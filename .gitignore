@@ -1,0 +1,32 @@
+# 虚拟环境
+.venv/
+venv/
+
+# 运行时数据（SQLite 单文件 + 抓取缓存），不入版本库
+data/
+
+# 日志
+logs/
+
+# 密钥
+.env
+.env.bot
+.env.local
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# 编辑器 / 系统
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 临时
+.tmp/
+*.tmp

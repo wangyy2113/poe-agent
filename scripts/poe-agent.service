@@ -1,0 +1,40 @@
+# Linux systemd unit 模板。
+#
+# 安装：
+#   sudo cp scripts/poe-agent.service /etc/systemd/system/
+#   # 按实际路径修改 User / WorkingDirectory / ExecStart
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now poe-agent
+#
+# 查看：journalctl -u poe-agent -f
+# 停止：sudo systemctl stop poe-agent
+#
+# 说明：日志同时落 logs/app-YYYY-MM-DD.log（按日期命名，不做 rename 轮转），
+#      不依赖 logrotate。
+
+[Unit]
+Description=POE1-Agent (Path of Exile 1 domain agent)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=poe-agent
+WorkingDirectory=/home/poe-agent/poe-agent
+ExecStart=/home/poe-agent/poe-agent/.venv/bin/python main.py
+Restart=always
+RestartSec=5
+
+Environment=PYTHONUNBUFFERED=1
+# 强制 UTF-8：避免非 UTF-8 locale 下中文输出损坏
+Environment=PYTHONUTF8=1
+
+# 基础加固
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/home/poe-agent/poe-agent/data /home/poe-agent/poe-agent/logs
+
+[Install]
+WantedBy=multi-user.target

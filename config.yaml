@@ -1,0 +1,112 @@
+# POE1-Agent 声明式行为配置
+# 密钥不放这里，见 .env
+
+server:
+  # 默认只绑本机。要对外提供服务请自行加反向代理与 TLS，
+  # 不要直接改成 0.0.0.0（会暴露未加固的管理端点）。
+  host: "127.0.0.1"
+  port: 8787
+
+paths:
+  db: "data/poe.db"
+  http_cache: "data/http_cache"
+  logs: "logs"
+
+llm:
+  # 推理模型必须留足预算：实测 GLM 5.2 在"只回答两个字"的任务上
+  # 消耗 117 输出 token，其中 114 是推理。设小了会正文为空且不报错。
+  max_tokens: 8192
+  temperature: 0.2
+  timeout_seconds: 180
+  # 单轮闸门，防失控循环与费用失控
+  max_tool_calls: 12
+  max_tokens_per_turn: 60000
+  # 分级退避（秒），429 单独识别
+  retry_delays: [1, 2, 4, 8, 15]
+  # 凭证冷却（秒）：额度类可带外补充故定期重试；鉴权类不会自愈但也不写死到进程结束
+  cooldown_budget_seconds: 1800
+  cooldown_auth_seconds: 3600
+  # 模型别名 → 完整模型 ID
+  model_aliases:
+    glm: "glm-5.2"
+    opus: "claude-opus-5"
+    sonnet: "claude-sonnet-4-6"
+    haiku: "claude-haiku-4-5"
+  # 需要二次判断的场景用廉价模型，不占主模型预算
+  gate_model: "claude-haiku-4-5"
+
+retrieval:
+  top_k: 20
+  # 相对相关度分数，**仅用于排序**，不作充分依据判据
+  # （相对归一化下最优项恒为 1.0，用它做阈值等于闸门永不触发）
+  min_score: 0.35
+  # 充分依据判据：查询的实义词有多少比例真的出现在候选文档里。
+  # 这是绝对量，可解释也可阈值化。实测「流放之路2 的升华机制是什么」
+  # 只命中「升华」→ 覆盖率 20%，据此正确拒答；而 bm25 绝对值
+  # （-8.97 vs 猎首的 -9.99）落在同一量级，无法区分。
+  # 需用黄金问答集调优：过高导致错误拒答，过低导致无据断言漏出，成对监控。
+  min_coverage: 0.5
+  # RRF 融合常数
+  rrf_k: 60
+  # 来源优先级衰减：同等相关度下高优先级来源排前
+  priority_decay: 0.08
+  timeout_seconds: 8
+
+  vector:
+    # 2026-08-04 实测：网关未注册 embedding 模型 → 关闭。
+    # 关闭后走 BM25 + 实体精确匹配 + search_keywords 补偿。
+    enabled: false
+    # 维度不写死：启用时按 embedding 模型实际输出维度建表
+    dim: 0
+  rerank:
+    enabled: false
+
+  # 事实句判定领域词表：命中这些词的句子视为事实断言，
+  # 必须绑定引用，否则在出口被拦截。
+  factual_terms:
+    - 词缀
+    - 隐式
+    - 显式
+    - 腐化
+    - 裂隙
+    - 合成
+    - 附魔
+    - 底材
+    - 物品等级
+    - 需求等级
+    - 抗性
+    - 暴击
+    - 增伤
+    - 技能石
+    - 升华
+    - 万神殿
+    - 天赋
+    - 概率
+    - 权重
+    - 掉落
+
+sources:
+  # P1 POEDB > P2 Wiki > P3 Craft of Exile > P4 经济 > P5 官方 Patch Notes > P6 社区
+  # P6 不得支撑事实断言，仅可标注为社区观点用于建议类内容。
+  priority:
+    POEDB: 1
+    PoE Wiki: 2
+    Craft of Exile: 3
+    poe.watch: 4
+    GGG Patch Notes: 5
+    Community: 6
+
+crawl:
+  user_agent: "poe1-agent/0.1 (knowledge base builder; contact: admin)"
+  # 令牌桶限速：对目标站点友好
+  requests_per_second: 0.5
+  concurrency: 2
+  timeout_seconds: 60
+  # 缓存有效期；未过期且内容哈希未变则跳过重新抽取与索引
+  cache_ttl_hours: 24
+
+logging:
+  level: "INFO"
+  # 按日期后缀直接命名新文件，不做 rename 轮转
+  # （Windows 上文件被杀软/索引器占用时 rename 会抛 WinError 32）
+  retention_days: 14

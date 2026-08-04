@@ -1,0 +1,30 @@
+# POE1-Agent 依赖（依赖范围；确切版本见 requirements.lock）
+#
+# 约束：所有依赖必须在 Windows / macOS / Linux 均可安装
+#       （有 wheel 或为纯 Python 源码包），见 .kiro/steering/project-conventions.md
+
+# ── Web 服务（进程内启动，不额外起服务）──
+fastapi>=0.141.0
+uvicorn>=0.52.0
+pydantic>=2.13.0
+pydantic-settings>=2.14.0
+
+# ── 配置 ──
+PyYAML>=6.0
+
+# ── LLM（OpenAI 兼容，直连内部 LiteLLM 网关）──
+openai>=1.0.0
+
+# ── 采集 ──
+httpx>=0.28.0
+selectolax>=0.4.11
+
+# ── 检索：中文分词（纯 Python，无需编译）──
+jieba>=0.42.1
+
+# ── 可选：向量通道。扩展加载不可用时自动降级，见 core/db.py ──
+sqlite-vec>=0.1.9
+numpy>=2.0.0
+
+# ── 进程名（Windows 上无效，best-effort）──
+setproctitle>=1.3.0
