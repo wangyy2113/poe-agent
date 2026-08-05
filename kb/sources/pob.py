@@ -32,6 +32,9 @@ logger = logging.getLogger(__name__)
 DATA_DIR = Path("src") / "Data"
 TREE_DIR = Path("src") / "TreeData"
 
+#: 常量文件的引用路径（相对 `src/`）。集中在此，免得各处各写一遍。
+MISC_URL_FILE = "Data/Misc.lua"
+
 
 class PoBNotFound(RuntimeError):
     """找不到 PoB 仓库。消息里列出所有尝试过的位置，便于用户直接处理。"""

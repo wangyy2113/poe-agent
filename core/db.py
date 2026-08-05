@@ -156,6 +156,62 @@ CREATE INDEX IF NOT EXISTS idx_pobmod_group ON pob_mod(mod_group, ilvl);
 CREATE INDEX IF NOT EXISTS idx_pobmod_kind ON pob_mod(mod_kind);
 CREATE INDEX IF NOT EXISTS idx_pobmod_loose ON pob_mod(loose_template);
 
+-- ── 游戏常量（calc/ 的真源）──
+-- 标量逐个成行，这样每个常量都能被单独引用（需求 12：常量附来源与版本）。
+-- dat_source 记 GGG 原始表名（GameConstants.dat / Character.ot），
+-- 比「来自 PoB」精确一级——出问题时能直接定位到上游哪张表。
+-- 注意玩家侧上限（抗性 75%、物理减伤 90%、格挡 75%）在 characterConstants，
+-- 不在 gameConstants。
+CREATE TABLE IF NOT EXISTS game_constant (
+    key             TEXT PRIMARY KEY,  -- characterConstants.base_maximum_all_resistances_%
+    group_name      TEXT NOT NULL,     -- characterConstants
+    dat_source      TEXT,              -- Metadata/Characters/Character.ot
+    -- 0 = 出处注释紧贴该赋值（确定）；1 = 从上文延续而来（推断，需人工确认）。
+    -- 区分是因为「错的出处比没有出处更糟」：它会让错误的溯源看起来可信。
+    dat_source_inherited INTEGER DEFAULT 0,
+    kind            TEXT NOT NULL,     -- scalar / level_table / array / other
+    value_num       REAL,              -- 标量值
+    value_json      TEXT,              -- 数组或嵌套值
+    source          TEXT NOT NULL,
+    source_priority INTEGER NOT NULL,
+    url             TEXT NOT NULL,     -- 钉住 commit 的 blob 地址（带行号锚点）
+    pob_version     TEXT,
+    game_version    TEXT,              -- 如 3.29
+    updated_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_const_group ON game_constant(group_name);
+
+-- ── PoB 唯一装备（P2，英文；用于与 POEDB 交叉校验）──
+-- variant_scope 是关键：PoB 的文本块里**历史版本与当前版本混在一起**
+-- （1293 件里 752 件带 Variant 标记）。冈姆的壮志同时写着 +500（3.25 前）
+-- 与 +1000（当前），不区分就会把过期数值当现值输出。
+-- 只有 variant_scope='current' 的行可用于回答；'obsolete' 仅供版本 diff 分析。
+CREATE TABLE IF NOT EXISTS pob_unique (
+    uid             TEXT PRIMARY KEY,  -- unique:{name}
+    name_en         TEXT NOT NULL,
+    base_type_en    TEXT,
+    source_file     TEXT NOT NULL,     -- Data/Uniques/amulet.lua
+    league          TEXT,              -- 首发赛季
+    drop_source     TEXT,              -- Source: 行（掉落来源）
+    level_req       INTEGER,
+    implicit_count  INTEGER,
+    limited_to      INTEGER,           -- 珠宝的携带上限
+    radius          TEXT,
+    variant_names   TEXT,              -- JSON 全部 variant 名
+    current_variants TEXT,             -- JSON 保留的 variant 下标（1-based）
+    obsolete_variants TEXT,            -- JSON 被排除的历史版本下标
+    mods            TEXT NOT NULL,     -- JSON [{kind,text,ranges,variants,tags,...}]
+    ranges_fp       TEXT,              -- JSON 区间指纹序列，跨语言比对用
+    source          TEXT NOT NULL,
+    source_priority INTEGER NOT NULL,
+    url             TEXT NOT NULL,
+    pob_version     TEXT,
+    game_version    TEXT,
+    updated_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_pobuniq_name ON pob_unique(name_en);
+CREATE INDEX IF NOT EXISTS idx_pobuniq_base ON pob_unique(base_type_en);
+
 -- ── 跨来源冲突台账 ──
 -- 需求 15.5/15.6：冲突时并列展示双方并推荐 POEDB，不得自行判定谁对而隐藏一方。
 -- 因此冲突必须**落库**，不能只在导入日志里一闪而过。

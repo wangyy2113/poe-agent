@@ -24,8 +24,9 @@ POE1 的机制耦合极深，一个错误的小前提会让整条结论反向。
 | 能力 | 说明 |
 | --- | --- |
 | 知识库 | POEDB 唯一装备 1341 件、词缀 93875 条（含 T 级 / 物品等级 / 生成权重）、别名 2691 条 |
-| PoB 数据源 | 词缀 25487 条，含按底材标签的权重向量与交易站 stat id；引用钉住 commit |
-| 跨来源对账 | 两源词缀区间数值一致 22848 行（86.4%），差异登记待核对 |
+| PoB 数据源 | 词缀 25487 条、唯一装备 1300 件、游戏常量 499 条；引用钉住 commit |
+| 跨来源对账 | 词缀区间一致 86.4%、唯一装备实质字段一致 83.5%，差异登记待核对 |
+| 游戏常量 | `calc/constants.py`，逐个常量可溯源到 GGG 原始表；**缺失即抛异常，不给默认值** |
 | 混合检索 | 实体精确匹配 + BM25（FTS5 + jieba）+ 词缀意图通道，RRF 融合 + 来源优先级加权 |
 | 充分依据判定 | 依据不足时返回 `sufficient=false` 与缺失信息点，**不**进入生成 |
 | **问答** | `POST /chat`：强制检索 → 充分性判定 → 生成 → 出口绑定校验 → 装配引用 |
@@ -91,10 +92,18 @@ Windows 把 `.venv/bin/python` 换成 `.venv\Scripts\python.exe`。
 ```bash
 # 仓库位置按 POB_PATH 环境变量 → config.yaml 的 sources.pob.path
 # → 本仓库同级目录 ../PathOfBuilding 依次解析
-.venv/bin/python scripts/probe_pob.py --align      # 先清点，确认解析无误
-.venv/bin/python scripts/import_pob_mods.py        # 导入词缀
-.venv/bin/python scripts/verify_pob_mods.py        # 与 POEDB 对账
+.venv/bin/python scripts/probe_pob.py --align       # 先清点，确认解析无误
+.venv/bin/python scripts/import_pob_constants.py    # 游戏常量（calc/ 的真源）
+.venv/bin/python scripts/import_pob_mods.py         # 词缀
+.venv/bin/python scripts/import_pob_uniques.py      # 唯一装备（自动过滤历史变体）
+.venv/bin/python scripts/verify_pob_mods.py         # 词缀对账
+.venv/bin/python scripts/verify_pob_uniques.py      # 唯一装备对账
 ```
+
+导入唯一装备时会自动过滤历史变体：1300 件里 758 件带 `Variant:` 标记，
+不过滤会把旧版数值和现版一起输出（冈姆的壮志的 `+500` 与 `+1000` 并存）。
+判据是**排除变体名含 `Pre <版本号>` 的**，而不是「只取 Current」——有些变体
+是选择型而非历史版本（`Impresence` 的 5 种元素全都当前有效）。
 
 ---
 
@@ -303,7 +312,10 @@ PoB 排 P2 而不是 P1：它在数值上更接近一手，但不含中文名与
 | `scripts/verify_llm.py` | LLM 客户端验证（`--offline` 无需凭证） |
 | `scripts/probe_pob.py` | PoB 数据资产清点与解析可行性验证 |
 | `scripts/import_pob_mods.py` | 导入 PoB 词缀（`--dry-run` 只体检） |
+| `scripts/import_pob_constants.py` | 导入游戏常量（`calc/` 真源） |
+| `scripts/import_pob_uniques.py` | 导入 PoB 唯一装备（过滤历史变体） |
 | `scripts/verify_pob_mods.py` | POEDB × PoB 词缀对账 |
+| `scripts/verify_pob_uniques.py` | POEDB × PoB 唯一装备对账 |
 | `scripts/verify_chat.py` | `/chat` 端到端验证（`--gap-only` 不需要凭证） |
 | `scripts/check_spec_refs.py` | 校验 spec 里的需求交叉引用 |
 
@@ -313,8 +325,9 @@ PoB 排 P2 而不是 P1：它在数值上更接近一手，但不含中文名与
 .venv/bin/python -m unittest discover -s tests -t .
 ```
 
-目前 28 项，全部覆盖出口绑定闸门——包括「该拦的拦住」与「该放的放行」两组，
-错误拒答与无据漏出要成对压制（需求 16.7）。
+目前 42 项：28 项覆盖出口绑定闸门（「该拦的拦住」与「该放的放行」成对，
+错误拒答与无据漏出要一起压制，见需求 16.7），14 项覆盖游戏常量访问层
+（重点是「缺失即抛异常，绝不给默认值」）。
 
 ---
 
@@ -331,6 +344,7 @@ orchestrator/           主循环、出口绑定闸门、引用装配
                           loop.py / binding.py / citation.py
 agents/                 领域 Agent：提示词 + 允许工具集 + 输出契约
 tools/                  工具注册与实现（kb_search / entity_lookup）
+calc/                   常量访问层与计算器（constants.py 缺失即抛异常）
 entities/               实体模型、分类体系、词缀反查
 kb/                     采集管线与各来源抽取器（poedb / pob）
 retrieval/              FTS5、别名、混合检索融合、分词、领域词表
@@ -362,8 +376,12 @@ logs/                   按日期命名的日志（不入版本库）
   在 `mod_lookup` 里仍按单行模板匹配，会失配。
 - **底材 / 技能 / 天赋树尚未入库。** PoB 有完整数据但无中文名，需先补 POEDB 对应中文页，
   否则 `name_zh` 只能填英文，违背中文输出要求。
-- **PoB 唯一装备的历史变体尚未处理。** 1293 件里 752 件带 `Variant:` 标记，
-  必须只取 `Current`，否则会把旧版数值一起输出。这是导入前必须先做的。
+- **PoB 唯一装备的历史变体已过滤但未入库。** 2157 条被排除的历史词缀目前丢弃了。
+  存下来能回答版本改动类问题，但必须与当前数据严格隔离，否则会被当成现值输出。
+- **POEDB 侧 76% 的唯一装备缺需求等级。** 交叉校验发现的采集缺口（926/1215），
+  PoB 侧有值可回填，装备分析需要这个字段。
+- **唯一装备的 `mod_count` 两源只有 52.9% 一致。** 这是建模差异不是数值分歧：
+  PoB 把 `Elder Item` 这类影响力标记也算独立词缀，POEDB 不抽取。已降级为结构指标。
 
 ---
 
