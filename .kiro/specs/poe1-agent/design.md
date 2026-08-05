@@ -82,11 +82,11 @@ graph TB
 
     subgraph EXT["外部数据源"]
         POEDB["POEDB (P1)"]
-        WIKI["PoE Wiki (P2)"]
-        COE["Craft of Exile (P3)"]
-        ECON["api.poe.watch (P4)"]
-        PATCH["Patch Notes (P5)"]
-        POB["PoB 仓库 / GGG API"]
+        POB["PoB src/Data (P2)<br/>本地仓库，不联网"]
+        WIKI["PoE Wiki (P3)"]
+        COE["Craft of Exile (P4)"]
+        ECON["api.poe.watch (P5)"]
+        PATCH["Patch Notes (P6)"]
     end
 
     WEB --> CHAT
@@ -374,7 +374,7 @@ class DocumentMetadata(BaseModel):
     title: str
     category: str           # 需求 2.6 的一级分类
     source: str             # "POEDB" | "PoE Wiki" | ...
-    source_priority: int    # 1..6，参与排序；P6 不得支撑事实断言（需求 2.2）
+    source_priority: int    # 1..7，参与排序；P7 不得支撑事实断言（需求 2.2）
     url: str                # 缺失则不入可引用索引（需求 2.5）
     league: str
     version: str
@@ -424,7 +424,7 @@ flowchart LR
 
 1. **实体精确通道**（需求 3.5）：维护 `alias → entity_id` 映射表，覆盖中文名、英文名、社区缩写。命中即把该实体的规范卡片强制注入候选集，解决「猎首」这类专名被语义检索稀释的问题。此通道是纯 SQL 查表，最快且最确定，因此放在最前。
 2. **融合用 RRF**：BM25 与向量分数量纲不可比（FTS5 的 `bm25()` 返回负值，向量返回距离），RRF 只用排名不用分值，无需调分数权重，也免去两种量纲的归一化。
-3. **来源优先级参与排序**（需求 2.3）：融合后按 `source_priority` 施加衰减因子，使 POEDB 在同等相关度下排前。这是把需求 15.5 落在算法里而不是提示词里。P6 社区来源在此层被标记为不可支撑事实断言（需求 2.2），后续出口校验拒绝以其绑定事实句。
+3. **来源优先级参与排序**（需求 2.3）：融合后按 `source_priority` 施加衰减因子，使 POEDB 在同等相关度下排前。这是把需求 15.5 落在算法里而不是提示词里。P7 社区来源在此层被标记为不可支撑事实断言（需求 2.2），后续出口校验拒绝以其绑定事实句。
 4. **充分依据判定**（需求 1.3）：重排后最高分低于 `retrieval.min_score` 即判定该事实点无充分依据，走缺据声明路径，**不进入生成**。此判定由代码执行，不交给模型自觉。阈值需按黄金问答集调优——过高导致错误拒答，过低导致推断漏出，两者成对监控（需求 16.7）。
 5. **超时降级取保守侧**（需求 3.8、3.10）：三路检索并发，任一路超时用已完成结果继续；但此时判定标准收紧，宁可缺据声明也不基于不完整候选集作答。
 6. **过滤**：`category` / `league` / `version` 作为 SQL `WHERE` 条件与 FTS5 查询的联合过滤（需求 3.6）。因为实体、FTS 索引、向量在同一个 SQLite 文件里，过滤与检索可以一条 SQL 完成，不需要跨服务的二次筛选。

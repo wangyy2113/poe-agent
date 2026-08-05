@@ -87,8 +87,10 @@ POE1 的机制高度耦合——一条词缀的适用条件、一个技能标签
 
 #### 验收标准
 
-1. 知识库 SHALL 按以下优先级组织数据源：P1 POEDB、P2 PoE Wiki、P3 Craft of Exile、P4 经济数据源、P5 GGG 官方 Patch Notes、P6 Reddit 等社区讨论。
-2. P1–P5 来源 SHALL 可用于支撑事实断言。P6 社区来源 SHALL NOT 用于支撑任何事实断言，仅可在明确标注为「社区观点」时用于建议类内容；WHEN 引用 P6 内容 THEN 系统 SHALL 说明该内容未经权威来源证实。
+1. 知识库 SHALL 按以下优先级组织数据源：P1 POEDB、P2 Path of Building 社区版数据（`src/Data/`，由 GGG 客户端 `.dat` 导出）、P3 PoE Wiki、P4 Craft of Exile、P5 经济数据源、P6 GGG 官方 Patch Notes、P7 Reddit 等社区讨论。
+   - PoB 数据置于 P2 而非 P1：它在**数值与结构**上更接近一手（自 `.dat` 机器导出），但不含中文名与页面说明，且社区分支存在人工修补。因此 POEDB 仍为最高优先级（需求 15.5），冲突时推荐 POEDB。
+   - 引用 PoB 时 URL SHALL 指向**钉住 commit 的** GitHub blob 地址，使引用可点击且可复现；SHALL 同时记录 PoB 的 `manifest` 版本与天赋树版本。
+2. P1–P6 来源 SHALL 可用于支撑事实断言。P7 社区来源 SHALL NOT 用于支撑任何事实断言，仅可在明确标注为「社区观点」时用于建议类内容；WHEN 引用 P7 内容 THEN 系统 SHALL 说明该内容未经权威来源证实。
 3. WHEN 系统在同一问题上检索到不同优先级来源 THEN 排序 SHALL 优先采信高优先级来源。
 4. 每一份知识文档 SHALL 携带完整 Metadata：`title`、`category`、`source`、`url`、`league`、`version`、`language`、`tags`。
 5. IF 某文档缺少 `url` 或 `source` THEN 该文档 SHALL NOT 进入可引用索引。
@@ -319,7 +321,7 @@ POE1 的机制高度耦合——一条词缀的适用条件、一个技能标签
 6. WHEN 陈述任何游戏机制 THEN 系统 SHALL 提供出处，格式形如「来源：POEDB → 猎首（Headhunter）」并附 URL。
 7. WHEN 执行 Build 分析 THEN 系统 SHALL 完整覆盖需求 8.4 列出的检查项，SHALL NOT 遗漏；IF 某项数据缺失 THEN SHALL 标注为「未知」而非填入估计值。
 8. WHEN 系统给出的结论基于假设（如假定满抗、假定某药剂生效） THEN 该假设 SHALL 被显式写出。
-9. 系统 SHALL NOT 将 P6 社区来源作为事实依据；WHEN 引用社区观点 THEN SHALL 标注为未经证实的社区讨论且仅用于建议类内容。
+9. 系统 SHALL NOT 将 P7 社区来源作为事实依据；WHEN 引用社区观点 THEN SHALL 标注为未经证实的社区讨论且仅用于建议类内容。
 10. 计算派生结论 SHALL 与推断严格区分：派生 SHALL 展示完整推导链且每个输入可溯源，SHALL NOT 在链中引入无据前提。
 11. WHEN 知识库中存在同一实体的多版本描述且无法确定适用于当前版本 THEN 系统 SHALL 说明该不确定性并列出各版本描述，SHALL NOT 自行选定一个版本作为事实陈述。
 12. 系统 SHALL NOT 因为「拒答显得无用」而放宽以上任何一条；输出错误内容的代价高于输出「查不到」。

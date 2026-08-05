@@ -230,20 +230,41 @@ def extract_payload(html: str) -> dict[str, Any]:
 _DASHES = "—–‒―"
 _NDASH_SPAN = re.compile(r'<span class="ndash">[^<]*</span>')
 _TAG = re.compile(r"<[^>]+>")
+#: 换行与块级结束标记。POEDB 用 `<br>` 分隔混合词缀的多行效果，
+#: 剥标签前必须先换成分隔符，否则两行会粘成一句读不通的话。
+#: `</span>` 是行内标记，**不能**列进来。
+_LINE_BREAK = re.compile(r"<\s*br\s*/?\s*>|</\s*(?:div|p|li|tr)\s*>", re.I)
+#: 多行词缀的行间分隔符。与 PoB 侧 `PoBMod.text` 的拼接方式保持一致，
+#: 两个源用同一种表示才能比对。
+LINE_SEP = " / "
 _RANGE_RE = re.compile(r"\(\s*(-?\d+(?:\.\d+)?)\s*[" + _DASHES + r"-]\s*(-?\d+(?:\.\d+)?)\s*\)")
 _NUM_RE = re.compile(r"-?\d+(?:\.\d+)?")
 
 
 def clean_mod_text(raw: str) -> str:
-    """词缀 HTML → 单行文本。区间分隔符统一为 ASCII 连字符，数值原样保留。"""
+    """词缀 HTML → 文本。区间分隔符统一为 ASCII 连字符，数值原样保留。
+
+    **多行词缀必须保留行边界**（实测踩到）：POEDB 的载荷里混合词缀是
+    `+(4—6)% 所有元素抗性<br>召唤生物获得 +(5—8)% 元素抗性`。
+    早先直接剥掉 `<br>`，两行粘成 `+(4-6)% 所有元素抗性召唤生物获得 +(5-8)% 元素抗性`
+    ——既会原样输出给用户，模板也永远匹配不上真实装备上的任何一行。
+    影响面不小：约 10% 的词缀行是多值的，工艺台词缀里也有。
+
+    分隔符用 `LINE_SEP`（与 PoB 侧一致），这样两个源的多行词缀表示相同，可比对。
+    """
     if not raw:
         return ""
     s = _NDASH_SPAN.sub("-", raw)
+    s = _LINE_BREAK.sub(LINE_SEP, s)
     s = _TAG.sub("", s)
     for d in _DASHES:
         s = s.replace(d, "-")
     s = s.replace("&nbsp;", " ").replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
-    return re.sub(r"\s+", " ", s).strip()
+    s = re.sub(r"\s+", " ", s).strip()
+    # 块级标记常成对出现，去掉由此产生的空段与首尾分隔符
+    sep = LINE_SEP.strip()
+    s = re.sub(rf"(?:\s*{re.escape(sep)}\s*)+", LINE_SEP, s)
+    return s.strip().strip(sep).strip()
 
 
 def parse_ranges(text: str) -> list[tuple[float, float]]:

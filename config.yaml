@@ -86,15 +86,31 @@ retrieval:
     - 掉落
 
 sources:
-  # P1 POEDB > P2 Wiki > P3 Craft of Exile > P4 经济 > P5 官方 Patch Notes > P6 社区
-  # P6 不得支撑事实断言，仅可标注为社区观点用于建议类内容。
+  # P1 POEDB > P2 PoB src/Data > P3 Wiki > P4 Craft of Exile > P5 经济
+  # > P6 官方 Patch Notes > P7 社区
+  # P7 不得支撑事实断言，仅可标注为社区观点用于建议类内容。
+  #
+  # PoB 排 P2 而非 P1：数值与结构上它更接近一手（自 GGG 客户端 .dat 机器导出），
+  # 但不含中文名与页面说明，且社区分支存在人工修补。POEDB 保持最高优先级，
+  # 冲突时推荐 POEDB（需求 15.5）。
   priority:
     POEDB: 1
-    PoE Wiki: 2
-    Craft of Exile: 3
-    poe.watch: 4
-    GGG Patch Notes: 5
-    Community: 6
+    Path of Building: 2
+    PoE Wiki: 3
+    Craft of Exile: 4
+    poe.watch: 5
+    GGG Patch Notes: 6
+    Community: 7
+
+  pob:
+    # PoB 仓库位置。留空则按 POB_PATH 环境变量 → 仓库同级 ../PathOfBuilding 解析。
+    # 不写绝对路径，避免把本机目录结构带进版本库（跨平台规则）。
+    path: ""
+    # 引用 URL 的仓库地址。导入时把当前 commit SHA 钉进 URL，使引用可复现。
+    repo_url: "https://github.com/PathOfBuildingCommunity/PathOfBuilding"
+    # 唯一装备的历史变体：只取 Current。1293 件里 752 件带 Variant 标记，
+    # 不过滤会把旧版数值和现版数值一起输出（如冈姆的壮志 +500 与 +1000 并存）。
+    variants: "current_only"
 
 crawl:
   user_agent: "poe1-agent/0.1 (knowledge base builder; contact: admin)"

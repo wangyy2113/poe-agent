@@ -115,6 +115,71 @@ CREATE INDEX IF NOT EXISTS idx_mod_class ON mod_affix(item_class_page, category)
 CREATE INDEX IF NOT EXISTS idx_mod_group ON mod_affix(correct_group, gen_type);
 CREATE INDEX IF NOT EXISTS idx_mod_code ON mod_affix(mod_code);
 
+-- ── PoB 词缀（P2 来源，英文）──
+-- 为什么单独建表而不是塞进 mod_affix：
+--   1. 两个源的粒度不同。mod_affix 按「词缀 × 底材类别」一行（同一词缀在弓上
+--      T5、法杖上 T4 是两行）；PoB 一条词缀一行，底材差异体现在 weights 向量里。
+--      硬合并会逼着二者之一失真。
+--   2. 交叉校验要求两边**各自独立保存**。混进同一张表就只能靠 source 列区分，
+--      而 UPSERT 一旦按 uid 撞上就会互相覆盖，冲突还没被发现就消失了。
+-- 对账结果单独落 source_conflict，驱动需求 15.5 的跨来源对照。
+CREATE TABLE IF NOT EXISTS pob_mod (
+    uid             TEXT PRIMARY KEY,  -- {mod_kind}:{mod_id}
+    mod_id          TEXT NOT NULL,     -- PoB 键名，如 IncreasedLife7
+    mod_kind        TEXT NOT NULL,     -- explicit/corrupted/eldritch/master/...
+    source_file     TEXT NOT NULL,     -- Data/ModExplicit.lua
+    affix_type      TEXT,              -- Prefix / Suffix / 空
+    affix_name      TEXT,              -- "Hale"、"of the Brute"
+    mod_group       TEXT,              -- 与 mod_affix.correct_group 同为 GGG 内部 ID
+    ilvl            INTEGER,           -- PoB 的 level：该档位要求的物品等级
+    text_en         TEXT NOT NULL,     -- 词缀英文原文，数值原样保留
+    text_template   TEXT,              -- 严格模板（与 mod_affix 同一套归一化规则）
+    loose_template  TEXT,
+    ranges          TEXT,              -- JSON [[low,high],...]
+    weights         TEXT,              -- JSON {底材标签: 权重}；权重 0 是显式禁止
+    weight_mults    TEXT,              -- JSON 权重乘数（化石等条件性加成）
+    spawn_tags      TEXT,              -- JSON 权重>0 的底材标签
+    tags            TEXT,              -- JSON modTags：分类标签，给检索与展示
+    behaviour_tags  TEXT,              -- JSON tags：机制标记(has_attack_mod)，
+                                       -- 决定权重乘数条件；与分类标签语义不同不可合并
+    item_types      TEXT,              -- JSON types：适用物品类型（工艺台词缀专有）
+    variant_id      TEXT,              -- 来源实例/档位（头盔附魔的实验室难度等）
+    trade_hashes    TEXT,              -- JSON 交易站 stat id，打通 Trade API
+    stat_order      TEXT,              -- JSON
+    source          TEXT NOT NULL,
+    source_priority INTEGER NOT NULL,
+    url             TEXT NOT NULL,     -- 钉住 commit 的 GitHub blob 地址
+    pob_version     TEXT,              -- 如 "PoB 2.66.2 / tree 3.29"
+    updated_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_pobmod_group ON pob_mod(mod_group, ilvl);
+CREATE INDEX IF NOT EXISTS idx_pobmod_kind ON pob_mod(mod_kind);
+CREATE INDEX IF NOT EXISTS idx_pobmod_loose ON pob_mod(loose_template);
+
+-- ── 跨来源冲突台账 ──
+-- 需求 15.5/15.6：冲突时并列展示双方并推荐 POEDB，不得自行判定谁对而隐藏一方。
+-- 因此冲突必须**落库**，不能只在导入日志里一闪而过。
+CREATE TABLE IF NOT EXISTS source_conflict (
+    conflict_id  INTEGER PRIMARY KEY AUTOINCREMENT,
+    subject      TEXT NOT NULL,        -- 冲突对象，如 mod_group=IncreasedLife ilvl=44
+    field        TEXT NOT NULL,        -- 冲突字段，如 ranges / weight / tier_count
+    kind         TEXT NOT NULL,        -- mod / unique / base / constant
+    source_a     TEXT NOT NULL,
+    value_a      TEXT NOT NULL,
+    ref_a        TEXT,                 -- a 侧的 uid 或 entity_id
+    url_a        TEXT,
+    source_b     TEXT NOT NULL,
+    value_b      TEXT NOT NULL,
+    ref_b        TEXT,
+    url_b        TEXT,
+    note         TEXT,
+    resolved     INTEGER DEFAULT 0,    -- 人工确认后置 1
+    first_seen   TEXT NOT NULL,
+    last_seen    TEXT NOT NULL,
+    UNIQUE(subject, field, source_a, source_b)
+);
+CREATE INDEX IF NOT EXISTS idx_conflict_kind ON source_conflict(kind, resolved);
+
 -- ── Tier B：知识卡片切片（语义层）──
 CREATE TABLE IF NOT EXISTS chunk (
     chunk_id   TEXT PRIMARY KEY,

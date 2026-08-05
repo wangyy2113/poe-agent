@@ -80,7 +80,7 @@ class SourceRef(BaseModel):
 
     @property
     def can_support_facts(self) -> bool:
-        """P6 社区来源不得支撑事实断言。"""
+        """P7 社区来源不得支撑事实断言。"""
         return self.priority <= MAX_FACTUAL_PRIORITY
 
 

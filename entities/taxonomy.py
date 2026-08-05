@@ -97,6 +97,9 @@ class ModKind(StrEnum):
 # 来源名常量，须与 config.yaml 的 sources.priority 键一致
 class Source(StrEnum):
     POEDB = "POEDB"
+    #: Path of Building 社区版的 src/Data/，由 GGG 客户端 .dat 机器导出。
+    #: 数值与结构上更接近一手，但无中文名、无页面说明，故列 P2 而非 P1。
+    POB = "Path of Building"
     WIKI = "PoE Wiki"
     CRAFT_OF_EXILE = "Craft of Exile"
     POE_WATCH = "poe.watch"
@@ -104,8 +107,8 @@ class Source(StrEnum):
     COMMUNITY = "Community"
 
 
-#: 可支撑事实断言的来源优先级上限。P6 社区来源不得用于事实断言。
-MAX_FACTUAL_PRIORITY = 5
+#: 可支撑事实断言的来源优先级上限。P7 社区来源不得用于事实断言。
+MAX_FACTUAL_PRIORITY = 6
 
 
 def make_entity_id(entity_type: EntityType | str, slug: str) -> str:
