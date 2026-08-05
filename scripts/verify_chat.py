@@ -18,7 +18,8 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+REPO_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO_ROOT))
 
 from api import normalize_base_path  # noqa: E402
 from core.config import get_config  # noqa: E402
@@ -48,6 +49,17 @@ def post(base: str, path: str, payload: dict, timeout: float = 300.0) -> dict:
     )
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         return json.load(resp)
+
+
+def post_status(base: str, path: str, payload: dict, timeout: float = 60.0) -> tuple[int, dict]:
+    """POST 并把错误码也当成正常结果返回——校验失败契约时要断言状态码。"""
+    try:
+        return 200, post(base, path, payload, timeout=timeout)
+    except urllib.error.HTTPError as exc:
+        try:
+            return exc.code, json.loads(exc.read())
+        except Exception:  # noqa: BLE001
+            return exc.code, {}
 
 
 def sse(base: str, path: str, payload: dict, timeout: float = 300.0) -> list[dict]:
@@ -118,12 +130,59 @@ def main() -> int:
         check("  缺据声明给出查证途径", "poedb.tw" in d["answer"])
         check("  未伪造引用", not d["citations"])
 
+    section("2. 装备解析与分析（/item，同样不调用 LLM）")
+    fixtures = REPO_ROOT / "tests" / "unit" / "fixtures" / "items"
+    for name, expect in (
+        ("rare_amulet_zh.txt", {"class": "项链", "matched": 5, "total": 6}),
+        ("rare_bow_fractured_en.txt", {"class": "Bows", "matched": 5, "total": 5}),
+        ("unique_nebulis_advanced_en.txt", {"class": "Sceptres", "advanced": True}),
+    ):
+        path = fixtures / name
+        if not path.is_file():
+            check(f"{name} 存在", False, "fixture 缺失")
+            continue
+        try:
+            d = post(base, "/item", {"text": path.read_text(encoding="utf-8")})
+        except urllib.error.HTTPError as exc:
+            check(f"{name} 分析", False, f"HTTP {exc.code}：{exc.read()[:200]!r}")
+            continue
+        print(f"\n  {name}：{d['rarity']} {d['name']}｜类别 {d['item_class']}"
+              f"｜已定档 {d['matched_count']}/{len(d['mods'])}")
+        check(f"  {name} 类别解析正确", d["item_class"] == expect["class"],
+              f"实得 {d['item_class']!r}")
+        if "matched" in expect:
+            check(f"  {name} 定档数符合预期",
+                  d["matched_count"] == expect["matched"] and len(d["mods"]) == expect["total"],
+                  f"实得 {d['matched_count']}/{len(d['mods'])}")
+        if expect.get("advanced"):
+            check(f"  {name} 识别为进阶复制", d["advanced_copy"])
+            from_text = [m for m in d["mods"] if m["tier_source"] == "item_text"]
+            check("  进阶复制的 T 级标注为游戏原文", bool(from_text),
+                  f"{len(from_text)} 条")
+        # 未定档的词缀必须给出原因，且不得出现推测的 T 级（需求 7.9）
+        unmatched = [m for m in d["mods"] if m["tier"] is None]
+        check(f"  {name} 未定档词缀都带原因",
+              all(m["reason"] for m in unmatched), f"{len(unmatched)} 条未定档")
+        check(f"  {name} 未定档词缀不给 T 级",
+              all(m["tier_label"] == "未匹配" for m in unmatched))
+        check(f"  {name} 不给市场价格", d["market_available"] is False)
+        check(f"  {name} 三项价值判断均为数据不足",
+              len(d["judgements"]) == 3
+              and all("数据不足" in j["verdict"] for j in d["judgements"]))
+
+    print()
+    bad = post_status(base, "/item", {"text": "今天天气不错\n随便贴点东西"})
+    check("非装备文本返回 422", bad[0] == 422, f"HTTP {bad[0]}")
+    detail = (bad[1] or {}).get("detail") or {}
+    check("解析失败带原因与期望格式",
+          bool(detail.get("reason")) and "Item Class:" in str(detail.get("expected_sample")))
+
     if args.gap_only:
         print("\n（--gap-only，跳过需要凭证的部分）")
         print(f"\n{'=' * 74}\n结果：{PASS} 通过，{FAIL} 失败")
         return 0 if FAIL == 0 else 1
 
-    section("2. 有据路径（需要可用 LLM 凭证）")
+    section("3. 有据路径（需要可用 LLM 凭证）")
     q = "猎首（Headhunter）有哪些词缀？"
     try:
         d = post(base, "/chat", {"message": q})
@@ -166,7 +225,7 @@ def main() -> int:
         print(f"\n  注意：闸门拦截了 {d['blocked_claims']} 句无据断言 —— "
               f"这是闸门在起作用，可用 /admin/trace/{d['trace_id']} 查原因")
 
-    section("3. 流式（SSE）")
+    section("4. 流式（SSE）")
     frames = sse(base, "/chat/stream", {"message": q})
     kinds = [f.get("type") for f in frames]
     print(f"  收到 {len(frames)} 帧：{_summarize(kinds)}")
@@ -186,7 +245,7 @@ def main() -> int:
           all("已被拦截" in f.get("text", "") for f in blocked),
           f"blocked 帧 {len(blocked)} 个")
 
-    section("4. 流式与非流式判定一致")
+    section("5. 流式与非流式判定一致")
     stream_text = "".join(
         f.get("text", "") for f in frames
         if f.get("type") in ("sentence", "blocked", "gap")
@@ -200,7 +259,7 @@ def main() -> int:
     # 故障转移会切模型，两条路径都必须报出实际模型，否则「换了模型」会被误判成 bug
     check("流式也报出实际模型", bool(done.get("model")), f"实得 {done.get('model')!r}")
 
-    section("5. 缺据路径的流式呈现")
+    section("6. 缺据路径的流式呈现")
     gap_frames = sse(base, "/chat/stream", {"message": "流放之路2 的升华机制是什么"})
     gap_kinds = [f.get("type") for f in gap_frames]
     print(f"  收到 {len(gap_frames)} 帧：{_summarize(gap_kinds)}")
@@ -210,10 +269,11 @@ def main() -> int:
     check("缺据时未消耗 token",
           not (gap_frames[-1].get("tokens") or {}).get("total"))
 
-    section("6. 静态前端")
+    section("7. 静态前端")
     for path, needle in (
-        ("/", "app.js"),
+        ("/", "paste-card"),      # 粘贴识别卡片的容器
         ("/app.js", "chat/stream"),
+        ("/app.js", "detectPasteKind"),
         ("/style.css", "--accent"),
     ):
         try:
@@ -223,7 +283,7 @@ def main() -> int:
         except urllib.error.URLError as exc:
             check(f"{path} 可访问", False, str(exc))
 
-    section("7. 轨迹可追溯")
+    section("8. 轨迹可追溯")
     try:
         req = urllib.request.Request(base + f"/admin/trace/{d['trace_id']}")
         with urllib.request.urlopen(req, timeout=30) as resp:

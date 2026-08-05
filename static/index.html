@@ -35,8 +35,10 @@
 </main>
 
 <footer>
+  <!-- 粘贴识别卡片（需求 6.3/6.4）：识别出装备文本或 PoB 码时先让用户确认再分析 -->
+  <div class="paste-card" id="paste-card" hidden></div>
   <div class="composer">
-    <textarea id="input" rows="1" placeholder="输入问题，Enter 发送，Shift+Enter 换行"></textarea>
+    <textarea id="input" rows="1" placeholder="输入问题，或直接粘贴装备文本（Ctrl+C / Ctrl+Alt+C）"></textarea>
     <button class="send" id="send" title="发送">↑</button>
   </div>
   <div class="hint">

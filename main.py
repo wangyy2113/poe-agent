@@ -25,6 +25,7 @@ from fastapi.staticfiles import StaticFiles
 from api import normalize_base_path
 from api.admin import router as admin_router
 from api.chat import router as chat_router
+from api.item import router as item_router
 from api.search import router as search_router
 from core import db as dbmod
 from core.config import REPO_ROOT, get_config, get_secrets
@@ -137,6 +138,7 @@ def create_app() -> FastAPI:
     api.add_api_route("/healthz", health, methods=["GET"], tags=["运维"])
     api.include_router(search_router)
     api.include_router(chat_router)
+    api.include_router(item_router)
     api.include_router(admin_router)
     app.include_router(api)
 

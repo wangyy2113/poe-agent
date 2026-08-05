@@ -1,0 +1,53 @@
+Item Class: Sceptres
+Rarity: Unique
+Nebulis
+Synthesised Void Sceptre
+--------
+Sceptre
+Physical Damage: 50-76
+Critical Strike Chance: 7.30%
+Attacks per Second: 1.25
+Weapon Range: 1.1 metres
+Memory Strands: 58
+--------
+Requirements:
+Level: 68
+Str: 104
+Int: 122
+--------
+Sockets: B R 
+--------
+Item Level: 87
+--------
++30% to Fire Resistance (scourge)
+22% reduced Global Defences (scourge)
+(Armour, Evasion Rating and Energy Shield are the standard Defences) (scourge)
+--------
+8% increased Explicit Cold Modifier magnitudes (enchant)
+Has 1 White Socket (enchant)
+--------
+{ Searing Exarch Implicit Modifier (Lesser) }
+Tempest Shield has 15(15-17)% increased Buff Effect
+{ Implicit Modifier — Damage, Critical  — 106% Increased }
++15(15-17)% to Global Critical Strike Multiplier
+--------
+{ Prefix Modifier "Freezing" (Tier: 5) — Damage, Elemental, Cold, Caster  — 8% Increased }
+Adds 17(16-20) to 35(30-36) Cold Damage to Spells
+{ Prefix Modifier "Beetle's" (Tier: 6) — Defences, Armour }
+9(6-13)% increased Armour
+7(6-7)% increased Stun and Block Recovery
+{ Master Crafted Prefix Modifier "Upgraded" — Life, Defences, Armour }
+21(18-21)% increased Armour
++18(17-19) to maximum Life
+{ Unique Modifier }
+106(60-120)% increased Implicit Modifier magnitudes — Unscalable Value
+(Implicit Modifiers are those that come from an item's type, rather than its random properties)
+{ Master Crafted Suffix Modifier "of Craft" (Rank: 3) — Elemental, Cold, Resistance }
++35(29-35)% to Cold Resistance
+{ Fractured Prefix Modifier "Thorny" (Tier: 2) — Damage, Physical }
+Reflects 3(1-4) Physical Damage to Melee Attackers
+{ Prefix Modifier "Veiled" }
+Veiled Prefix
+Searing Exarch Item
+--------
+Corrupted

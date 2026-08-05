@@ -45,6 +45,11 @@ class ModCandidate:
     tags: list[str]
     url: str
     item_class_zh: str
+    #: POEDB 页面 slug。护甲类一个中文类别对应多个页面，跨页查询时要靠它去重
+    item_class_page: str = ""
+    #: 宽松模板。判断「是不是同一条词缀的另一个档位」用它——严格模板会因为
+    #: 固定数字不同而在同一条词缀的不同档位间产生差异（`该装备附加 1 - #`）
+    loose_template: str = ""
 
     def match_text(self, text: str) -> list[float] | None:
         """用严格模板正则匹配装备文本，返回按位置捕获的可变数值。
@@ -92,6 +97,10 @@ class ModMatch:
     ambiguous: bool = False
     #: 歧义时的分组（来源类别, 词缀组）→ 该组内最优候选
     alternatives: list[ModCandidate] = field(default_factory=list)
+    #: 同一词缀组内出现多个 T 级 → 说明按多个底材页面查询时页面之间不一致。
+    #: 单页面查询下不可能出现（同组各级区间互斥），所以这个标记只在跨页查询时有意义。
+    #: 必须暴露出来：不同底材页面给不同 T 级时，取最优的那个就是在编造。
+    tier_varies_by_page: bool = False
     reason: str = ""
 
     @property
@@ -138,6 +147,8 @@ def _row_to_candidate(row: sqlite3.Row) -> ModCandidate:
         tags=json.loads(row["tags"] or "[]"),
         url=row["url"] or "",
         item_class_zh=row["item_class_zh"] or "",
+        item_class_page=row["item_class_page"] or "",
+        loose_template=row["loose_template"] or "",
     )
 
 
@@ -146,22 +157,30 @@ def lookup_mod(
     text: str,
     item_class_page: str | None = None,
     *,
+    item_class_pages: list[str] | None = None,
     categories: list[str] | None = None,
 ) -> ModMatch:
     """按词缀文本反查定义。
 
     `item_class_page` 指定底材类别（如 Bows）时结果更准——同一词缀在不同
     类别上的 T 级不同。不指定则跨类别查，T 级只能作参考。
+
+    `item_class_pages` 传多个页面：护甲类的一个中文类别（手套）在 POEDB 上按
+    属性需求拆成 6 个页面（`Gloves_str`、`Gloves_str_int`…），而装备文本只给
+    「Gloves」这一个类别名，落到哪个页面取决于底材，而底材库尚未入库。
+    实测通用词缀（生命、抗性）在这 6 个页面上的 T 级阶梯完全一致，所以按整个
+    类别查是可行的；不一致时置 `tier_varies_by_page` 如实报告，不取「最优的那个」。
     """
     loose = loose_templatize(text)
     match = ModMatch(raw_text=text, loose_template=loose)
+    pages = [p for p in (item_class_pages or ([item_class_page] if item_class_page else [])) if p]
 
     # ── 阶段 1：宽松模板召回 ──
     sql = "SELECT * FROM mod_affix WHERE loose_template = ?"
     params: list = [loose]
-    if item_class_page:
-        sql += " AND item_class_page = ?"
-        params.append(item_class_page)
+    if pages:
+        sql += " AND item_class_page IN (%s)" % ",".join("?" * len(pages))
+        params.extend(pages)
     if categories:
         sql += " AND category IN (%s)" % ",".join("?" * len(categories))
         params.extend(categories)
@@ -171,10 +190,10 @@ def lookup_mod(
     match.candidates = [_row_to_candidate(r) for r in rows]
 
     if not match.candidates:
-        match.reason = (
-            f"知识库中没有匹配模板 {loose!r} 的词缀"
-            + (f"（底材类别 {item_class_page}）" if item_class_page else "")
-        )
+        scope = ""
+        if pages:
+            scope = f"（底材类别 {pages[0] if len(pages) == 1 else '/'.join(pages[:3]) + '…'}）"
+        match.reason = f"知识库中没有匹配模板 {loose!r} 的词缀{scope}"
         return match
 
     # ── 阶段 2：严格模板正则校验 + 区间覆盖 ──
@@ -212,16 +231,36 @@ def lookup_mod(
     match.alternatives = [cands[0] for _, cands in ordered[1:]]
     match.ambiguous = len(ordered) > 1
 
+    # 同一词缀组里出现多个 T 级：同组各级区间互斥，单页面查询下不可能发生，
+    # 只会出自跨页查询时页面之间的阶梯不同。此时取哪个都是编造，故拒绝给 T 级。
+    best_group = ordered[0][1]
+    tiers_in_group = sorted({c.tier for c in best_group})
+    if len(tiers_in_group) > 1:
+        match.tier_varies_by_page = True
+        match.matched = None
+        match.reason = (
+            "T 级取决于具体底材：该类别下不同底材页面给出不同档位（"
+            + "、".join(f"T{t}" for t in tiers_in_group)
+            + "），而底材库尚未入库、无法定到具体页面，因此不给单一 T 级"
+        )
+        return match
+
     if match.ambiguous:
         match.reason = (
             f"数值可被 {len(ordered)} 个来源/词缀组解释，无法唯一确定；"
             f"已取最可能的一项并列出其余可能"
         )
     else:
-        match.reason = (
-            f"唯一匹配 {match.matched.tier_label}"
-            + (f"（组内 {len(ordered[0][1])} 条同 T 并列）" if len(ordered[0][1]) > 1 else "")
-        )
+        # 跨页查询时同一条词缀会按页面重复出现，那不是「多条同 T 并列」，
+        # 只是同一条在多个底材页面上都成立。分开表述，否则读的人会误以为有歧义。
+        pages = {c.item_class_page for c in best_group}
+        if len(best_group) > 1 and len(pages) == len(best_group):
+            note = f"（该类别 {len(pages)} 个底材页面上档位一致）"
+        elif len(best_group) > 1:
+            note = f"（组内 {len(best_group)} 条同 T 并列）"
+        else:
+            note = ""
+        match.reason = f"唯一匹配 {match.matched.tier_label}{note}"
     return match
 
 

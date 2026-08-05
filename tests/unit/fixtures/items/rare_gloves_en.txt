@@ -1,0 +1,27 @@
+Item Class: Gloves
+Rarity: Rare
+Havoc Grip
+Fugitive Gloves
+--------
+Quality: +20% (augmented)
+Evasion Rating: 220 (augmented)
+Energy Shield: 45 (augmented)
+--------
+Requirements:
+Level: 70
+Dex: 51
+Int: 51
+--------
+Sockets: R-G-B-B
+--------
+Item Level: 84
+--------
++12% to Chaos Resistance (implicit)
+--------
++45 to maximum Life
++35% to Fire Resistance
++28% to Cold Resistance
+14% increased Attack Speed
++31 to maximum Mana (crafted)
+--------
+Corrupted

@@ -1,0 +1,26 @@
+Item Class: Bows
+Rarity: Rare
+Vengeance Barrage
+Spine Bow
+--------
+Bow
+Physical Damage: 43-124 (augmented)
+Critical Strike Chance: 6.60%
+Attacks per Second: 1.43 (augmented)
+--------
+Requirements:
+Level: 64
+Dex: 175
+--------
+Sockets: G-G-G G-B B
+--------
+Item Level: 82
+--------
+Adds 40 to 78 Physical Damage (fractured)
++46 to Dexterity
+18% increased Attack Speed
+Adds 27 to 50 Fire Damage
++189 to Accuracy Rating
+--------
+Fractured Item
+Hunter Item

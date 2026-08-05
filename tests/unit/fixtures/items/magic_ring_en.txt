@@ -1,0 +1,13 @@
+Item Class: Rings
+Rarity: Magic
+Sapphire Ring of Success
+--------
+Requirements:
+Level: 20
+--------
+Item Level: 44
+--------
++20% to Cold Resistance (implicit)
+--------
++18% to Cold Resistance
+12% increased Rarity of Items found

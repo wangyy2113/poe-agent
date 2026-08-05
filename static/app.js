@@ -21,7 +21,7 @@ const $ = (id) => document.getElementById(id);
 
 const el = {
   main: $('main'), thread: $('thread'), empty: $('empty'),
-  input: $('input'), send: $('send'),
+  input: $('input'), send: $('send'), pasteCard: $('paste-card'),
   newChat: $('new-chat'), convs: $('conversations'),
 };
 
@@ -114,16 +114,18 @@ function markdown(src) {
     // 列表
     const li = t.match(/^([-*+]|\d+[.)])\s+(.*)$/);
     if (li) {
-      const ordered = /\d/.test(li[1]);
-      const items = [];
+      /* 列表按**缩进**分层。原先直接 trim 掉缩进，于是子项被拉平成兄弟项——
+       * `/item` 的装备报告正是「每条词缀一项、档位明细缩进一层」，拉平后
+       * 明细看起来像独立词缀。 */
+      const block = [];
       while (i < lines.length) {
-        const m = lines[i].trim().match(/^([-*+]|\d+[.)])\s+(.*)$/);
+        const raw = lines[i];
+        const m = raw.match(/^(\s*)([-*+]|\d+[.)])\s+(.*)$/);
         if (!m) break;
-        items.push(m[2]);
+        block.push({ indent: m[1].length, ordered: /\d/.test(m[2]), text: m[3] });
         i++;
       }
-      const tag = ordered ? 'ol' : 'ul';
-      out.push(`<${tag}>` + items.map((x) => `<li>${inline(x)}</li>`).join('') + `</${tag}>`);
+      out.push(renderList(block, 0));
       continue;
     }
     // 段落：连续非空行合并
@@ -138,6 +140,32 @@ function markdown(src) {
     else i++;
   }
   return out.join('');
+}
+
+/** 把带缩进的列表项渲染成嵌套 ul/ol。`level` 是当前层的缩进量。 */
+function renderList(items, start) {
+  if (!items.length) return '';
+  /* 基准缩进取整块的最小值，不取首项的。首项恰好缩进更深时（手写 Markdown
+   * 里常见），按首项算会让后面缩进更浅的项落在循环条件外被静默丢掉。 */
+  const baseIndent = Math.min(...items.slice(start).map((x) => x.indent));
+  const tag = items[start].ordered ? 'ol' : 'ul';
+  const parts = [];
+  let i = start;
+  while (i < items.length && items[i].indent >= baseIndent) {
+    if (items[i].indent > baseIndent) {
+      // 子层：整段交给递归，挂进上一个 li 里
+      const childStart = i;
+      while (i < items.length && items[i].indent > baseIndent) i++;
+      const child = renderList(items.slice(childStart, i), 0);
+      if (parts.length) parts[parts.length - 1] += child;
+      else parts.push(`<li>${child}</li>`);
+      continue;
+    }
+    parts.push(`<li>${inline(items[i].text)}`);
+    i++;
+    // li 的闭合推迟到确认没有子层之后，所以这里先不闭合
+  }
+  return `<${tag}>` + parts.map((p) => `${p}</li>`).join('') + `</${tag}>`;
 }
 
 /* ── 消息渲染 ─────────────────────────────────────────── */
@@ -251,6 +279,32 @@ function addAssistantMessage() {
       d.className = 'note';
       d.textContent = text;
       body.insertBefore(d, status);
+    },
+
+    /** 整段 Markdown 一次渲染。给 `/item` 这类非流式、代码生成的报告用。
+     *  不做打字机：报告是结构化文本，逐字重渲染会让表格与列表反复重排。 */
+    async appendMarkdown(text) {
+      const target = ensureProse();
+      markdownBuffer = text;
+      target.innerHTML = markdown(text);
+      sealProse();
+      scrollToEnd();
+    },
+
+    /** 装备文本解析失败（需求 7.6）：给原因 + 期望格式，不给半个结果。 */
+    appendParseFailure(detail) {
+      const d = document.createElement('div');
+      d.className = 'evidence-gap';
+      d.innerHTML =
+        '<div class="tag">解析失败 · 未作分析</div>' +
+        `<p>${escapeHtml(detail.reason || '无法识别这段文本')}</p>` +
+        (detail.hint ? `<p>${escapeHtml(detail.hint)}</p>` : '') +
+        (detail.expected_sample
+          ? `<p>期望的格式：</p><pre><code>${escapeHtml(detail.expected_sample)}</code></pre>`
+          : '');
+      body.insertBefore(d, status);
+      sealProse();
+      scrollToEnd();
     },
 
     appendError(msg) {
@@ -382,6 +436,122 @@ async function handleEvent(ev, msg) {
     case 'error':
       msg.appendError(ev.message || '未知错误');
       break;
+  }
+}
+
+/* ── 粘贴识别（需求 6.3/6.4）────────────────────────────
+ *
+ * 三条分流：装备文本 / PoB 码 / 普通文本。
+ *
+ * 识别后**先给卡片让用户确认**，不直接分析。两个理由：
+ *   1. 识别可能判错。判错了直接分析等于用户莫名收到一份不相干的报告，
+ *      而他连「系统把这段当成装备了」都不知道
+ *   2. 粘贴的可能只是问题的一部分（贴完装备还想补一句「值多少钱」），
+ *      直接触发分析就把他的下文吞了
+ */
+
+/* PoB 分享码是 URL-safe Base64 的 zlib 数据，长且只含 [A-Za-z0-9_-]。
+ * 阈值取 80：短于此的多半是别的东西，宁可漏判也不要把普通文本当成码。 */
+const POB_CODE_RE = /^[A-Za-z0-9_-]{80,}={0,2}$/;
+const POB_LINK_RE = /^https?:\/\/(?:www\.)?(?:pobb\.in|pastebin\.com|poe\.ninja\/pob)\/\S+$/i;
+/* 装备文本的判据：段落分隔线 + 固定开头两行之一。
+ * 只看分隔线不够——Markdown 里的 --- 也会命中。 */
+const ITEM_HEAD_RE = /^(?:Item Class|Rarity|物品类别|物品類別|稀有度)\s*[:：]/im;
+
+function detectPasteKind(text) {
+  const trimmed = text.trim();
+  if (!trimmed) return 'text';
+  if (POB_CODE_RE.test(trimmed) || POB_LINK_RE.test(trimmed)) return 'pob';
+  if (/^-{3,}$/m.test(trimmed) && ITEM_HEAD_RE.test(trimmed)) return 'item';
+  return 'text';
+}
+
+/** 粘贴内容的首行摘要，用于卡片与消息气泡，避免把二十行原文铺满屏幕。 */
+function pasteSummary(text) {
+  const lines = text.trim().split('\n').map((l) => l.trim()).filter(Boolean);
+  const head = lines.slice(0, 3).join(' · ');
+  return lines.length > 3 ? `${head} …（共 ${lines.length} 行）` : head;
+}
+
+function hidePasteCard() {
+  el.pasteCard.hidden = true;
+  el.pasteCard.innerHTML = '';
+}
+
+function showPasteCard(kind, text) {
+  const known = kind === 'item';
+  el.pasteCard.hidden = false;
+  el.pasteCard.innerHTML =
+    `<div class="pc-head"><span class="pc-tag">${known ? '识别为装备文本' : '识别为 PoB 码'}</span>` +
+    `<button class="pc-close" title="取消">×</button></div>` +
+    `<div class="pc-body">${escapeHtml(pasteSummary(text))}</div>` +
+    (known
+      ? '<div class="pc-actions"><button class="pc-primary">解析并分析</button>' +
+        '<button class="pc-ghost">当作普通提问发送</button></div>'
+      : '<div class="pc-note">PoB 码解析尚未实现（排在 V2）。现在可以当作普通提问发送，' +
+        '但请注意：知识库里没有 PoB 数据，很可能得到缺据声明。</div>' +
+        '<div class="pc-actions"><button class="pc-ghost">当作普通提问发送</button></div>');
+
+  el.pasteCard.querySelector('.pc-close').onclick = hidePasteCard;
+  const asText = el.pasteCard.querySelector('.pc-ghost');
+  if (asText) {
+    asText.onclick = () => {
+      hidePasteCard();
+      el.input.value = text;
+      autoGrow();
+      el.input.focus();
+    };
+  }
+  const primary = el.pasteCard.querySelector('.pc-primary');
+  if (primary) {
+    primary.onclick = () => {
+      hidePasteCard();
+      analyzeItem(text);
+    };
+  }
+}
+
+el.input.addEventListener('paste', (e) => {
+  const text = (e.clipboardData || window.clipboardData)?.getData('text') || '';
+  const kind = detectPasteKind(text);
+  if (kind === 'text') return;   // 普通文本照常粘贴，不打扰
+  e.preventDefault();
+  showPasteCard(kind, text);
+});
+
+/** 调 /item 做装备分析。这条链路不经 LLM，结果完全可预测。 */
+async function analyzeItem(text) {
+  if (busy) return;
+  busy = true;
+  el.send.disabled = true;
+  addUserMessage(`【装备文本】${pasteSummary(text)}`);
+  const msg = addAssistantMessage();
+  msg.setStatus('解析装备');
+  try {
+    const resp = await fetch(`${API}/item`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }),
+    });
+    const data = await resp.json().catch(() => null);
+    if (resp.status === 422 && data && data.detail) {
+      msg.appendParseFailure(data.detail);
+    } else if (!resp.ok) {
+      msg.appendError(`HTTP ${resp.status}`);
+    } else {
+      // 报告自带「### 引用」小节，这里改用结构化引用渲染，
+      // 好让正文里的角标能点击跳转
+      const [bodyText] = String(data.answer || '').split('\n### 引用\n');
+      await msg.appendMarkdown(bodyText);
+      if ((data.citations || []).length) msg.appendCitations(data.citations);
+    }
+  } catch (err) {
+    msg.appendError(String(err.message || err));
+  } finally {
+    msg.finish(null);
+    busy = false;
+    el.send.disabled = false;
+    refreshConversations();
   }
 }
 
