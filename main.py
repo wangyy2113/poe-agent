@@ -5,6 +5,8 @@
 
 单实例保护靠**端口绑定失败**，不用 PID 文件也不用 kill——跨平台且天然可靠。
 
+所有路由挂在 `server.base_path`（默认 `/poe_agent`）下，包括 `/docs` 与静态前端。
+
     python main.py
 """
 
@@ -14,60 +16,29 @@ import contextlib
 import logging
 import signal
 import sys
-from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, Header, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, FastAPI
+from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
 
+from api import normalize_base_path
+from api.admin import router as admin_router
+from api.chat import router as chat_router
+from api.search import router as search_router
 from core import db as dbmod
 from core.config import REPO_ROOT, get_config, get_secrets
 from core.llm import LLMError, get_llm_client
 from core.logging_setup import setup_logging
-from retrieval.hybrid import retrieve
+
+# 导入即注册工具（kb_search / entity_lookup）
+import tools.impl  # noqa: F401
 
 logger = logging.getLogger(__name__)
 
 cfg = get_config()
+BASE_PATH = normalize_base_path(cfg.get("server.base_path", "/poe_agent"))
 
-
-# ── 请求 / 响应模型 ─────────────────────────────────────────
-
-class SearchRequest(BaseModel):
-    query: str = Field(min_length=1, max_length=500)
-    top_k: int | None = Field(default=None, ge=1, le=50)
-    category: str | None = None
-
-
-class HitOut(BaseModel):
-    chunk_id: str
-    entity_id: str | None
-    title: str
-    url: str
-    source: str
-    source_priority: int
-    channel: str
-    score: float
-    coverage: float
-    text: str
-
-
-class SearchResponse(BaseModel):
-    query: str
-    #: False 时上层必须走缺据声明路径，不得基于这些候选作答
-    sufficient: bool
-    reason: str
-    top_coverage: float
-    missing_terms: list[str]
-    channels: list[str]
-    degraded: bool
-    note: str
-    hits: list[HitOut]
-
-
-# ── 应用 ───────────────────────────────────────────────────
 
 @contextlib.asynccontextmanager
 async def _lifespan(_app: FastAPI):
@@ -76,6 +47,7 @@ async def _lifespan(_app: FastAPI):
     dbmod.init_db(cfg.db_path, vector_dim=dim)
     logger.info("数据库就绪：%s", cfg.db_path)
     logger.info("向量通道：%s", dbmod.vector_status())
+    _warn_if_open()
     try:
         yield
     finally:
@@ -83,151 +55,105 @@ async def _lifespan(_app: FastAPI):
         logger.info("已关闭数据库（含 WAL checkpoint）")
 
 
+def _warn_if_open() -> None:
+    """普通 API 未配 Key 时告警。不阻止启动——本机开发默认无需鉴权，
+    但对外提供服务时不配就会被当成免费 LLM 代理（需求 16.9）。"""
+    from api.deps import user_keys
+
+    if not user_keys():
+        logger.warning(
+            "API_KEYS 未配置，%s/chat 无鉴权。仅限本机开发；"
+            "对外提供服务前必须配置，否则会被当作免费 LLM 代理", BASE_PATH,
+        )
+
+
+def health() -> dict[str, Any]:
+    """反映 SQLite / 向量扩展 / LLM 凭证池 / embedding 通道状态。"""
+    out: dict[str, Any] = {"status": "ok", "base_path": BASE_PATH or "/"}
+    try:
+        conn = dbmod.get_conn()
+        out["db"] = {
+            "path": str(cfg.db_path),
+            "journal_mode": conn.execute("PRAGMA journal_mode").fetchone()[0],
+            "entities": conn.execute("SELECT count(*) FROM entity").fetchone()[0],
+            "chunks": conn.execute("SELECT count(*) FROM chunk").fetchone()[0],
+            "aliases": conn.execute("SELECT count(*) FROM alias").fetchone()[0],
+        }
+    except Exception as exc:  # noqa: BLE001
+        out["status"] = "degraded"
+        out["db"] = {"error": f"{type(exc).__name__}: {exc}"}
+
+    vs = dbmod.vector_status()
+    out["vector"] = {
+        "extension_available": vs.available,
+        "reason": vs.reason,
+        "enabled": bool(cfg.get("retrieval.vector.enabled", False)),
+    }
+    out["tools"] = __import__("tools.registry", fromlist=["REGISTRY"]).REGISTRY.names()
+    try:
+        sec = get_secrets()
+        out["llm"] = {
+            "base_url": sec.llm_base_url,
+            "model": sec.llm_model,
+            "credentials": len(sec.credential_specs()),
+        }
+        # 凭证池状态（脱敏）：能看出哪个 Key 在冷却、为什么冷却。
+        # 建客户端不发请求，所以不产生费用，也不代表 Key 真的可用。
+        try:
+            pool = get_llm_client().credential_status()
+            out["llm"]["pool"] = pool
+            if not any(c["healthy"] for c in pool):
+                out["status"] = "degraded"
+        except LLMError as exc:
+            out["status"] = "degraded"
+            out["llm"]["pool_error"] = str(exc)
+        out["embedding"] = {
+            "configured": bool(sec.embedding_base_url and sec.embedding_model),
+            "model": sec.embedding_model or None,
+        }
+    except Exception as exc:  # noqa: BLE001
+        out["status"] = "degraded"
+        out["llm"] = {"error": f"{type(exc).__name__}: {exc}"}
+    return out
+
+
 def create_app() -> FastAPI:
+    base = BASE_PATH
     app = FastAPI(
         title="POE1-Agent",
-        version="0.1.0",
-        description="面向《流放之路 1》的领域 AI Agent。核心原则：无据不答。",
+        version="0.2.0",
+        description=(
+            "面向《流放之路 1》的领域 AI Agent。核心原则：无据不答。\n\n"
+            f"所有路由挂在 `{base or '/'}` 下。"
+        ),
         lifespan=_lifespan,
+        # 文档与 schema 也放到前缀下，保持一致
+        docs_url=f"{base}/docs",
+        redoc_url=f"{base}/redoc",
+        openapi_url=f"{base}/openapi.json",
     )
 
-    @app.get("/healthz")
-    def healthz() -> dict[str, Any]:
-        """反映 SQLite / 向量扩展 / LLM 与 embedding 通道配置状态。"""
-        out: dict[str, Any] = {"status": "ok"}
-        try:
-            conn = dbmod.get_conn()
-            out["db"] = {
-                "path": str(cfg.db_path),
-                "journal_mode": conn.execute("PRAGMA journal_mode").fetchone()[0],
-                "entities": conn.execute("SELECT count(*) FROM entity").fetchone()[0],
-                "chunks": conn.execute("SELECT count(*) FROM chunk").fetchone()[0],
-                "aliases": conn.execute("SELECT count(*) FROM alias").fetchone()[0],
-            }
-        except Exception as exc:  # noqa: BLE001
-            out["status"] = "degraded"
-            out["db"] = {"error": f"{type(exc).__name__}: {exc}"}
+    api = APIRouter(prefix=base)
+    api.add_api_route("/healthz", health, methods=["GET"], tags=["运维"])
+    api.include_router(search_router)
+    api.include_router(chat_router)
+    api.include_router(admin_router)
+    app.include_router(api)
 
-        vs = dbmod.vector_status()
-        out["vector"] = {
-            "extension_available": vs.available,
-            "reason": vs.reason,
-            "enabled": bool(cfg.get("retrieval.vector.enabled", False)),
-        }
-        try:
-            sec = get_secrets()
-            out["llm"] = {
-                "base_url": sec.llm_base_url,
-                "model": sec.llm_model,
-                "credentials": len(sec.credential_specs()),
-            }
-            # 凭证池状态（脱敏）：能看出哪个 Key 在冷却、为什么冷却。
-            # 建客户端不发请求，所以这里不会产生费用，也不代表 Key 真的可用。
-            try:
-                pool = get_llm_client().credential_status()
-                out["llm"]["pool"] = pool
-                if not any(c["healthy"] for c in pool):
-                    out["status"] = "degraded"
-            except LLMError as exc:
-                out["status"] = "degraded"
-                out["llm"]["pool_error"] = str(exc)
-            out["embedding"] = {
-                "configured": bool(sec.embedding_base_url and sec.embedding_model),
-                "model": sec.embedding_model or None,
-            }
-        except Exception as exc:  # noqa: BLE001
-            out["status"] = "degraded"
-            out["llm"] = {"error": f"{type(exc).__name__}: {exc}"}
-        return out
-
-    @app.post("/search", response_model=SearchResponse)
-    def search(req: SearchRequest) -> SearchResponse:
-        """纯检索接口，供检索质量评测（需求 3.7）。
-
-        注意 `sufficient` 字段：为 False 时说明知识库没有足够依据，
-        调用方**不得**基于返回的候选生成事实性回答。
-        """
-        conn = dbmod.get_conn()
-        result = retrieve(
-            conn,
-            req.query,
-            top_k=req.top_k or int(cfg.get("retrieval.top_k", 20)),
-            min_score=float(cfg.get("retrieval.min_score", 0.35)),
-            min_coverage=float(cfg.get("retrieval.min_coverage", 0.5)),
-            rrf_k=int(cfg.get("retrieval.rrf_k", 60)),
-            priority_decay=float(cfg.get("retrieval.priority_decay", 0.08)),
-            vector_enabled=bool(cfg.get("retrieval.vector.enabled", False)),
-            rerank_enabled=bool(cfg.get("retrieval.rerank.enabled", False)),
-            category=req.category,
-        )
-        return SearchResponse(
-            query=result.query,
-            sufficient=result.sufficient,
-            reason=result.reason,
-            top_coverage=result.top_coverage,
-            missing_terms=result.missing_terms,
-            channels=result.channels,
-            degraded=result.degraded,
-            note=result.note,
-            hits=[
-                HitOut(
-                    chunk_id=h.chunk_id,
-                    entity_id=h.entity_id,
-                    title=h.metadata.get("title", ""),
-                    url=h.metadata.get("url", ""),
-                    source=h.source,
-                    source_priority=h.source_priority,
-                    channel=h.channel,
-                    score=round(h.score, 4),
-                    coverage=round(h.coverage, 4),
-                    text=h.text,
-                )
-                for h in result.hits
-            ],
-        )
-
-    @app.get("/admin/stats")
-    def admin_stats(authorization: str = Header(default="")) -> dict[str, Any]:
-        """管理端：采集任务与缺口台账。使用独立管理令牌，不与用户 Key 共用。"""
-        _require_admin(authorization)
-        conn = dbmod.get_conn()
-        runs = [
-            dict(r)
-            for r in conn.execute(
-                "SELECT run_id, source, category, started_at, finished_at, total, "
-                "succeeded, failed, skipped, elapsed_ms, note FROM ingest_run "
-                "ORDER BY run_id DESC LIMIT 20"
-            )
-        ]
-        gaps = [
-            dict(r)
-            for r in conn.execute(
-                "SELECT question, missing_point, guessed_category, hit_count, last_seen "
-                "FROM knowledge_gap ORDER BY hit_count DESC LIMIT 50"
-            )
-        ]
-        return {"ingest_runs": runs, "knowledge_gaps": gaps}
+    if base:
+        # 裸根路径给个指引，否则用户只会看到 404 而不知道前缀是什么
+        @app.get("/", include_in_schema=False)
+        def _root() -> RedirectResponse:
+            return RedirectResponse(url=f"{base}/docs")
 
     static_dir = REPO_ROOT / "static"
     if static_dir.is_dir():
-        app.mount("/", StaticFiles(directory=str(static_dir), html=True), name="static")
-
+        app.mount(
+            base or "/",
+            StaticFiles(directory=str(static_dir), html=True),
+            name="static",
+        )
     return app
-
-
-def _require_admin(authorization: str) -> None:
-    """管理端点鉴权。ADMIN_TOKEN 未配置时**拒绝全部请求**——
-    不能因为没配就默认放行，那等于把高开销操作公开。"""
-    token = ""
-    try:
-        token = get_secrets().admin_token.strip()
-    except Exception:  # noqa: BLE001
-        pass
-    if not token:
-        raise HTTPException(status_code=403, detail="ADMIN_TOKEN 未配置，管理端点已禁用")
-    supplied = authorization.removeprefix("Bearer ").strip()
-    if supplied != token:
-        raise HTTPException(status_code=401, detail="管理凭证无效")
 
 
 app = create_app()
@@ -288,7 +214,8 @@ def main() -> int:
             "请确认已配置反向代理、TLS 与鉴权", host,
         )
 
-    logger.info("启动 POE1-Agent，监听 http://%s:%d", host, port)
+    logger.info("启动 POE1-Agent，监听 http://%s:%d%s", host, port, BASE_PATH or "")
+    logger.info("交互式 API 文档：http://%s:%d%s/docs", host, port, BASE_PATH)
     logger.info("单实例保护靠端口绑定：若端口已占用会直接失败退出")
 
     try:

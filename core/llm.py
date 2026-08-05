@@ -50,6 +50,15 @@ _AUTH_HINTS = (
     "unauthorized", "auth_error", "no access", "not allowed", "not permitted",
     "model_not_found", "does not exist", "key not found",
 )
+#: 「某个采样参数这个模型不支持」类的 400。实测该网关背后既有 GLM 也有 Bedrock，
+#: 后者直接拒 `temperature`（`temperature is deprecated for this model`）。
+#: 这类错误不该让整次调用失败——去掉该参数重试一次即可。
+_PARAM_UNSUPPORTED_HINTS = (
+    "deprecated for this model", "unsupported parameter", "unsupported_parameter",
+    "does not support", "not supported with this model", "unrecognized request argument",
+)
+#: 可被丢弃重试的采样参数。只列真正可选的——丢掉 max_tokens 会让推理吃光预算。
+_DROPPABLE_PARAMS = ("temperature", "top_p", "presence_penalty", "frequency_penalty")
 
 
 # ── 异常 ───────────────────────────────────────────────────
@@ -336,6 +345,9 @@ class LLMClient:
             auth_cooldown=float(self._cfg.get("llm.cooldown_auth_seconds", 3600)),
         )
         self._clients: dict[int, OpenAI] = {}
+        #: 网关拒绝过的采样参数，之后不再发送。实测该网关背后既有 GLM 也有
+        #: Bedrock，后者拒 `temperature`。见 `_drop_unsupported`。
+        self._unsupported_params: set[str] = set()
         self._lock = threading.Lock()
         logger.info(
             "LLM 客户端就绪：%s 模型=%s 凭证=%d max_tokens=%d",
@@ -545,7 +557,6 @@ class LLMClient:
         effective_max = self._effective_max_tokens(max_tokens)
         attempt = 0
         last: Exception | None = None
-
         while True:
             cred = self._pool.acquire()
             # 切 Key 必须同步切模型：受限 Key 访问别的模型只会 401
@@ -557,7 +568,7 @@ class LLMClient:
                 "stream": stream,
             }
             temp = temperature if temperature is not None else self._temperature
-            if temp is not None:
+            if temp is not None and "temperature" not in self._unsupported_params:
                 payload["temperature"] = float(temp)
             if tools:
                 payload["tools"] = list(tools)
@@ -575,6 +586,16 @@ class LLMClient:
                 detail = _scrub(detail, self._pool)
 
                 if kind == "fatal":
+                    # 「这个模型不支持某个采样参数」不该让整次调用失败：
+                    # 去掉该参数重试。记进实例级集合，后续请求不再发送——
+                    # 同一模型每次都会拒，每轮重试一次等于白花一次调用。
+                    dropped_now = self._drop_unsupported(detail)
+                    if dropped_now:
+                        logger.warning(
+                            "模型 %s 不支持参数 %s，已停止发送并重试：%s",
+                            model_used, ", ".join(sorted(dropped_now)), detail[:160],
+                        )
+                        continue
                     raise LLMError(f"LLM 调用失败（不可重试）：{detail}") from exc
 
                 if kind == "transient":
@@ -597,6 +618,22 @@ class LLMClient:
 
     def _effective_max_tokens(self, max_tokens: int | None) -> int:
         return _clamp_max_tokens(max_tokens) if max_tokens else self._max_tokens
+
+    def _drop_unsupported(self, detail: str) -> set[str]:
+        """从 400 的错误消息里识别「该模型不支持的采样参数」并登记停发。
+
+        返回本次新登记的参数名；空集表示这个 400 不属于该类，应按 fatal 处理。
+        """
+        low = detail.lower()
+        if not any(h in low for h in _PARAM_UNSUPPORTED_HINTS):
+            return set()
+        found = {p for p in _DROPPABLE_PARAMS if p in low} - self._unsupported_params
+        if not found:
+            # 提到了「不支持」但没指到可丢弃的参数 —— 不能瞎猜，按 fatal 处理
+            return set()
+        with self._lock:
+            self._unsupported_params |= found
+        return found
 
     def _client_for(self, cred: _Credential) -> OpenAI:
         with self._lock:

@@ -6,6 +6,12 @@ server:
   # 不要直接改成 0.0.0.0（会暴露未加固的管理端点）。
   host: "127.0.0.1"
   port: 8787
+  # 所有路由（含 /docs、/openapi.json、静态前端）挂在此前缀下。
+  # 用**显式路由前缀**实现，不用 FastAPI 的 root_path——后者是给
+  # 「反向代理会剥掉前缀」的场景用的，本机直连时路径对不上。
+  # 显式前缀在直连与路径保留型代理（nginx proxy_pass 不改 path）下都成立。
+  # 置空则不加前缀。
+  base_path: "/poe_agent"
 
 paths:
   db: "data/poe.db"
@@ -16,7 +22,11 @@ llm:
   # 推理模型必须留足预算：实测 GLM 5.2 在"只回答两个字"的任务上
   # 消耗 117 输出 token，其中 114 是推理。设小了会正文为空且不报错。
   max_tokens: 8192
-  temperature: 0.2
+  # 默认不发 temperature。实测该网关背后同时挂着 GLM 与 Bedrock，后者直接拒：
+  # `temperature is deprecated for this model` → 整次调用 400 失败。
+  # 而 GLM 5.2 是推理模型，temperature 的意义本就有限。
+  # 填了数值也没关系：客户端遇到「该模型不支持此参数」会自动停发并重试。
+  temperature: null
   timeout_seconds: 180
   # 单轮闸门，防失控循环与费用失控
   max_tool_calls: 12

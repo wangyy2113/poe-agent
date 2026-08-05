@@ -28,17 +28,19 @@ POE1 的机制耦合极深，一个错误的小前提会让整条结论反向。
 | 跨来源对账 | 两源词缀区间数值一致 22848 行（86.4%），差异登记待核对 |
 | 混合检索 | 实体精确匹配 + BM25（FTS5 + jieba）+ 词缀意图通道，RRF 融合 + 来源优先级加权 |
 | 充分依据判定 | 依据不足时返回 `sufficient=false` 与缺失信息点，**不**进入生成 |
-| HTTP 服务 | `GET /healthz`、`POST /search`、`GET /admin/stats`（独立管理凭证） |
+| **问答** | `POST /chat`：强制检索 → 充分性判定 → 生成 → 出口绑定校验 → 装配引用 |
+| **出口闸门** | 逐句校验事实断言是否绑定有效证据，未通过由代码拦截；28 项单测覆盖 |
 | LLM 客户端 | 直连 LiteLLM 网关，多 Key 故障转移、分级冷却、推理模型适配 |
+| 执行轨迹 | 每轮落库，含拦截原因与 Token 明细，`/admin/traces` 可追溯 |
 
 **还没实现**
 
-- 对话式 Chat Web 前端（`static/`，任务 5.1）→ 所以 `GET /` 现在返回 404
-- `POST /chat` 与 `POST /v1/chat/completions` 流式对话接口（任务 3.8）
-- Orchestrator 主循环、Agent、工具注册（阶段 3）
+- 对话式 Web 前端（`static/`，任务 5.1）→ 所以现在只能通过 API 交互
+- 流式输出（SSE）与 `POST /v1/chat/completions`。流式必须按句缓冲、校验通过才下发，
+  不能把未校验内容先推给用户，需要把出口闸门改造成可增量消费的形式
 - 装备文本解析、PoB 码解析、计算器、经济数据（阶段 4 及之后）
 
-也就是说：**现在能通过 web 做的是「检索」，还不是「对话」。** 下面的交互方式据此写。
+也就是说：**问答已经通了，但还没有聊天界面**，交互方式见下。
 
 ---
 
@@ -70,10 +72,19 @@ Windows 把 `.venv/bin/python` 换成 `.venv\Scripts\python.exe`。
 `scripts/setup.sh` 与 `scripts/setup.bat` 只是转调 `setup.py` 的薄封装——
 初始化逻辑的唯一真源是 `setup.py`。
 
-启动后监听 `http://127.0.0.1:8787`。默认**只绑本机**，要对外提供服务请自行加反向代理与 TLS，
-不要直接把 `config.yaml` 的 `server.host` 改成 `0.0.0.0`（会暴露未加固的管理端点）。
+启动后监听 `http://127.0.0.1:8787`，**所有路由挂在 `/poe_agent` 前缀下**
+（由 `config.yaml` 的 `server.base_path` 配置，置空则不加前缀）。
+
+前缀用显式路由实现，不用 FastAPI 的 `root_path`——后者假定反向代理会剥掉前缀，
+本机直连时路径对不上。显式前缀在直连与路径保留型代理（nginx `proxy_pass` 不改 path）
+下都成立。
+
+默认**只绑本机**，要对外提供服务请自行加反向代理与 TLS，不要直接把 `server.host`
+改成 `0.0.0.0`（会暴露未加固的管理端点）。
 
 单实例保护靠端口绑定失败判断，不用 PID 文件——端口被占用时启动会直接失败退出。
+注意进程名被 `setproctitle` 改成了 `poe-agent`，所以 `pkill -f main.py` 找不到它；
+要停掉残留实例请按端口找：`lsof -nP -iTCP:8787 -sTCP:LISTEN -t`。
 
 可选：把 PoB 数据也导进来（需要本地有 PathOfBuilding 仓库）
 
@@ -89,28 +100,86 @@ Windows 把 `.venv/bin/python` 换成 `.venv\Scripts\python.exe`。
 
 ## 通过 web 与 poe-agent 交互
 
+> **所有路径都带 `/poe_agent` 前缀。** 访问不带前缀的 `/docs`、`/healthz` 会得到 404。
+> 裸根路径 `http://127.0.0.1:8787/` 会 307 重定向到文档页，忘了前缀时不至于一头雾水。
+
 ### 方式一：浏览器打开交互式 API 文档（推荐）
 
 服务起来后直接访问：
 
 ```
-http://127.0.0.1:8787/docs
+http://127.0.0.1:8787/poe_agent/docs
 ```
 
 这是 FastAPI 自带的 Swagger UI，可以在网页上填参数、点 **Try it out** 直接发请求、
-看完整响应。目前**这就是最方便的 web 交互方式**——对话式界面还没做。
+看完整响应。目前**这就是最方便的交互方式**——聊天界面还没做。
 
-`http://127.0.0.1:8787/redoc` 是同一套接口的另一种阅读视图。
-
-> `http://127.0.0.1:8787/` 返回 404 是正常的：`static/` 目录还不存在，
-> FastAPI 只在该目录存在时才挂载静态前端（见 `main.py` 的 `create_app`）。
+`http://127.0.0.1:8787/poe_agent/redoc` 是同一套接口的另一种阅读视图。
 
 ### 方式二：命令行调接口
 
-**检索知识库** —— 核心接口。返回命中的知识切片、来源、优先级与可点击 URL。
+**问答** —— 主接口。返回的 `answer` 是**已通过出口绑定校验**的文本。
 
 ```bash
-curl -s -X POST http://127.0.0.1:8787/search \
+curl -s -X POST http://127.0.0.1:8787/poe_agent/chat \
+  -H 'Content-Type: application/json' \
+  -d '{"message": "猎首（Headhunter）有哪些词缀？"}'
+```
+
+真实响应（节选，实测）：
+
+```
+## 猎首（Headhunter）词缀
+**基础信息**：唯一装备，底材为皮革腰带，需求等级 40[[E1]]。
+**显式词缀**
+- +(40-55) 力量[[E1]]
+- 当你击败稀有怪物时，会获得该怪物属性修正 60 秒[[E1]]
+...
+> 检索以降级通道完成（alias, fts, mod_intent）：向量检索与重排未启用
+
+引用
+[E1] 来源：POEDB → 猎首（Headhunter）
+     https://poedb.tw/cn/Headhunter
+[E2] 来源：POEDB → 猎首【仿品】（Replica Headhunter）
+     https://poedb.tw/cn/Replica_Headhunter
+```
+
+句末的 `[[E1]]` 是**证据绑定标记**，不是装饰。出口闸门会逐句检查：
+
+- 事实句必须绑定证据编号，未绑定即拦截
+- 句中出现的每个数值必须能在它绑定的证据原文里找到（证据给区间 `(40-55)`
+  时，句中取具体值 `47` 算合法）
+- 编号必须有效，来源优先级必须能支撑事实断言（P7 社区来源不行）
+- 禁止「一般来说」「大概」这类模糊限定语
+
+未通过的句子被替换为拦截说明，并计入响应的 `blocked_claims`。这个字段大于 0
+说明模型试图输出无据内容而被挡下，可用 `trace_id` 查具体原因。
+
+响应里的 `model` 字段是实际使用的模型——网关背后挂着多个模型，多 Key 故障转移
+可能切到别的模型，而不同模型的推理 token 行为不同。
+
+**依据不足时不会调用 LLM**：
+
+```bash
+curl -s -X POST http://127.0.0.1:8787/poe_agent/chat \
+  -H 'Content-Type: application/json' \
+  -d '{"message": "流放之路2 的升华机制是什么"}'
+```
+
+```
+evidence_gap = true
+tokens       = {}            ← 完全没调模型
+answer       = 知识库中查不到回答这个问题所需的依据，因此不作答……
+               **缺失的信息点** / **判定依据** / **建议的查证途径**
+citations    = []            ← 不伪造引用
+```
+
+这条路径由代码生成，刻意不经模型——它必须完全可预测。
+
+**检索知识库** —— 调试与评测用，返回原始命中。
+
+```bash
+curl -s -X POST http://127.0.0.1:8787/poe_agent/search \
   -H 'Content-Type: application/json' \
   -d '{"query": "猎首", "top_k": 3}'
 ```
@@ -126,10 +195,10 @@ hits[0]      = [POEDB P1/alias] 猎首（Headhunter）  score=1.0
                https://poedb.tw/cn/Headhunter
 ```
 
-**先看 `sufficient` 字段。** 它是「无据不答」在接口层的出口：
+**先看 `sufficient` 字段。** 它是「无据不答」在检索层的判据：
 
 ```bash
-curl -s -X POST http://127.0.0.1:8787/search \
+curl -s -X POST http://127.0.0.1:8787/poe_agent/search \
   -H 'Content-Type: application/json' \
   -d '{"query": "流放之路2 的升华机制是什么"}'
 ```
@@ -147,17 +216,17 @@ missing_terms = ["升华", "机制"]
 自然语言描述也能命中，走的是词缀意图通道：
 
 ```bash
-curl -s -X POST http://127.0.0.1:8787/search \
+curl -s -X POST http://127.0.0.1:8787/poe_agent/search \
   -H 'Content-Type: application/json' \
   -d '{"query": "偷取词缀的腰带", "top_k": 3}'
 ```
 
 可选参数：`top_k`（1–50）、`category`（按一级分类过滤）。
 
-**健康检查** —— 反映 SQLite、向量扩展、LLM 凭证池状态。
+**健康检查** —— 反映 SQLite、向量扩展、已注册工具、LLM 凭证池状态。
 
 ```bash
-curl -s http://127.0.0.1:8787/healthz
+curl -s http://127.0.0.1:8787/poe_agent/healthz
 ```
 
 ```
@@ -172,15 +241,22 @@ llm    = glm-5.2, credentials 1
 `pool` 里能看出哪个 Key 在冷却、因为什么冷却——但注意 `healthy=true` 只表示「不在冷却中」，
 建客户端不发请求，所以它不代表这个 Key 真的可用。
 
-**管理端点** —— 采集任务记录与缺口台账。使用独立管理凭证。
+**管理端点** —— 采集记录、缺口台账、跨来源差异、执行轨迹。使用独立管理凭证。
 
 ```bash
-curl -s http://127.0.0.1:8787/admin/stats \
-  -H "Authorization: Bearer $ADMIN_TOKEN"
+curl -s http://127.0.0.1:8787/poe_agent/admin/stats     -H "Authorization: Bearer $ADMIN_TOKEN"
+curl -s http://127.0.0.1:8787/poe_agent/admin/traces    -H "Authorization: Bearer $ADMIN_TOKEN"
+curl -s http://127.0.0.1:8787/poe_agent/admin/conflicts -H "Authorization: Bearer $ADMIN_TOKEN"
 ```
+
+`/admin/trace/{trace_id}` 能看到某一轮的完整轨迹：调了哪些工具、检索到哪些证据、
+逐句的绑定校验结果与拦截原因、Token 明细。答案不对时先看这里。
 
 不带凭证返回 **403**；`ADMIN_TOKEN` 未配置时同样返回 403 而不是放行——
 没配就默认放行等于把高开销操作公开。
+
+注意 `/admin/conflicts` 里 `kind` 的区别：`mod` 是**已确认冲突**，会按需求 15.5
+并列展示给用户；`mod_review` 只是「两源对不上，待人工核对」，不得当作冲突呈现。
 
 ### 检索结果里的 `degraded=true` 是什么意思
 
@@ -228,7 +304,17 @@ PoB 排 P2 而不是 P1：它在数值上更接近一手，但不含中文名与
 | `scripts/probe_pob.py` | PoB 数据资产清点与解析可行性验证 |
 | `scripts/import_pob_mods.py` | 导入 PoB 词缀（`--dry-run` 只体检） |
 | `scripts/verify_pob_mods.py` | POEDB × PoB 词缀对账 |
+| `scripts/verify_chat.py` | `/chat` 端到端验证（`--gap-only` 不需要凭证） |
 | `scripts/check_spec_refs.py` | 校验 spec 里的需求交叉引用 |
+
+单元测试用标准库 `unittest`，不引入 pytest：
+
+```bash
+.venv/bin/python -m unittest discover -s tests -t .
+```
+
+目前 28 项，全部覆盖出口绑定闸门——包括「该拦的拦住」与「该放的放行」两组，
+错误拒答与无据漏出要成对压制（需求 16.7）。
 
 ---
 
@@ -239,11 +325,18 @@ PoB 排 P2 而不是 P1：它在数值上更接近一手，但不含中文名与
 ```
 main.py                 入口：装配 FastAPI + 进程内启动 uvicorn
 core/                   配置、SQLite、日志、LLM 客户端
+api/                    路由层：只做校验与编排调用，不写业务逻辑
+                          chat.py / search.py / admin.py / deps.py（鉴权）
+orchestrator/           主循环、出口绑定闸门、引用装配
+                          loop.py / binding.py / citation.py
+agents/                 领域 Agent：提示词 + 允许工具集 + 输出契约
+tools/                  工具注册与实现（kb_search / entity_lookup）
 entities/               实体模型、分类体系、词缀反查
 kb/                     采集管线与各来源抽取器（poedb / pob）
 retrieval/              FTS5、别名、混合检索融合、分词、领域词表
+tests/unit/             单元测试（unittest）
 scripts/                初始化、体检、验证、导入
-config.yaml             声明式行为：检索参数、来源优先级、限速、领域词表
+config.yaml             声明式行为：路由前缀、检索参数、来源优先级、领域词表
 .env                    密钥（不入版本库）
 data/                   SQLite 单文件 + HTTP 缓存（不入版本库）
 logs/                   按日期命名的日志（不入版本库）
@@ -255,8 +348,15 @@ logs/                   按日期命名的日志（不入版本库）
 
 ## 已知限制
 
-- **对话能力尚未接通。** 知识库与检索已就绪，Orchestrator / Agent / Chat 接口还没写，
-  所以现在只能检索，不能问答。
+- **没有聊天界面，也没有流式输出。** 问答只能通过 API 调用。流式要求按句缓冲、
+  校验通过才下发，需要把出口闸门改造成可增量消费的形式，与前端一起做。
+- **`.env` 里的 `LLM_API_KEY` 需要填真值。** 模板里是占位符 `sk-`；不填的话
+  有据路径会返回「生成失败」，但缺据路径仍能正常工作（它不调模型）。
+- **出口闸门的事实句判定是规则驱动的。** 判不出类型时默认按事实句处理（要求绑定
+  引用），这是刻意选的安全侧：漏出无据断言的代价高于多拦一句过渡语。代价是偶尔会
+  误拦无害的连接句。Markdown 标题、加粗标签、分隔线、缺据声明句已豁免。
+- **计算派生尚未强校验。** 派生句的结论数值本来就不在证据里，目前只要求整个回答里
+  有可作为推导输入的有据事实句。`calc/` 就位后应改为由计算器产出并回填校验。
 - **向量通道关闭。** 网关没有 embedding 模型，描述性查询依赖 `search_keywords` 的覆盖质量。
 - **混合词缀反查失配。** 带 ` / ` 的多行词缀（如「+X% 全抗 / 召唤生物 +Y% 抗性」）
   在 `mod_lookup` 里仍按单行模板匹配，会失配。
