@@ -140,14 +140,21 @@ def create_app() -> FastAPI:
     api.include_router(admin_router)
     app.include_router(api)
 
+    static_dir = REPO_ROOT / "static"
+    has_ui = static_dir.is_dir()
+
     if base:
-        # 裸根路径给个指引，否则用户只会看到 404 而不知道前缀是什么
+        # 裸根路径给个指引，否则用户只会看到 404 而不知道前缀是什么。
+        # 有前端就进前端，没有就进 API 文档。
+        target = f"{base}/" if has_ui else f"{base}/docs"
+
         @app.get("/", include_in_schema=False)
         def _root() -> RedirectResponse:
-            return RedirectResponse(url=f"{base}/docs")
+            return RedirectResponse(url=target)
 
-    static_dir = REPO_ROOT / "static"
-    if static_dir.is_dir():
+    if has_ui:
+        # 挂在 API 路由**之后**：Starlette 按注册顺序匹配，精确路径的接口
+        # 先于 Mount 命中，剩下的（/、style.css、app.js）才落到静态文件。
         app.mount(
             base or "/",
             StaticFiles(directory=str(static_dir), html=True),

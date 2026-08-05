@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>POE1-Agent</title>
+<!-- 内联 favicon：省一个文件，也免掉控制台里那条 404 -->
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='25' font-size='26'>⚗️</text></svg>">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header>
+  <div class="brand">POE1-Agent<span>无据不答</span></div>
+  <nav>
+    <select id="conversations" class="ghost" title="切换会话"></select>
+    <button id="new-chat" class="ghost">新对话</button>
+  </nav>
+</header>
+
+<main id="main">
+  <div class="thread" id="thread"></div>
+
+  <div class="empty" id="empty">
+    <h1>问点《流放之路 1》的事</h1>
+    <p>只依据知识库作答。查不到会明确说查不到，不会编一个听起来合理的答案。</p>
+    <div class="samples">
+      <button>猎首（Headhunter）有哪些词缀？</button>
+      <button>戒指上「+最大生命」的 T1 是多少？</button>
+      <button>偷取词缀的腰带有哪些？</button>
+      <button>冈姆的壮志现在给多少生命？</button>
+    </div>
+  </div>
+</main>
+
+<footer>
+  <div class="composer">
+    <textarea id="input" rows="1" placeholder="输入问题，Enter 发送，Shift+Enter 换行"></textarea>
+    <button class="send" id="send" title="发送">↑</button>
+  </div>
+  <div class="hint">
+    答案中的角标可点击跳转到来源。标为「已拦截」的句子是模型试图输出的无据内容，已被出口校验挡下。
+  </div>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>

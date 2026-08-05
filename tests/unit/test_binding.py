@@ -224,6 +224,38 @@ class TestDisclosure(unittest.TestCase):
         r = run("证据中没有给出上限，一般来说是 100。", e)
         self.assertEqual(r.blocked, 1)
 
+    def test_缺据声明的各种措辞都要覆盖(self):
+        """实测两轮各撞一次同类假阳性，只是措辞不同：
+        「未包含」→「不包含」、「本次证据」→「本轮证据」。枚举词表补不完，
+        所以改成按构式匹配。"""
+        e = [ev("E1", "猎首：+(40-55) 力量")]
+        for line in (
+            "**说明缺口**：本轮证据中不包含猎首的掉落来源、市场价格。",
+            "当前证据没有涉及该词缀的权重数据。",
+            "以上证据未记载适用版本。",
+            "证据里不含掉落来源。",
+            "知识库中未收录该条目。",
+        ):
+            r = run(line, e)
+            self.assertEqual(r.blocked, 0, f"缺据声明被误拦：{line[:26]}")
+
+    def test_面向用户的操作指引不要求绑定(self):
+        """「若你需要这些内容，请单独提问」讲的是怎么继续用助手，不是断言事实。"""
+        e = [ev("E1", "猎首：+(40-55) 力量")]
+        for line in (
+            "若你需要这些内容，请单独提问以便检索对应条目。",
+            "如需其他部位的词缀，请另行提问。",
+            "可以再问我具体某一条的 T 级分布。",
+        ):
+            r = run(line, e)
+            self.assertEqual(r.blocked, 0, f"操作指引被误拦：{line[:24]}")
+
+    def test_带数字的指引句仍走事实句校验(self):
+        """「如需满抗请堆到 75%」是建议或事实，不是操作指引，不能因句式豁免。"""
+        e = [ev("E1", "无相关数值")]
+        r = run("如需满抗，请把三抗堆到 88%。", e)
+        self.assertEqual(r.blocked, 1)
+
 
 class TestSplitting(unittest.TestCase):
     def test_分句后拼回与原文等价(self):

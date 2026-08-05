@@ -18,7 +18,7 @@ import logging
 import time
 import uuid
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Iterator
 
 from agents.knowledge import ALLOWED_TOOLS, EVIDENCE_TEMPLATE, SYSTEM_PROMPT, render_gap
 from core import db as dbmod
@@ -28,6 +28,7 @@ from orchestrator import citation as cit
 from orchestrator.binding import (
     BindingResult,
     Evidence,
+    StreamingGate,
     number_evidence,
     render_evidence_block,
     verify,
@@ -237,6 +238,218 @@ def run_turn(
 
 
 # ── 辅助 ───────────────────────────────────────────────────
+
+def stream_turn(
+    question: str,
+    *,
+    conversation_id: str | None = None,
+    client: LLMClient | None = None,
+) -> Iterator[dict[str, Any]]:
+    """流式版本。产出事件字典，由 `api/chat.py` 包成 SSE。
+
+    **粒度必然是句，不是字。** 校验单位是句子——判断一句是不是事实断言、绑定编号
+    是否有效、句中数值能否溯源，都得等这句说完。逐字推送等于把未校验内容先给了
+    用户，之后没法撤回。前端可以对已通过的句子做打字机效果，观感接近逐字流，
+    但不会显示任何未校验内容。
+
+    与 `run_turn` 共用同一套检索、闸门与轨迹逻辑，只是把「一次性校验」换成
+    `StreamingGate` 增量校验，判定结果两条路径一致（有单测保证）。
+    """
+    started = time.monotonic()
+    cfg = get_config()
+    client = client or get_llm_client()
+    trace_id = uuid.uuid4().hex
+    result = TurnResult(trace_id=trace_id, question=question, answer="")
+    yield {"type": "meta", "trace_id": trace_id, "conversation_id": conversation_id}
+
+    # ── 强制检索 ──
+    first = REGISTRY.call("kb_search", json.dumps({"query": question}, ensure_ascii=False))
+    result.tool_calls.append(_tool_record("kb_search", {"query": question}, first))
+    result.retrieval_meta = dict(first.meta)
+
+    if not first.ok:
+        result.evidence_gap = True
+        result.answer = f"检索不可用（{first.error}），无法确认依据，本轮不作答。"
+        yield {"type": "gap", "text": result.answer}
+        yield from _finish(result, conversation_id, started)
+        return
+
+    data = first.data or {}
+    if not data.get("sufficient"):
+        # 依据不足 → 缺据声明由代码生成，模型完全不参与
+        result.evidence_gap = True
+        result.answer = render_gap(
+            question,
+            list(data.get("missing_terms") or []),
+            str(data.get("reason") or "检索未命中足够依据"),
+        )
+        _record_gaps(question, [str(data.get("reason") or "依据不足")])
+        yield {"type": "gap", "text": result.answer}
+        yield from _finish(result, conversation_id, started)
+        return
+
+    evidence = number_evidence(first.citations)
+    result.evidence = evidence
+    if first.meta.get("degraded"):
+        result.degraded_note = (
+            f"检索以降级通道完成（{', '.join(first.meta.get('channels') or [])}）："
+            f"{first.meta.get('note') or '向量与重排未启用'}"
+        )
+
+    messages: list[dict[str, Any]] = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {
+            "role": "user",
+            "content": EVIDENCE_TEMPLATE.format(
+                evidence=render_evidence_block(evidence), question=question
+            ),
+        },
+    ]
+    budget = TurnBudget(limit=int(cfg.get("llm.max_tokens_per_turn", 60000)))
+    max_calls = int(cfg.get("llm.max_tool_calls", 12))
+    tools = REGISTRY.schemas(ALLOWED_TOOLS)
+
+    gate = StreamingGate(
+        evidence,
+        factual_terms=list(cfg.get("retrieval.factual_terms", []) or []),
+        domain_terms=_domain_terms(),
+    )
+    announced_thinking = False
+
+    try:
+        for _round in range(max_calls + 1):
+            pending: list[Any] = []
+            saw_content = False
+            for event in client.stream(messages, tools=tools, budget=budget):
+                if event.kind == "thinking":
+                    if not announced_thinking:
+                        announced_thinking = True
+                        yield {"type": "thinking"}
+                elif event.kind == "content":
+                    saw_content = True
+                    for verdict in gate.feed(event.text):
+                        yield _sentence_event(verdict)
+                elif event.kind == "tool_calls":
+                    pending = list(event.tool_calls)
+                elif event.kind == "usage" and event.usage is not None:
+                    # 模型名必须记下来：故障转移会切模型，不同模型的推理 token
+                    # 行为差别很大（实测 claude-opus-5 的 reasoning 恒为 0），
+                    # 少了这个字段就会把「换了模型」误判成 bug
+                    result.model = event.model or result.model
+                    result.tokens = {
+                        "prompt": budget.used.prompt_tokens,
+                        "output": budget.used.completion_tokens,
+                        "reasoning": budget.used.reasoning_tokens,
+                        "total": budget.used.total_tokens,
+                    }
+                elif event.kind == "error":
+                    yield {"type": "error", "message": event.detail}
+                    pending = []
+                    break
+
+            if not pending:
+                break
+
+            # 模型要调工具：执行后开新的一轮流
+            messages.append({
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {"id": tc.id, "type": "function",
+                     "function": {"name": tc.name, "arguments": tc.arguments}}
+                    for tc in pending
+                ],
+            })
+            for tc in pending:
+                yield {"type": "tool", "name": tc.name}
+                tr = REGISTRY.call(tc.name, tc.arguments)
+                result.tool_calls.append(
+                    _tool_record(tc.name, _safe_json(tc.arguments), tr)
+                )
+                if tr.citations:
+                    evidence = _merge_evidence(evidence, tr.citations)
+                    result.evidence = evidence
+                    # 编号是追加式的，旧编号不变，所以只需把新证据补进闸门的映射
+                    gate.add_evidence(evidence)
+                messages.append({
+                    "role": "tool", "tool_call_id": tc.id, "content": tr.for_model(),
+                })
+            messages.append({
+                "role": "user",
+                "content": "当前可用证据（编号已更新，请据此标注）：\n\n"
+                           + render_evidence_block(evidence),
+            })
+            if not saw_content:
+                continue
+        else:
+            logger.warning("流式工具调用达到上限 %d", max_calls)
+    except LLMError as exc:
+        logger.error("流式生成失败（trace=%s）：%s", trace_id, exc)
+        yield {"type": "error", "message": f"生成失败（{type(exc).__name__}）"}
+
+    for verdict in gate.flush():
+        yield _sentence_event(verdict)
+
+    binding = gate.result()
+    result.binding = binding
+    result.answer = binding.text
+    result.citations = cit.collect(evidence, binding.used_labels)
+
+    if result.citations:
+        yield {
+            "type": "citations",
+            "items": [
+                {"label": c.label, "source": c.source, "title": c.title,
+                 "url": c.url, "priority": c.priority}
+                for c in result.citations
+            ],
+        }
+    if result.degraded_note:
+        yield {"type": "note", "text": result.degraded_note}
+    if binding.blocked:
+        logger.warning(
+            "流式绑定校验拦截 %d 句（trace=%s）", binding.blocked, trace_id
+        )
+        _record_gaps(question, binding.gaps)
+
+    yield from _finish(result, conversation_id, started)
+
+
+def _sentence_event(verdict) -> dict[str, Any]:  # noqa: ANN001
+    """一句校验结果 → 下发事件。
+
+    未通过的句子下发的是**替换文本**（`output`），不是原文——原文是无据断言，
+    不能出现在用户面前。
+    """
+    if verdict.ok:
+        return {
+            "type": "sentence",
+            "text": verdict.text,
+            "kind": verdict.kind,
+            "labels": list(verdict.labels),
+        }
+    return {
+        "type": "blocked",
+        "text": verdict.output,
+        "reason": verdict.reason,
+    }
+
+
+def _finish(
+    result: TurnResult, conversation_id: str | None, started: float
+) -> Iterator[dict[str, Any]]:
+    result.elapsed_ms = int((time.monotonic() - started) * 1000)
+    _persist(result, conversation_id)
+    yield {
+        "type": "done",
+        "trace_id": result.trace_id,
+        "evidence_gap": result.evidence_gap,
+        "blocked_claims": result.blocked,
+        "model": result.model,
+        "tokens": result.tokens,
+        "elapsed_ms": result.elapsed_ms,
+    }
+
 
 def _merge_evidence(
     existing: list[Evidence], new_citations: list[dict[str, Any]]

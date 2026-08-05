@@ -50,6 +50,38 @@ def post(base: str, path: str, payload: dict, timeout: float = 300.0) -> dict:
         return json.load(resp)
 
 
+def sse(base: str, path: str, payload: dict, timeout: float = 300.0) -> list[dict]:
+    """消费 SSE 流，返回全部事件。"""
+    req = urllib.request.Request(
+        base + path,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json", "Accept": "text/event-stream"},
+    )
+    out: list[dict] = []
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        for raw in resp:
+            line = raw.decode("utf-8", "replace").strip()
+            if not line.startswith("data:"):
+                continue
+            try:
+                out.append(json.loads(line[5:].strip()))
+            except json.JSONDecodeError:
+                continue
+    return out
+
+
+def _summarize(kinds: list[str]) -> str:
+    """把帧类型序列压成 `meta thinking sentence×6 citations done` 这种形式。"""
+    parts: list[str] = []
+    for k in kinds:
+        if parts and parts[-1].split("×")[0] == k:
+            n = int(parts[-1].split("×")[1]) if "×" in parts[-1] else 1
+            parts[-1] = f"{k}×{n + 1}"
+        else:
+            parts.append(k)
+    return " ".join(parts)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--gap-only", action="store_true", help="只测不需要凭证的缺据路径")
@@ -134,7 +166,64 @@ def main() -> int:
         print(f"\n  注意：闸门拦截了 {d['blocked_claims']} 句无据断言 —— "
               f"这是闸门在起作用，可用 /admin/trace/{d['trace_id']} 查原因")
 
-    section("3. 轨迹可追溯")
+    section("3. 流式（SSE）")
+    frames = sse(base, "/chat/stream", {"message": q})
+    kinds = [f.get("type") for f in frames]
+    print(f"  收到 {len(frames)} 帧：{_summarize(kinds)}")
+    check("首帧是 meta", kinds[:1] == ["meta"], f"实得 {kinds[:1]}")
+    check("末帧是 done", kinds[-1:] == ["done"], f"实得 {kinds[-1:]}")
+    check("有逐句下发的正文", kinds.count("sentence") > 1,
+          f"sentence 帧 {kinds.count('sentence')} 个")
+    check("有引用帧", "citations" in kinds)
+
+    sentences = [f for f in frames if f.get("type") == "sentence"]
+    check("每句都带分类与编号字段",
+          all("kind" in f and "labels" in f for f in sentences))
+    check("推理正文未外发（只有 thinking 状态，无推理文本）",
+          all(not f.get("text") for f in frames if f.get("type") == "thinking"))
+    blocked = [f for f in frames if f.get("type") == "blocked"]
+    check("被拦截的句子下发的是拦截说明而非原文",
+          all("已被拦截" in f.get("text", "") for f in blocked),
+          f"blocked 帧 {len(blocked)} 个")
+
+    section("4. 流式与非流式判定一致")
+    stream_text = "".join(
+        f.get("text", "") for f in frames
+        if f.get("type") in ("sentence", "blocked", "gap")
+    )
+    done = frames[-1]
+    print(f"  非流式拦截 {d['blocked_claims']} 句 ｜ 流式拦截 {done.get('blocked_claims')} 句")
+    print(f"  非流式模型 {d.get('model') or '（空）'} ｜ 流式模型 {done.get('model') or '（空）'}")
+    check("正文非空", bool(stream_text.strip()), f"{len(stream_text)} 字")
+    check("两条路径都不是缺据声明",
+          not d["evidence_gap"] and not done.get("evidence_gap"))
+    # 故障转移会切模型，两条路径都必须报出实际模型，否则「换了模型」会被误判成 bug
+    check("流式也报出实际模型", bool(done.get("model")), f"实得 {done.get('model')!r}")
+
+    section("5. 缺据路径的流式呈现")
+    gap_frames = sse(base, "/chat/stream", {"message": "流放之路2 的升华机制是什么"})
+    gap_kinds = [f.get("type") for f in gap_frames]
+    print(f"  收到 {len(gap_frames)} 帧：{_summarize(gap_kinds)}")
+    check("缺据时下发 gap 帧", "gap" in gap_kinds)
+    check("缺据时不下发正文句", "sentence" not in gap_kinds)
+    check("缺据时不伪造引用", "citations" not in gap_kinds)
+    check("缺据时未消耗 token",
+          not (gap_frames[-1].get("tokens") or {}).get("total"))
+
+    section("6. 静态前端")
+    for path, needle in (
+        ("/", "app.js"),
+        ("/app.js", "chat/stream"),
+        ("/style.css", "--accent"),
+    ):
+        try:
+            with urllib.request.urlopen(host + base_path + path, timeout=20) as resp:
+                body = resp.read().decode("utf-8", "replace")
+            check(f"{path} 可访问且内容正确", needle in body)
+        except urllib.error.URLError as exc:
+            check(f"{path} 可访问", False, str(exc))
+
+    section("7. 轨迹可追溯")
     try:
         req = urllib.request.Request(base + f"/admin/trace/{d['trace_id']}")
         with urllib.request.urlopen(req, timeout=30) as resp:

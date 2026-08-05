@@ -151,6 +151,10 @@ class StreamEvent:
     tool_calls: tuple[ToolCall, ...] = ()
     usage: Usage | None = None
     detail: str = ""
+    #: 实际服务本次请求的模型，只在 `kind == "usage"` 时填。
+    #: 非流式走 `LLMResponse.model`，流式必须由这里带出来——网关背后挂着多个模型，
+    #: 多 Key 故障转移会切模型，不知道是谁答的就没法解释不同的推理 token 行为
+    model: str = ""
 
     def __post_init__(self) -> None:
         if self.kind != "content" and self.text:
@@ -467,6 +471,8 @@ class LLMClient:
         reasoning_chars = 0
         thinking_announced = False
         finish = ""
+        #: 网关在每个分片里回报实际服务的模型，可能与请求的不同（别名解析、灰度）
+        served_model = ""
         #: 流式 tool_calls 按 index 分片到达，需要在此拼装
         partial: dict[int, dict[str, str]] = {}
 
@@ -475,6 +481,7 @@ class LLMClient:
                 chunk_usage = _usage_of(chunk)
                 if chunk_usage.total_tokens:
                     usage = chunk_usage  # 网关在末尾给累计值，直接覆盖而非相加
+                served_model = getattr(chunk, "model", "") or served_model
 
                 choices = getattr(chunk, "choices", None) or []
                 if not choices:
@@ -527,8 +534,8 @@ class LLMClient:
         logger.info(
             "LLM 流式完成：模型=%s 耗时=%dms finish=%s token=%d(推理%d) "
             "正文=%d字 推理=%d字 tool_calls=%d",
-            model_used, elapsed_ms, finish, usage.total_tokens, usage.reasoning_tokens,
-            content_chars, reasoning_chars, len(partial),
+            served_model or model_used, elapsed_ms, finish, usage.total_tokens,
+            usage.reasoning_tokens, content_chars, reasoning_chars, len(partial),
         )
         if not content_chars and not partial and reasoning_chars:
             logger.warning(
@@ -538,7 +545,7 @@ class LLMClient:
             )
         if budget is not None:
             budget.add(usage)
-        yield StreamEvent(kind="usage", usage=usage)
+        yield StreamEvent(kind="usage", usage=usage, model=served_model or model_used)
 
     # ── 内部 ──
 

@@ -75,12 +75,26 @@ _DERIVED_HINTS = ("因此", "所以", "计算得", "推导", "合计", "= ", "�
 
 #: 缺据声明句式：陈述「证据里没有某项信息」。
 #: 这类句子断言的是信息的**缺失**，本质上无法绑定证据——要求它带引用是自相矛盾的。
-#: 实测模型主动声明「本次证据中未包含掉落来源与市场价格」时被闸门拦掉了，
-#: 而那正是「无据不答」希望模型做的事，拦它等于惩罚正确行为。
-_DISCLOSURE_HINTS = (
-    "未包含", "未涉及", "没有涉及", "未提供", "未给出", "查不到", "无法确认",
-    "需另行查证", "需进一步查证", "证据中没有", "知识库中没有", "缺少依据",
-    "本次证据", "以上证据",
+#: 实测模型主动声明缺据时被闸门拦掉了，而那正是「无据不答」希望它做的事。
+#:
+#: 用**正则**而非关键词表：实测两轮各撞一次同类假阳性，只是措辞不同
+#: （「未包含」→「不包含」、「本次证据」→「本轮证据」）。枚举词表补不完，
+#: 按「否定词 + 提供类动词」的构式匹配才收得住。
+_DISCLOSURE_RE = re.compile(
+    r"(?:未|不|没(?:有)?|无)\s*(?:包含|涉及|提供|给出|收录|说明|记载|列出)"
+    r"|(?:本次|本轮|当前|以上|上述|该批)\s*证据"
+    r"|证据(?:中|里)?(?:没有|不含|未)"
+    r"|(?:知识库|库)(?:中|里)?(?:没有|查不到|未收录)"
+    r"|查不到|无法确认|缺少依据|需(?:另行|进一步)查证"
+)
+
+#: 面向用户的操作指引：「请单独提问」「如需…请…」。
+#: 这类句子讲的是怎么继续用这个助手，不是在断言游戏事实。
+#: 要求**不含数字**——带数字的「如需满抗请堆到 75%」是建议或事实，不是操作指引。
+_META_INSTRUCTION_RE = re.compile(
+    r"(?:请(?:单独|另行|重新)?(?:提问|询问|告知|补充|指定|说明))"
+    r"|(?:如(?:果)?需|若需|需要).{0,16}(?:请|可以)"
+    r"|(?:可以再(?:问|提问))|(?:欢迎(?:继续)?提问)"
 )
 
 #: 模糊限定语。需求 1.5/15.1 明令禁止用它们把推断包装成模糊表述。
@@ -269,6 +283,136 @@ def verify(
     return result
 
 
+class StreamingGate:
+    """增量版出口闸门：喂 token 分片，产出**已校验通过**的整句。
+
+    为什么流式不能逐字下发：校验单位是**句子**——要判断一句是不是事实断言、
+    绑定的编号是否有效、句中数值能否溯源，都得等这句说完。逐字推送等于把
+    未校验内容先给了用户，之后再撤回；而撤回是做不到的，用户已经读到了。
+
+    所以流式的粒度必然是句。前端可以对已通过的句子做打字机效果，
+    观感接近逐字流，但**不会显示任何未校验内容**。
+
+    与批量 `verify()` 必须行为一致：这里复用同一套分句与校验函数，
+    不另写一份规则。两份规则迟早分叉，那时流式与非流式的结果就不一样了。
+    """
+
+    def __init__(
+        self,
+        evidence: list[Evidence],
+        *,
+        factual_terms: Iterable[str] = (),
+        domain_terms: Iterable[str] = (),
+    ) -> None:
+        self._by_label = {e.label.upper(): e for e in evidence}
+        self._terms = tuple(t for t in factual_terms if t)
+        self._domain = tuple(t for t in domain_terms if t)
+        self._buffer = ""
+        self.verdicts: list[SentenceVerdict] = []
+        self.blocked = 0
+        self.gaps: list[str] = []
+
+    # ── 证据 ──
+
+    def add_evidence(self, evidence: list[Evidence]) -> None:
+        """补进新检索到的证据。
+
+        编号是**追加式**的（`_merge_evidence` 不重编已有 chunk），所以这里只需
+        把新编号补进映射。若重编号，模型先前标的 `[[E1]]` 就会指向别的东西，
+        已下发的句子也无法追回。
+        """
+        for e in evidence:
+            self._by_label.setdefault(e.label.upper(), e)
+
+    # ── 消费 ──
+
+    def feed(self, delta: str) -> list[SentenceVerdict]:
+        """喂一个分片，返回本次新完成校验的句子（可能为空）。"""
+        if not delta:
+            return []
+        self._buffer += delta
+        return self._drain(final=False)
+
+    def flush(self) -> list[SentenceVerdict]:
+        """收尾：把缓冲区剩余内容当作最后一句处理（可能没有终止标点）。"""
+        return self._drain(final=True)
+
+    # ── 内部 ──
+
+    def _drain(self, *, final: bool) -> list[SentenceVerdict]:
+        out: list[SentenceVerdict] = []
+        while True:
+            piece, rest = self._take_sentence(final=final)
+            if piece is None:
+                break
+            self._buffer = rest
+            verdict = _check_sentence(piece, self._by_label, self._terms, self._domain)
+            self.verdicts.append(verdict)
+            if not verdict.ok:
+                self.blocked += 1
+                if verdict.missing_point:
+                    self.gaps.append(verdict.missing_point)
+            out.append(verdict)
+        return out
+
+    def _take_sentence(self, *, final: bool) -> tuple[str | None, str]:
+        """从缓冲区切出一个完整句子。切不出来返回 (None, 原缓冲)。"""
+        buf = self._buffer
+        if not buf:
+            return None, buf
+
+        # 绑定标记未闭合时**绝不切**：`[[E1;E2]]` 只写到 `[[E1;` 时，
+        # 那个分号会被当成句末标点，切出来的半个标记会让有据句被判成未绑定。
+        if _has_open_marker(buf):
+            return (buf, "") if final else (None, buf)
+
+        parts = split_sentences(buf)
+        if not parts:
+            return None, buf
+        if final:
+            # 收尾时全部交出。多于一句就先给第一句，其余留待下一轮循环。
+            return parts[0], "".join(parts[1:])
+        if len(parts) == 1 and not _ends_sentence(buf):
+            # 只有一段且没说完，继续等
+            return None, buf
+        if len(parts) == 1:
+            return parts[0], ""
+        return parts[0], "".join(parts[1:])
+
+    # ── 结果 ──
+
+    def result(self) -> BindingResult:
+        """汇总成与批量校验同构的结果，供轨迹落库与引用装配复用。"""
+        res = BindingResult(verdicts=list(self.verdicts), blocked=self.blocked,
+                            gaps=list(self.gaps))
+        seen: set[str] = set()
+        used: list[str] = []
+        for v in res.verdicts:
+            if not v.ok:
+                continue
+            for lb in v.labels:
+                if lb not in seen:
+                    seen.add(lb)
+                    used.append(lb)
+        res.used_labels = used
+        return res
+
+
+def _has_open_marker(text: str) -> bool:
+    """缓冲区末尾是否有未闭合的 `[[`。"""
+    open_at = text.rfind("[[")
+    if open_at < 0:
+        return False
+    return text.find("]]", open_at) < 0
+
+
+_SENT_END_CHARS = "。！？!?；;\n"
+
+
+def _ends_sentence(text: str) -> bool:
+    return bool(text) and text.rstrip()[-1:] in _SENT_END_CHARS or text.endswith("\n")
+
+
 def split_sentences(text: str) -> list[str]:
     """分句，保留原有标点与空白，拼回去应与原文等价（除拦截替换）。
 
@@ -428,9 +572,13 @@ def classify(
     # 标题里出现「猎首」不代表这句在断言什么，只是个小节标签。
     if is_structural(s):
         return "narrative"
+    has_hedge = any(w in s for w in _HEDGE_WORDS)
     # 缺据声明：断言的是信息缺失，无法也不该绑定证据。
     # 但必须同时不含模糊限定语——否则「证据里没写，一般来说是 100」会整句蒙过去。
-    if any(h in s for h in _DISCLOSURE_HINTS) and not any(w in s for w in _HEDGE_WORDS):
+    if _DISCLOSURE_RE.search(s) and not has_hedge:
+        return "narrative"
+    # 面向用户的操作指引。要求不含数字：带数字的是建议或事实，不是指引。
+    if _META_INSTRUCTION_RE.search(s) and not has_hedge and not _NUM_RE.search(s):
         return "narrative"
     if any(h in s for h in _RECOMMEND_HINTS):
         return "recommendation"
