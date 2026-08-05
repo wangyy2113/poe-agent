@@ -24,6 +24,7 @@ from pydantic import BaseModel, Field
 
 from core import db as dbmod
 from core.config import REPO_ROOT, get_config, get_secrets
+from core.llm import LLMError, get_llm_client
 from core.logging_setup import setup_logging
 from retrieval.hybrid import retrieve
 
@@ -120,6 +121,16 @@ def create_app() -> FastAPI:
                 "model": sec.llm_model,
                 "credentials": len(sec.credential_specs()),
             }
+            # 凭证池状态（脱敏）：能看出哪个 Key 在冷却、为什么冷却。
+            # 建客户端不发请求，所以这里不会产生费用，也不代表 Key 真的可用。
+            try:
+                pool = get_llm_client().credential_status()
+                out["llm"]["pool"] = pool
+                if not any(c["healthy"] for c in pool):
+                    out["status"] = "degraded"
+            except LLMError as exc:
+                out["status"] = "degraded"
+                out["llm"]["pool_error"] = str(exc)
             out["embedding"] = {
                 "configured": bool(sec.embedding_base_url and sec.embedding_model),
                 "model": sec.embedding_model or None,
