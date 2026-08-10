@@ -145,7 +145,7 @@ DOMAINS: tuple[DomainSpec, ...] = (
         count_sql="SELECT count(*) FROM mod_affix",
         channel_sql="SELECT DISTINCT category_label FROM mod_affix WHERE category_label<>''",
         chunk_prefix="mod_ladder:",
-        tools=("mod_tiers", "stat_sources"),
+        tools=("check_mod_combination", "mod_tiers", "stat_sources"),
         hints=("词缀", "前缀", "后缀", "T1", "T级", "词缀组", "互斥", "物品等级", "权重"),
         question_hints=(
             "某底材类别上某条词缀有几档、各档物品等级与权重",
@@ -369,6 +369,28 @@ DOMAINS: tuple[DomainSpec, ...] = (
         note="易与辛迪加的「隐匿」词缀混淆，两者是不同机制",
     ),
     DomainSpec(
+        key="craft_feasibility",
+        display_zh="目标词缀组合局部可行性（候选 / family 互斥 / 占位）",
+        category=Category.CRAFTING,
+        authority_url=f"{POEDB_BASE}/Modifiers",
+        count_sql=(
+            "SELECT count(*) FROM mod_affix "
+            "WHERE json_valid(family_list) AND json_array_length(family_list)>0"
+        ),
+        tools=("check_mod_combination",),
+        hints=("词缀组合", "能否共存", "是否共存", "同时存在", "前后缀占位"),
+        question_hints=(
+            "指定底材上的多个目标词缀是否存在 family_list 冲突",
+            "目标词缀分别占前缀还是后缀",
+        ),
+        partial_note=(
+            "已支持候选解析、完整 family_list 互斥与占位见证；"
+            "**前后缀容量、来源适用条件、影响力与元词缀规则未采集**，"
+            "因此无 family 冲突的组合只返回 unknown"
+        ),
+        note="局部兼容不等于整体可制作；工具不提供制作步骤、概率或成本",
+    ),
+    DomainSpec(
         key="craft_rule",
         display_zh="制作规则（前后缀名额 / 影响力 / 元词缀）",
         category=Category.CRAFTING,
@@ -377,11 +399,14 @@ DOMAINS: tuple[DomainSpec, ...] = (
         hints=("几个前缀", "几个后缀", "名额", "影响力", "元词缀", "觉醒者之石"),
         question_hints=(
             "稀有装备最多几前缀几后缀",
-            "这套词缀组合是否可能同时存在",
             "影响力词缀需要什么底材",
+            "元词缀如何约束制作操作",
         ),
         poedb_pages=("metamods",),
-        note="制作可行性判定的前置。game_constant 里没有这类规则，需另找权威来源",
+        note=(
+            "该领域仍未结构化；check_mod_combination 只能报告这些缺据，"
+            "不能据此判定整体 possible"
+        ),
     ),
     # ── 地图系统 ──
     DomainSpec(
@@ -648,6 +673,16 @@ def load(conn: sqlite3.Connection) -> list[DomainStatus]:
     except sqlite3.Error:
         rows = []
     if not rows:
+        return probe(conn)
+
+    expected_keys = {domain.key for domain in DOMAINS}
+    stored_keys = {str(row["domain_key"]) for row in rows}
+    if stored_keys != expected_keys:
+        logger.warning(
+            "kb_coverage 快照与当前 inventory 不一致（缺少=%s，多出=%s），改用实时探测",
+            sorted(expected_keys - stored_keys),
+            sorted(stored_keys - expected_keys),
+        )
         return probe(conn)
 
     by_key = {d.key: d for d in DOMAINS}

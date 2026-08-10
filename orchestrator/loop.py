@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -131,6 +132,230 @@ def _domain_terms() -> tuple[str, ...]:
         return ()
 
 
+_CRAFT_COMBINATION_INTENTS = (
+    "一起出现", "同时出现", "同时存在", "同时有", "共存", "冲突", "互斥",
+    "词缀组合是否可能", "词缀组合能否", "这些词缀能否",
+)
+_CRAFT_ROUTE_NEGATIONS = (
+    "不要", "请勿", "不用", "无需", "不需要", "不必", "别",
+    "不是问", "并非询问",
+)
+_CRAFT_ROUTE_META_QUESTIONS = (
+    "什么意思", "含义是什么", "概念是什么",
+    "为什么要检查", "为什么要判断", "为什么需要检查", "为什么需要判断",
+    "为何要检查", "为何要判断",
+)
+_CRAFT_POSITIVE_TURNS = (
+    "我是问", "而是问", "而是判断", "真正想问", "实际想问",
+    "但请判断", "但判断", "再判断", "然后判断", "接着判断",
+)
+_CRAFT_CLAUSE_SPLIT_RE = re.compile(r"[，,。；;：:！？?!\n]+")
+_CRAFT_TARGET_SPLIT_RE = re.compile(r"(?:以及|并且|和|与|及|跟|同|、|\+)")
+
+
+def _normalized(text: str) -> str:
+    return "".join((text or "").lower().split())
+
+
+def _positive_craft_clause(question: str) -> str:
+    """返回最后一个未被否定的组合判断子句；没有则返回空串。"""
+    positive: list[str] = []
+    for raw in _CRAFT_CLAUSE_SPLIT_RE.split(question or ""):
+        clause = _normalized(raw)
+        if not clause:
+            continue
+        # 同一标点子句里先否定、后转问时，只看最后一个明确的正向转折。
+        turn_at = max((clause.rfind(turn) for turn in _CRAFT_POSITIVE_TURNS), default=-1)
+        if turn_at > 0:
+            clause = clause[turn_at:]
+        if not any(intent in clause for intent in _CRAFT_COMBINATION_INTENTS):
+            continue
+        if any(marker in clause for marker in _CRAFT_ROUTE_NEGATIONS):
+            continue
+        if any(marker in clause for marker in _CRAFT_ROUTE_META_QUESTIONS):
+            continue
+        positive.append(clause)
+    return positive[-1] if positive else ""
+
+
+def _precision_tool_route(question: str) -> str:
+    """只有存在未被否定的组合判断子句时才放行结构化求解器。"""
+    return "check_mod_combination" if _positive_craft_clause(question) else ""
+
+
+def _strip_target_scaffolding(segment: str) -> str:
+    leading = (
+        "请帮我判断", "请判断", "帮我判断", "真正想问", "实际想问", "我是问",
+        "再判断", "然后判断", "接着判断", "判断", "请帮我看", "帮我看",
+        "看看", "想知道", "对比", "比较", "这个", "这些",
+    )
+    trailing = ("能否", "是否", "会不会", "能不能", "可以", "可否", "会", "能", "在")
+    prefixes = ("上的", "上面有", "上有", "上", "里面有", "里有", "中有", "的", "有", "带有", "包含")
+    changed = True
+    while changed and segment:
+        changed = False
+        for token in (*leading, *prefixes):
+            if segment.startswith(token):
+                segment = segment[len(token):]
+                changed = True
+                break
+        for token in trailing:
+            if segment.endswith(token):
+                segment = segment[:-len(token)]
+                changed = True
+                break
+    return segment
+
+
+def _target_segment(clause: str, item_class: str) -> str:
+    """从正向判断子句抽出完整目标列表文本；不做词缀知识猜测。"""
+    positions = [
+        (clause.rfind(intent), intent)
+        for intent in _CRAFT_COMBINATION_INTENTS
+        if intent in clause
+    ]
+    if not positions:
+        return ""
+    marker_at, intent = max(positions, key=lambda item: item[0])
+
+    # 同一意图同时支持“目标 + 能否共存”与“能同时存在 + 目标”两种语序。
+    before_raw = clause[:marker_at]
+    after_intent = _strip_target_scaffolding(
+        clause[marker_at + len(intent):].removesuffix("吗")
+    )
+    if item_class in before_raw and after_intent:
+        return after_intent
+
+    before_intent = _strip_target_scaffolding(before_raw)
+    item_at = before_intent.rfind(item_class)
+    if item_at < 0:
+        return ""
+    after_item = _strip_target_scaffolding(before_intent[item_at + len(item_class):])
+    if after_item:
+        return after_item
+    return _strip_target_scaffolding(before_intent[:item_at])
+
+
+def _validate_precision_call(
+    question: str,
+    tool_name: str,
+    arguments: Any,
+) -> str:
+    """冻结正向判断子句的底材、限定条件与完整目标集合。"""
+    if tool_name != "check_mod_combination":
+        return "当前精确路由不支持该工具"
+    if not isinstance(arguments, dict):
+        return "参数必须是 JSON 对象"
+    clause = _positive_craft_clause(question)
+    if not clause:
+        return "当前问题没有未被否定的组合判断子句"
+
+    item_class = _normalized(str(arguments.get("item_class") or ""))
+    if not item_class or item_class not in clause:
+        return "item_class 未对应正向组合判断子句中的底材类别"
+
+    rarity_raw = arguments.get("rarity")
+    if rarity_raw is not None:
+        rarity = _normalized(str(rarity_raw))
+        if not rarity or rarity not in clause:
+            return "rarity 未对应正向组合判断子句中的稀有度限定"
+
+    targets = arguments.get("targets")
+    if not isinstance(targets, list) or len(targets) < 2:
+        return "组合检查至少需要两个目标词缀"
+    target_specs: list[tuple[str, str]] = []
+    for raw in targets:
+        if not isinstance(raw, dict):
+            return "targets 中每项都必须是对象"
+        query = _normalized(str(raw.get("query") or ""))
+        if len(query) < 2:
+            return "每个 target.query 至少需要两个字符"
+        source = _normalized(str(raw.get("source") or ""))
+        target_specs.append((query, source))
+    queries = [query for query, _source in target_specs]
+    if len(set(queries)) != len(queries):
+        return "组合检查的目标词缀不得重复"
+
+    segment = _target_segment(clause, item_class)
+    expected = [part for part in _CRAFT_TARGET_SPLIT_RE.split(segment) if part]
+    remaining = list(expected)
+    # 先绑定带 source 的目标，避免来源词留在分段里让无来源目标抢先报成普通缺失。
+    ordered_specs = sorted(target_specs, key=lambda spec: bool(spec[1]), reverse=True)
+    for query, source in ordered_specs:
+        matches: list[int] = []
+        for index, part in enumerate(remaining):
+            if source:
+                if source not in part or part.replace(source, "", 1) != query:
+                    continue
+            elif part != query:
+                continue
+            matches.append(index)
+        if len(matches) != 1:
+            if source:
+                return "target.source 必须与对应 target.query 位于同一目标词组"
+            return "targets 必须完整且精确覆盖正向判断子句中的全部目标词组"
+        remaining.pop(matches[0])
+    if remaining:
+        return "targets 必须完整且精确覆盖正向判断子句中的全部目标词组"
+
+    influences = arguments.get("influences") or []
+    if not isinstance(influences, list):
+        return "influences 必须是数组"
+    normalized_influences = [_normalized(str(value)) for value in influences]
+    if any(not value or value not in clause for value in normalized_influences):
+        return "influences 中存在正向判断子句未提及的条件"
+    return ""
+
+
+def _precision_solver_citations(result: ToolResult) -> list[dict[str, Any]]:
+    """只接受本次确定性求解器产出的结论证据，不接受候选表或其它工具证据。"""
+    return [
+        citation
+        for citation in result.citations
+        if str(citation.get("chunk_id") or "").startswith("craft_solver:")
+        and citation.get("channel") == "derived"
+    ]
+
+
+def _call_tool(
+    question: str,
+    precision_tool: str,
+    name: str,
+    raw_arguments: str,
+) -> tuple[ToolResult, bool]:
+    """执行工具，并返回它是否是参数归属正确且带 solver 证据的精确调用。"""
+    parsed = _safe_json(raw_arguments)
+    if precision_tool and name == precision_tool:
+        reason = _validate_precision_call(question, name, parsed)
+        if reason:
+            return ToolResult(ok=False, error=f"精确工具参数与当前问题不一致：{reason}"), False
+    result = REGISTRY.call(name, raw_arguments)
+    matched = bool(
+        precision_tool
+        and name == precision_tool
+        and result.ok
+        and _precision_solver_citations(result)
+    )
+    return result, matched
+
+
+def _initial_user_content(
+    question: str, evidence: list[Evidence], precision_tool: str
+) -> str:
+    if not precision_tool:
+        return EVIDENCE_TEMPLATE.format(
+            evidence=render_evidence_block(evidence), question=question
+        )
+    initial = render_evidence_block(evidence) or "（首轮全文检索未形成可引用证据）"
+    return (
+        f"以下是首轮证据：\n\n{initial}\n\n---\n"
+        f"精确工具路由已命中 `{precision_tool}`。回答前必须先调用该工具；"
+        "工具参数中的底材、每个目标、来源和影响力都必须逐字对应用户问题。"
+        "不得依据首轮候选或其它工具证据自行判断组合可行性。\n\n"
+        f"用户的问题：{question}"
+    )
+
+
 def run_turn(
     question: str,
     *,
@@ -159,8 +384,11 @@ def run_turn(
         return result
 
     data = first.data or {}
-    if not data.get("sufficient"):
-        # 依据不足 → 由代码生成缺据声明，模型完全不参与
+    precision_tool = _precision_tool_route(question)
+    if precision_tool:
+        result.retrieval_meta["precision_route"] = precision_tool
+    if not data.get("sufficient") and not precision_tool:
+        # 依据不足且没有确定性精确工具路由 → 由代码生成缺据声明，模型完全不参与
         result.evidence_gap = True
         result.answer, gap_category = _gap_answer(question, data)
         result.elapsed_ms = int((time.monotonic() - started) * 1000)
@@ -171,7 +399,10 @@ def run_turn(
         return result
 
     # ── 第二步：编号证据并生成 ──
-    evidence = number_evidence(first.citations)
+    # BM25 不充分时不能把「最不差」的命中当证据；精确路由只给模型调用工具的机会。
+    evidence = number_evidence(
+        [] if precision_tool else (first.citations if data.get("sufficient") else [])
+    )
     result.evidence = evidence
     if first.meta.get("degraded"):
         result.degraded_note = (
@@ -183,9 +414,7 @@ def run_turn(
         {"role": "system", "content": build_system_prompt()},
         {
             "role": "user",
-            "content": EVIDENCE_TEMPLATE.format(
-                evidence=render_evidence_block(evidence), question=question
-            ),
+            "content": _initial_user_content(question, evidence, precision_tool),
         },
     ]
 
@@ -193,6 +422,9 @@ def run_turn(
     max_calls = int(cfg.get("llm.max_tool_calls", 12))
     tools = _prepare_tools()
     answer_text = ""
+    final_tool_results: dict[str, ToolResult] = {}
+    precision_tool_succeeded = not bool(precision_tool)
+    precision_call_invalidated = False
 
     try:
         for _ in range(max_calls + 1):
@@ -220,12 +452,27 @@ def run_turn(
                 ],
             })
             for tc in resp.tool_calls:
-                tr = REGISTRY.call(tc.name, tc.arguments)
+                if precision_tool and tc.name == precision_tool and precision_tool_succeeded:
+                    precision_call_invalidated = True
+                    tr = ToolResult(
+                        ok=False,
+                        error="精确组合求解已成功完成；本轮再次改参会使证据归属不唯一",
+                    )
+                    precision_match = False
+                else:
+                    tr, precision_match = _call_tool(
+                        question, precision_tool, tc.name, tc.arguments
+                    )
                 result.tool_calls.append(
                     _tool_record(tc.name, _safe_json(tc.arguments), tr)
                 )
-                # 追加检索到的新证据并重新编号，让模型后续能引用它们
-                if tr.citations:
+                final_tool_results[tc.name] = tr
+                if precision_match:
+                    precision_tool_succeeded = True
+                    # 精确组合回答只允许使用本次、参数归属正确的 solver 派生证据。
+                    evidence = number_evidence(_precision_solver_citations(tr))
+                    result.evidence = evidence
+                elif not precision_tool and tr.citations:
                     evidence = _merge_evidence(evidence, tr.citations)
                     result.evidence = evidence
                 messages.append({
@@ -250,6 +497,17 @@ def run_turn(
         _persist(result, conversation_id)
         return result
 
+    if not precision_tool_succeeded or precision_call_invalidated:
+        result.evidence_gap = True
+        result.answer = (
+            f"已识别为需要精确工具 `{precision_tool}` 的问题，但本轮没有形成唯一、"
+            "参数与当前问题一致且带确定性求解证据的调用；因此不作组合判断。"
+        )
+        result.elapsed_ms = int((time.monotonic() - started) * 1000)
+        _persist(result, conversation_id)
+        return result
+
+    _record_final_tool_result_gaps(question, final_tool_results)
     result.tokens = {
         "prompt": budget.used.prompt_tokens,
         "output": budget.used.completion_tokens,
@@ -321,8 +579,11 @@ def stream_turn(
         return
 
     data = first.data or {}
-    if not data.get("sufficient"):
-        # 依据不足 → 缺据声明由代码生成，模型完全不参与
+    precision_tool = _precision_tool_route(question)
+    if precision_tool:
+        result.retrieval_meta["precision_route"] = precision_tool
+    if not data.get("sufficient") and not precision_tool:
+        # 依据不足且没有确定性精确工具路由 → 缺据声明由代码生成
         result.evidence_gap = True
         result.answer, gap_category = _gap_answer(question, data)
         _record_gaps(
@@ -332,7 +593,9 @@ def stream_turn(
         yield from _finish(result, conversation_id, started)
         return
 
-    evidence = number_evidence(first.citations)
+    evidence = number_evidence(
+        [] if precision_tool else (first.citations if data.get("sufficient") else [])
+    )
     result.evidence = evidence
     if first.meta.get("degraded"):
         result.degraded_note = (
@@ -344,9 +607,7 @@ def stream_turn(
         {"role": "system", "content": build_system_prompt()},
         {
             "role": "user",
-            "content": EVIDENCE_TEMPLATE.format(
-                evidence=render_evidence_block(evidence), question=question
-            ),
+            "content": _initial_user_content(question, evidence, precision_tool),
         },
     ]
     budget = TurnBudget(limit=int(cfg.get("llm.max_tokens_per_turn", 60000)))
@@ -359,20 +620,26 @@ def stream_turn(
         domain_terms=_domain_terms(),
     )
     announced_thinking = False
+    final_tool_results: dict[str, ToolResult] = {}
+    precision_tool_succeeded = not bool(precision_tool)
+    precision_call_invalidated = False
 
     try:
         for _round in range(max_calls + 1):
             pending: list[Any] = []
-            saw_content = False
+            round_content: list[str] = []
             for event in client.stream(messages, tools=tools, budget=budget):
                 if event.kind == "thinking":
                     if not announced_thinking:
                         announced_thinking = True
                         yield {"type": "thinking"}
                 elif event.kind == "content":
-                    saw_content = True
-                    for verdict in gate.feed(event.text):
-                        yield _sentence_event(verdict)
+                    if precision_tool:
+                        # 精确路径整轮缓冲：直到确认该轮没有后续工具调用，正文才进闸门。
+                        round_content.append(event.text)
+                    else:
+                        for verdict in gate.feed(event.text):
+                            yield _sentence_event(verdict)
                 elif event.kind == "tool_calls":
                     pending = list(event.tool_calls)
                 elif event.kind == "usage" and event.usage is not None:
@@ -392,6 +659,10 @@ def stream_turn(
                     break
 
             if not pending:
+                if precision_tool_succeeded and not precision_call_invalidated:
+                    for piece in round_content:
+                        for verdict in gate.feed(piece):
+                            yield _sentence_event(verdict)
                 break
 
             # 模型要调工具：执行后开新的一轮流
@@ -406,11 +677,27 @@ def stream_turn(
             })
             for tc in pending:
                 yield {"type": "tool", "name": tc.name}
-                tr = REGISTRY.call(tc.name, tc.arguments)
+                if precision_tool and tc.name == precision_tool and precision_tool_succeeded:
+                    precision_call_invalidated = True
+                    tr = ToolResult(
+                        ok=False,
+                        error="精确组合求解已成功完成；本轮再次改参会使证据归属不唯一",
+                    )
+                    precision_match = False
+                else:
+                    tr, precision_match = _call_tool(
+                        question, precision_tool, tc.name, tc.arguments
+                    )
                 result.tool_calls.append(
                     _tool_record(tc.name, _safe_json(tc.arguments), tr)
                 )
-                if tr.citations:
+                final_tool_results[tc.name] = tr
+                if precision_match:
+                    precision_tool_succeeded = True
+                    evidence = number_evidence(_precision_solver_citations(tr))
+                    result.evidence = evidence
+                    gate.add_evidence(evidence)
+                elif not precision_tool and tr.citations:
                     evidence = _merge_evidence(evidence, tr.citations)
                     result.evidence = evidence
                     # 编号是追加式的，旧编号不变，所以只需把新证据补进闸门的映射
@@ -423,14 +710,23 @@ def stream_turn(
                 "content": "当前可用证据（编号已更新，请据此标注）：\n\n"
                            + render_evidence_block(evidence),
             })
-            if not saw_content:
-                continue
         else:
             logger.warning("流式工具调用达到上限 %d", max_calls)
     except LLMError as exc:
         logger.error("流式生成失败（trace=%s）：%s", trace_id, exc)
         yield {"type": "error", "message": f"生成失败（{type(exc).__name__}）"}
 
+    if not precision_tool_succeeded or precision_call_invalidated:
+        result.evidence_gap = True
+        result.answer = (
+            f"已识别为需要精确工具 `{precision_tool}` 的问题，但本轮没有形成唯一、"
+            "参数与当前问题一致且带确定性求解证据的调用；因此不作组合判断。"
+        )
+        yield {"type": "gap", "text": result.answer}
+        yield from _finish(result, conversation_id, started)
+        return
+
+    _record_final_tool_result_gaps(question, final_tool_results)
     for verdict in gate.flush():
         yield _sentence_event(verdict)
 
@@ -548,6 +844,55 @@ def _safe_json(raw: str) -> Any:
         return json.loads(raw)
     except (TypeError, json.JSONDecodeError):
         return raw
+
+
+_CRAFT_GAP_CATEGORIES = {
+    "target_not_resolved": "not_recalled/mod_affix",
+    "candidate_search_truncated": "analysis_limit/craft_feasibility",
+    "assignment_search_truncated": "analysis_limit/craft_feasibility",
+    "item_class_not_resolved": "input_clarification/item_class",
+    "base_page_scope": "input_clarification/base_item",
+    "affix_capacity": "not_collected/craft_rule",
+    "source_requirement": "not_collected/craft_rule",
+    "influence_requirement": "not_collected/craft_rule",
+}
+
+
+def _record_final_tool_result_gaps(
+    question: str,
+    final_results: dict[str, ToolResult],
+) -> None:
+    """只记录每种工具最后一次调用仍未解决的缺口，避免把中间重试污染成欠债。"""
+    seen: set[tuple[str, str]] = set()
+    for result in final_results.values():
+        _record_tool_result_gaps(question, result, seen=seen)
+
+
+def _record_tool_result_gaps(
+    question: str,
+    result: ToolResult,
+    *,
+    seen: set[tuple[str, str]],
+) -> None:
+    """把结构化工具的缺据写入统一台账；同一轮同一缺口只计一次。"""
+    if not result.ok or not isinstance(result.data, dict):
+        return
+    raw_gaps = result.data.get("gaps")
+    if not isinstance(raw_gaps, list):
+        return
+    by_category: dict[str, list[str]] = {}
+    for raw in raw_gaps:
+        if not isinstance(raw, dict):
+            continue
+        code = str(raw.get("code") or "structured_tool_gap")
+        message = str(raw.get("message") or "").strip()
+        if not message or (code, message) in seen:
+            continue
+        seen.add((code, message))
+        category = _CRAFT_GAP_CATEGORIES.get(code, "not_collected/craft_rule")
+        by_category.setdefault(category, []).append(f"[{code}] {message}")
+    for category, points in by_category.items():
+        _record_gaps(question, points, category=category)
 
 
 def _record_gaps(question: str, gaps: list[str], *, category: str = "") -> None:

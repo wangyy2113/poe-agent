@@ -132,16 +132,51 @@ def main() -> int:
     if not (r.data.get("channels_no_match_note") or ""):
         problems.append("零命中未附说明——「没命中」会被读成「给不了」")
 
-    # ── 6. kb_coverage ──
-    print("\n[6] kb_coverage")
+    # ── 6. check_mod_combination：三态可行性，禁止把局部兼容当可制作 ──
+    print("\n[6] check_mod_combination：项链 × 最大生命 + 火焰抗性")
+    r = call(
+        "check_mod_combination",
+        item_class="项链",
+        targets=[{"query": "最大生命"}, {"query": "火焰抗性"}],
+        rarity="稀有",
+    )
+    print(f"    ok={r.ok} verdict={r.data.get('verdict') if r.ok else 'error'}")
+    print(f"    gaps={[g.get('code') for g in (r.data.get('gaps') or [])] if r.ok else []}")
+    print(f"    citations={len(r.citations)}")
+    if not r.ok:
+        problems.append(f"check_mod_combination 调用失败：{r.error}")
+    else:
+        if r.data.get("verdict") != "unknown":
+            problems.append("无 family 冲突但容量规则缺失时必须为 unknown")
+        if not any(g.get("code") == "affix_capacity" for g in r.data.get("gaps") or []):
+            problems.append("check_mod_combination 未报告前后缀容量缺据")
+        if not r.citations or any(not c.get("url") for c in r.citations):
+            problems.append("check_mod_combination 的候选事实缺少 POEDB 引用")
+        forbidden = {"steps", "probability", "cost"}
+
+        def collect_keys(value):  # noqa: ANN202
+            if isinstance(value, dict):
+                yield from value
+                for child in value.values():
+                    yield from collect_keys(child)
+            elif isinstance(value, list):
+                for child in value:
+                    yield from collect_keys(child)
+
+        leaked = forbidden & set(collect_keys(r.data))
+        if leaked:
+            problems.append(f"check_mod_combination 越界返回字段：{sorted(leaked)}")
+
+    # ── 7. kb_coverage ──
+    print("\n[7] kb_coverage")
     r = call("kb_coverage")
     print(f"    领域 {r.data.get('domains_total')}，可用 {r.data.get('domains_usable')}，"
           f"分类 {r.data.get('usable_categories')}")
     if not r.data.get("manifest"):
         problems.append("kb_coverage 没有返回覆盖清单")
 
-    # ── 7. category 枚举说真话 ──
-    print("\n[7] kb_search 的 category 枚举")
+    # ── 8. category 枚举说真话 ──
+    print("\n[8] kb_search 的 category 枚举")
     from tools.impl.kb_search import sync_category_enum  # noqa: PLC0415
 
     cats = sync_category_enum()
@@ -154,8 +189,8 @@ def main() -> int:
     if len(enum) == 6:
         problems.append("枚举仍是六类，未按实际数据收窄")
 
-    # ── 8. 覆盖声明是否真的进了系统提示词 ──
-    print("\n[8] 系统提示词是否注入覆盖声明")
+    # ── 9. 覆盖声明是否真的进了系统提示词 ──
+    print("\n[9] 系统提示词是否注入覆盖声明")
     from agents.knowledge import ALLOWED_TOOLS, build_system_prompt  # noqa: PLC0415
 
     sp = build_system_prompt()
