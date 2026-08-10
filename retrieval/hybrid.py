@@ -27,7 +27,7 @@ import sqlite3
 from dataclasses import dataclass, field
 
 from retrieval import alias as alias_mod
-from retrieval.fts import Hit, search_fts, term_coverage
+from retrieval.fts import Hit, absent_from_corpus, search_fts, term_coverage
 from retrieval.tokenize import query_content_words
 
 logger = logging.getLogger(__name__)
@@ -232,11 +232,27 @@ def retrieve(
             "且无实体精确命中；专名查询应由别名表命中，未命中即知识库无此条目"
         )
     elif result.top_coverage >= min_coverage:
-        result.sufficient = True
-        result.reason = (
-            f"查询词覆盖率 {result.top_coverage:.0%} ≥ {min_coverage:.0%}"
-            f"（命中 {matched_count} 个词）"
-        )
+        # 覆盖率达标还不够：**没被覆盖的词若全库都不存在**，命中的就只是通用词。
+        #
+        # 覆盖率给每个查询词等权，于是问题可以只靠通用词过线，漏掉的偏偏是主体词。
+        # 实测「玄虚之靴有什么属性」靠 `之靴`+`属性` 拿到 67%，未覆盖的 `玄虚`
+        # 恰是那个 POEDB 上不存在的名字；「流放之路2 的升华机制是什么」靠
+        # `升华`+`机制` 过线，未覆盖的 `流放之路2` 恰是「问的是另一款游戏」的标志。
+        # 一个词全库为零，答案就不可能在库里——此时其余词覆盖多少都不算依据。
+        absent = absent_from_corpus(conn, result.missing_terms)
+        if absent:
+            result.sufficient = False
+            result.reason = (
+                f"查询词覆盖率 {result.top_coverage:.0%} 虽达标，但"
+                f"「{'、'.join(absent[:4])}」在知识库中完全不存在——"
+                "命中的只是与问题主体无关的通用词，不构成依据"
+            )
+        else:
+            result.sufficient = True
+            result.reason = (
+                f"查询词覆盖率 {result.top_coverage:.0%} ≥ {min_coverage:.0%}"
+                f"（命中 {matched_count} 个词）"
+            )
     else:
         result.sufficient = False
         result.reason = (

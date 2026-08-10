@@ -19,7 +19,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import sqlite3
 from typing import Any
@@ -33,8 +32,6 @@ logger = logging.getLogger(__name__)
 #: 单次返回的梯度组数上限。一个词缀在一个底材类别上最多横跨 10 个来源，
 #: 全给会挤爆上下文，也会让模型倾向于把弱相关的也绑上去。
 MAX_LADDERS = 6
-#: 渠道汇总里每类最多列几行
-MAX_ROWS_PER_CHANNEL = 12
 #: 单条证据文本上限，与 kb_search 保持一致
 MAX_EVIDENCE_CHARS = 1800
 
@@ -292,120 +289,70 @@ def mod_tiers(item_class: str, mod_query: str, source: str | None = None) -> Too
 # ── 工具 2：一条词缀能从哪些渠道获得 ──────────────────────────────
 
 @REGISTRY.register(
-    name="mod_sources",
+    name="stat_sources",
     description=(
-        "查某个属性/词缀**能从哪些渠道获得**（哪些底材类别、哪些来源机制、"
-        "哪些唯一装备）。问「XX 能从哪来 / 有哪些途径 / 怎么获得」时用它。\n"
-        "**返回里必带覆盖声明**：本知识库尚未采集的渠道（天赋树、星团珠宝天赋、"
-        "技能石、升华等）会被明确列出。回答这类「全面列举」问题时**必须**转述该声明，"
-        "否则会给出一份看起来完整、实际漏掉整个维度的清单。"
+        "查某个属性**能从哪些渠道获得**——装备词缀、唯一装备、天赋树节点、升华节点、"
+        "Atlas 天赋，逐个渠道分别列出。问「XX 能从哪来 / 有哪些途径 / 怎么获得 / "
+        "哪些装备或天赋给 XX」时用它。\n"
+        "**返回里必带 coverage_note**，写明哪些能提供属性的渠道尚未采集。回答这类"
+        "「全面列举」问题时**必须**转述它：不完整的枚举被当成完整的呈现，本身就是"
+        "错误答案。"
     ),
     parameters={
         "type": "object",
         "properties": {
             "stat_query": {
                 "type": "string",
-                "description": "属性或词缀关键词，如「药剂效果」「移动速度」「法术压制」",
+                "description": "属性关键词，如「药剂效果」「移动速度」「法术压制」。"
+                "用属性原文里的说法，不要用口语缩写",
             },
         },
         "required": ["stat_query"],
     },
 )
-def mod_sources(stat_query: str) -> ToolResult:
-    from kb import coverage as cov  # noqa: PLC0415  延迟导入避免循环
+def stat_sources(stat_query: str) -> ToolResult:
+    """遍历渠道注册表。
+
+    渠道清单不写在这里——见 `kb/stat_channels.py`。新增一个属性来源应当只是
+    「注册一个渠道」，不该再回来改这个工具；同理，未采集渠道的声明由
+    覆盖层派生，这里一个字都不手写。
+    """
+    from kb import stat_channels  # noqa: PLC0415  延迟导入避免循环
 
     conn = dbmod.get_conn()
     q = (stat_query or "").strip()
     if not q:
         return ToolResult(ok=False, error="stat_query 不能为空")
 
-    like = f"%{q}%"
+    res = stat_channels.scan_all(conn, q)
 
-    # ── 装备词缀渠道 ──
-    mod_rows = conn.execute(
-        "SELECT item_class_zh, category_label, gen_label, correct_group, "
-        "       count(*) n, min(tier) best_tier, max(tier_count) tiers, "
-        "       max(weight) max_weight, min(ilvl) min_ilvl, "
-        "       min(text_zh) sample_text, min(url) url "
-        "FROM mod_affix WHERE text_zh LIKE ? "
-        "GROUP BY item_class_zh, category_label, gen_label, correct_group "
-        "ORDER BY count(*) DESC",
-        (like,),
-    ).fetchall()
-
-    # ── 唯一装备渠道 ──
-    uniq_rows = conn.execute(
-        "SELECT name_zh, name_en, base_type, url, attributes FROM entity "
-        "WHERE entity_type='unique_item' AND attributes LIKE ?",
-        (like,),
-    ).fetchall()
-    uniques: list[tuple[str, str, str, str]] = []
-    for r in uniq_rows:
-        try:
-            mods = json.loads(r["attributes"] or "{}").get("mods", [])
-        except json.JSONDecodeError:
-            continue
-        hit = next((m["text"] for m in mods if q in m.get("text", "")), "")
-        if hit:
-            title = r["name_zh"] + (f"（{r['name_en']}）" if r["name_en"] else "")
-            uniques.append((title, r["base_type"] or "", hit, r["url"] or ""))
-
-    if not mod_rows and not uniques:
+    if not res.hits:
         return ToolResult(
             ok=True,
             data={
                 "found": False,
-                "reason": f"已采集的渠道里没有含「{q}」的词缀或唯一装备",
-                "coverage_note": _uncovered_note(cov, conn),
+                "reason": f"已采集的 {len(stat_channels.channels())} 个渠道里，"
+                          f"没有属性文本含「{q}」的条目",
+                "channels_searched": [c.label_zh for c in stat_channels.channels()],
+                "channels_no_match": res.no_match,
+                # 用词提示：库里存在相近说法时给出原文，避免把「用词不对」
+                # 当成「游戏里没这东西」
+                "wording_hint": res.wording_hint,
+                "coverage_note": res.coverage_note(),
             },
         )
 
     citations: list[dict[str, Any]] = []
-
-    if mod_rows:
-        lines = [f"### 装备词缀渠道：含「{q}」", ""]
-        lines.append("| 底材类别 | 来源 | 前后缀 | 词缀组 | 档数 | 最低物品等级 | 有权重 |")
-        lines.append("| --- | --- | --- | --- | --- | --- | --- |")
-        for r in mod_rows[:MAX_ROWS_PER_CHANNEL]:
-            lines.append(
-                f"| {r['item_class_zh'] or '?'} | {r['category_label'] or '?'} "
-                f"| {r['gen_label'] or '其他'} | {r['correct_group'] or '未分组'} "
-                f"| {r['n']} | {r['min_ilvl']} "
-                f"| {'是' if (r['max_weight'] or 0) else '**否**'} |"
-            )
-        if len(mod_rows) > MAX_ROWS_PER_CHANNEL:
-            lines.append("")
-            lines.append(
-                f"（共 {len(mod_rows)} 个渠道组合，此处列出前 {MAX_ROWS_PER_CHANNEL} 个；"
-                "用 mod_tiers 查具体某个类别的完整梯度）"
-            )
-        lines.append("")
-        lines.append(f"文本样例：{mod_rows[0]['sample_text']}")
-        lines.append(f"来源：POEDB {mod_rows[0]['url'] or ''}")
+    for hit in res.hits:
+        text = hit.text
+        if hit.caveat:
+            text += f"\n\n> {hit.caveat}。"
         citations.append(
             _citation(
-                cid=f"mod_sources:affix:{q}",
-                title=f"「{q}」的装备词缀渠道（{len(mod_rows)} 个组合）",
-                url=mod_rows[0]["url"] or "https://poedb.tw/cn/Modifiers",
-                text="\n".join(lines),
-            )
-        )
-
-    if uniques:
-        lines = [f"### 唯一装备渠道：含「{q}」", ""]
-        lines.append("| 装备 | 底材 | 词缀原文 |")
-        lines.append("| --- | --- | --- |")
-        for title, base, text, _u in uniques[:MAX_ROWS_PER_CHANNEL]:
-            lines.append(f"| {title} | {base} | {text} |")
-        if len(uniques) > MAX_ROWS_PER_CHANNEL:
-            lines.append("")
-            lines.append(f"（共 {len(uniques)} 件，此处列出前 {MAX_ROWS_PER_CHANNEL} 件）")
-        citations.append(
-            _citation(
-                cid=f"mod_sources:unique:{q}",
-                title=f"「{q}」的唯一装备渠道（{len(uniques)} 件）",
-                url=uniques[0][3] or "https://poedb.tw/cn/Unique_item",
-                text="\n".join(lines),
+                cid=f"stat_sources:{hit.key}:{q}",
+                title=hit.title,
+                url=hit.url,
+                text=text,
             )
         )
 
@@ -413,30 +360,20 @@ def mod_sources(stat_query: str) -> ToolResult:
         ok=True,
         data={
             "found": True,
-            "affix_channels": len(mod_rows),
-            "unique_items": len(uniques),
+            "channels_hit": [
+                {"key": h.key, "label": h.label_zh, "count": h.total} for h in res.hits
+            ],
+            # 已采集但本次零命中的渠道。与「该渠道未采集」是两件事，分开报；
+            # 且零命中**不等于**该渠道给不了这条属性（多为用词不一致）
+            "channels_no_match": res.no_match,
+            "channels_no_match_note": res.no_match_note(),
+            "wording_hint": res.wording_hint,
+            "total": res.total_hits,
             # 这条**必须**被转述：不列出未采集渠道，答案就是一份假装完整的清单
-            "coverage_note": _uncovered_note(cov, conn),
+            "coverage_note": res.coverage_note(),
         },
         citations=citations,
-        meta={"channel": "structured", "tables": ["mod_affix", "entity"]},
-    )
-
-
-def _uncovered_note(cov, conn: sqlite3.Connection) -> str:  # noqa: ANN001
-    """未采集渠道声明。
-
-    「一条词缀能从哪来」是**枚举类**问题，而不完整的枚举被当成完整的呈现，
-    本身就是错误答案。所以这条声明是 `mod_sources` 返回的必要组成部分，
-    不是可选的补充说明。
-    """
-    missing = [s for s in cov.load(conn) if not s.usable]
-    if not missing:
-        return "已声明的全部渠道均已采集。"
-    items = "；".join(f"{s.spec.display_zh}（{s.spec.authority_url}）" for s in missing)
-    return (
-        "以下渠道**本知识库尚未采集**，因此下面的清单在这些维度上必然不完整，"
-        f"回答时必须如实说明：{items}"
+        meta={"channel": "structured", "registry": "kb.stat_channels"},
     )
 
 

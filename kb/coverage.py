@@ -94,6 +94,16 @@ class DomainSpec:
     #: status=partial 时必须说明缺什么。
     partial_note: str = ""
     note: str = ""
+    #: 这个领域是否是**属性的独立来源**——即「某属性能从哪获得」的完整枚举必须
+    #: 覆盖它。
+    #:
+    #: 用途：`kb/stat_channels.py` 据此派生「哪些渠道尚未采集」的声明。以前那句
+    #: 声明是手写在工具描述里的（「天赋树、星团珠宝天赋、技能石、升华等」），
+    #: 天赋树入库当天它就变成了假话——这正是覆盖层要消灭的那类漂移。
+    #:
+    #: 只标**独立**来源：精华 / 化石 / 工艺台 / 隐匿 / 纠缠都是 `mod_affix` 的
+    #: 子渠道，标了会重复声明；市场价格、联盟机制、游戏常量不产出装备属性，不标。
+    provides_stats: bool = False
 
 
 #: ─────────────────────────────────────────────────────────────────
@@ -125,6 +135,7 @@ DOMAINS: tuple[DomainSpec, ...] = (
             "按效果描述反查是哪件唯一装备",
         ),
         poedb_pages=("Unique_item",),
+        provides_stats=True,
     ),
     DomainSpec(
         key="mod_affix",
@@ -134,7 +145,7 @@ DOMAINS: tuple[DomainSpec, ...] = (
         count_sql="SELECT count(*) FROM mod_affix",
         channel_sql="SELECT DISTINCT category_label FROM mod_affix WHERE category_label<>''",
         chunk_prefix="mod_ladder:",
-        tools=("mod_tiers", "mod_sources"),
+        tools=("mod_tiers", "stat_sources"),
         hints=("词缀", "前缀", "后缀", "T1", "T级", "词缀组", "互斥", "物品等级", "权重"),
         question_hints=(
             "某底材类别上某条词缀有几档、各档物品等级与权重",
@@ -142,6 +153,7 @@ DOMAINS: tuple[DomainSpec, ...] = (
             "两条词缀是否互斥",
         ),
         poedb_pages=("Modifiers",),
+        provides_stats=True,
     ),
     DomainSpec(
         key="pob_mod",
@@ -165,6 +177,7 @@ DOMAINS: tuple[DomainSpec, ...] = (
         hints=("底材", "基础物品", "白装底子"),
         question_hints=("某底材的基础属性、需求、隐式词缀",),
         poedb_pages=("Items",),
+        provides_stats=True,
     ),
     # ── 游戏基础 ──
     DomainSpec(
@@ -182,14 +195,33 @@ DOMAINS: tuple[DomainSpec, ...] = (
     ),
     DomainSpec(
         key="passive_tree",
-        display_zh="天赋树节点",
+        display_zh="天赋树节点（基石 / 核心 / 大师 / 普通）",
         category=Category.BASICS,
         authority_url=f"{POEDB_BASE}/passive-skill-tree",
         count_sql="SELECT count(*) FROM entity WHERE entity_type='passive'",
-        hints=("天赋", "天赋树", "天赋点", "被动", "点数"),
-        question_hints=("某个天赋节点给什么属性", "某属性能从哪些天赋获得"),
+        channel_sql=(
+            "SELECT DISTINCT json_extract(attributes,'$.node_kind_zh') "
+            "FROM entity WHERE entity_type='passive'"
+        ),
+        chunk_prefix="passive:",
+        tools=("stat_sources",),
+        hints=("天赋", "天赋树", "天赋点", "被动", "基石", "大师天赋", "点数"),
+        question_hints=(
+            "某个天赋节点给什么属性",
+            "某属性能从哪些天赋节点获得",
+            "某个大师天赋有哪些可选效果",
+        ),
         poedb_pages=("passive-skill-tree",),
         pob_files=("TreeData/{ver}/tree.lua",),
+        partial_note=(
+            "节点属性已入库；**天赋点消耗与连接关系未入库**，因此无法回答"
+            "「点到某节点要花几点」「从某处到某处怎么走」"
+        ),
+        note=(
+            "数据取自 POEDB 的天赋树 JSON 端点（页面本身是 JS 空壳，抓页面拿不到数据）；"
+            "升华节点单列 ascendancy 域"
+        ),
+        provides_stats=True,
     ),
     DomainSpec(
         key="cluster_jewel",
@@ -204,6 +236,7 @@ DOMAINS: tuple[DomainSpec, ...] = (
             "易误判：ModJewelCluster.lua 已入库，但那是星团珠宝**自身的词缀**，"
             "不是它能开出的天赋点定义（ClusterJewels.lua 未接）"
         ),
+        provides_stats=True,
     ),
     DomainSpec(
         key="skill_gem",
@@ -215,6 +248,7 @@ DOMAINS: tuple[DomainSpec, ...] = (
         question_hints=("某技能的数值与标签", "某效果由哪些技能提供"),
         poedb_pages=("Skill_Gems", "Transfigured_Gems", "Gem"),
         pob_files=("Data/Gems.lua", "Data/Skills/"),
+        provides_stats=True,
     ),
     DomainSpec(
         key="support_gem",
@@ -226,16 +260,28 @@ DOMAINS: tuple[DomainSpec, ...] = (
         question_hints=("某辅助宝石的加成与代价", "哪些辅助能提升某类伤害"),
         poedb_pages=("Support_Gems", "Exceptional"),
         pob_files=("Data/Gems.lua",),
+        provides_stats=True,
     ),
     DomainSpec(
         key="ascendancy",
-        display_zh="升华职业与升华节点",
+        display_zh="升华节点",
         category=Category.BASICS,
         authority_url=f"{POEDB_BASE}/Ascendancy_class",
         count_sql="SELECT count(*) FROM entity WHERE entity_type='ascendancy'",
+        channel_sql=(
+            "SELECT DISTINCT json_extract(attributes,'$.ascendancy_zh') "
+            "FROM entity WHERE entity_type='ascendancy'"
+        ),
+        chunk_prefix="ascendancy:",
+        tools=("stat_sources",),
         hints=("升华", "升华节点", "职业", "守望者", "刺客"),
         question_hints=("某升华节点的效果", "某效果由哪个升华提供"),
         poedb_pages=("Ascendancy", "Ascendancy_class", "Bloodline_Ascendancy_class"),
+        partial_note=(
+            "升华**节点效果**已入库（随天赋树 JSON 一起）；"
+            "升华试炼流程、升华点数获取、职业总览未采集"
+        ),
+        provides_stats=True,
     ),
     DomainSpec(
         key="pantheon",
@@ -247,6 +293,7 @@ DOMAINS: tuple[DomainSpec, ...] = (
         question_hints=("某万神殿加成的效果",),
         poedb_pages=("Pantheon",),
         pob_files=("Data/Pantheons.lua",),
+        provides_stats=True,
     ),
     # ── 制作系统 ──
     DomainSpec(
@@ -255,7 +302,7 @@ DOMAINS: tuple[DomainSpec, ...] = (
         category=Category.CRAFTING,
         authority_url=f"{POEDB_BASE}/Essence",
         count_sql="SELECT count(*) FROM mod_affix WHERE category='essence'",
-        tools=("mod_sources",),
+        tools=("stat_sources",),
         hints=("精华", "精华词缀"),
         question_hints=("某精华赋予什么词缀", "某词缀由哪个精华赋予"),
         poedb_pages=("Essence",),
@@ -267,7 +314,7 @@ DOMAINS: tuple[DomainSpec, ...] = (
         category=Category.CRAFTING,
         authority_url=f"{POEDB_BASE}/Modifiers",
         count_sql="SELECT count(*) FROM mod_affix WHERE category='delve'",
-        tools=("mod_sources",),
+        tools=("stat_sources",),
         hints=("化石", "共鸣器", "地心探索"),
         question_hints=("化石能出什么词缀",),
         partial_note="化石**词缀池**已入库；化石对权重的乘数与共鸣器组合规则未采集",
@@ -278,7 +325,7 @@ DOMAINS: tuple[DomainSpec, ...] = (
         category=Category.CRAFTING,
         authority_url=f"{POEDB_BASE}/Crafting_Bench",
         count_sql="SELECT count(*) FROM mod_affix WHERE category='master'",
-        tools=("mod_sources",),
+        tools=("stat_sources",),
         hints=("工艺台", "工艺工作台", "改造台", "手工"),
         question_hints=("工艺台能做什么词缀",),
         poedb_pages=("Crafting_Bench",),
@@ -303,7 +350,7 @@ DOMAINS: tuple[DomainSpec, ...] = (
         category=Category.CRAFTING,
         authority_url=f"{POEDB_BASE}/Betrayal",
         count_sql="SELECT count(*) FROM mod_affix WHERE category='veiled'",
-        tools=("mod_sources",),
+        tools=("stat_sources",),
         hints=("辛迪加", "隐匿", "隐匿词缀", "情报网", "尤金"),
         question_hints=("隐匿词缀有哪些", "某条隐匿词缀怎么解锁"),
         poedb_pages=("Betrayal",),
@@ -315,7 +362,7 @@ DOMAINS: tuple[DomainSpec, ...] = (
         category=Category.CRAFTING,
         authority_url=f"{POEDB_BASE}/Modifiers",
         count_sql="SELECT count(*) FROM mod_affix WHERE category='haunted'",
-        tools=("mod_sources",),
+        tools=("stat_sources",),
         hints=("纠缠", "纠缠词缀", "亡者之城", "墓地", "尸体"),
         question_hints=("纠缠词缀有哪些", "某条纠缠词缀在哪个部位可用"),
         partial_note="纠缠**词缀**已入库；尸体种类、墓地布局与调度规则未采集",
@@ -350,13 +397,22 @@ DOMAINS: tuple[DomainSpec, ...] = (
     ),
     DomainSpec(
         key="atlas_passive",
-        display_zh="Atlas 天赋",
+        display_zh="Atlas 天赋（异界图鉴天赋树）",
         category=Category.ATLAS,
         authority_url=f"{POEDB_BASE}/atlas-skill-tree",
-        count_sql=None,
-        hints=("异界天赋", "atlas天赋", "图鉴天赋"),
-        question_hints=("某异界天赋的效果",),
+        count_sql="SELECT count(*) FROM entity WHERE entity_type='atlas_passive'",
+        channel_sql=(
+            "SELECT DISTINCT json_extract(attributes,'$.node_kind_zh') "
+            "FROM entity WHERE entity_type='atlas_passive'"
+        ),
+        chunk_prefix="atlas_passive:",
+        tools=("stat_sources",),
+        hints=("异界天赋", "atlas天赋", "图鉴天赋", "异界图鉴天赋"),
+        question_hints=("某异界天赋的效果", "某地图产出效果由哪些异界天赋提供"),
         poedb_pages=("atlas-skill-tree",),
+        partial_note="节点属性已入库；天赋点消耗与连接关系未入库",
+        note="作用于**地图产出**而非角色属性，回答时不要与角色天赋树混为一谈",
+        provides_stats=True,
     ),
     DomainSpec(
         key="boss",

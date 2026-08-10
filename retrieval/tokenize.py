@@ -34,8 +34,29 @@ STOPWORDS = frozenset(
     """.split()
 )
 
+#: 疑问数量构式：`几` / `多少` 加一个可选量词。
+#:
+#: 为什么用构式而不是往 STOPWORDS 里继续加词：这类组合是开放的
+#: （几级 / 几档 / 几条 / 几个 / 几点 / 几种 / 多少条 …），枚举补不完，
+#: 而漏一个的代价是实打实的——实测「爪的攻击速度后缀有几级」被 jieba 切出
+#: `几级`，它在任何知识卡里都不存在，于是既永久压低覆盖率，又在 missing_terms
+#: 里冒充「知识库缺几级」。这与 `orchestrator/binding.py` 把缺据声明的识别
+#: 从词表改成构式匹配是同一个教训。
+#:
+#: 刻意只覆盖**纯疑问数量**：`几率` 不匹配（量词表里没有「率」），
+#: 因为「几率」是实义词而且是词缀原文里的高频词。
+_INTERROGATIVE_QTY_RE = re.compile(r"^(?:几|多少)(?:个|条|级|档|点|种|件|张|次|层|阶|颗|把|支|页)?$")
+
 _PUNCT_RE = re.compile(r"[0-9%+\-()（）\[\]{},.:：、。；;“”\"'’!！?？…—–~/\\|*&^$#@]+")
 _MEANINGFUL_RE = re.compile(r"[\u4e00-\u9fff]|[A-Za-z]{2,}")
+
+
+def is_stopword(token: str) -> bool:
+    """整词停用判定：显式词表 ∪ 疑问数量构式。
+
+    所有过滤点都走这一个函数，避免「查询侧过滤了、索引侧没过滤」这类分叉。
+    """
+    return token in STOPWORDS or bool(_INTERROGATIVE_QTY_RE.match(token))
 
 
 def _ensure_jieba():
@@ -85,7 +106,7 @@ def content_words(texts: list[str], extra: list[str] | None = None) -> list[str]
     for text in texts:
         cleaned = _PUNCT_RE.sub(" ", text)
         for token in segment(cleaned):
-            if len(token) < 2 or token in STOPWORDS:
+            if len(token) < 2 or is_stopword(token):
                 continue
             if not _MEANINGFUL_RE.search(token):
                 continue
@@ -143,7 +164,7 @@ def query_tokens(query: str) -> str:
     from retrieval import vocab  # noqa: PLC0415
 
     domain = vocab.scan_terms(query)
-    parts = [t for t in segment(query) if len(t) >= 1 and t not in STOPWORDS and not t.isspace()]
+    parts = [t for t in segment(query) if len(t) >= 1 and not is_stopword(t) and not t.isspace()]
     parts = _drop_glued(parts, domain)
 
     exprs: list[str] = []

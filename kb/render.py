@@ -27,6 +27,8 @@ _KIND_LABEL = {
     ModKind.SYNTHESISED: "合成隐式",
     ModKind.ENCHANT: "附魔",
     ModKind.CRAFTED: "工艺台词缀",
+    ModKind.PASSIVE: "天赋属性",
+    ModKind.MASTERY: "大师天赋（选一）",
     ModKind.DESCRIPTION: "说明",
 }
 

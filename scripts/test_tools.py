@@ -80,27 +80,57 @@ def main() -> int:
     if not warned:
         problems.append("存在无权重来源却没有任何置信度告警——会被误当成概率可算")
 
-    # ── 4. mod_sources：枚举类查询必须带覆盖声明 ──
-    print("\n[4] mod_sources：药剂效果（场景 B）")
-    r = call("mod_sources", stat_query="药剂效果")
-    print(f"    ok={r.ok} 词缀渠道={r.data.get('affix_channels')} "
-          f"唯一装备={r.data.get('unique_items')}")
+    # ── 4. stat_sources：多渠道枚举必须逐渠道列出 + 带覆盖声明 ──
+    print("\n[4] stat_sources：药剂效果（场景 B）")
+    r = call("stat_sources", stat_query="药剂效果")
+    hit = r.data.get("channels_hit") or []
+    print(f"    ok={r.ok} 命中 {len(hit)} 个渠道，共 {r.data.get('total')} 条")
+    for h in hit:
+        print(f"      - {h['label']:10s} {h['count']:>4} 条")
+    # 场景 B 的要点是**跨渠道**：只答装备而漏掉天赋，等于漏了玩家点名要的一个维度
+    labels = {h["key"] for h in hit}
+    for need in ("equipment_mod", "unique_item", "passive"):
+        if need not in labels:
+            problems.append(f"stat_sources(药剂效果) 未覆盖渠道 {need}——跨渠道枚举不完整")
     note = r.data.get("coverage_note") or ""
     print(f"    覆盖声明长度 {len(note)}，含「未采集」：{'未采集' in note}")
-    print(f"      {note[:220]}…")
+    print(f"      {note[:200]}…")
     if "未采集" not in note:
-        problems.append("mod_sources 未携带未采集渠道声明——枚举会假装完整")
+        problems.append("stat_sources 未携带未采集渠道声明——枚举会假装完整")
+    # 覆盖声明只该列**属性来源**类的未采集领域，不该把市场价格、联盟机制也塞进来
+    for irrelevant in ("市场价格", "联盟机制", "游戏常量"):
+        if irrelevant in note:
+            problems.append(f"覆盖声明混入了非属性来源领域「{irrelevant}」，会稀释真正的缺口")
     for c in r.citations:
         print(f"    证据：{c['title']}")
-    if not r.citations:
-        problems.append("mod_sources(药剂效果) 没有返回证据")
+    if len(r.citations) != len(hit):
+        problems.append("命中渠道数与证据条数不一致——有渠道命中了却没给证据")
 
-    # ── 5. 未采集领域的关键词不应被 mod_sources 假装答上 ──
-    print("\n[5] mod_sources：一个只存在于天赋树的说法")
-    r = call("mod_sources", stat_query="这个词缀纯属虚构")
+    # ── 5. 虚构属性不得被命中 ──
+    print("\n[5] stat_sources：虚构属性")
+    r = call("stat_sources", stat_query="这个词缀纯属虚构")
     print(f"    found={r.data.get('found')}  reason={r.data.get('reason')}")
+    print(f"    用词提示：{r.data.get('wording_hint') or '（无，正确——不该给不相干的建议）'}")
     if r.data.get("found"):
-        problems.append("虚构词缀被 mod_sources 命中")
+        problems.append("虚构词缀被 stat_sources 命中")
+    if r.data.get("wording_hint"):
+        problems.append("虚构查询不应给出用词提示——那会把编造的问题导向不相干的词缀")
+
+    # ── 5b. 社区简称：零命中不得被读成「该渠道给不了」 ──
+    print("\n[5b] stat_sources：社区简称「法术压制」（游戏原文为「法术伤害压制率」）")
+    r = call("stat_sources", stat_query="法术压制")
+    nm = r.data.get("channels_no_match") or []
+    hint = r.data.get("wording_hint") or ""
+    print(f"    零命中渠道：{nm}")
+    print(f"    用词提示：{hint[:150]}")
+    if "装备词缀" in nm and not hint:
+        problems.append(
+            "装备词缀渠道零命中却没有用词提示——模型会据此断言装备给不了该属性"
+        )
+    if hint and "压制" not in hint:
+        problems.append("用词提示没指向有区分度的子词（应为「压制」而非「法术」）")
+    if not (r.data.get("channels_no_match_note") or ""):
+        problems.append("零命中未附说明——「没命中」会被读成「给不了」")
 
     # ── 6. kb_coverage ──
     print("\n[6] kb_coverage")

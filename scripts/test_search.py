@@ -45,11 +45,33 @@ CASES: list[tuple[str, str | None, str]] = [
     ("无尽之衣", "Tabula_Rasa", "L2 补集·索引页没有但类别页有"),
     ("神行靴", "Seven-League_Step", "专名·中文（曾被误记为缺失项）"),
     ("真知灼见", "Anatomical_Knowledge", "L2 补集·唯一珠宝（索引页对珠宝覆盖不全）"),
+    # ── 天赋树 / 升华 / Atlas 天赋 ──
+    # 期望值写成 `类型:slug*` 形式：天赋实体 id 末尾带内容哈希
+    # （同名节点按内容分成多个实体，见 kb/sources/poedb_tree.py），
+    # 写死哈希会在数据更新时变成假失败，所以按前缀断言。
+    # 断言到**类型**这一层是有意义的：查基石不该命中同名的唯一装备，
+    # 查 Atlas 天赋不该命中角色天赋树——实测 29 个天赋名与唯一装备重名。
+    ("神威之盾", "passive:Divine_Shield_*", "天赋树·基石专名"),
+    ("元素专精有哪些可选效果", "passive:Elemental_Mastery_*", "天赋树·大师天赋（效果选一）"),
+    ("结合尖塔", "ascendancy:Conjoined_Spire_*", "升华节点专名（独立于 passive 域）"),
+    ("精炼师的交易", "atlas_passive:Refiner_s_Bargain_*", "Atlas 天赋专名（不得混入角色天赋树）"),
     # ── 知识库确定不覆盖：必须拒答，不得编造 ──
     ("玄虚之靴有什么属性", REFUSE, "POEDB 无此名称·必须拒答（真名为神行靴）"),
     ("流放之路2 的升华机制是什么", REFUSE, "越界·POE2"),
     ("辛迪加情报网怎么运作", REFUSE, "越界·制作系统（V1 只采了唯一装备）"),
     ("今天上海天气怎么样", REFUSE, "越界·非 POE 问题"),
+    # 编造的天赋名：天赋树已采集，所以这里考的是「已采集领域里的不存在条目」
+    # 也必须拒答，而不是拿一个名字相近的节点顶上。
+    #
+    # 选名时避开了与既有实体名的**子串**重叠。原先用的是「虚空壁垒」，结果被
+    # 唯一装备「虚空」（Null and Void）子串命中别名表 → `exact_hit` 直接判充分依据，
+    # 覆盖率只有 25% 也照样漏出。那考的是别名子串匹配的边界，不是天赋树，
+    # 换成不撞名的以免一条用例同时测两件事。
+    #
+    # 别名子串匹配的这个边界是**已知未修项**：它存在是为了让「猎首这件装备有什么词缀」
+    # 这类带上下文的专名查询能命中（需求 3.5），代价是查询里偶然包含某个实体名时
+    # 会被当成强证据。收紧它要同时保住带上下文的专名查询，风险不小，留作单独课题。
+    ("霜锻穹顶这个基石给什么属性", REFUSE, "天赋树里没有这个名字·必须拒答"),
 ]
 
 
@@ -87,7 +109,18 @@ def main() -> int:
         )
 
         top = r.hits[0] if r.hits else None
-        top_ent = (top.entity_id or "").split(":")[-1] if top else "-"
+        full_id = (top.entity_id or "") if top else ""
+        top_ent = full_id.split(":")[-1] if top else "-"
+
+        def _matches(exp: str) -> bool:
+            """期望值两种写法：
+            `slug`            —— 只比末段（唯一装备等 id 稳定的类型沿用旧写法）
+            `类型:slug*`      —— 比完整 entity_id 的前缀，并顺带断言实体类型。
+                                 天赋类实体的 id 末尾带内容哈希，只能按前缀比。
+            """
+            if ":" in exp:
+                return full_id.startswith(exp.rstrip("*"))
+            return top_ent == exp
 
         if expect == REFUSE:
             ok = not r.sufficient
@@ -98,12 +131,12 @@ def main() -> int:
             verdict = f"有命中 top={top_ent}" if ok else "无命中（错误拒答）"
             wrong_refusals += not ok
         else:
-            ok = r.sufficient and top_ent == expect
+            ok = r.sufficient and _matches(expect)
             if not r.sufficient:
                 verdict = f"**错误拒答**（应命中 {expect}）"
                 wrong_refusals += 1
             else:
-                verdict = f"top={top_ent}" + ("" if ok else f"（期望 {expect}）")
+                verdict = f"top={full_id or top_ent}" + ("" if ok else f"（期望 {expect}）")
 
         passed += ok
         failed += not ok

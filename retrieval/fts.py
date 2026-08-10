@@ -67,6 +67,53 @@ def term_coverage(query_terms: list[str], haystack: str) -> tuple[float, list[st
     return len(matched) / len(query_terms), matched, missing
 
 
+def absent_from_corpus(conn: sqlite3.Connection, terms: list[str]) -> list[str]:
+    """筛出**整个索引里一条切片都不包含**的词。
+
+    ## 为什么需要它
+
+    `term_coverage` 给每个查询词等权，于是一个查询可以只靠通用词过线，而**没被
+    覆盖的恰好是主体词**。实测两例（都是必须拒答却漏出的）：
+
+      - 「玄虚之靴有什么属性」：`之靴`、`属性` 命中，未覆盖的是 `玄虚` ——
+        而 `玄虚之靴` 这个名字 POEDB 上根本不存在（真名神行靴）。
+      - 「流放之路2 的升华机制是什么」：`升华`、`机制` 命中，未覆盖的是
+        `流放之路2` ——那正是「这问的是另一款游戏」的唯一标志。
+
+    两例的共同点：漏掉的词在**全库里都不存在**。一个词全库都没有，答案就不可能
+    在库里，此时无论其余通用词覆盖到多少都不构成依据。这是「无据不答」的直接推论。
+
+    ## 判据只取「全库为零」这一档
+
+    刻意不做 IDF 或稀有度加权：那会改变整条判据的语义，可能把「已采集但这次没
+    召回」也判成拒答，而那两类的正确处理方式完全不同（见 `kb.coverage.attribute_gap`）。
+    「全库为零」是无歧义的——它只可能意味着没采集或问的不是这个领域。
+
+    与 `term_coverage` 保持同一套匹配语义（子串包含），不用 FTS 的 MATCH：
+    两套判据若分叉，会出现「覆盖率说命中了、存在性说不存在」的自相矛盾。
+    """
+    if not terms:
+        return []
+    absent: list[str] = []
+    for t in terms:
+        if not t.strip():
+            continue
+        row = conn.execute(
+            "SELECT 1 FROM chunk WHERE instr(text, ?) > 0 LIMIT 1", (t,)
+        ).fetchone()
+        if row is not None:
+            continue
+        # keywords 列也算语料的一部分（`search_fts` 的 haystack 含它），
+        # 漏查会把「只在 keywords 里出现的词」误判为不存在 → 错误拒答。
+        # 这一步只在词已经不在任何正文里时才执行，代价可忽略。
+        row = conn.execute(
+            "SELECT 1 FROM chunk_fts WHERE instr(keywords, ?) > 0 LIMIT 1", (t,)
+        ).fetchone()
+        if row is None:
+            absent.append(t)
+    return absent
+
+
 def index_chunks(conn: sqlite3.Connection, chunks: list[Chunk]) -> int:
     """写入 chunk 与 FTS 索引。同 chunk_id 覆盖，可重复执行。"""
     written = 0

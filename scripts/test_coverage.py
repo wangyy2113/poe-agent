@@ -26,31 +26,34 @@ from kb import coverage as cov  # noqa: E402
 
 class Case(NamedTuple):
     question: str
-    #: 期望归因：not_collected / not_recalled / unknown
-    expect_kind: str
-    #: 期望命中的领域 key（None 表示不校验具体领域）
+    #: 期望命中的领域 key。None 表示期望归因为 unknown（不属任何已声明领域）。
     expect_domain: str | None
     note: str
 
 
+#: 归因用例。
+#:
+#: **期望的归因种类不写死，由覆盖层实测状态推导**：命中的领域可用即应为
+#: not_recalled（是检索用词问题），不可用即应为 not_collected（该去采集）。
+#:
+#: 为什么这么写：早先每条用例都硬编码 `expect_kind`，于是「天赋树上哪些节点给
+#: 药剂效果 → not_collected」在天赋树入库当天变成了假断言，测试报红但代码是对的。
+#: 一旦把「哪些领域已采集」抄进测试，它就成了覆盖状态的第二个真源，必然与探测
+#: 结果漂移——这正是 `kb/coverage.py` 用 inventory/status 分离要避免的问题，
+#: 测试自己不能再犯一遍。
+#:
+#: 这里检验的不变量是**路由正确性**：问题该落到哪个领域、以及归因种类是否与该
+#: 领域的真实可用性一致。至于某个领域该不该已采集，那是覆盖清单的事，不是这里。
 CASES = [
-    # ── 未采集：必须说「没采集」并指路，而不是「检索没命中」 ──
-    Case("天赋树上哪些节点给药剂效果", "not_collected", "passive_tree",
-         "天赋树未采集"),
-    Case("星团珠宝能开出哪些大点", "not_collected", "cluster_jewel",
-         "星团珠宝天赋定义未采集"),
-    Case("暴击辅助宝石有哪些", "not_collected", "support_gem", "辅助宝石未采集"),
-    Case("猎首现在多少钱", "not_collected", "economy_price", "经济源未接入"),
-    Case("稀有装备最多能有几个前缀", "not_collected", "craft_rule",
-         "制作规则常量未采集——可行性判定的前置"),
-    Case("守望者升华节点有什么", "not_collected", "ascendancy", "升华未采集"),
-    # ── 已采集：查不到应归因为召回问题，不该派给采集 ──
-    Case("某个我编造出来的词缀叫什么名字", "not_recalled", "mod_affix",
-         "词缀已采集，查不到是召回问题"),
-    Case("某件不存在的唯一装备属性", "not_recalled", "unique_item",
-         "唯一装备已采集"),
-    # ── 无法归因 ──
-    Case("今天上海天气怎么样", "unknown", None, "完全不属任何领域"),
+    Case("天赋树上哪些节点给药剂效果", "passive_tree", "天赋树类问题"),
+    Case("星团珠宝能开出哪些大点", "cluster_jewel", "星团珠宝天赋定义"),
+    Case("暴击辅助宝石有哪些", "support_gem", "辅助宝石"),
+    Case("猎首现在多少钱", "economy_price", "经济源"),
+    Case("稀有装备最多能有几个前缀", "craft_rule", "制作规则常量——可行性判定的前置"),
+    Case("守望者升华节点有什么", "ascendancy", "升华"),
+    Case("某个我编造出来的词缀叫什么名字", "mod_affix", "词缀"),
+    Case("某件不存在的唯一装备属性", "unique_item", "唯一装备"),
+    Case("今天上海天气怎么样", None, "完全不属任何领域"),
 ]
 
 
@@ -97,9 +100,22 @@ def main() -> int:
         print(f"      - {n}")
 
     # ── 3. 缺据归因 ──
-    print("\n[3] 缺据归因")
+    print("\n[3] 缺据归因（期望种类由覆盖层实测状态推导，不写死）")
+    by_key = {s.key: s for s in rows}
     passed = failed = 0
-    for q, expect_kind, expect_domain, note in CASES:
+    for q, expect_domain, note in CASES:
+        # 期望种类 = 该领域此刻是否可用。领域不存在于清单里则期望 unknown。
+        if expect_domain is None:
+            expect_kind = "unknown"
+            state = "不属任何领域"
+        else:
+            dom = by_key.get(expect_domain)
+            if dom is None:
+                problems.append(f"用例引用了未声明的领域 {expect_domain}")
+                continue
+            expect_kind = "not_recalled" if dom.usable else "not_collected"
+            state = f"{expect_domain}={dom.status}"
+
         attr = cov.attribute_gap(conn, q)
         kind = attr.kind
         hit_keys = [d.key for d in attr.missing_domains + attr.covered_domains]
@@ -108,10 +124,10 @@ def main() -> int:
         failed += not ok
         print(f"\n    [{'PASS' if ok else 'FAIL'}] {note}")
         print(f"      问题 : {q}")
-        print(f"      归因 : {kind}（期望 {expect_kind}）  命中域={hit_keys}")
+        print(f"      归因 : {kind}（按实测 {state} 应为 {expect_kind}）  命中域={hit_keys}")
         if not ok:
-            problems.append(f"归因错误：{q} → {kind}，期望 {expect_kind}/{expect_domain}")
-        if kind == "not_collected":
+            problems.append(f"归因错误：{q} → {kind}，按实测 {state} 应为 {expect_kind}")
+        if kind == "not_collected" and attr.missing_domains:
             print(f"      指路 : {attr.missing_domains[0].spec.authority_url}")
 
     # ── 4. 工具入口 ──

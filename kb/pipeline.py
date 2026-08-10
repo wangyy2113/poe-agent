@@ -27,9 +27,10 @@ from entities.models import Entity, ModLine, Requirement, SourceRef, ValueRange
 from entities.taxonomy import EntityType, ModKind
 from kb import coverage as coverage_mod
 from kb.fetcher import Fetcher
+from kb import render_tree
 from kb.render import to_chunks
 from kb.render_mods import build_mod_chunks
-from kb.sources import poedb_index, poedb_mods, poedb_unique
+from kb.sources import poedb_index, poedb_mods, poedb_tree, poedb_unique
 from retrieval import alias as alias_mod
 from retrieval import fts as fts_mod
 from retrieval import vocab as vocab_mod
@@ -725,6 +726,112 @@ def run_poedb_mods(*, force: bool = False, rebuild: bool = False) -> int:
     return 1 if pages_failed else 0
 
 
+def run_passive_tree(*, force: bool = False, targets: list[str] | None = None) -> int:
+    """采集天赋树与 Atlas 天赋树。
+
+    **每次全量重建**，不做增量。两个原因：
+      1. 实体只有两千级，全量重建比增量对账便宜得多；
+      2. `entity_id` 里带内容哈希（同名节点按内容分成多个实体，见
+         `poedb_tree` 的模块说明），内容一变就是新 id，旧 id 不会被 UPSERT
+         覆盖，只会以孤儿身份留在索引里继续被检索命中。按前缀清干净是唯一
+         可靠的做法——这与词缀梯度卡踩过的坑是同一个。
+    """
+    cfg = get_config()
+    conn = dbmod.init_db(cfg.db_path, vector_dim=int(cfg.get("retrieval.vector.dim", 0) or 0))
+    started = time.time()
+    cur = conn.execute(
+        "INSERT INTO ingest_run(source, category, started_at) VALUES (?,?,datetime('now'))",
+        ("POEDB", "passive_tree"),
+    )
+    run_id = cur.lastrowid
+
+    fetcher = Fetcher(
+        cache_dir=cfg.cache_dir,
+        user_agent=str(cfg.get("crawl.user_agent")),
+        requests_per_second=float(cfg.get("crawl.requests_per_second", 0.5)),
+        timeout=float(cfg.get("crawl.timeout_seconds", 60)),
+        cache_ttl_hours=int(cfg.get("crawl.cache_ttl_hours", 24)),
+    )
+
+    wanted = targets or [poedb_tree.TARGET_PASSIVE, poedb_tree.TARGET_ATLAS]
+    note: dict = {"trees": {}}
+    total_entities = total_indexed = total_alias = 0
+
+    for target in wanted:
+        version = poedb_tree.discover_version(fetcher, target, force=force)
+        ep_zh = poedb_tree.TreeEndpoint(target, version, poedb_tree.LANG_ZH)
+        ep_en = poedb_tree.TreeEndpoint(target, version, poedb_tree.LANG_EN)
+
+        payload_zh = poedb_tree.fetch_payload(fetcher, ep_zh, force=force)
+        # 英文名取不到不阻塞采集：中文名才是必需的，英文名缺了只是英文检索差一点。
+        # 但缺多少必须可见，不能静默。
+        try:
+            payload_en = poedb_tree.fetch_payload(fetcher, ep_en, force=force)
+        except poedb_tree.TreeStructureError as exc:
+            logger.warning("%s 英文版取不到（%s），本轮 name_en 将为空", target, exc)
+            payload_en = None
+
+        nodes, st = poedb_tree.extract(payload_zh, payload_en, ep_zh)
+        entities = [poedb_tree.node_to_entity(n, ep_zh) for n in nodes]
+        logger.info(
+            "%s v%s：节点 %d（带内容 %d / %.0f%%），合并为 %d 个实体 %s；缺英文名 %d",
+            target, version, st.total_nodes, st.with_content, st.content_ratio * 100,
+            st.merged, st.by_kind, st.missing_en,
+        )
+
+        # 一棵树可能产出多种实体类型（天赋树里的升华节点独立成域），
+        # 必须把每一种的前缀都清掉——漏一种就留下孤儿卡片继续被检索命中
+        for etype in ep_zh.entity_types:
+            fts_mod.clear_index(conn, entity_prefix=f"{etype.value}:")
+            alias_mod.clear_aliases(conn, entity_prefix=f"{etype.value}:")
+            conn.execute("DELETE FROM entity WHERE entity_type=?", (etype.value,))
+
+        for e in entities:
+            e.content_hash = _entity_hash(e)
+            _upsert_entity(conn, e)
+        vocab_mod.build_vocab(conn)
+
+        indexed = 0
+        for e in entities:
+            indexed += fts_mod.index_chunks(conn, render_tree.to_chunks(e))
+
+        # 别名只收有专名的节点。普通天赋的名字就是它给的属性（「火焰伤害」「生命」），
+        # 入表会让装备词缀类问题被强行注入天赋卡——见 poedb_tree.NAMED_KINDS。
+        aliasable = poedb_tree.aliasable_entities(entities)
+        n_alias = alias_mod.index_aliases(conn, aliasable)
+
+        total_entities += len(entities)
+        total_indexed += indexed
+        total_alias += n_alias
+        note["trees"][target] = {
+            "version": version,
+            "nodes": st.total_nodes,
+            "with_content": st.with_content,
+            "entities": len(entities),
+            "by_kind": st.by_kind,
+            "chunks": indexed,
+            "aliased": len(aliasable),
+            "missing_en": st.missing_en,
+            "skipped_empty": st.skipped_empty,
+        }
+        logger.info(
+            "%s 入库：实体 %d，卡片 %d，别名实体 %d/%d（只收有专名的种类）",
+            target, len(entities), indexed, len(aliasable), len(entities),
+        )
+
+    elapsed_ms = int((time.time() - started) * 1000)
+    conn.execute(
+        "UPDATE ingest_run SET finished_at=datetime('now'), total=?, succeeded=?, "
+        "failed=0, skipped=0, elapsed_ms=?, note=? WHERE run_id=?",
+        (total_entities, total_entities, elapsed_ms,
+         json.dumps(note, ensure_ascii=False), run_id),
+    )
+    conn.commit()
+    logger.info("天赋树采集完成：实体 %d，卡片 %d，别名 %d 条，耗时 %dms",
+                total_entities, total_indexed, total_alias, elapsed_ms)
+    return 0
+
+
 def run_coverage() -> int:
     """探测并刷新覆盖声明。
 
@@ -754,9 +861,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--source", default="poedb", choices=["poedb"])
     ap.add_argument(
         "--category", default="unique_item",
-        choices=["unique_item", "unique_l2", "mods", "coverage", "all"],
+        choices=["unique_item", "unique_l2", "mods", "tree", "coverage", "all"],
         help="unique_item=唯一装备索引页, unique_l2=类别页补集+权威英文名+详情页兜底, "
-             "mods=词缀, coverage=只刷新覆盖声明, all=全部",
+             "mods=词缀, tree=天赋树与 Atlas 天赋树, coverage=只刷新覆盖声明, all=全部",
     )
     ap.add_argument("--harvest", action="store_true",
                     help="只抓取索引页与词缀类别页到本地缓存，不抽取")
@@ -782,6 +889,8 @@ def main(argv: list[str] | None = None) -> int:
             rc |= run_unique_l2(force=args.force)
         if args.category in ("mods", "all"):
             rc |= run_poedb_mods(force=args.force, rebuild=args.rebuild)
+        if args.category in ("tree", "all"):
+            rc |= run_passive_tree(force=args.force)
         # 覆盖声明总是最后刷新：它的每个数字都来自库里的实际行数，
         # 任何一次采集之后不刷新，它就开始说假话。
         rc |= run_coverage()
@@ -791,6 +900,9 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     except poedb_mods.ModStructureError as exc:
         logger.error("词缀结构断言失败，已拒绝写入：%s", exc)
+        return 2
+    except poedb_tree.TreeStructureError as exc:
+        logger.error("天赋树结构断言失败，已拒绝写入：%s", exc)
         return 2
     finally:
         dbmod.close_db()

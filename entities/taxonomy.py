@@ -74,6 +74,10 @@ class EntityType(StrEnum):
     SUPPORT_GEM = "support_gem"
     PASSIVE = "passive"
     ASCENDANCY = "ascendancy"
+    #: Atlas（异界图鉴）天赋树节点。与 PASSIVE 分开是因为两者是**不同的树**，
+    #: 作用域也不同（角色属性 vs 地图产出），混在一起会让「哪些天赋给某属性」
+    #: 把地图产出词条也算进角色属性里。
+    ATLAS_PASSIVE = "atlas_passive"
     BOSS = "boss"
     MAP = "map"
     CURRENCY = "currency"
@@ -89,6 +93,14 @@ class ModKind(StrEnum):
     SYNTHESISED = "synthesised"
     ENCHANT = "enchant"
     CRAFTED = "crafted"
+    #: 天赋节点提供的属性。点了就一直生效。
+    #: 不复用 EXPLICIT：那会让「装备上的显式词缀」查询把天赋条目也算进来。
+    PASSIVE = "passive"
+    #: 大师天赋（Mastery）的**可选**效果。一个大师节点列出多个效果，
+    #: 点它时**只能选其中一个**。与 PASSIVE 分开是为了把「选一」这件事
+    #: 固化在类型上而不是只写在卡片文案里——一旦只靠文案，
+    #: 任何遍历 mods 的代码都会把六个互斥效果当成同时生效的六条属性。
+    MASTERY = "mastery"
     # POEDB 的 explicitMod 里可能只含 span.item_description，
     # 那是括号说明文本而非真实词条，单独归类以免被当作事实词缀。
     DESCRIPTION = "description"
