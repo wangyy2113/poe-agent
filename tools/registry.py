@@ -84,6 +84,10 @@ class ToolRegistry:
     def names(self) -> list[str]:
         return sorted(self._tools)
 
+    def spec(self, name: str) -> ToolSpec | None:
+        """取工具定义。供运行时按库内实际状态修正 schema（如枚举值）使用。"""
+        return self._tools.get(name)
+
     def schemas(self, allow: list[str] | None = None) -> list[dict[str, Any]]:
         """导出给 LLM 的 tools 参数。`allow` 限定 Agent 的可用工具集。"""
         names = allow if allow is not None else self.names()

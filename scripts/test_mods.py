@@ -129,7 +129,10 @@ def show_page(fetcher: Fetcher, slug: str, verbose: bool) -> tuple[int, int, int
             print(f"  异组（应不互斥）: {same[0].name_zh} vs {diff[0].name_zh} -> "
                   f"{poedb_mods.are_exclusive(same[0], diff[0])}")
 
-    return stats.succeeded, stats.failed
+    # 与非 verbose 分支保持同一口径：`dedup_conflicts` 必须计入失败。
+    # 它的含义是「主键太粗，实质不同的两条被合并」= 静默丢数据，
+    # 上面刚打印「必须为 0」，却不让它影响退出码的话，这条断言就只是句装饰。
+    return stats.succeeded, stats.failed + stats.dedup_conflicts, 0
 
 
 def main() -> int:

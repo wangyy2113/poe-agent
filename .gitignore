@@ -23,6 +23,8 @@ __pycache__/
 # 编辑器 / 系统
 .idea/
 .vscode/
+# 工作区文件含本机绝对路径（如同级的 PathOfBuilding 检出位置），因人而异
+*.code-workspace
 .DS_Store
 Thumbs.db
 desktop.ini

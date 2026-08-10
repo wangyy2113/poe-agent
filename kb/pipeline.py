@@ -25,6 +25,7 @@ from core.config import get_config
 from core.logging_setup import setup_logging
 from entities.models import Entity, ModLine, Requirement, SourceRef, ValueRange
 from entities.taxonomy import EntityType, ModKind
+from kb import coverage as coverage_mod
 from kb.fetcher import Fetcher
 from kb.render import to_chunks
 from kb.render_mods import build_mod_chunks
@@ -700,8 +701,12 @@ def run_poedb_mods(*, force: bool = False, rebuild: bool = False) -> int:
 
     # 汇总成 T 级梯度卡片并建 FTS 索引，使词缀可被自然语言检索
     chunks = build_mod_chunks(conn)
-    if rebuild:
-        fts_mod.clear_index(conn, entity_prefix=MOD_LADDER_PREFIX)
+    # **总是**清空后重建，不只在 --rebuild 时清。
+    # `build_mod_chunks` 每次产出的是全量卡片（它不做增量），而 chunk_id 由
+    # entity_id 派生。粒度或命名一变，旧 id 的卡片就再也不会被覆盖，只会以
+    # 孤儿身份留在索引里继续被检索命中——实测粒度从
+    # (类别,来源,前后缀,词缀组) 并成 (类别,词缀组) 时正是这种情形。
+    fts_mod.clear_index(conn, entity_prefix=MOD_LADDER_PREFIX)
     indexed = fts_mod.index_chunks(conn, chunks)
     logger.info("词缀梯度卡片：%d 张，已索引 %d 张", len(chunks), indexed)
     conn.commit()
@@ -720,14 +725,38 @@ def run_poedb_mods(*, force: bool = False, rebuild: bool = False) -> int:
     return 1 if pages_failed else 0
 
 
+def run_coverage() -> int:
+    """探测并刷新覆盖声明。
+
+    每次采集之后都会自动跑（见 `main`）——覆盖声明一旦滞后于实际数据，
+    它就从「诚实的边界说明」变成「看起来可信的假话」，比没有更糟。
+    """
+    cfg = get_config()
+    conn = dbmod.init_db(cfg.db_path, vector_dim=int(cfg.get("retrieval.vector.dim", 0) or 0))
+    n = coverage_mod.refresh(conn, cache_dir=cfg.cache_dir)
+    conn.commit()
+
+    rows = coverage_mod.load(conn)
+    usable = [s for s in rows if s.usable]
+    logger.info(
+        "覆盖声明：%d 个领域，可用 %d，未采集 %d",
+        n, len(usable), len(rows) - len(usable),
+    )
+    for s in rows:
+        logger.info("  [%-13s] %-28s %8s 条  %s",
+                    s.status, s.spec.display_zh, f"{s.item_count:,}" if s.item_count else "-",
+                    s.spec.authority_url if not s.usable else "")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="POE1-Agent 采集管线")
     ap.add_argument("--source", default="poedb", choices=["poedb"])
     ap.add_argument(
         "--category", default="unique_item",
-        choices=["unique_item", "unique_l2", "mods", "all"],
+        choices=["unique_item", "unique_l2", "mods", "coverage", "all"],
         help="unique_item=唯一装备索引页, unique_l2=类别页补集+权威英文名+详情页兜底, "
-             "mods=词缀, all=全部",
+             "mods=词缀, coverage=只刷新覆盖声明, all=全部",
     )
     ap.add_argument("--harvest", action="store_true",
                     help="只抓取索引页与词缀类别页到本地缓存，不抽取")
@@ -753,6 +782,9 @@ def main(argv: list[str] | None = None) -> int:
             rc |= run_unique_l2(force=args.force)
         if args.category in ("mods", "all"):
             rc |= run_poedb_mods(force=args.force, rebuild=args.rebuild)
+        # 覆盖声明总是最后刷新：它的每个数字都来自库里的实际行数，
+        # 任何一次采集之后不刷新，它就开始说假话。
+        rc |= run_coverage()
         return rc
     except poedb_unique.StructureError as exc:
         logger.error("结构断言失败，已拒绝写入：%s", exc)

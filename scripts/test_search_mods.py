@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """词缀检索验证：确认词缀梯度卡片可被自然语言命中，
-且 24418 张词缀卡不会淹没唯一装备的检索。
+且一万多张词缀卡不会淹没唯一装备的检索。
 
     python scripts/test_search_mods.py
 """
@@ -24,31 +24,50 @@ class Case(NamedTuple):
     query: str
     #: 'mod'=词缀卡 / 'unique'=唯一装备 / REFUSE
     expect: str
-    #: **类别断言**：首条命中的标题里必须出现的串。不可省。
+    #: **底材类别断言**：首条命中的标题里必须出现的串。
     #: 教训：早先只校验「是不是词缀卡」，结果查「弓」返回爪 / 匕首 / 短杖的火焰词缀
     #: 也算通过——那是答错了物品类别，属于「看起来回答了问题、实际说的是别的东西」，
     #: 正是无据不答要拦的形态。
+    #:
+    #: 只管**底材类别**。卡片标题 = `底材类别 · 词缀组`，来源已随粒度合并挪进卡内，
+    #: 不再出现在标题里，故「来源」类断言一律走 `facet_has`。
     title_has: str | None
     #: **召回断言**：候选集里必须存在以此为前缀的 entity_id。
-    #: 为什么不断言它排第一：这些候选的 bm25 差异只有 3%（实测 -10.42 ~ -10.12），
-    #: 名次本质是噪声；且 BM25 的长度归一系统性偏向短卡，而完整的 T 级梯度恰恰是长卡
-    #: （虚空忆境隐式卡只有 1-2 行，天然占优）。可验证且真正重要的是：
-    #: 最完整的那张梯度卡有没有进入可引用的候选集。
+    #:
+    #: 卡片粒度合并成 (底材类别, 词缀组) 之后，同组的各个来源在**同一张卡**里，
+    #: 因此这里断言的是「该词缀组的卡有没有进候选集」。合并前需要断言
+    #: `mod_ladder:Rings:normal:` 这种带来源的前缀，因为常规掉落池那张卡会被
+    #: 同组其他来源的近似重复挤出候选集——那个问题已随粒度修正消失。
     must_recall: str | None
     note: str
+    #: **facet 断言** `(facet 键, 必须包含的串)`：首条命中的该 facet 值须含此串。
+    #:
+    #: 为什么不复用 `title_has`：粒度合并后来源是**卡内维度**（`facets.mod_sources`
+    #: 形如 `Base、精华、异度天灾 有利`），不在标题里。若继续拿标题去断言来源，
+    #: 结果只有两种——要么永远失败，要么把断言删掉当没这回事；前者是假警报，
+    #: 后者是真漏测。断言要跟着事实搬家，而不是就地放宽。
+    facet_has: tuple[str, str] | None = None
 
 
 CASES = [
     Case("弓上的火焰伤害前缀有哪些等级", "mod", "弓",
-         "mod_ladder:Bows:normal:1:FireDamage", "词缀梯度查询（须锁定弓）"),
+         "mod_ladder:Bows:FireDamage", "词缀梯度查询（须锁定弓）"),
     Case("胸甲最大生命词缀 T1 需要多少物品等级", "mod", "胸甲",
          "mod_ladder:Body_Armours_", "T 级+ilvl 查询（须锁定胸甲）"),
     Case("戒指的抗性词缀权重", "mod", "戒指",
-         "mod_ladder:Rings:normal:", "权重查询（须锁定戒指 + 召回常规池）"),
+         "mod_ladder:Rings:", "权重查询（须锁定戒指）"),
     Case("爪的攻击速度后缀有几级", "mod", "爪",
-         "mod_ladder:Claws:normal:2:IncreasedAttackSpeed",
+         "mod_ladder:Claws:IncreasedAttackSpeed",
          "单字类别名（jieba 会粘连，考验词表）"),
-    Case("精华可以给什么词缀", "mod", "精华", None, "来源类别查询"),
+    # 来源类别查询。底材类别不设限（问题没指定部位），但命中的卡**必须真含精华这一节**——
+    # 否则就是「答的是别的来源的词缀，只因文本里出现过精华二字」。
+    #
+    # 注意这条只验检索落点对不对，不代表这是回答该问题的正确路径：枚举类问题靠语义
+    # 检索只能拿到候选集里的一部分来源，把不完整的枚举当完整的说出去就是错答案。
+    # 正确出口是 `mod_sources` 工具（带 coverage_note 声明未采集渠道），见
+    # scripts/test_tools.py。
+    Case("精华可以给什么词缀", "mod", None, None, "来源类别查询",
+         facet_has=("mod_sources", "精华")),
     Case("猎首", "unique", "猎首", "unique_item:Headhunter",
          "唯一装备专名——不应被词缀卡淹没"),
     Case("猎首这件装备有什么词缀", "unique", "猎首", "unique_item:Headhunter",
@@ -85,7 +104,8 @@ def main() -> int:
     print("=" * 82)
 
     passed = failed = leak = wrong_refuse = wrong_class = missed_recall = 0
-    for query, expect, want_in_title, must_recall, note in CASES:
+    wrong_facet = 0
+    for query, expect, want_in_title, must_recall, note, facet_has in CASES:
         r = retrieve(
             conn, query,
             top_k=int(cfg.get("retrieval.top_k", 20)),
@@ -112,9 +132,12 @@ def main() -> int:
             verdict = "正确拒答" if ok else f"**漏出** top={title or '-'}"
             leak += not ok
         else:
+            facets = (top.metadata.get("facets") or {}) if top else {}
+            facet_val = facets.get(facet_has[0], "") if facet_has else ""
             title_ok = (want_in_title is None) or (want_in_title in title)
             recall_ok = (must_recall is None) or (recall_rank is not None)
-            ok = r.sufficient and kind == expect and title_ok and recall_ok
+            facet_ok = (facet_has is None) or (facet_has[1] in facet_val)
+            ok = r.sufficient and kind == expect and title_ok and recall_ok and facet_ok
             if not r.sufficient:
                 verdict = f"**错误拒答**（应命中 {expect}）"
                 wrong_refuse += 1
@@ -126,8 +149,14 @@ def main() -> int:
             elif not recall_ok:
                 verdict = f"**召回缺失** 候选集内无 {must_recall}*"
                 missed_recall += 1
+            elif not facet_ok:
+                verdict = (f"**facet 错误** 首条「{title}」的 {facet_has[0]}="
+                           f"「{facet_val or '-'}」，应含「{facet_has[1]}」")
+                wrong_facet += 1
             else:
                 verdict = f"命中 {kind}「{title}」"
+                if facet_has:
+                    verdict += f"；{facet_has[0]}=「{facet_val}」"
                 if recall_rank:
                     verdict += f"；{must_recall}* 在第 {recall_rank} 位"
 
@@ -145,7 +174,8 @@ def main() -> int:
     print("\n" + "=" * 82)
     print(f"结果：{passed} 通过 / {failed} 失败")
     print(f"  无据漏出（必须 0）: {leak}    错误拒答: {wrong_refuse}    "
-          f"类别错误: {wrong_class}    召回缺失: {missed_recall}")
+          f"类别错误: {wrong_class}    召回缺失: {missed_recall}    "
+          f"facet 错误: {wrong_facet}")
     dbmod.close_db()
     return 0 if failed == 0 else 1
 

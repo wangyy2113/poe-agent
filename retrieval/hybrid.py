@@ -5,6 +5,19 @@
 
 **充分依据判定由代码执行，不交给模型自觉**（需求 1.3）：
 最高分低于 min_score 即返回 evidence_gap，不进入生成。
+
+## 曾经有过、现已删除的两个补偿层
+
+这里原先有 `_diversify()`（按 (底材类别, 词缀组) 限流，每组最多留 3 张卡）与
+`_prefer_mod_source()`（在词缀卡占据的名次内按来源偏好重排）。两者都是在补偿
+同一个根因：词缀卡的粒度是 (底材类别, **来源**, 前后缀, 词缀组)，于是同一个
+词缀组在多个来源下有多张高度雷同的卡，把候选集挤满。
+
+`kb/render_mods.py` 把粒度并成 (底材类别, 词缀组)、来源作为卡内分节之后，
+同组已不存在近似重复，这两层补偿就没有对象了，一并删除。
+
+记在这里是为了说明：**排序层反复加权、限流、调系数，往往说明索引的切分粒度
+不对。** 先怀疑粒度，再改排序。
 """
 
 from __future__ import annotations
@@ -14,7 +27,6 @@ import sqlite3
 from dataclasses import dataclass, field
 
 from retrieval import alias as alias_mod
-from retrieval import vocab as vocab_mod
 from retrieval.fts import Hit, search_fts, term_coverage
 from retrieval.tokenize import query_content_words
 
@@ -38,108 +50,15 @@ _MOD_INTENT_TERMS = (
 )
 
 
-#: 查询未点名词缀来源时默认偏向的来源（POEDB 的常规掉落池代码）。
-DEFAULT_MOD_CATEGORY = "normal"
-
-#: 来源偏好的加权系数。RRF 分在相邻名次间只差百分之几，需要一个明确的乘数
-#: 才能把被点名 / 默认来源提到前面；同时保持足够小，不至于把覆盖率低的候选顶上来。
-MOD_SOURCE_BOOST = 1.25
-
-#: 同一 (底材类别, 词缀组) 在候选集里最多保留几张卡。见 `_diversify`。
-MAX_PER_MOD_GROUP = 3
-
-#: 召回倍率：每路通道取 top_k 的几倍作为候选，供限流筛选后再截断到 top_k。
+#: 召回倍率：每路通道取 top_k 的几倍作为候选，再截断到 top_k。
+#: 合并卡片粒度之后同组不再有近似重复，但保留余量仍有价值——
+#: 覆盖率判定要在尽量完整的候选集上做。
 RECALL_MULTIPLIER = 4
 
 
 def _looks_like_mod_query(query: str) -> bool:
     """判断查询是否表现出词缀类意图。"""
     return any(term in query for term in _MOD_INTENT_TERMS)
-
-
-def _prefer_mod_source(hits: list[Hit], query: str) -> None:
-    """按词缀来源意图，**只在词缀卡自己占据的名次内**重排。
-
-    问题：同一 (底材, 前后缀, 词缀组) 在多个来源下各有一张卡。查
-    「弓上的火焰伤害前缀有哪些等级」时，精华 / 工艺工作台 / 异度天灾等版本
-    与常规掉落池版本的文本高度重合，BM25 分只差千分之几，实测常规池那张
-    排到第 10 位。生成层若照首条引用，会答成「弓的火焰伤害前缀来自精华」——
-    机制上完全是另一回事，正是「一个小前提错就整条结论反向」的典型。
-
-    规则（两条都由数据决定，不含手写来源清单）：
-    1. 查询点名了来源（词表里 kind=mod_source 的词，如「精华」「工艺工作台」）
-       → 偏向被点名的来源；
-    2. 没点名 → 偏向常规掉落池。与 `entities/mod_lookup.py` 里
-       normal > master > essence 的消歧顺序一致。
-
-    **为什么必须限定在词缀卡的名次内**：早先直接把加权乘进全局 rrf 再整体重排，
-    结果查「击败稀有怪物获得其属性修正的腰带」时，一张 43% 覆盖率的 Base 词缀卡
-    把 100% 覆盖率的「猎首」挤到第二。来源偏好回答的是「同一词缀该看哪个来源」，
-    它没有资格判断词缀卡与装备卡谁更相关。因此这里只做**槽位内重排**：
-    词缀卡占据哪些名次不变，只调整它们彼此的先后，其他实体类型的位置分毫不动。
-
-    也因此 `rrf` 不被改写——它保持纯融合分，最终排序由列表顺序表达。
-    """
-    wanted = {t for t in vocab_mod.scan_terms(query) if vocab_mod.kind_of(t) == "mod_source"}
-
-    def preferred(h: Hit) -> bool:
-        facets = h.metadata.get("facets") or {}
-        if wanted:
-            return facets.get("mod_source", "") in wanted
-        return facets.get("mod_category") == DEFAULT_MOD_CATEGORY
-
-    slots = [
-        i for i, h in enumerate(hits)
-        if (h.metadata.get("facets") or {}).get("mod_source")
-    ]
-    if len(slots) < 2:
-        return
-
-    mods = [hits[i] for i in slots]
-    # 软偏好：仍以相关度为主，被偏好的来源乘一个系数。用硬性字典序会让一张
-    # 相关度明显更低的 Base 卡压过高度相关的精华卡，那是另一种失真。
-    mods.sort(
-        key=lambda h: (
-            -h.rrf * (MOD_SOURCE_BOOST if preferred(h) else 1.0),
-            h.source_priority,
-            -h.score,
-        )
-    )
-    for slot, hit in zip(slots, mods, strict=True):
-        hits[slot] = hit
-
-
-def _diversify(hits: list[Hit], per_group: int = MAX_PER_MOD_GROUP) -> list[Hit]:
-    """按 (底材类别, 词缀组) 限流，剔除近似重复的候选。
-
-    为什么必须做：同一个词缀组在同一底材上，常规掉落池 / 工艺工作台 / 精华 /
-    虚空忆境 / 异度天灾 有利 / 异度天灾 有害 …… 各有一张卡，文本高度雷同。
-    实测「戒指的抗性词缀权重」的前 20 名被这类近重复占满，**常规掉落池的完整梯度
-    根本没进候选集**——最该被引用的那张卡到不了生成层。这不是排名瑕疵，是召回失败。
-
-    为什么用限流而不是加大来源加权：加权是在拿魔数拟合噪声（这些候选的 bm25
-    只差 3%，实测 -10.42 ~ -10.12），而且治不了「候选集被同组挤满」这个根因。
-    限流只**删除**低名次的近重复，不抬升任何候选，因此不会把低相关项顶上来，
-    也不会撼动实体精确命中的位置。
-
-    非词缀卡（无 facets）不受限流影响。
-    """
-    if per_group <= 0:
-        return hits
-    seen: dict[tuple[str, str], int] = {}
-    out: list[Hit] = []
-    for h in hits:
-        facets = h.metadata.get("facets") or {}
-        key = (facets.get("item_class_page", ""), facets.get("mod_group", ""))
-        if not key[0] and not key[1]:
-            out.append(h)
-            continue
-        n = seen.get(key, 0)
-        if n >= per_group:
-            continue
-        seen[key] = n + 1
-        out.append(h)
-    return out
 
 
 @dataclass
@@ -272,9 +191,8 @@ def retrieve(
         return result
 
     fused = _rrf_fuse(channels, rrf_k, priority_decay)
-    _prefer_mod_source(fused, query)
     # 先限流再截断：否则同组近重复会在截断前就把候选名额吃光
-    result.hits = _diversify(fused)[:top_k]
+    result.hits = fused[:top_k]
     result.top_score = result.hits[0].score if result.hits else 0.0
     result.top_coverage = max((h.coverage for h in result.hits), default=0.0)
 

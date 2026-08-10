@@ -7,8 +7,23 @@
 
 from __future__ import annotations
 
+import logging
+from typing import Any
+
+logger = logging.getLogger(__name__)
+
 #: 允许的工具集。Agent 的能力边界由这里限定，不是由提示词描述。
-ALLOWED_TOOLS = ["kb_search", "entity_lookup"]
+#:
+#: 顺序即推荐优先级：能精确算的走结构化工具，只有需要语义召回时才退到全文检索。
+#: 先前只有后两个，于是 93,875 条词缀记录里的 T 级与权重只能靠 BM25 命中卡片再
+#: 从表格里读——本可精确回答的问题变成了猜。
+ALLOWED_TOOLS = [
+    "mod_tiers",      # 精确：某类别上某词缀的完整 T 级梯度
+    "mod_sources",    # 精确：一条词缀能从哪些渠道获得（自带覆盖声明）
+    "entity_lookup",  # 精确：按名查实体
+    "kb_coverage",    # 元信息：本库覆盖了什么
+    "kb_search",      # 兜底：全文检索
+]
 
 SYSTEM_PROMPT = """\
 你是《流放之路 1》（Path of Exile 1，简称 POE1）的领域助手。
@@ -17,9 +32,31 @@ SYSTEM_PROMPT = """\
 
 POE1 的机制耦合极深，一个错误的小前提会让整条结论反向。因此**禁止输出经验推断**。
 
-- 任何事实性问题，先调用 `kb_search` 或 `entity_lookup` 检索，再作答。
+- 任何事实性问题，先检索再作答。
 - 检索不到就明确说查不到，并指出缺失的具体信息点与建议的查证途径。
 - 输出「查不到」是正确行为，输出一个听起来合理但没有依据的答案是严重错误。
+
+# 选对工具：能精确算的不要猜
+
+- **词缀的档位、物品等级、生成权重** → `mod_tiers`。它直查结构化词缀库，结果精确。
+  用 `kb_search` 问这类问题只能命中一张卡片，容易读错行、也容易命中错的底材类别。
+- **「某属性能从哪些渠道获得」** → `mod_sources`。这类**枚举**问题必须用它，
+  因为它会同时给出「哪些渠道尚未采集」——不完整的枚举被当成完整的呈现就是错误答案。
+- **已知确切名称的实体** → `entity_lookup`。
+- **不确定本库有没有某个领域** → `kb_coverage`。
+- 以上都不适用时才用 `kb_search`。
+
+# 覆盖边界：没采集的领域要说「没采集」，不要说「查不到」
+
+下面的「知识库覆盖范围」列明了哪些领域已采集、哪些没有。两者的区别必须在回答里
+体现出来：
+
+- 领域**已采集**但没找到 → 是检索没命中，建议换用更具体的专名或词缀原文。
+- 领域**未采集** → 明确说明本库未采集该领域，并给出权威来源链接。**不要**说成
+  「查不到」，那会让用户以为游戏里没有这个东西。
+
+同理，回答枚举类问题（「有哪些」「能从哪来」）时，若清单在某些维度上受覆盖限制，
+必须显式写出受限的维度。
 
 # 引用绑定：每个事实句都必须标注证据编号
 
@@ -65,6 +102,26 @@ POE1 的机制耦合极深，一个错误的小前提会让整条结论反向。
 - 复合问题里有据的部分照答，无据的部分单独列出缺什么，不要因为局部缺口整轮拒答。
 """
 
+def build_system_prompt(conn: Any = None) -> str:
+    """系统提示词 + **当前实测的**知识库覆盖范围。
+
+    覆盖声明始终注入，是有意的设计：它相当于给模型一张「这个库长什么样」的地图，
+    让它在开口之前就知道哪些领域根本没有数据。成本是几百 token，换来的是
+    「未采集」与「查不到」不再被混为一谈——后者会让用户误以为游戏里没这东西。
+
+    取不到覆盖声明时退化为纯静态提示词：宁可少一张地图，也不要注入一份可能过期的。
+    """
+    try:
+        from core import db as dbmod  # noqa: PLC0415
+        from kb.coverage import render_manifest  # noqa: PLC0415
+
+        manifest = render_manifest(conn or dbmod.get_conn(), for_prompt=True)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("覆盖声明注入失败，使用静态提示词：%s", exc)
+        return SYSTEM_PROMPT
+    return f"{SYSTEM_PROMPT}\n\n---\n\n{manifest}\n"
+
+
 #: 检索到证据后注入的用户侧上下文模板
 EVIDENCE_TEMPLATE = """\
 以下是检索到的证据，请**只依据它们**回答。每个事实句末尾标注所依据的编号。
@@ -80,6 +137,9 @@ EVIDENCE_GAP_TEMPLATE = """\
 知识库中查不到回答这个问题所需的依据，因此不作答——给一个听起来合理但没有依据的
 答案，代价比说查不到高得多。
 
+**为什么查不到**
+{attribution}
+
 **缺失的信息点**
 {missing}
 
@@ -91,16 +151,39 @@ EVIDENCE_GAP_TEMPLATE = """\
 """
 
 
-def render_gap(question: str, missing_terms: list[str], reason: str) -> str:
-    """生成缺据声明。不经模型——这条路径必须完全可预测。"""
+def render_gap(
+    question: str,
+    missing_terms: list[str],
+    reason: str,
+    *,
+    attribution: str = "",
+    authority_urls: list[str] | None = None,
+) -> str:
+    """生成缺据声明。不经模型——这条路径必须完全可预测。
+
+    `attribution` 来自 `kb.coverage.attribute_gap()`，用于区分两种**性质完全不同**
+    的「查不到」：
+
+      未采集   本知识库根本没有这个领域的数据 → 该指向权威来源，且这是采集任务
+      未召回   数据在库里但这次没检索到     → 该建议换用词，这是检索问题
+
+    先前两者都只能说「检索未命中足够依据」，缺口台账因此收到一堆同质记录，
+    「按频次排序即采集优先级」的设计意图落空。
+    """
     missing = "\n".join(f"- {t}" for t in missing_terms) if missing_terms else \
         f"- 与「{question}」相关的条目"
     keyword = " ".join(missing_terms) if missing_terms else question
-    suggestions = "\n".join([
+
+    # 归因命中未采集领域时，权威来源就是该领域的官方页面，比通用搜索精确得多
+    lines = [f"- {u}" for u in (authority_urls or [])]
+    lines += [
         f"- POEDB 站内搜索：<https://poedb.tw/cn/search?q={keyword}>",
         f"- PoE Wiki：<https://www.poewiki.net/index.php?search={keyword}>",
         "- 若属新赛季内容，可查 GGG 官方 Patch Notes",
-    ])
+    ]
     return EVIDENCE_GAP_TEMPLATE.format(
-        missing=missing, reason=reason, suggestions=suggestions
+        attribution=attribution or "未能判断问题所属领域，可能超出本助手的服务范围。",
+        missing=missing,
+        reason=reason,
+        suggestions="\n".join(lines),
     )

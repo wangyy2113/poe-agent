@@ -39,22 +39,21 @@ def _record_gap(conn, question: str, missing_point: str, category: str) -> None:
     每条缺据都要进 `knowledge_gap`，按命中次数排序即成为后续采集优先级
     （需求 1.3）。只打印在终端里，下次就没人记得了。
     """
-    row = conn.execute(
-        "SELECT gap_id FROM knowledge_gap WHERE question=? AND missing_point=?",
-        (question, missing_point),
-    ).fetchone()
-    if row:
-        conn.execute(
-            "UPDATE knowledge_gap SET hit_count=hit_count+1, last_seen=datetime('now') "
-            "WHERE gap_id=?",
-            (row["gap_id"],),
-        )
-    else:
-        conn.execute(
-            "INSERT INTO knowledge_gap(question, missing_point, guessed_category, "
-            "hit_count, first_seen, last_seen) VALUES (?,?,?,1,datetime('now'),datetime('now'))",
-            (question, missing_point, category),
-        )
+    # 与 orchestrator/loop._record_gaps 用同一种 upsert：两处写同一张表，
+    # 语义分叉会让 hit_count 的含义取决于是谁写的。
+    conn.execute(
+        """
+        INSERT INTO knowledge_gap(question, missing_point, guessed_category,
+                                  hit_count, first_seen, last_seen)
+        VALUES (?,?,?,1,datetime('now'),datetime('now'))
+        ON CONFLICT(question, missing_point) DO UPDATE SET
+            hit_count = hit_count + 1,
+            last_seen = datetime('now'),
+            guessed_category = COALESCE(excluded.guessed_category,
+                                        knowledge_gap.guessed_category)
+        """,
+        (question, missing_point, category),
+    )
 
 
 def _load_entities(conn, slugs: list[str], count: int) -> list[dict]:

@@ -236,6 +236,33 @@ CREATE TABLE IF NOT EXISTS source_conflict (
 );
 CREATE INDEX IF NOT EXISTS idx_conflict_kind ON source_conflict(kind, resolved);
 
+-- ── 知识库自描述：覆盖声明 ──
+-- 为什么要落库而不是每次现算：它要注入 system prompt、要供缺据声明归因、
+-- 要让 kb_search 的 category 枚举说真话，三处都在请求路径上，每次扫全库不合适。
+--
+-- 关键约定：这张表**全部由 kb/coverage.py 探测生成**，任何一行都不是手写的。
+-- 手写的只有 DOMAINS 里「这个领域应该存在」的声明；「我们实际有多少」一律现测。
+-- 两者的差集就是覆盖缺口，这样清单永远不会和实际状态漂移。
+CREATE TABLE IF NOT EXISTS kb_coverage (
+    domain_key       TEXT PRIMARY KEY,
+    display_zh       TEXT NOT NULL,
+    category         TEXT NOT NULL,     -- 六个一级分类之一
+    -- ingested 已采集 / partial 部分采集 / harvested 已抓取未入库 / not_collected 未采集
+    status           TEXT NOT NULL,
+    item_count       INTEGER DEFAULT 0, -- 实测条目数
+    chunk_count      INTEGER DEFAULT 0,
+    channels         TEXT,              -- JSON：子渠道（词缀的 24 个来源等）
+    authority_url    TEXT NOT NULL,     -- 未采集时缺据声明靠它指路，故必填
+    tools            TEXT,              -- JSON：能精确查询它的工具名
+    hints            TEXT,              -- JSON：**意图识别**词，非事实断言
+    question_hints   TEXT,              -- JSON：能回答哪类问题（路由表）
+    confidence_notes TEXT,              -- JSON：实测的置信度限制，数字现算不写死
+    partial_note     TEXT,              -- status=partial 时说明缺什么
+    note             TEXT,
+    probed_at        TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_coverage_status ON kb_coverage(status);
+
 -- ── Tier B：知识卡片切片（语义层）──
 CREATE TABLE IF NOT EXISTS chunk (
     chunk_id   TEXT PRIMARY KEY,
@@ -350,6 +377,53 @@ def _probe_vector(conn: sqlite3.Connection) -> VectorStatus:
             pass
 
 
+def _migrate(conn: sqlite3.Connection) -> None:
+    """幂等迁移。只做「补上本该存在的约束」这类修正，不做破坏性变更。
+
+    knowledge_gap 的去重与唯一索引：
+      台账原先没有 UNIQUE(question, missing_point)，而写入代码用了
+      `ON CONFLICT DO NOTHING` —— 冲突目标不存在，于是每次调用都插新行，
+      紧随其后的 UPDATE 又会把**所有**同题行的 hit_count 一起加一。
+      实测 51 行里只有 22 个不同条目，一条问题重复 18 行、hit_count 累到 189。
+      后果是「按频次排序即采集优先级」这个核心信号完全失真。
+      这里合并重复行（hit_count 取该组行数，即真实出现次数），再补上唯一索引，
+      让同类 bug 以后直接撞约束而不是静默积累。
+    """
+    try:
+        dup = conn.execute(
+            "SELECT count(*) FROM (SELECT 1 FROM knowledge_gap "
+            "GROUP BY question, missing_point HAVING count(*) > 1)"
+        ).fetchone()[0]
+        if dup:
+            conn.executescript(
+                """
+                CREATE TEMP TABLE _gap_merged AS
+                SELECT question, missing_point,
+                       MAX(COALESCE(guessed_category,'')) AS guessed_category,
+                       COUNT(*) AS hit_count,
+                       MIN(first_seen) AS first_seen,
+                       MAX(last_seen)  AS last_seen
+                FROM knowledge_gap GROUP BY question, missing_point;
+                DELETE FROM knowledge_gap;
+                INSERT INTO knowledge_gap(question, missing_point, guessed_category,
+                                          hit_count, first_seen, last_seen)
+                SELECT question, missing_point,
+                       NULLIF(guessed_category,''), hit_count, first_seen, last_seen
+                FROM _gap_merged;
+                DROP TABLE _gap_merged;
+                """
+            )
+            logger.info("缺口台账去重：合并了 %d 组重复条目", dup)
+        conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_gap_unique "
+            "ON knowledge_gap(question, missing_point)"
+        )
+        conn.commit()
+    except sqlite3.Error as exc:
+        # 迁移失败不能让启动失败——但必须告警，否则台账会继续悄悄积累重复
+        logger.warning("缺口台账迁移未完成：%s", exc)
+
+
 def init_db(db_path: Path, vector_dim: int = 0) -> sqlite3.Connection:
     """建立单连接、开 WAL、建表、探测向量扩展。幂等。"""
     global _conn, _vector_status
@@ -369,6 +443,7 @@ def init_db(db_path: Path, vector_dim: int = 0) -> sqlite3.Connection:
 
         conn.executescript(SCHEMA)
         conn.executescript(FTS_SCHEMA)
+        _migrate(conn)
 
         _vector_status = _probe_vector(conn)
         if _vector_status.available and vector_dim > 0:

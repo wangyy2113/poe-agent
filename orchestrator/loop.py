@@ -20,7 +20,12 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any, Iterator
 
-from agents.knowledge import ALLOWED_TOOLS, EVIDENCE_TEMPLATE, SYSTEM_PROMPT, render_gap
+from agents.knowledge import (
+    ALLOWED_TOOLS,
+    EVIDENCE_TEMPLATE,
+    build_system_prompt,
+    render_gap,
+)
 from core import db as dbmod
 from core.config import get_config
 from core.llm import LLMClient, LLMError, TurnBudget, get_llm_client
@@ -65,6 +70,49 @@ class TurnResult:
     def full_text(self) -> str:
         """答案 + 引用块。给最终用户看的完整内容。"""
         return self.answer + cit.render_block(self.citations)
+
+
+def _prepare_tools() -> list[dict[str, Any]]:
+    """导出工具 schema，并先把 `kb_search` 的 category 枚举同步为实际有数据的分类。
+
+    每轮同步一次而不是启动时一次：采集随时可能跑，启动时的快照会过期，
+    而过期的枚举会让模型拿一个空分类去过滤，得到 0 条证据。
+    代价是一次 24 行的 SELECT。
+    """
+    try:
+        from tools.impl.kb_search import sync_category_enum  # noqa: PLC0415
+
+        sync_category_enum()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("同步工具 schema 失败，用现有定义继续：%s", exc)
+    return REGISTRY.schemas(ALLOWED_TOOLS)
+
+
+def _gap_answer(question: str, data: dict[str, Any]) -> tuple[str, str]:
+    """依据不足时生成缺据声明，并给出台账分类。
+
+    返回 (答案文本, 台账 guessed_category)。归因失败不影响主流程——
+    退化成没有归因的缺据声明，仍然是安全侧。
+    """
+    reason = str(data.get("reason") or "检索未命中足够依据")
+    missing_terms = list(data.get("missing_terms") or [])
+    attribution = ""
+    urls: list[str] = []
+    category = "unknown"
+    try:
+        from kb.coverage import attribute_gap  # noqa: PLC0415  延迟导入避免循环
+
+        attr = attribute_gap(dbmod.get_conn(), question)
+        attribution = attr.explain()
+        urls = [d.spec.authority_url for d in attr.missing_domains]
+        category = attr.category_label()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("缺据归因失败，退化为无归因声明：%s", exc)
+    return (
+        render_gap(question, missing_terms, reason,
+                   attribution=attribution, authority_urls=urls),
+        category,
+    )
 
 
 def _domain_terms() -> tuple[str, ...]:
@@ -114,13 +162,11 @@ def run_turn(
     if not data.get("sufficient"):
         # 依据不足 → 由代码生成缺据声明，模型完全不参与
         result.evidence_gap = True
-        result.answer = render_gap(
-            question,
-            list(data.get("missing_terms") or []),
-            str(data.get("reason") or "检索未命中足够依据"),
-        )
+        result.answer, gap_category = _gap_answer(question, data)
         result.elapsed_ms = int((time.monotonic() - started) * 1000)
-        _record_gaps(question, [str(data.get("reason") or "依据不足")])
+        _record_gaps(
+            question, [str(data.get("reason") or "依据不足")], category=gap_category
+        )
         _persist(result, conversation_id)
         return result
 
@@ -134,7 +180,7 @@ def run_turn(
         )
 
     messages: list[dict[str, Any]] = [
-        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "system", "content": build_system_prompt()},
         {
             "role": "user",
             "content": EVIDENCE_TEMPLATE.format(
@@ -145,7 +191,7 @@ def run_turn(
 
     budget = TurnBudget(limit=int(cfg.get("llm.max_tokens_per_turn", 60000)))
     max_calls = int(cfg.get("llm.max_tool_calls", 12))
-    tools = REGISTRY.schemas(ALLOWED_TOOLS)
+    tools = _prepare_tools()
     answer_text = ""
 
     try:
@@ -278,12 +324,10 @@ def stream_turn(
     if not data.get("sufficient"):
         # 依据不足 → 缺据声明由代码生成，模型完全不参与
         result.evidence_gap = True
-        result.answer = render_gap(
-            question,
-            list(data.get("missing_terms") or []),
-            str(data.get("reason") or "检索未命中足够依据"),
+        result.answer, gap_category = _gap_answer(question, data)
+        _record_gaps(
+            question, [str(data.get("reason") or "依据不足")], category=gap_category
         )
-        _record_gaps(question, [str(data.get("reason") or "依据不足")])
         yield {"type": "gap", "text": result.answer}
         yield from _finish(result, conversation_id, started)
         return
@@ -297,7 +341,7 @@ def stream_turn(
         )
 
     messages: list[dict[str, Any]] = [
-        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "system", "content": build_system_prompt()},
         {
             "role": "user",
             "content": EVIDENCE_TEMPLATE.format(
@@ -307,7 +351,7 @@ def stream_turn(
     ]
     budget = TurnBudget(limit=int(cfg.get("llm.max_tokens_per_turn", 60000)))
     max_calls = int(cfg.get("llm.max_tool_calls", 12))
-    tools = REGISTRY.schemas(ALLOWED_TOOLS)
+    tools = _prepare_tools()
 
     gate = StreamingGate(
         evidence,
@@ -506,8 +550,17 @@ def _safe_json(raw: str) -> Any:
         return raw
 
 
-def _record_gaps(question: str, gaps: list[str]) -> None:
-    """写缺口台账。按频次排序即为采集优先级（需求 2.12）。"""
+def _record_gaps(question: str, gaps: list[str], *, category: str = "") -> None:
+    """写缺口台账。按频次排序即为采集优先级（需求 2.12）。
+
+    `category` 来自覆盖归因（`not_collected/<域>` 或 `not_recalled/<域>`），
+    它让台账能区分「该去采集」与「该改检索」——这是两类完全不同的待办。
+
+    用 `ON CONFLICT(question, missing_point) DO UPDATE` 而非「先插再更新」：
+    先前那种写法依赖一个**并不存在**的唯一约束，结果每次都插新行，随后的
+    UPDATE 又把所有同题行一起加一，hit_count 因此虚高数倍
+    （实测一条问题 18 行、计数 189）。唯一索引已由 `core/db._migrate` 补上。
+    """
     if not gaps:
         return
     try:
@@ -515,17 +568,16 @@ def _record_gaps(question: str, gaps: list[str]) -> None:
         for point in gaps:
             conn.execute(
                 """
-                INSERT INTO knowledge_gap(question, missing_point, hit_count,
-                                          first_seen, last_seen)
-                VALUES (?,?,1,datetime('now'),datetime('now'))
-                ON CONFLICT DO NOTHING
+                INSERT INTO knowledge_gap(question, missing_point, guessed_category,
+                                          hit_count, first_seen, last_seen)
+                VALUES (?,?,?,1,datetime('now'),datetime('now'))
+                ON CONFLICT(question, missing_point) DO UPDATE SET
+                    hit_count = hit_count + 1,
+                    last_seen = datetime('now'),
+                    guessed_category = COALESCE(excluded.guessed_category,
+                                                knowledge_gap.guessed_category)
                 """,
-                (question, point[:500]),
-            )
-            conn.execute(
-                "UPDATE knowledge_gap SET hit_count = hit_count + 1, "
-                "last_seen = datetime('now') WHERE question = ? AND missing_point = ?",
-                (question, point[:500]),
+                (question, point[:500], category or None),
             )
         conn.commit()
     except Exception as exc:  # noqa: BLE001  台账失败不该让整轮失败

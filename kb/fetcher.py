@@ -125,10 +125,7 @@ class Fetcher:
         self.robots = RobotsGate(user_agent) if respect_robots else None
 
     def _cache_path(self, url: str) -> Path:
-        # 哈希文件名：避开 Windows MAX_PATH 与非法字符问题
-        digest = hashlib.sha256(url.encode("utf-8")).hexdigest()
-        host = urlparse(url).netloc.replace(":", "_")
-        return self.cache_dir / f"{host}_{digest[:24]}.html"
+        return cache_path_for(self.cache_dir, url)
 
     def _cache_fresh(self, path: Path) -> bool:
         if not path.is_file():
@@ -191,6 +188,18 @@ class Fetcher:
             fetched_at=_now_iso(),
             status_code=resp.status_code,
         )
+
+
+def cache_path_for(cache_dir: Path, url: str) -> Path:
+    """URL → 缓存文件路径。
+
+    公开函数而非只留 `Fetcher._cache_path`：覆盖层要判断「这一页是否已抓到本地」，
+    如果它自己复制一遍哈希规则，两份规则迟早分叉，那时「已抓取」的判断就会失准。
+    哈希文件名同时避开 Windows MAX_PATH 与非法字符问题。
+    """
+    digest = hashlib.sha256(url.encode("utf-8")).hexdigest()
+    host = urlparse(url).netloc.replace(":", "_")
+    return cache_dir / f"{host}_{digest[:24]}.html"
 
 
 def _sha256(text: str) -> str:

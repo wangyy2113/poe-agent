@@ -41,10 +41,13 @@ MAX_EVIDENCE_CHARS = 1200
                 "description": "检索词。专名（如「猎首」「Headhunter」）直接给，"
                 "描述性问题给关键词组合（如「偷取 词缀 腰带」）",
             },
+            # 枚举值**在运行时按实际有数据的分类填充**（见本模块末尾）。
+            # 先前这里固定写着六个一级分类，而其中四类一条数据都没有——
+            # 工具描述在对模型撒谎，模型按它过滤只会得到空结果。
             "category": {
                 "type": "string",
-                "description": "可选，按一级分类过滤：游戏基础 / 装备 / 制作系统 / "
-                "地图系统 / 联盟机制 / 经济系统",
+                "description": "可选，按一级分类过滤。可用值见 enum",
+                "enum": [],
             },
             "top_k": {"type": "integer", "description": "可选，返回条数，1-20"},
         },
@@ -100,6 +103,36 @@ def kb_search(query: str, category: str | None = None, top_k: int | None = None)
             "note": result.note,
         },
     )
+
+
+def sync_category_enum(conn: Any = None) -> list[str]:
+    """把 `kb_search` 的 category 枚举同步为**实际有数据**的分类。
+
+    为什么要在运行时改 schema 而不是写死：库里有什么分类取决于采集进度。写死六类
+    的后果是模型拿一个空分类去过滤，得到 0 条证据，然后要么错误拒答、要么绕过证据
+    自己编——两种都是我们要防的。
+
+    找不到覆盖声明时**留空枚举**（等于不限制），而不是退回写死的六类：
+    宁可少一个过滤维度，也不要给模型一份假的可选值。
+    """
+    try:
+        from kb.coverage import usable_categories  # noqa: PLC0415  延迟导入避免循环
+
+        cats = usable_categories(conn or dbmod.get_conn())
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("同步 category 枚举失败，保持为空（不限制）：%s", exc)
+        return []
+
+    spec = REGISTRY.spec("kb_search")
+    if spec is not None:
+        prop = spec.parameters["properties"]["category"]
+        prop["enum"] = cats
+        prop["description"] = (
+            "可选，按一级分类过滤。当前**确实有数据**的分类："
+            + "、".join(cats)
+            + "。其余分类尚未采集，填了只会得到空结果"
+        )
+    return cats
 
 
 @REGISTRY.register(
