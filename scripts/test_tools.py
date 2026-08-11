@@ -167,6 +167,31 @@ def main() -> int:
         if leaked:
             problems.append(f"check_mod_combination 越界返回字段：{sorted(leaked)}")
 
+    # ── 6b. bench_recipe_catalog：只返回页面目录，不伪装成可执行步骤 ──
+    print("\n[6b] bench_recipe_catalog：护甲 × 前缀无法被改变")
+    r = call(
+        "bench_recipe_catalog",
+        query="前缀无法被改变",
+        item_class="护甲",
+    )
+    print(f"    ok={r.ok} found={r.data.get('found') if r.ok else False} "
+          f"total={r.data.get('total') if r.ok else 0}")
+    if not r.ok or not r.data.get("found"):
+        problems.append(f"bench_recipe_catalog 未命中真实工艺台目录：{r.error}")
+    else:
+        evidence = r.citations[0]["text"] if r.citations else ""
+        print(f"    证据含原始费用：{'2x 神圣石' in evidence}")
+        print(f"    证据含目录边界：{'不证明' in evidence}")
+        if not r.citations or not r.citations[0].get("url"):
+            problems.append("bench_recipe_catalog 缺少 POEDB 来源引用")
+        if "2x 神圣石" not in evidence:
+            problems.append("bench_recipe_catalog 没有完整呈现页面原始费用")
+        if "不证明" not in evidence or "步骤" not in (r.data.get("boundary") or ""):
+            problems.append("bench_recipe_catalog 未声明目录不等于可执行制作步骤")
+        leaked = {"steps", "probability", "cost"} & set(collect_keys(r.data))
+        if leaked:
+            problems.append(f"bench_recipe_catalog 越界返回字段：{sorted(leaked)}")
+
     # ── 7. kb_coverage ──
     print("\n[7] kb_coverage")
     r = call("kb_coverage")

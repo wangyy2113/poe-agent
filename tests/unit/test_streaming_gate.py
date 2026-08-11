@@ -20,11 +20,18 @@ TERMS = ("词缀", "抗性", "物品等级", "权重")
 DOMAIN = ("猎首", "皮革腰带")
 
 
-def ev(label: str, text: str) -> binding.Evidence:
+def ev(
+    label: str,
+    text: str,
+    *,
+    claim_scope: str = "general",
+    claim_data: dict | None = None,
+) -> binding.Evidence:
     return binding.Evidence(
         label=label, chunk_id=f"c-{label}", entity_id=None,
         title=f"条目{label}", url=f"https://poedb.tw/cn/{label}",
         source="POEDB", source_priority=1, text=text, can_support_facts=True,
+        claim_scope=claim_scope, claim_data=claim_data or {},
     )
 
 
@@ -90,6 +97,87 @@ class TestParityWithBatch(unittest.TestCase):
         batch = binding.verify(text, e, factual_terms=TERMS, domain_terms=DOMAIN)
         got = stream(text, e, chunk=2)
         self.assertEqual(got.used_labels, batch.used_labels)
+
+    def test_工艺台目录范围在批量与流式均拦截且不下发Citation(self):
+        evidence = [
+            ev(
+                "E1",
+                "页面目录项；原始费用：5x 改造石；目录记录不证明给定装备状态下可执行。",
+                claim_scope="bench_catalog",
+                claim_data={
+                    "effect_text": "+(15-25) 最大生命",
+                    "item_classes": ["项链"],
+                    "raw_costs": [{"amount": 5, "currency": "改造石"}],
+                    "unlock_text": "Default",
+                    "unlock_hint": None,
+                },
+            )
+        ]
+        cases = (
+            "该工艺可在任意给定装备状态下执行[[E1]]。",
+            "该工艺成功率是 5%[[E1]]。",
+            "建议采用最快且最经济的路线[[E1]]。",
+            "页面显示该工艺成功机会为 5%[[E1]]。",
+            "目录不包含状态转移，因此它会删除现有前缀[[E1]]。",
+            "目录不证明可执行，但它可用于当前装备[[E1]]。",
+            "目录不证明可执行，故它可用于当前装备[[E1]]。",
+            "建议采用这个目录选项[[E1]]。",
+            "页面列出的原始费用是 15x 改造石[[E1]]。",
+            "页面列出的适用 ItemClasses 是项链和弓[[E1]]。",
+            "页面列出的解锁信息是 Default错误[[E1]]。",
+            "页面列出的原始费用是 5x 改造石和 5x 改造石[[E1]]。",
+            "页面列出的原始费用是 不包含 5x 改造石[[E1]]。",
+            "页面列出的原始费用是 5x 改造石和错误说明[[E1]]。",
+            "POEDB 页面目录列出了该选项，故它可用于当前装备[[E1]]。",
+            "它可用于当前装备，页面效果原文是 +(15-25) 最大生命[[E1]]。",
+            "它可用于当前装备，页面列出的原始费用是 5x 改造石[[E1]]。",
+            "它可用于当前装备，页面列出的适用 ItemClasses 是项链[[E1]]。",
+            "它可用于当前装备，页面列出的解锁信息是 Default[[E1]]。",
+        )
+        for text in cases:
+            batch = binding.verify(text, evidence, factual_terms=TERMS, domain_terms=DOMAIN)
+            self.assertEqual(batch.blocked, 1)
+            self.assertEqual(batch.used_labels, [])
+            for chunk in (1, 3, 7):
+                got = stream(text, evidence, chunk=chunk)
+                self.assertEqual(got.blocked, batch.blocked)
+                self.assertEqual(got.text, batch.text)
+                self.assertEqual(got.used_labels, [])
+                self.assertNotIn(text.replace("[[E1]]", ""), got.text)
+    def test_双费用遗漏重复和乱序在批量与流式均拒绝(self):
+        evidence = [
+            ev(
+                "E1",
+                "原始费用：5x 灌顶石 + 5x 玻璃弹珠",
+                claim_scope="bench_catalog",
+                claim_data={
+                    "effect_text": "跟接邻的药剂一起自动使用",
+                    "item_classes": ["药剂"],
+                    "raw_costs": [
+                        {"amount": 5, "currency": "灌顶石"},
+                        {"amount": 5, "currency": "玻璃弹珠"},
+                    ],
+                    "unlock_text": "移动速度和药剂附魔 - 等级 3",
+                    "unlock_hint": None,
+                },
+            )
+        ]
+        cases = (
+            "页面列出的原始费用是 5x 灌顶石[[E1]]。",
+            "页面列出的原始费用是 5x 玻璃弹珠[[E1]]。",
+            "页面列出的原始费用是 5x 玻璃弹珠和 5x 灌顶石[[E1]]。",
+            "页面列出的原始费用是 不包含 5x 灌顶石和 5x 玻璃弹珠[[E1]]。",
+            "页面列出的原始费用是 5x 灌顶石和随便写和 5x 玻璃弹珠[[E1]]。",
+        )
+        for text in cases:
+            batch = binding.verify(text, evidence, factual_terms=TERMS, domain_terms=DOMAIN)
+            self.assertEqual(batch.blocked, 1)
+            self.assertEqual(batch.used_labels, [])
+            for chunk in (1, 3, 7):
+                got = stream(text, evidence, chunk=chunk)
+                self.assertEqual(got.blocked, 1)
+                self.assertEqual(got.used_labels, [])
+                self.assertEqual(got.text, batch.text)
 
 
 class TestNoUnverifiedOutput(unittest.TestCase):

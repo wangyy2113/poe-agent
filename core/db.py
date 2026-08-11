@@ -156,6 +156,42 @@ CREATE INDEX IF NOT EXISTS idx_pobmod_group ON pob_mod(mod_group, ilvl);
 CREATE INDEX IF NOT EXISTS idx_pobmod_kind ON pob_mod(mod_kind);
 CREATE INDEX IF NOT EXISTS idx_pobmod_loose ON pob_mod(loose_template);
 
+-- ── 工艺工作台目录（选项 / 原始费用 / 适用类别 / 解锁信息）──
+-- 这里只保存 POEDB 页面明确列出的目录事实，不承载「该动作对当前装备可执行」的
+-- 状态转移语义。后者必须等独立 craft_rule 有可靠来源后再开放。
+CREATE TABLE IF NOT EXISTS craft_bench_recipe (
+    recipe_id       TEXT PRIMARY KEY,  -- 完整记录 canonical JSON 的 SHA-256
+    effect_text     TEXT NOT NULL CHECK(effect_text <> ''),
+    item_classes    TEXT NOT NULL CHECK(
+        json_valid(item_classes) AND json_array_length(item_classes) > 0
+    ),                              -- JSON 非空数组，保持页面原始 ItemClasses 名称
+    unlock_text     TEXT NOT NULL CHECK(unlock_text <> ''),
+    unlock_url      TEXT,           -- Default / 等级条件在页面上没有链接，合法为空
+    unlock_hint     TEXT,           -- tooltip，如「生命和魔力 - 等级 2」
+    source          TEXT NOT NULL,
+    source_priority INTEGER NOT NULL,
+    url             TEXT NOT NULL CHECK(url <> ''), -- 工艺台主表来源页，始终必填
+    content_hash    TEXT NOT NULL,
+    fetched_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_bench_effect ON craft_bench_recipe(effect_text);
+
+-- 一条工艺可能要求多种通货（真实页面 783 行中有 15 行是双费用），不能把费用
+-- 压成 recipe 上的单个 currency 字段，也不能塞进 mod_affix。
+CREATE TABLE IF NOT EXISTS craft_bench_recipe_cost (
+    recipe_id       TEXT NOT NULL,
+    position        INTEGER NOT NULL CHECK(position >= 0),
+    amount          INTEGER NOT NULL CHECK(amount > 0),
+    currency_slug   TEXT NOT NULL CHECK(currency_slug <> ''),
+    currency_name_zh TEXT NOT NULL CHECK(currency_name_zh <> ''),
+    currency_url    TEXT NOT NULL CHECK(currency_url <> ''),
+    PRIMARY KEY (recipe_id, position),
+    FOREIGN KEY (recipe_id) REFERENCES craft_bench_recipe(recipe_id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_bench_cost_currency
+    ON craft_bench_recipe_cost(currency_slug);
+
 -- ── 游戏常量（calc/ 的真源）──
 -- 标量逐个成行，这样每个常量都能被单独引用（需求 12：常量附来源与版本）。
 -- dat_source 记 GGG 原始表名（GameConstants.dat / Character.ot），

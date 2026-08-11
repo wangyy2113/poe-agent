@@ -104,6 +104,62 @@ _HEDGE_WORDS = (
     "据我所知", "印象中", "记得是", "差不多是", "多半",
 )
 
+#: 工艺台目录 scope 使用“结构化字段正向匹配”，而不是靠扩充同义词黑名单。
+#: 下列模式只用于生成可审计的拦截原因；未命中任何模式也会按“目录未覆盖”拒绝。
+_BENCH_CATALOG_FORBIDDEN: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("给定装备状态下的可执行性", re.compile(
+        r"可执行|执行该工艺|用于当前装备|当前装备.{0,8}(?:使用|制作|应用)"
+        r"|(?:能|可以|可).{0,12}(?:使用|制作|应用)"
+    )),
+    ("装备状态转移或词缀替换/移除", re.compile(
+        r"装备状态|状态转移|(?:添加|删除|移除|替换|覆盖|保留).{0,10}(?:词缀|属性|前缀|后缀|crafted[ -]?mod)"
+    , re.I)),
+    ("制作步骤或操作顺序", re.compile(
+        r"制作步骤|操作步骤|操作顺序|制作流程|第一步|第二步|下一步|先.{0,20}再|依次"
+    )),
+    ("成功率或概率", re.compile(r"成功率|成功机会|成功可能|概率|几率|机率|期望次数|平均次数")),
+    ("市场成本或价格", re.compile(r"市场成本|实际成本|市价|市场价|行情|折算价格|交易价格")),
+    ("最快、最经济或最优路线", re.compile(
+        r"最快|最经济|最省|最便宜|最优|路线|方案比较|成本最低"
+    )),
+    ("词缀容量、crafted-mod 上限或元词缀交互", re.compile(
+        r"词缀容量|crafted[ -]?mod.{0,6}上限|工艺词缀.{0,6}上限|元词缀.{0,8}(?:交互|作用|影响)"
+    , re.I)),
+)
+_BENCH_PURE_BOUNDARY = re.compile(
+    r"^(?:该)?目录(?:记录)?(?:不|无法|不能|不足以)证明(?:它)?(?:在)?"
+    r"(?:任意|当前|给定|这件|该)?(?:给定)?装备状态下可执行$"
+)
+_BENCH_EFFECT_CLAIM = re.compile(
+    r"^\s*(?:poedb\s*)?(?:页面|目录|页面目录)?\s*(?:列出的?\s*)?"
+    r"效果原文\s*(?:是|为|：|:)\s*(.+?)\s*[。！？!?]*$",
+    re.I,
+)
+_BENCH_COST_CLAIM = re.compile(
+    r"^\s*(?:poedb\s*)?(?:页面|目录|页面目录)?\s*(?:列出的?\s*)?"
+    r"(?:原始费用|页面费用)\s*(?:是|为|：|:)\s*(.+?)\s*[。！？!?]*$",
+    re.I,
+)
+_BENCH_ITEM_CLASSES_CLAIM = re.compile(
+    r"^\s*(?:poedb\s*)?(?:页面|目录|页面目录)?\s*(?:列出的?\s*)?"
+    r"(?:适用\s*itemclasses|适用类别)\s*(?:是|为|：|:)\s*(.+?)\s*[。！？!?]*$",
+    re.I,
+)
+_BENCH_UNLOCK_CLAIM = re.compile(
+    r"^\s*(?:poedb\s*)?(?:页面|目录|页面目录)?\s*(?:列出的?\s*)?"
+    r"解锁(?:信息|文本|说明)?\s*(?:是|为|：|:)\s*(.+?)\s*[。！？!?]*$",
+    re.I,
+)
+_BENCH_COST_PAIR = re.compile(
+    r"([-+]?\d+(?:\.\d+)?)\s*[xX×]\s*(.+?)(?="
+    r"\s*(?:\+|和|与|、|，|,)\s*[-+]?\d+(?:\.\d+)?\s*[xX×]|\s*$)"
+)
+_BENCH_CATALOG_PRESENCE = re.compile(
+    r"^\s*(?:poedb\s*)?(?:页面)?目录(?:中|里)?\s*"
+    r"(?:列出|收录|有|存在)了?\s*(?:该选项|这个选项|该目录项)\s*[。！？!?]*$",
+    re.I,
+)
+
 
 @dataclass(frozen=True)
 class Evidence:
@@ -118,6 +174,11 @@ class Evidence:
     source_priority: int
     text: str
     can_support_facts: bool = True
+    #: 证据可支撑的事实范围。`general` 保持既有证据行为；`bench_catalog`
+    #: 只能支撑页面目录字段，不能被反向用于证明制作执行语义。
+    claim_scope: str = "general"
+    #: 受限证据的结构化原字段。范围闸门只按这里的值做正向匹配，不能仅靠关键词。
+    claim_data: dict[str, Any] = field(default_factory=dict)
 
     @property
     def numbers(self) -> set[str]:
@@ -200,6 +261,12 @@ def number_evidence(citations: Iterable[dict[str, Any]]) -> list[Evidence]:
                 source_priority=priority,
                 text=str(c.get("text") or ""),
                 can_support_facts=bool(c.get("can_support_facts", True)),
+                claim_scope=str(c.get("claim_scope") or "general"),
+                claim_data=(
+                    dict(c["claim_data"])
+                    if isinstance(c.get("claim_data"), dict)
+                    else {}
+                ),
             )
         )
     return out
@@ -210,7 +277,12 @@ def render_evidence_block(evidence: list[Evidence]) -> str:
     给了 URL 模型就会自己编引用。"""
     parts = []
     for e in evidence:
-        tag = "" if e.can_support_facts else "（社区来源，不可支撑事实断言）"
+        tags: list[str] = []
+        if not e.can_support_facts:
+            tags.append("社区来源，不可支撑事实断言")
+        if e.claim_scope == "bench_catalog":
+            tags.append("仅可支撑目录存在、效果原文、原始费用、ItemClasses 与解锁信息")
+        tag = f"（{'；'.join(tags)}）" if tags else ""
         parts.append(f"[{e.label}] 来源：{e.source} → {e.title}{tag}\n{e.text}")
     return "\n\n".join(parts)
 
@@ -444,6 +516,123 @@ def split_sentences(text: str) -> list[str]:
     return out
 
 
+def _claim_value_norm(value: Any) -> str:
+    return re.sub(r"[\s。！？!?，,、；;：:]", "", str(value or "")).lower()
+
+
+def _parse_bench_cost_claim(value: str) -> list[tuple[str, str]] | None:
+    """完整消费费用字段；任何未被费用对或允许分隔符覆盖的文本都拒绝。"""
+    matches = list(_BENCH_COST_PAIR.finditer(value))
+    if not matches:
+        return None
+    out: list[tuple[str, str]] = []
+    cursor = 0
+    for index, match in enumerate(matches):
+        gap = value[cursor:match.start()]
+        if index == 0:
+            if gap.strip():
+                return None
+        elif not re.fullmatch(r"\s*(?:\+|和|与|、|，|,)\s*", gap):
+            return None
+        out.append((_norm_num(match.group(1)), _claim_value_norm(match.group(2))))
+        cursor = match.end()
+    if value[cursor:].strip():
+        return None
+    return out
+
+
+def _bench_catalog_scope_error(
+    sentence: str,
+    evidence: list[Evidence],
+    kind: SentenceKind,
+) -> str:
+    """正向核对目录字段；任何未精确匹配的语义都 fail closed。"""
+    normalized = sentence.strip()
+    compact = _claim_value_norm(normalized)
+    claim_data = [e.claim_data for e in evidence if e.claim_data]
+
+    # Catalog v1 不包含“采用某选项”的建议依据；建议也不能借目录 Citation 解锁。
+    if kind == "recommendation":
+        return "制作建议或选项采用结论"
+
+    if _BENCH_PURE_BOUNDARY.fullmatch(compact):
+        return ""
+
+    effect_match = _BENCH_EFFECT_CLAIM.fullmatch(normalized)
+    if effect_match:
+        claimed = _claim_value_norm(effect_match.group(1))
+        effects = {
+            _claim_value_norm(data.get("effect_text"))
+            for data in claim_data
+            if data.get("effect_text")
+        }
+        if claimed and claimed in effects:
+            return ""
+        return "与 Citation 不一致的效果原文"
+
+    cost_match = _BENCH_COST_CLAIM.fullmatch(normalized)
+    if cost_match:
+        claimed_costs = _parse_bench_cost_claim(cost_match.group(1))
+        expected_cost_lists = [
+            [
+                (_norm_num(str(cost.get("amount"))), _claim_value_norm(cost.get("currency")))
+                for cost in (data.get("raw_costs") or [])
+                if isinstance(cost, dict) and cost.get("amount") is not None
+                and cost.get("currency")
+            ]
+            for data in claim_data
+        ]
+        if claimed_costs and any(
+            claimed_costs == expected for expected in expected_cost_lists if expected
+        ):
+            return ""
+        return "与 Citation 不一致的原始费用"
+
+    item_classes_match = _BENCH_ITEM_CLASSES_CLAIM.fullmatch(normalized)
+    if item_classes_match:
+        claimed_classes = {
+            _claim_value_norm(value)
+            for value in re.split(
+                r"(?:和|与|、|，|,|\+)", item_classes_match.group(1)
+            )
+            if _claim_value_norm(value)
+        }
+        expected_class_sets = [
+            {
+                _claim_value_norm(item_class)
+                for item_class in (data.get("item_classes") or [])
+                if item_class
+            }
+            for data in claim_data
+        ]
+        if claimed_classes and any(
+            claimed_classes <= expected for expected in expected_class_sets if expected
+        ):
+            return ""
+        return "与 Citation 不一致的 ItemClasses"
+
+    unlock_match = _BENCH_UNLOCK_CLAIM.fullmatch(normalized)
+    if unlock_match:
+        claimed_unlock = _claim_value_norm(unlock_match.group(1))
+        unlock_values = {
+            _claim_value_norm(value)
+            for data in claim_data
+            for value in (data.get("unlock_text"), data.get("unlock_hint"))
+            if value
+        }
+        if claimed_unlock and claimed_unlock in unlock_values:
+            return ""
+        return "与 Citation 不一致的解锁信息"
+
+    if _BENCH_CATALOG_PRESENCE.fullmatch(normalized):
+        return ""
+
+    for claim_name, pattern in _BENCH_CATALOG_FORBIDDEN:
+        if pattern.search(normalized):
+            return claim_name
+    return "目录未明确覆盖的事实语义"
+
+
 def _check_sentence(
     sentence: str,
     by_label: dict[str, Evidence],
@@ -454,8 +643,10 @@ def _check_sentence(
     stripped = _BINDING_RE.sub("", sentence)
     kind = classify(stripped, labels, terms, domain)
 
-    if kind in ("narrative", "recommendation"):
-        # 建议类不强制绑定（需求 15.4），但其中的事实前提若带了标注仍会被校验
+    if kind == "narrative" and not labels:
+        return SentenceVerdict(sentence, kind, labels, True, "无需绑定")
+    if kind == "recommendation" and not labels:
+        # 纯建议不强制绑定；一旦主动绑定证据，仍须检查该证据的能力范围。
         return SentenceVerdict(sentence, kind, labels, True, "无需绑定")
 
     hedge = next((w for w in _HEDGE_WORDS if w in stripped), "")
@@ -482,6 +673,16 @@ def _check_sentence(
         )
 
     bound = [by_label[lb] for lb in labels]
+    restricted = [e for e in bound if e.claim_scope == "bench_catalog"]
+    if restricted:
+        scope_error = _bench_catalog_scope_error(stripped, restricted, kind)
+        if scope_error:
+            return _block(
+                sentence, kind, labels,
+                f"工艺台目录证据仅支撑页面目录字段，不能支撑{scope_error}",
+                f"缺少可支撑{scope_error}的非目录证据：{_excerpt(stripped)}",
+            )
+
     weak = [e for e in bound if not e.can_support_facts]
     if weak and len(weak) == len(bound):
         return _block(
@@ -491,10 +692,12 @@ def _check_sentence(
             f"仅有社区来源，未经权威来源证实：{_excerpt(stripped)}",
         )
 
+    if kind in ("recommendation", "narrative"):
+        return SentenceVerdict(sentence, kind, labels, True, "已通过证据范围校验")
+
     # 数值回填校验：句中数值必须能在绑定证据里找到。
     # 编造的具体形态就是数字，这一条抓得最准。
     missing = unsupported_numbers(stripped, bound)
-    numbers_total = len(_NUM_RE.findall(stripped))
 
     if kind == "derived":
         # 计算派生（需求 15.3、10）：结论数值本来就不在证据里——那是算出来的，

@@ -321,15 +321,26 @@ DOMAINS: tuple[DomainSpec, ...] = (
     ),
     DomainSpec(
         key="crafting_bench",
-        display_zh="工艺工作台（选项与费用）",
+        display_zh="工艺工作台目录（选项 / 原始费用 / 适用类别 / 解锁）",
         category=Category.CRAFTING,
         authority_url=f"{POEDB_BASE}/Crafting_Bench",
-        count_sql="SELECT count(*) FROM mod_affix WHERE category='master'",
-        tools=("stat_sources",),
+        count_sql="SELECT count(*) FROM craft_bench_recipe",
+        channel_sql=(
+            "SELECT DISTINCT c.currency_name_zh FROM craft_bench_recipe_cost c "
+            "WHERE c.currency_name_zh<>''"
+        ),
+        tools=("bench_recipe_catalog", "stat_sources"),
         hints=("工艺台", "工艺工作台", "改造台", "手工"),
-        question_hints=("工艺台能做什么词缀",),
+        question_hints=(
+            "工艺工作台页面列有哪些效果、原始通货费用、适用 ItemClasses 与解锁信息",
+        ),
         poedb_pages=("Crafting_Bench",),
-        partial_note="工艺台**词缀**已入库；**每项的通货费用未采集**，因此制作成本无法计算",
+        partial_note=(
+            "目录、原始费用、适用 ItemClasses 与解锁信息已入库；"
+            "**装备状态转移、crafted-mod 上限、替换/移除语义和元词缀交互未采集**，"
+            "因此目录项不代表在给定装备状态下可执行，也不能作为制作步骤"
+        ),
+        note="工艺台词缀本体仍可由 stat_sources 查询；目录查询不提供概率或市场成本",
     ),
     DomainSpec(
         key="harvest",

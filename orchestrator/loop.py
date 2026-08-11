@@ -178,9 +178,106 @@ def _positive_craft_clause(question: str) -> str:
     return positive[-1] if positive else ""
 
 
+_BENCH_TERMS = ("工艺工作台", "工艺台", "改造台")
+_BENCH_EXISTS_MARKERS = ("有没有", "是否有", "有无")
+_BENCH_FACT_MARKERS = (
+    "原始费用", "费用", "花费", "解锁地点", "解锁说明", "如何解锁", "怎么解锁",
+    "适用类别", "适用itemclasses", "适用于哪些",
+)
+_BENCH_QUERY_PREFIXES = ("页面里的", "页面中的", "页面的", "里的", "中的", "的", "配方", "选项")
+_BENCH_QUERY_SUFFIXES = ("这个选项", "这项", "吗", "么")
+
+
+def _strip_bench_query_scaffolding(value: str) -> str:
+    changed = True
+    while changed and value:
+        changed = False
+        for token in _BENCH_QUERY_PREFIXES:
+            if value.startswith(token):
+                value = value[len(token):]
+                changed = True
+                break
+        for token in _BENCH_QUERY_SUFFIXES:
+            if value.endswith(token):
+                value = value[:-len(token)]
+                changed = True
+                break
+    return value
+
+
+def _known_bench_item_classes() -> tuple[str, ...]:
+    """从已入库目录读取真实 ItemClasses；不可用时返回空，绝不手写猜测。"""
+    try:
+        rows = dbmod.get_conn().execute(
+            "SELECT DISTINCT j.value "
+            "FROM craft_bench_recipe AS r, json_each(r.item_classes) AS j "
+            "WHERE typeof(j.value)='text' AND j.value<>''"
+        ).fetchall()
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("工艺台 ItemClasses 不可用，不拆分目录参数：%s", exc)
+        return ()
+    return tuple(sorted({str(row[0]).strip() for row in rows if row[0]}, key=len, reverse=True))
+
+
+def _split_bench_item_class(raw_query: str) -> tuple[str, str]:
+    """仅按目录中真实存在的 ItemClass 前缀拆分“类别的效果”。"""
+    for item_class in _known_bench_item_classes():
+        prefix = f"{_normalized(item_class)}的"
+        if raw_query.startswith(prefix) and len(raw_query) > len(prefix):
+            return raw_query[len(prefix):], _normalized(item_class)
+    return raw_query, ""
+
+
+def _bench_precision_query(question: str) -> tuple[str, str, str]:
+    """提取明确目录问法中的效果原文与显式 ItemClass；无法冻结就不路由。"""
+    candidates: list[tuple[str, str, str]] = []
+    for raw in _CRAFT_CLAUSE_SPLIT_RE.split(question or ""):
+        clause = _normalized(raw)
+        if not clause or not any(term in clause for term in _BENCH_TERMS):
+            continue
+        if any(marker in clause for marker in _CRAFT_ROUTE_NEGATIONS):
+            continue
+
+        # 「工艺台有没有 X」：X 是完整目录关键词；若是“真实 ItemClass 的效果”，
+        # 则把类别单独冻结，不能让模型自行改参。
+        for marker in _BENCH_EXISTS_MARKERS:
+            at = clause.find(marker)
+            if at < 0:
+                continue
+            raw_query = _strip_bench_query_scaffolding(clause[at + len(marker):])
+            query, item_class = _split_bench_item_class(raw_query)
+            if len(query) >= 2:
+                candidates.append((clause, query, item_class))
+
+        # 「工艺工作台页面的 X 原始费用是什么」：取工艺台词之后、事实字段之前。
+        fact_hits = [
+            (clause.find(marker), -len(marker), marker)
+            for marker in _BENCH_FACT_MARKERS
+            if clause.find(marker) >= 0
+        ]
+        if fact_hits:
+            marker_at, _neg_len, marker = min(fact_hits)
+            term_hits = [
+                (clause.rfind(term, 0, marker_at), term)
+                for term in _BENCH_TERMS
+                if clause.rfind(term, 0, marker_at) >= 0
+            ]
+            if term_hits:
+                term_at, term = max(term_hits, key=lambda item: item[0])
+                raw_query = _strip_bench_query_scaffolding(
+                    clause[term_at + len(term):marker_at]
+                )
+                query, item_class = _split_bench_item_class(raw_query)
+                if len(query) >= 2:
+                    candidates.append((clause, query, item_class))
+    return candidates[-1] if candidates else ("", "", "")
+
+
 def _precision_tool_route(question: str) -> str:
-    """只有存在未被否定的组合判断子句时才放行结构化求解器。"""
-    return "check_mod_combination" if _positive_craft_clause(question) else ""
+    """只为参数可从问题逐字冻结的结构化能力放行精确工具。"""
+    if _positive_craft_clause(question):
+        return "check_mod_combination"
+    return "bench_recipe_catalog" if _bench_precision_query(question)[1] else ""
 
 
 def _strip_target_scaffolding(segment: str) -> str:
@@ -241,11 +338,30 @@ def _validate_precision_call(
     tool_name: str,
     arguments: Any,
 ) -> str:
-    """冻结正向判断子句的底材、限定条件与完整目标集合。"""
-    if tool_name != "check_mod_combination":
-        return "当前精确路由不支持该工具"
+    """冻结精确路由的事实查询参数，阻止模型改参后混淆证据归属。"""
     if not isinstance(arguments, dict):
         return "参数必须是 JSON 对象"
+
+    if tool_name == "bench_recipe_catalog":
+        clause, expected_query, expected_item_class = _bench_precision_query(question)
+        if not clause or not expected_query:
+            return "当前问题没有可精确提取的工艺台目录查询"
+        if set(arguments) - {"query", "item_class"}:
+            return "工艺台目录调用含未允许的参数"
+        query = _normalized(str(arguments.get("query") or ""))
+        if query != expected_query:
+            return "query 必须逐字对应工艺台目录问题中的效果关键词"
+        item_class_raw = arguments.get("item_class")
+        item_class = _normalized(str(item_class_raw or ""))
+        if expected_item_class:
+            if item_class != expected_item_class:
+                return "item_class 必须逐字对应工艺台目录问题中的显式适用类别"
+        elif item_class_raw is not None:
+            return "当前工艺台目录问题没有显式 item_class，不得额外添加类别限定"
+        return ""
+
+    if tool_name != "check_mod_combination":
+        return "当前精确路由不支持该工具"
     clause = _positive_craft_clause(question)
     if not clause:
         return "当前问题没有未被否定的组合判断子句"
@@ -307,14 +423,29 @@ def _validate_precision_call(
     return ""
 
 
-def _precision_solver_citations(result: ToolResult) -> list[dict[str, Any]]:
-    """只接受本次确定性求解器产出的结论证据，不接受候选表或其它工具证据。"""
-    return [
-        citation
-        for citation in result.citations
-        if str(citation.get("chunk_id") or "").startswith("craft_solver:")
-        and citation.get("channel") == "derived"
-    ]
+def _precision_citations(
+    tool_name: str, result: ToolResult
+) -> list[dict[str, Any]]:
+    """只接受与精确工具类型一致的结论/目录证据。"""
+    if tool_name == "check_mod_combination":
+        return [
+            citation
+            for citation in result.citations
+            if str(citation.get("chunk_id") or "").startswith("craft_solver:")
+            and citation.get("channel") == "derived"
+        ]
+    if tool_name == "bench_recipe_catalog":
+        return [
+            citation
+            for citation in result.citations
+            if str(citation.get("chunk_id") or "").startswith("bench_recipe:")
+            and citation.get("channel") == "structured"
+            and citation.get("claim_scope") == "bench_catalog"
+            and isinstance(citation.get("claim_data"), dict)
+            and citation.get("claim_data")
+            and citation.get("url")
+        ]
+    return []
 
 
 def _call_tool(
@@ -334,7 +465,7 @@ def _call_tool(
         precision_tool
         and name == precision_tool
         and result.ok
-        and _precision_solver_citations(result)
+        and _precision_citations(precision_tool, result)
     )
     return result, matched
 
@@ -347,12 +478,34 @@ def _initial_user_content(
             evidence=render_evidence_block(evidence), question=question
         )
     initial = render_evidence_block(evidence) or "（首轮全文检索未形成可引用证据）"
+    if precision_tool == "check_mod_combination":
+        instruction = (
+            "工具参数中的底材、每个目标、来源和影响力都必须逐字对应用户问题。"
+            "不得依据首轮候选或其它工具证据自行判断组合可行性。"
+        )
+    else:
+        instruction = (
+            "工具参数中的目录关键词和可选 ItemClass 必须逐字对应用户问题。"
+            "目录证据只可回答页面列出的效果、原始费用、适用类别与解锁信息；"
+            "不得扩写为可执行制作步骤、概率、市场成本或路线比较。"
+        )
     return (
         f"以下是首轮证据：\n\n{initial}\n\n---\n"
         f"精确工具路由已命中 `{precision_tool}`。回答前必须先调用该工具；"
-        "工具参数中的底材、每个目标、来源和影响力都必须逐字对应用户问题。"
-        "不得依据首轮候选或其它工具证据自行判断组合可行性。\n\n"
-        f"用户的问题：{question}"
+        f"{instruction}\n\n用户的问题：{question}"
+    )
+
+
+def _precision_failure_answer(tool_name: str) -> str:
+    if tool_name == "check_mod_combination":
+        action = "因此不作组合判断"
+        evidence_kind = "确定性求解证据"
+    else:
+        action = "因此不陈述工艺台目录事实"
+        evidence_kind = "对应的结构化目录证据"
+    return (
+        f"已识别为需要精确工具 `{tool_name}` 的问题，但本轮没有形成唯一、"
+        f"参数与当前问题一致且带{evidence_kind}的调用；{action}。"
     )
 
 
@@ -456,7 +609,7 @@ def run_turn(
                     precision_call_invalidated = True
                     tr = ToolResult(
                         ok=False,
-                        error="精确组合求解已成功完成；本轮再次改参会使证据归属不唯一",
+                        error="精确工具已成功完成；本轮再次改参会使证据归属不唯一",
                     )
                     precision_match = False
                 else:
@@ -469,8 +622,8 @@ def run_turn(
                 final_tool_results[tc.name] = tr
                 if precision_match:
                     precision_tool_succeeded = True
-                    # 精确组合回答只允许使用本次、参数归属正确的 solver 派生证据。
-                    evidence = number_evidence(_precision_solver_citations(tr))
+                    # 精确回答只允许使用本次、参数归属正确且类型匹配的证据。
+                    evidence = number_evidence(_precision_citations(precision_tool, tr))
                     result.evidence = evidence
                 elif not precision_tool and tr.citations:
                     evidence = _merge_evidence(evidence, tr.citations)
@@ -499,10 +652,7 @@ def run_turn(
 
     if not precision_tool_succeeded or precision_call_invalidated:
         result.evidence_gap = True
-        result.answer = (
-            f"已识别为需要精确工具 `{precision_tool}` 的问题，但本轮没有形成唯一、"
-            "参数与当前问题一致且带确定性求解证据的调用；因此不作组合判断。"
-        )
+        result.answer = _precision_failure_answer(precision_tool)
         result.elapsed_ms = int((time.monotonic() - started) * 1000)
         _persist(result, conversation_id)
         return result
@@ -681,7 +831,7 @@ def stream_turn(
                     precision_call_invalidated = True
                     tr = ToolResult(
                         ok=False,
-                        error="精确组合求解已成功完成；本轮再次改参会使证据归属不唯一",
+                        error="精确工具已成功完成；本轮再次改参会使证据归属不唯一",
                     )
                     precision_match = False
                 else:
@@ -694,7 +844,7 @@ def stream_turn(
                 final_tool_results[tc.name] = tr
                 if precision_match:
                     precision_tool_succeeded = True
-                    evidence = number_evidence(_precision_solver_citations(tr))
+                    evidence = number_evidence(_precision_citations(precision_tool, tr))
                     result.evidence = evidence
                     gate.add_evidence(evidence)
                 elif not precision_tool and tr.citations:
@@ -718,10 +868,7 @@ def stream_turn(
 
     if not precision_tool_succeeded or precision_call_invalidated:
         result.evidence_gap = True
-        result.answer = (
-            f"已识别为需要精确工具 `{precision_tool}` 的问题，但本轮没有形成唯一、"
-            "参数与当前问题一致且带确定性求解证据的调用；因此不作组合判断。"
-        )
+        result.answer = _precision_failure_answer(precision_tool)
         yield {"type": "gap", "text": result.answer}
         yield from _finish(result, conversation_id, started)
         return
@@ -821,6 +968,8 @@ def _merge_evidence(
                 source_priority=e.source_priority,
                 text=e.text,
                 can_support_facts=e.can_support_facts,
+                claim_scope=e.claim_scope,
+                claim_data=e.claim_data,
             )
         )
     return merged
@@ -951,7 +1100,7 @@ def _persist(result: TurnResult, conversation_id: str | None) -> None:
                         "evidence": [
                             {"label": e.label, "chunk_id": e.chunk_id,
                              "source": e.source, "priority": e.source_priority,
-                             "title": e.title}
+                             "title": e.title, "claim_scope": e.claim_scope}
                             for e in result.evidence
                         ],
                         "meta": result.retrieval_meta,

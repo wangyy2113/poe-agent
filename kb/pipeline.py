@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import math
 import sys
 import time
 from pathlib import Path
@@ -30,7 +31,13 @@ from kb.fetcher import Fetcher
 from kb import render_tree
 from kb.render import to_chunks
 from kb.render_mods import build_mod_chunks
-from kb.sources import poedb_index, poedb_mods, poedb_tree, poedb_unique
+from kb.sources import (
+    poedb_crafting,
+    poedb_index,
+    poedb_mods,
+    poedb_tree,
+    poedb_unique,
+)
 from retrieval import alias as alias_mod
 from retrieval import fts as fts_mod
 from retrieval import vocab as vocab_mod
@@ -40,6 +47,12 @@ logger = logging.getLogger(__name__)
 #: 各类别切片的 entity_id 前缀。rebuild 时按前缀清理，互不干扰。
 UNIQUE_PREFIX = "unique_item:"
 MOD_LADDER_PREFIX = "mod_ladder:"
+
+#: 快照完整性护栏。它们是采集安全阈值，不是游戏机制断言：首次导入至少应有
+#: 100 条；已有快照更新时若骤降超过 5%，默认拒绝 destructive replace。
+#: 当前真实页面为 783 条，阈值刻意不钉死当前行数，允许正常的小幅版本变化。
+MIN_BENCH_SNAPSHOT_RECIPES = 100
+MAX_BENCH_SNAPSHOT_DROP_FRACTION = 0.05
 
 
 def _existing_hashes(conn, entity_type: str) -> dict[str, str]:
@@ -525,6 +538,267 @@ def _make_fetcher(cfg) -> Fetcher:  # noqa: ANN001
     )
 
 
+def _validate_bench_snapshot_size(
+    conn, incoming_count: int, *, allow_shrink: bool = False  # noqa: ANN001
+) -> dict[str, object]:
+    """拒绝结构合法但明显截短的 destructive snapshot，并返回持久审计字段。"""
+    existing_count = int(
+        conn.execute("SELECT count(*) FROM craft_bench_recipe").fetchone()[0]
+    )
+    minimum_allowed = (
+        math.ceil(existing_count * (1.0 - MAX_BENCH_SNAPSHOT_DROP_FRACTION))
+        if existing_count else None
+    )
+    drop_ratio = (
+        max(0.0, (existing_count - incoming_count) / existing_count)
+        if existing_count else 0.0
+    )
+    guard_reason = ""
+    if not existing_count and incoming_count < MIN_BENCH_SNAPSHOT_RECIPES:
+        guard_reason = "below_absolute_minimum"
+        message = (
+            f"首次工艺台快照只有 {incoming_count} 条，低于安全下限 "
+            f"{MIN_BENCH_SNAPSHOT_RECIPES}；拒绝建立目录"
+        )
+    elif minimum_allowed is not None and incoming_count < minimum_allowed:
+        guard_reason = "relative_drop_exceeded"
+        message = (
+            f"工艺台快照从 {existing_count} 条骤降至 {incoming_count} 条，"
+            f"超过允许的 {MAX_BENCH_SNAPSHOT_DROP_FRACTION:.0%}；"
+            "可能是截短响应，拒绝覆盖旧目录"
+        )
+    else:
+        message = ""
+
+    applied = bool(allow_shrink and guard_reason)
+    audit: dict[str, object] = {
+        "allow_shrink_requested": allow_shrink,
+        "allow_shrink_applied": applied,
+        "existing_recipe_count": existing_count,
+        "incoming_recipe_count": incoming_count,
+        "drop_ratio": round(drop_ratio, 6),
+        "minimum_allowed_count": minimum_allowed,
+        "guard_reason": guard_reason or None,
+    }
+    if guard_reason and not allow_shrink:
+        error = poedb_crafting.CraftingBenchStructureError(message)
+        error.snapshot_audit = audit  # type: ignore[attr-defined]
+        raise error
+    if applied:
+        logger.warning(
+            "已显式允许工艺台目录缩减；跳过快照数量护栏（%s，%d → %d）",
+            guard_reason,
+            existing_count,
+            incoming_count,
+        )
+    return audit
+
+
+def _replace_bench_recipes(conn, recipes, fetched_at: str) -> tuple[int, int]:  # noqa: ANN001
+    """用页面完整快照替换目录；调用方负责事务与数量护栏。"""
+    conn.execute("DELETE FROM craft_bench_recipe_cost")
+    conn.execute("DELETE FROM craft_bench_recipe")
+    conn.executemany(
+        """
+        INSERT INTO craft_bench_recipe(
+            recipe_id, effect_text, item_classes, unlock_text, unlock_url,
+            unlock_hint, source, source_priority, url, content_hash,
+            fetched_at, updated_at
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,datetime('now'))
+        """,
+        [
+            (
+                recipe.recipe_id,
+                recipe.effect_text,
+                json.dumps(list(recipe.item_classes), ensure_ascii=False),
+                recipe.unlock_text,
+                recipe.unlock_url,
+                recipe.unlock_hint,
+                "POEDB",
+                1,
+                recipe.url,
+                recipe.content_hash,
+                fetched_at,
+            )
+            for recipe in recipes
+        ],
+    )
+    cost_rows = [
+        (
+            recipe.recipe_id,
+            cost.position,
+            cost.amount,
+            cost.currency_slug,
+            cost.currency_name_zh,
+            cost.currency_url,
+        )
+        for recipe in recipes
+        for cost in recipe.costs
+    ]
+    conn.executemany(
+        """
+        INSERT INTO craft_bench_recipe_cost(
+            recipe_id, position, amount, currency_slug, currency_name_zh, currency_url
+        ) VALUES (?,?,?,?,?,?)
+        """,
+        cost_rows,
+    )
+    return len(recipes), len(cost_rows)
+
+
+def _commit_bench_snapshot(
+    conn,  # noqa: ANN001
+    recipes,  # noqa: ANN001
+    *,
+    fetched_at: str,
+    run_id: int,
+    total: int,
+    elapsed_ms: int,
+    note: str,
+) -> tuple[int, int]:
+    """原子提交目录快照与成功审计；任一步失败两者一起回滚。"""
+    with conn:
+        recipe_count, cost_count = _replace_bench_recipes(conn, recipes, fetched_at)
+        cur = conn.execute(
+            "UPDATE ingest_run SET finished_at=datetime('now'), total=?, succeeded=?, "
+            "failed=0, skipped=0, elapsed_ms=?, note=? WHERE run_id=?",
+            (total, recipe_count, elapsed_ms, note, run_id),
+        )
+        if cur.rowcount != 1:
+            raise RuntimeError(f"ingest_run {run_id} 不存在，拒绝提交无审计快照")
+    return recipe_count, cost_count
+
+
+def run_poedb_crafting(*, force: bool = False, allow_shrink: bool = False) -> int:
+    """采集工艺工作台目录；不生成制作步骤或可执行性结论。"""
+    cfg = get_config()
+    conn = dbmod.init_db(cfg.db_path, vector_dim=int(cfg.get("retrieval.vector.dim", 0) or 0))
+    fetcher = _make_fetcher(cfg)
+
+    started = time.time()
+    initial_note = json.dumps(
+        {
+            "allow_shrink_requested": allow_shrink,
+            "allow_shrink_applied": False,
+            "existing_recipe_count": None,
+            "incoming_recipe_count": None,
+            "drop_ratio": None,
+            "minimum_allowed_count": None,
+            "guard_reason": None,
+            "status": "started",
+        },
+        ensure_ascii=False,
+    )
+    cur = conn.execute(
+        "INSERT INTO ingest_run(source, category, started_at, note) "
+        "VALUES (?,?,datetime('now'),?)",
+        ("POEDB", "crafting_bench", initial_note),
+    )
+    run_id = cur.lastrowid
+    conn.commit()
+
+    res = fetcher.fetch(poedb_crafting.CRAFTING_BENCH_URL, force=force)
+    if not res.ok:
+        conn.execute(
+            "UPDATE ingest_run SET finished_at=datetime('now'), failed=1, note=? WHERE run_id=?",
+            (
+                json.dumps(
+                    {
+                        "allow_shrink_requested": allow_shrink,
+                        "allow_shrink_applied": False,
+                        "existing_recipe_count": None,
+                        "incoming_recipe_count": None,
+                        "drop_ratio": None,
+                        "minimum_allowed_count": None,
+                        "guard_reason": None,
+                        "status": "fetch_failed",
+                        "error": f"HTTP {res.status_code}",
+                    },
+                    ensure_ascii=False,
+                ),
+                run_id,
+            ),
+        )
+        conn.commit()
+        logger.error("工艺台目录抓取失败：HTTP %s", res.status_code)
+        return 1
+
+    try:
+        recipes, stats = poedb_crafting.extract_bench_recipes(
+            res.text, poedb_crafting.CRAFTING_BENCH_URL
+        )
+        snapshot_audit = _validate_bench_snapshot_size(
+            conn, len(recipes), allow_shrink=allow_shrink
+        )
+    except poedb_crafting.CraftingBenchStructureError as exc:
+        rejected_audit = getattr(
+            exc,
+            "snapshot_audit",
+            {
+                "allow_shrink_requested": allow_shrink,
+                "allow_shrink_applied": False,
+                "existing_recipe_count": None,
+                "incoming_recipe_count": None,
+                "drop_ratio": None,
+                "minimum_allowed_count": None,
+                "guard_reason": None,
+            },
+        )
+        conn.execute(
+            "UPDATE ingest_run SET finished_at=datetime('now'), total=?, failed=1, "
+            "elapsed_ms=?, note=? WHERE run_id=?",
+            (
+                0,
+                int((time.time() - started) * 1000),
+                json.dumps(
+                    {
+                        **rejected_audit,
+                        "status": "structure_rejected",
+                        "error": str(exc),
+                    },
+                    ensure_ascii=False,
+                ),
+                run_id,
+            ),
+        )
+        conn.commit()
+        raise
+
+    elapsed_ms = int((time.time() - started) * 1000)
+    cost_count = sum(len(recipe.costs) for recipe in recipes)
+    note = json.dumps(
+        {
+            "page_content_hash": res.content_hash,
+            "from_cache": res.from_cache,
+            "costs": cost_count,
+            "multi_cost_recipes": stats.multi_cost_recipes,
+            "currencies": len(stats.currencies),
+            "boundary": "catalog_only_no_execution_semantics",
+            **snapshot_audit,
+        },
+        ensure_ascii=False,
+    )
+    # 快照替换与成功审计同属一个事务：中途崩溃不会留下「数据已换但 run 未完成」。
+    recipe_count, committed_costs = _commit_bench_snapshot(
+        conn,
+        recipes,
+        fetched_at=res.fetched_at,
+        run_id=run_id,
+        total=stats.total,
+        elapsed_ms=elapsed_ms,
+        note=note,
+    )
+    logger.info(
+        "工艺台目录入库完成：配方 %d，费用子项 %d，双费用配方 %d，通货 %d 种，耗时 %dms",
+        recipe_count,
+        committed_costs,
+        stats.multi_cost_recipes,
+        len(stats.currencies),
+        elapsed_ms,
+    )
+    return 0
+
+
 def run_harvest(*, force: bool = False) -> int:
     """把索引页与全部词缀类别页抓到本地缓存。
 
@@ -861,14 +1135,20 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--source", default="poedb", choices=["poedb"])
     ap.add_argument(
         "--category", default="unique_item",
-        choices=["unique_item", "unique_l2", "mods", "tree", "coverage", "all"],
+        choices=["unique_item", "unique_l2", "mods", "bench", "tree", "coverage", "all"],
         help="unique_item=唯一装备索引页, unique_l2=类别页补集+权威英文名+详情页兜底, "
-             "mods=词缀, tree=天赋树与 Atlas 天赋树, coverage=只刷新覆盖声明, all=全部",
+             "mods=词缀, bench=工艺工作台目录与原始费用, "
+             "tree=天赋树与 Atlas 天赋树, coverage=只刷新覆盖声明, all=全部",
     )
     ap.add_argument("--harvest", action="store_true",
                     help="只抓取索引页与词缀类别页到本地缓存，不抽取")
     ap.add_argument("--force", action="store_true", help="强制重新抓取（忽略缓存）")
     ap.add_argument("--rebuild", action="store_true", help="清空后重建")
+    ap.add_argument(
+        "--allow-bench-shrink",
+        action="store_true",
+        help="显式允许工艺台目录大幅缩减；仅在人工核对上游确实删项后使用",
+    )
     args = ap.parse_args(argv)
 
     if hasattr(sys.stdout, "reconfigure"):
@@ -889,6 +1169,10 @@ def main(argv: list[str] | None = None) -> int:
             rc |= run_unique_l2(force=args.force)
         if args.category in ("mods", "all"):
             rc |= run_poedb_mods(force=args.force, rebuild=args.rebuild)
+        if args.category in ("bench", "all"):
+            rc |= run_poedb_crafting(
+                force=args.force, allow_shrink=args.allow_bench_shrink
+            )
         if args.category in ("tree", "all"):
             rc |= run_passive_tree(force=args.force)
         # 覆盖声明总是最后刷新：它的每个数字都来自库里的实际行数，
@@ -900,6 +1184,9 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     except poedb_mods.ModStructureError as exc:
         logger.error("词缀结构断言失败，已拒绝写入：%s", exc)
+        return 2
+    except poedb_crafting.CraftingBenchStructureError as exc:
+        logger.error("工艺台目录结构断言失败，已拒绝写入：%s", exc)
         return 2
     except poedb_tree.TreeStructureError as exc:
         logger.error("天赋树结构断言失败，已拒绝写入：%s", exc)

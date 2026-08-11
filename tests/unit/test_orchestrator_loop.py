@@ -44,6 +44,20 @@ SECOND_TOOL_CALL = ToolCall(
     name="check_mod_combination",
     arguments=TOOL_CALL.arguments,
 )
+BENCH_QUESTION = "工艺工作台页面的跟接邻的药剂一起自动使用原始费用是什么？"
+BENCH_TOOL_CALL = ToolCall(
+    id="bench-1",
+    name="bench_recipe_catalog",
+    arguments=json.dumps(
+        {"query": "跟接邻的药剂一起自动使用"},
+        ensure_ascii=False,
+    ),
+)
+WRONG_BENCH_TOOL_CALL = ToolCall(
+    id="bench-wrong",
+    name="bench_recipe_catalog",
+    arguments=json.dumps({"query": "前缀无法被改变"}, ensure_ascii=False),
+)
 
 
 class _FakeConfig:
@@ -114,6 +128,42 @@ def _craft_result(*, gaps=None) -> ToolResult:
                 "can_support_facts": True,
                 "text": "页面结论为 unknown。",
                 "channel": "derived",
+            }
+        ],
+        meta={"channel": "structured"},
+    )
+
+
+def _bench_result() -> ToolResult:
+    return ToolResult(
+        ok=True,
+        data={
+            "found": True,
+            "total": 1,
+            "boundary": "目录记录不证明给定装备状态下可执行",
+        },
+        citations=[
+            {
+                "chunk_id": "bench_recipe:bench:test",
+                "entity_id": None,
+                "title": "工艺工作台：跟接邻的药剂一起自动使用",
+                "url": "https://poedb.tw/cn/Crafting_Bench",
+                "source": "POEDB",
+                "source_priority": 1,
+                "can_support_facts": True,
+                "claim_scope": "bench_catalog",
+                "claim_data": {
+                    "effect_text": "跟接邻的药剂一起自动使用",
+                    "item_classes": ["药剂"],
+                    "raw_costs": [
+                        {"amount": 5, "currency": "灌顶石"},
+                        {"amount": 5, "currency": "玻璃弹珠"},
+                    ],
+                    "unlock_text": "移动速度和药剂附魔 - 等级 3",
+                    "unlock_hint": None,
+                },
+                "text": "效果原文：跟接邻的药剂一起自动使用。原始费用：5x 灌顶石 + 5x 玻璃弹珠。",
+                "channel": "structured",
             }
         ],
         meta={"channel": "structured"},
@@ -270,6 +320,227 @@ class TestPrecisionRoute(unittest.TestCase):
             ),
             "",
         )
+
+    def test_工艺台目录问法命中且参数必须逐字归属(self):
+        questions = (
+            BENCH_QUESTION,
+            "工艺台有没有前缀无法被改变？",
+        )
+        expected = ("跟接邻的药剂一起自动使用", "前缀无法被改变")
+        for question, query in zip(questions, expected, strict=True):
+            with self.subTest(question=question):
+                self.assertEqual(
+                    loop._precision_tool_route(question), "bench_recipe_catalog"
+                )
+                self.assertEqual(
+                    loop._validate_precision_call(
+                        question, "bench_recipe_catalog", {"query": query}
+                    ),
+                    "",
+                )
+
+        explicit = "工艺台有没有项链的最大生命？"
+        with patch("orchestrator.loop._known_bench_item_classes", return_value=("项链",)):
+            self.assertEqual(
+                loop._bench_precision_query(explicit),
+                ("工艺台有没有项链的最大生命", "最大生命", "项链"),
+            )
+            self.assertEqual(
+                loop._validate_precision_call(
+                    explicit,
+                    "bench_recipe_catalog",
+                    {"query": "最大生命", "item_class": "项链"},
+                ),
+                "",
+            )
+            invalid = (
+                {"query": "项链的最大生命"},
+                {"query": "最大生命"},
+                {"query": "生命", "item_class": "项链"},
+                {"query": "最大生命", "item_class": "戒指"},
+                {"query": "最大生命", "item_class": "项链", "limit": 1},
+            )
+            for arguments in invalid:
+                with self.subTest(arguments=arguments):
+                    self.assertTrue(
+                        loop._validate_precision_call(
+                            explicit, "bench_recipe_catalog", arguments
+                        )
+                    )
+        self.assertEqual(
+            loop._precision_tool_route("不是问工艺台有没有前缀无法被改变，只解释概念"),
+            "",
+        )
+        self.assertIn(
+            "query",
+            loop._validate_precision_call(
+                BENCH_QUESTION,
+                "bench_recipe_catalog",
+                {"query": "前缀无法被改变"},
+            ),
+        )
+        self.assertIn(
+            "item_class",
+            loop._validate_precision_call(
+                BENCH_QUESTION,
+                "bench_recipe_catalog",
+                {"query": expected[0], "item_class": "项链"},
+            ),
+        )
+
+    def test_工艺台目录在kb不足时批量路径仍调用精确工具(self):
+        calls: list[str] = []
+
+        def registry_call(name, _arguments):
+            calls.append(name)
+            return _kb_result() if name == "kb_search" else _bench_result()
+
+        client = _ChatClient(
+            [
+                LLMResponse(content="", tool_calls=(BENCH_TOOL_CALL,), model="fake"),
+                LLMResponse(
+                    content="页面列出的原始费用是 5x 灌顶石和 5x 玻璃弹珠[[E1]]。",
+                    model="fake",
+                ),
+            ]
+        )
+        with self._patches(registry_call):
+            result = loop.run_turn(BENCH_QUESTION, client=client)
+
+        self.assertEqual(calls, ["kb_search", "bench_recipe_catalog"])
+        self.assertFalse(result.evidence_gap)
+        self.assertEqual(result.retrieval_meta["precision_route"], "bench_recipe_catalog")
+        self.assertEqual([e.chunk_id for e in result.evidence], ["bench_recipe:bench:test"])
+        self.assertEqual([citation.label for citation in result.citations], ["E1"])
+        self.assertIn("灌顶石", result.answer)
+        first_prompt = client.messages[0][1]["content"]
+        self.assertIn("目录证据只可回答", first_prompt)
+        self.assertNotIn("首轮伪证据", first_prompt)
+
+    def test_工艺台目录在kb不足时流式路径合并精确Citation(self):
+        def registry_call(name, _arguments):
+            return _kb_result() if name == "kb_search" else _bench_result()
+
+        client = _StreamClient(
+            [
+                [StreamEvent(kind="tool_calls", tool_calls=(BENCH_TOOL_CALL,))],
+                [
+                    StreamEvent(
+                        kind="content",
+                        text="页面列出的原始费用是 5x 灌顶石和 5x 玻璃弹珠[[E1]]。",
+                    )
+                ],
+            ]
+        )
+        with self._patches(registry_call):
+            events = list(loop.stream_turn(BENCH_QUESTION, client=client))
+
+        self.assertTrue(any(event["type"] == "sentence" for event in events))
+        citations = next(event for event in events if event["type"] == "citations")
+        self.assertEqual(citations["items"][0]["url"], "https://poedb.tw/cn/Crafting_Bench")
+        self.assertFalse(events[-1]["evidence_gap"])
+
+    def test_显式ItemClass问法在批量与流式路径使用唯一拆分参数(self):
+        question = "工艺台有没有项链的最大生命？"
+        tool_call = ToolCall(
+            id="bench-item-class",
+            name="bench_recipe_catalog",
+            arguments=json.dumps(
+                {"query": "最大生命", "item_class": "项链"}, ensure_ascii=False
+            ),
+        )
+        calls: list[dict] = []
+
+        def registry_call(name, arguments):
+            if name == "kb_search":
+                return _kb_result()
+            calls.append(json.loads(arguments))
+            return _bench_result()
+
+        batch_client = _ChatClient(
+            [
+                LLMResponse(content="", tool_calls=(tool_call,), model="fake"),
+                LLMResponse(content="页面目录列出了该选项[[E1]]。", model="fake"),
+            ]
+        )
+        with self._patches(registry_call), patch(
+            "orchestrator.loop._known_bench_item_classes", return_value=("项链",)
+        ):
+            batch = loop.run_turn(question, client=batch_client)
+        self.assertFalse(batch.evidence_gap)
+        self.assertEqual(calls, [{"query": "最大生命", "item_class": "项链"}])
+        self.assertEqual([citation.label for citation in batch.citations], ["E1"])
+
+        calls.clear()
+        stream_client = _StreamClient(
+            [
+                [StreamEvent(kind="tool_calls", tool_calls=(tool_call,))],
+                [StreamEvent(kind="content", text="页面目录列出了该选项[[E1]]。")],
+            ]
+        )
+        with self._patches(registry_call), patch(
+            "orchestrator.loop._known_bench_item_classes", return_value=("项链",)
+        ):
+            events = list(loop.stream_turn(question, client=stream_client))
+        self.assertEqual(calls, [{"query": "最大生命", "item_class": "项链"}])
+        self.assertTrue(any(event["type"] == "sentence" for event in events))
+        self.assertTrue(any(event["type"] == "citations" for event in events))
+
+    def test_工艺台目录越界执行语义在批量与流式均拦截(self):
+        unsafe = "该工艺可在任意给定装备状态下执行[[E1]]。"
+
+        def registry_call(name, _arguments):
+            return _kb_result() if name == "kb_search" else _bench_result()
+
+        batch_client = _ChatClient(
+            [
+                LLMResponse(content="", tool_calls=(BENCH_TOOL_CALL,), model="fake"),
+                LLMResponse(content=unsafe, model="fake"),
+            ]
+        )
+        with self._patches(registry_call):
+            batch = loop.run_turn(BENCH_QUESTION, client=batch_client)
+        self.assertEqual(batch.blocked, 1)
+        self.assertEqual(batch.citations, [])
+        self.assertNotIn("可在任意给定装备状态下执行", batch.answer)
+
+        stream_client = _StreamClient(
+            [
+                [StreamEvent(kind="tool_calls", tool_calls=(BENCH_TOOL_CALL,))],
+                [StreamEvent(kind="content", text=unsafe)],
+            ]
+        )
+        with self._patches(registry_call):
+            events = list(loop.stream_turn(BENCH_QUESTION, client=stream_client))
+        self.assertTrue(any(event["type"] == "blocked" for event in events))
+        self.assertFalse(any(event["type"] == "citations" for event in events))
+        visible = "".join(
+            str(event.get("text") or "")
+            for event in events
+            if event["type"] in {"sentence", "blocked"}
+        )
+        self.assertNotIn("可在任意给定装备状态下执行", visible)
+
+    def test_工艺台目录错误改参不能解锁正文(self):
+        calls: list[str] = []
+
+        def registry_call(name, _arguments):
+            calls.append(name)
+            return _kb_result()
+
+        client = _ChatClient(
+            [
+                LLMResponse(content="", tool_calls=(WRONG_BENCH_TOOL_CALL,), model="fake"),
+                LLMResponse(content="模型使用了不属于问题的目录项。", model="fake"),
+            ]
+        )
+        with self._patches(registry_call):
+            result = loop.run_turn(BENCH_QUESTION, client=client)
+
+        self.assertEqual(calls, ["kb_search"])
+        self.assertTrue(result.evidence_gap)
+        self.assertIn("不陈述工艺台目录事实", result.answer)
+        self.assertNotIn("不属于问题", result.answer)
 
     def test_批量路径在kb不足时仍调用精确工具(self):
         calls: list[str] = []

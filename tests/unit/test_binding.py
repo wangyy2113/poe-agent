@@ -18,7 +18,15 @@ from orchestrator import binding  # noqa: E402
 TERMS = ("词缀", "抗性", "物品等级", "权重", "升华", "隐式")
 
 
-def ev(label: str, text: str, *, priority: int = 1, facts: bool = True) -> binding.Evidence:
+def ev(
+    label: str,
+    text: str,
+    *,
+    priority: int = 1,
+    facts: bool = True,
+    claim_scope: str = "general",
+    claim_data: dict | None = None,
+) -> binding.Evidence:
     return binding.Evidence(
         label=label,
         chunk_id=f"chunk-{label}",
@@ -29,6 +37,8 @@ def ev(label: str, text: str, *, priority: int = 1, facts: bool = True) -> bindi
         source_priority=priority,
         text=text,
         can_support_facts=facts,
+        claim_scope=claim_scope,
+        claim_data=claim_data or {},
     )
 
 
@@ -100,6 +110,159 @@ class TestBlocking(unittest.TestCase):
         r = run("这条词缀还能给暴击伤害。", e)
         self.assertTrue(r.gaps)
         self.assertEqual(len(r.gaps), r.blocked)
+
+
+class TestBenchCatalogClaimScope(unittest.TestCase):
+    """目录 Citation 不能被反向用来证明页面未提供的制作执行语义。"""
+
+    def setUp(self) -> None:
+        self.evidence = [
+            ev(
+                "E1",
+                "页面目录项。效果原文：+(15-25) 最大生命。适用 ItemClasses：项链。"
+                "原始费用：5x 改造石。解锁：Default。"
+                "目录记录不证明给定装备状态下可执行。",
+                claim_scope="bench_catalog",
+                claim_data={
+                    "effect_text": "+(15-25) 最大生命",
+                    "item_classes": ["项链"],
+                    "raw_costs": [{"amount": 5, "currency": "改造石"}],
+                    "unlock_text": "Default",
+                    "unlock_hint": None,
+                },
+            )
+        ]
+
+    def test_执行语义概率成本与路线均被拦(self):
+        forbidden = (
+            "该工艺可在任意给定装备状态下执行[[E1]]。",
+            "该工艺会移除当前词缀[[E1]]。",
+            "制作步骤是先使用改造石再应用该工艺[[E1]]。",
+            "该工艺的成功率是 5%[[E1]]。",
+            "该工艺的市场成本是 5 混沌石[[E1]]。",
+            "这是最快且最经济的制作路线[[E1]]。",
+            "该工艺允许突破 crafted-mod 上限[[E1]]。",
+            "建议采用最经济路线[[E1]]。",
+            "页面显示该工艺成功机会为 5%[[E1]]。",
+            "目录不包含状态转移，因此它会删除现有前缀[[E1]]。",
+            "目录不证明可执行，但它可用于当前装备[[E1]]。",
+            "目录不证明可执行，故它可用于当前装备[[E1]]。",
+            "建议采用这个目录选项[[E1]]。",
+        )
+        for sentence in forbidden:
+            with self.subTest(sentence=sentence):
+                result = run(sentence, self.evidence)
+                self.assertEqual(result.blocked, 1)
+                self.assertEqual(result.used_labels, [])
+                self.assertNotIn(sentence.replace("[[E1]]", ""), result.text)
+                self.assertIn("目录证据", result.verdicts[0].reason)
+
+    def test_目录明确字段与边界声明可以通过(self):
+        allowed = (
+            "POEDB 页面目录列出了该选项[[E1]]。",
+            "页面效果原文是 +(15-25) 最大生命[[E1]]。",
+            "页面列出的原始费用是 5x 改造石[[E1]]。",
+            "页面列出的适用 ItemClasses 是项链[[E1]]。",
+            "页面列出的解锁信息是 Default[[E1]]。",
+            "该目录不证明它在给定装备状态下可执行[[E1]]。",
+        )
+        for sentence in allowed:
+            with self.subTest(sentence=sentence):
+                result = run(sentence, self.evidence)
+                self.assertEqual(
+                    result.blocked,
+                    0,
+                    [verdict.reason for verdict in result.verdicts],
+                )
+                self.assertEqual(result.used_labels, ["E1"])
+
+    def test_目录字段不能夹带错误值或跨字段借数字(self):
+        invalid = (
+            "页面列出的原始费用是 15x 改造石[[E1]]。",
+            "页面列出的适用 ItemClasses 是项链和弓[[E1]]。",
+            "页面列出的解锁信息是 Default错误[[E1]]。",
+            "页面列出的原始费用是 5x 改造石和 5x 改造石[[E1]]。",
+            "页面列出的原始费用是 不包含 5x 改造石[[E1]]。",
+            "页面列出的原始费用是 5x 改造石和错误说明[[E1]]。",
+            "POEDB 页面目录列出了该选项，故它可用于当前装备[[E1]]。",
+            "它可用于当前装备，页面效果原文是 +(15-25) 最大生命[[E1]]。",
+            "它可用于当前装备，页面列出的原始费用是 5x 改造石[[E1]]。",
+            "它可用于当前装备，页面列出的适用 ItemClasses 是项链[[E1]]。",
+            "它可用于当前装备，页面列出的解锁信息是 Default[[E1]]。",
+        )
+        for sentence in invalid:
+            with self.subTest(sentence=sentence):
+                result = run(sentence, self.evidence)
+                self.assertEqual(result.blocked, 1)
+                self.assertEqual(result.used_labels, [])
+                self.assertIn("目录证据", result.verdicts[0].reason)
+
+    def test_双费用必须按页面顺序完整声明且保留重数(self):
+        evidence = [
+            ev(
+                "E1",
+                "原始费用：5x 灌顶石 + 5x 玻璃弹珠",
+                claim_scope="bench_catalog",
+                claim_data={
+                    "effect_text": "跟接邻的药剂一起自动使用",
+                    "item_classes": ["药剂"],
+                    "raw_costs": [
+                        {"amount": 5, "currency": "灌顶石"},
+                        {"amount": 5, "currency": "玻璃弹珠"},
+                    ],
+                    "unlock_text": "移动速度和药剂附魔 - 等级 3",
+                    "unlock_hint": None,
+                },
+            )
+        ]
+        valid = run(
+            "页面列出的原始费用是 5x 灌顶石和 5x 玻璃弹珠[[E1]]。",
+            evidence,
+        )
+        self.assertEqual(valid.blocked, 0)
+        self.assertEqual(valid.used_labels, ["E1"])
+        for sentence in (
+            "页面列出的原始费用是 5x 灌顶石[[E1]]。",
+            "页面列出的原始费用是 5x 玻璃弹珠[[E1]]。",
+            "页面列出的原始费用是 5x 玻璃弹珠和 5x 灌顶石[[E1]]。",
+            "页面列出的原始费用是 不包含 5x 灌顶石和 5x 玻璃弹珠[[E1]]。",
+            "页面列出的原始费用是 5x 灌顶石和随便写和 5x 玻璃弹珠[[E1]]。",
+        ):
+            with self.subTest(sentence=sentence):
+                result = run(sentence, evidence)
+                self.assertEqual(result.blocked, 1)
+                self.assertEqual(result.used_labels, [])
+
+    def test_真实效果原文中的几率和移除不会被误拦(self):
+        cases = (
+            ("(15-20)% 几率避免被晕眩", "页面效果原文是 (15-20)% 几率避免被晕眩[[E1]]。"),
+            ("移除工艺词缀", "页面效果原文是移除工艺词缀[[E1]]。"),
+        )
+        for effect_text, sentence in cases:
+            evidence = [
+                ev(
+                    "E1",
+                    f"效果原文：{effect_text}",
+                    claim_scope="bench_catalog",
+                    claim_data={
+                        "effect_text": effect_text,
+                        "item_classes": ["物品"],
+                        "raw_costs": [{"amount": 1, "currency": "重铸石"}],
+                        "unlock_text": "Default",
+                        "unlock_hint": None,
+                    },
+                )
+            ]
+            with self.subTest(effect_text=effect_text):
+                result = run(sentence, evidence)
+                self.assertEqual(result.blocked, 0, [v.reason for v in result.verdicts])
+                self.assertEqual(result.used_labels, ["E1"])
+
+    def test_混合普通证据也不能洗白错误绑定的目录Citation(self):
+        evidence = self.evidence + [ev("E2", "另一条普通证据")]
+        result = run("该工艺可在当前装备上使用[[E1,E2]]。", evidence)
+        self.assertEqual(result.blocked, 1)
+        self.assertEqual(result.used_labels, [])
 
 
 class TestPassing(unittest.TestCase):
@@ -288,6 +451,33 @@ class TestEvidence(unittest.TestCase):
         ]
         got = binding.number_evidence(cites)
         self.assertEqual([e.label for e in got], ["E1", "E2"])
+
+    def test_编号时保留claim_scope且旧Citation默认general(self):
+        got = binding.number_evidence(
+            [
+                {
+                    "chunk_id": "bench",
+                    "title": "工艺台",
+                    "url": "u",
+                    "source": "POEDB",
+                    "source_priority": 1,
+                    "text": "目录项",
+                    "claim_scope": "bench_catalog",
+                    "claim_data": {"effect_text": "最大生命"},
+                },
+                {
+                    "chunk_id": "normal",
+                    "title": "普通证据",
+                    "url": "u2",
+                    "source": "POEDB",
+                    "source_priority": 1,
+                    "text": "普通内容",
+                },
+            ]
+        )
+        self.assertEqual([e.claim_scope for e in got], ["bench_catalog", "general"])
+        self.assertEqual(got[0].claim_data["effect_text"], "最大生命")
+        self.assertIn("仅可支撑目录存在", binding.render_evidence_block(got))
 
     def test_证据块不含URL(self):
         """URL 给了模型就会自己编引用格式；引用由代码在出口装配。"""
