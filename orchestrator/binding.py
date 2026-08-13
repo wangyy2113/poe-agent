@@ -160,6 +160,42 @@ _BENCH_CATALOG_PRESENCE = re.compile(
     re.I,
 )
 
+#: Metamod Matrix v1 只允许三种正向字段声明；其它绑定语义全部 fail closed。
+_METAMOD_RESULT_CLAIM = re.compile(
+    r"^\s*来源矩阵记录[“\"](.+?)[”\"]在[“\"](.+?)[”\"]下的"
+    r"原始结果(?:是|为|：|:)\s*(YES\s*&\s*NO|YES|NO|N/A)\s*[。！？!?]*$",
+    re.I,
+)
+_METAMOD_NOTE_CLAIM = re.compile(
+    r"^\s*来源矩阵对[“\"](.+?)[”\"]与[“\"](.+?)[”\"]的"
+    r"原始注释(?:是|为|：|:)\s*(.+?)\s*[。！？!?]*$",
+    re.I,
+)
+_METAMOD_PRESENCE_CLAIM = re.compile(
+    r"^\s*来源矩阵包含[“\"](.+?)[”\"]与[“\"](.+?)[”\"]的交互记录\s*[。！？!?]*$",
+    re.I,
+)
+_METAMOD_PURE_BOUNDARY = re.compile(
+    r"^\s*(?:该)?矩阵记录(?:不|无法|不能|不足以)证明(?:它)?(?:在)?"
+    r"(?:任意|当前|给定|这件|该)?装备状态下可执行\s*[。！？!?]*$"
+)
+_METAMOD_FORBIDDEN: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("给定装备状态下的可执行性", re.compile(
+        r"可执行|执行该操作|用于当前装备|当前装备.{0,8}(?:使用|制作|应用)"
+        r"|(?:能|可以|可).{0,12}(?:使用|制作|应用)"
+    )),
+    ("完整状态转移或结果外推", re.compile(
+        r"状态转移|(?:添加|删除|移除|替换|覆盖|保留).{0,10}(?:词缀|属性|前缀|后缀)"
+    )),
+    ("制作步骤或操作顺序", re.compile(
+        r"制作步骤|操作步骤|操作顺序|制作流程|第一步|第二步|下一步|先.{0,20}再|依次"
+    )),
+    ("成功率或概率", re.compile(r"成功率|成功机会|成功可能|概率|几率|机率|期望次数|平均次数")),
+    ("市场成本或价格", re.compile(r"市场成本|实际成本|市价|市场价|行情|折算价格|交易价格")),
+    ("最快、最经济或最优路线", re.compile(r"最快|最经济|最省|最便宜|最优|路线|方案比较|成本最低")),
+    ("当前版本或赛季适用性", re.compile(r"当前版本|当前赛季|本赛季|现版本|3[.]\d+")),
+)
+
 
 @dataclass(frozen=True)
 class Evidence:
@@ -282,6 +318,8 @@ def render_evidence_block(evidence: list[Evidence]) -> str:
             tags.append("社区来源，不可支撑事实断言")
         if e.claim_scope == "bench_catalog":
             tags.append("仅可支撑目录存在、效果原文、原始费用、ItemClasses 与解锁信息")
+        if e.claim_scope == "metamod_matrix":
+            tags.append("仅可支撑逐字 operation × guard 的原始结果与原始注释")
         tag = f"（{'；'.join(tags)}）" if tags else ""
         parts.append(f"[{e.label}] 来源：{e.source} → {e.title}{tag}\n{e.text}")
     return "\n\n".join(parts)
@@ -633,6 +671,66 @@ def _bench_catalog_scope_error(
     return "目录未明确覆盖的事实语义"
 
 
+def _metamod_matrix_scope_error(
+    sentence: str,
+    evidence: list[Evidence],
+    kind: SentenceKind,
+) -> str:
+    """只按同一 Citation 的 operation + guard + 原字段做正向核对。"""
+    normalized = sentence.strip()
+    claim_data = [e.claim_data for e in evidence if e.claim_data]
+    if kind == "recommendation":
+        return "制作建议或操作采用结论"
+    if _METAMOD_PURE_BOUNDARY.fullmatch(normalized):
+        return ""
+
+    result_match = _METAMOD_RESULT_CLAIM.fullmatch(normalized)
+    if result_match:
+        operation = result_match.group(1)
+        guard = result_match.group(2)
+        raw_value = result_match.group(3)
+        if any(
+            operation == str(data.get("operation_text") or "")
+            and guard == str(data.get("guard_text") or "")
+            and raw_value == str(data.get("raw_value") or "")
+            for data in claim_data
+        ):
+            return ""
+        return "与 Citation 不一致的 operation、guard 或原始结果"
+
+    note_match = _METAMOD_NOTE_CLAIM.fullmatch(normalized)
+    if note_match:
+        operation = note_match.group(1)
+        guard = note_match.group(2)
+        note = note_match.group(3)
+        if any(
+            operation == str(data.get("operation_text") or "")
+            and guard == str(data.get("guard_text") or "")
+            and note == str(data.get("note_text") or "")
+            and bool(data.get("note_text"))
+            for data in claim_data
+        ):
+            return ""
+        return "与 Citation 不一致的原始注释"
+
+    presence_match = _METAMOD_PRESENCE_CLAIM.fullmatch(normalized)
+    if presence_match:
+        operation = presence_match.group(1)
+        guard = presence_match.group(2)
+        if any(
+            operation == str(data.get("operation_text") or "")
+            and guard == str(data.get("guard_text") or "")
+            for data in claim_data
+        ):
+            return ""
+        return "与 Citation 不一致的矩阵记录存在性"
+
+    for claim_name, pattern in _METAMOD_FORBIDDEN:
+        if pattern.search(normalized):
+            return claim_name
+    return "矩阵未明确覆盖的事实语义"
+
+
 def _check_sentence(
     sentence: str,
     by_label: dict[str, Evidence],
@@ -681,6 +779,26 @@ def _check_sentence(
                 sentence, kind, labels,
                 f"工艺台目录证据仅支撑页面目录字段，不能支撑{scope_error}",
                 f"缺少可支撑{scope_error}的非目录证据：{_excerpt(stripped)}",
+            )
+
+    metamod_restricted = [e for e in bound if e.claim_scope == "metamod_matrix"]
+    if metamod_restricted:
+        marker_matches = list(_BINDING_RE.finditer(sentence))
+        marker_tail = sentence[marker_matches[0].start():] if marker_matches else ""
+        marker_tail_text = _BINDING_RE.sub("", marker_tail).strip(" \t\r\n。！？!?")
+        if marker_tail_text:
+            scope_error = "插入原字段内部的 Citation marker"
+        else:
+            # Metamod 的 operation / guard / raw_value / note 必须保留逐字原貌；
+            # Citation 只能出现在声明末尾，不能靠全局删除 marker 拼接出合法字段。
+            scope_error = _metamod_matrix_scope_error(
+                _BINDING_RE.sub("", sentence), metamod_restricted, kind
+            )
+        if scope_error:
+            return _block(
+                sentence, kind, labels,
+                f"Metamod 矩阵证据仅支撑页面单元格原字段，不能支撑{scope_error}",
+                f"缺少可支撑{scope_error}的非矩阵证据：{_excerpt(stripped)}",
             )
 
     weak = [e for e in bound if not e.can_support_facts]

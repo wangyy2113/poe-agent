@@ -32,6 +32,7 @@ from kb import render_tree
 from kb.render import to_chunks
 from kb.render_mods import build_mod_chunks
 from kb.sources import (
+    craftofexile_metamods,
     poedb_crafting,
     poedb_index,
     poedb_mods,
@@ -53,6 +54,11 @@ MOD_LADDER_PREFIX = "mod_ladder:"
 #: 当前真实页面为 783 条，阈值刻意不钉死当前行数，允许正常的小幅版本变化。
 MIN_BENCH_SNAPSHOT_RECIPES = 100
 MAX_BENCH_SNAPSHOT_DROP_FRACTION = 0.05
+
+#: Metamod 页面当前有 134 个明确单元格；绝对下限防止登录页、错误页或截断页
+#: 被当成首次可信快照。阈值不钉死当前值，允许上游正常增删。
+MIN_METAMOD_SNAPSHOT_INTERACTIONS = 100
+MAX_METAMOD_SNAPSHOT_DROP_FRACTION = 0.05
 
 
 def _existing_hashes(conn, entity_type: str) -> dict[str, str]:
@@ -799,6 +805,321 @@ def run_poedb_crafting(*, force: bool = False, allow_shrink: bool = False) -> in
     return 0
 
 
+def _validate_metamod_snapshot_size(
+    conn, incoming_count: int, *, allow_shrink: bool = False  # noqa: ANN001
+) -> dict[str, object]:
+    """拒绝明显截短的矩阵快照；空白格已在 incoming_count 之外。"""
+    existing_count = int(
+        conn.execute("SELECT count(*) FROM craft_metamod_interaction").fetchone()[0]
+    )
+    minimum_allowed = (
+        math.ceil(existing_count * (1.0 - MAX_METAMOD_SNAPSHOT_DROP_FRACTION))
+        if existing_count else None
+    )
+    drop_ratio = (
+        max(0.0, (existing_count - incoming_count) / existing_count)
+        if existing_count else 0.0
+    )
+    guard_reason = ""
+    if not existing_count and incoming_count < MIN_METAMOD_SNAPSHOT_INTERACTIONS:
+        guard_reason = "below_absolute_minimum"
+        message = (
+            f"首次 Metamod 矩阵只有 {incoming_count} 个明确单元格，低于安全下限 "
+            f"{MIN_METAMOD_SNAPSHOT_INTERACTIONS}；拒绝建立矩阵"
+        )
+    elif minimum_allowed is not None and incoming_count < minimum_allowed:
+        guard_reason = "relative_drop_exceeded"
+        message = (
+            f"Metamod 矩阵从 {existing_count} 个明确单元格骤降至 {incoming_count} 个，"
+            f"超过允许的 {MAX_METAMOD_SNAPSHOT_DROP_FRACTION:.0%}；拒绝覆盖旧快照"
+        )
+    else:
+        message = ""
+
+    applied = bool(allow_shrink and guard_reason)
+    audit: dict[str, object] = {
+        "allow_shrink_requested": allow_shrink,
+        "allow_shrink_applied": applied,
+        "existing_interaction_count": existing_count,
+        "incoming_interaction_count": incoming_count,
+        "drop_ratio": round(drop_ratio, 6),
+        "minimum_allowed_count": minimum_allowed,
+        "guard_reason": guard_reason or None,
+    }
+    if guard_reason and not allow_shrink:
+        error = craftofexile_metamods.MetamodMatrixStructureError(message)
+        error.snapshot_audit = audit  # type: ignore[attr-defined]
+        raise error
+    if applied:
+        logger.warning(
+            "已显式允许 Metamod 矩阵缩减；跳过数量护栏（%s，%d → %d）",
+            guard_reason,
+            existing_count,
+            incoming_count,
+        )
+    return audit
+
+
+def _replace_metamod_interactions(conn, interactions, fetched_at: str) -> int:  # noqa: ANN001
+    """用全部明确单元格替换快照；空白源格永不写入事实表。"""
+    conn.execute("DELETE FROM craft_metamod_interaction")
+    conn.executemany(
+        """
+        INSERT INTO craft_metamod_interaction(
+            interaction_id, section, operation_text, guard_text, outcome,
+            raw_value, note_text, row_order, column_order, source,
+            source_priority, source_url, mirror_url, content_hash, fetched_at,
+            version_scope, updated_at
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'))
+        """,
+        [
+            (
+                item.interaction_id,
+                item.section,
+                item.operation_text,
+                item.guard_text,
+                item.outcome,
+                item.raw_value,
+                item.note_text,
+                item.row_order,
+                item.column_order,
+                "Craft of Exile",
+                4,
+                item.source_url,
+                item.mirror_url,
+                item.content_hash,
+                fetched_at,
+                item.version_scope,
+            )
+            for item in interactions
+        ],
+    )
+    return len(interactions)
+
+
+def _commit_metamod_snapshot(
+    conn,  # noqa: ANN001
+    interactions,  # noqa: ANN001
+    *,
+    fetched_at: str,
+    run_id: int,
+    total: int,
+    skipped: int,
+    elapsed_ms: int,
+    note: str,
+) -> int:
+    """原子提交矩阵事实、空白格审计和成功状态。"""
+    with conn:
+        interaction_count = _replace_metamod_interactions(
+            conn, interactions, fetched_at
+        )
+        cur = conn.execute(
+            "UPDATE ingest_run SET finished_at=datetime('now'), total=?, succeeded=?, "
+            "failed=0, skipped=?, elapsed_ms=?, note=? WHERE run_id=?",
+            (total, interaction_count, skipped, elapsed_ms, note, run_id),
+        )
+        if cur.rowcount != 1:
+            raise RuntimeError(f"ingest_run {run_id} 不存在，拒绝提交无审计快照")
+    return interaction_count
+
+
+def _finish_metamod_failure(
+    conn,  # noqa: ANN001
+    *,
+    run_id: int,
+    started: float,
+    status: str,
+    error: BaseException,
+    audit: dict[str, object] | None = None,
+) -> None:
+    """尽力把未预期异常收口为终态审计；只记录异常类型，不泄露路径或 SQL。"""
+    try:
+        conn.rollback()
+        note = {
+            **(audit or {}),
+            "status": status,
+            "error_type": type(error).__name__,
+        }
+        with conn:
+            cur = conn.execute(
+                "UPDATE ingest_run SET finished_at=datetime('now'), failed=1, "
+                "elapsed_ms=?, note=? WHERE run_id=?",
+                (
+                    int((time.time() - started) * 1000),
+                    json.dumps(note, ensure_ascii=False),
+                    run_id,
+                ),
+            )
+            if cur.rowcount != 1:
+                raise RuntimeError(f"ingest_run {run_id} 不存在")
+    except Exception as audit_exc:  # noqa: BLE001
+        logger.error(
+            "Metamod 失败终态审计写入失败（原异常 %s，审计异常 %s）",
+            type(error).__name__,
+            type(audit_exc).__name__,
+        )
+
+
+def run_poedb_metamods(*, force: bool = False, allow_shrink: bool = False) -> int:
+    """采集 Craft of Exile 元词缀矩阵镜像；只保存页面逐格事实。"""
+    cfg = get_config()
+    conn = dbmod.init_db(
+        cfg.db_path, vector_dim=int(cfg.get("retrieval.vector.dim", 0) or 0)
+    )
+    fetcher = _make_fetcher(cfg)
+    started = time.time()
+    initial_note = json.dumps(
+        {
+            "status": "started",
+            "allow_shrink_requested": allow_shrink,
+            "allow_shrink_applied": False,
+            "existing_interaction_count": None,
+            "incoming_interaction_count": None,
+            "drop_ratio": None,
+            "minimum_allowed_count": None,
+            "guard_reason": None,
+        },
+        ensure_ascii=False,
+    )
+    cur = conn.execute(
+        "INSERT INTO ingest_run(source, category, started_at, note) "
+        "VALUES (?,?,datetime('now'),?)",
+        ("Craft of Exile", "metamod_matrix", initial_note),
+    )
+    run_id = cur.lastrowid
+    conn.commit()
+
+    try:
+        res = fetcher.fetch(craftofexile_metamods.METAMOD_MIRROR_URL, force=force)
+    except Exception as exc:  # noqa: BLE001
+        _finish_metamod_failure(
+            conn,
+            run_id=run_id,
+            started=started,
+            status="fetch_exception",
+            error=exc,
+            audit={"allow_shrink_requested": allow_shrink},
+        )
+        raise
+    if not res.ok:
+        conn.execute(
+            "UPDATE ingest_run SET finished_at=datetime('now'), failed=1, note=? "
+            "WHERE run_id=?",
+            (
+                json.dumps(
+                    {
+                        "status": "fetch_failed",
+                        "error": f"HTTP {res.status_code}",
+                        "allow_shrink_requested": allow_shrink,
+                        "allow_shrink_applied": False,
+                    },
+                    ensure_ascii=False,
+                ),
+                run_id,
+            ),
+        )
+        conn.commit()
+        logger.error("Metamod 矩阵镜像抓取失败：HTTP %s", res.status_code)
+        return 1
+
+    try:
+        interactions, stats = craftofexile_metamods.extract_metamod_interactions(
+            res.text, craftofexile_metamods.METAMOD_MIRROR_URL
+        )
+        snapshot_audit = _validate_metamod_snapshot_size(
+            conn, len(interactions), allow_shrink=allow_shrink
+        )
+    except craftofexile_metamods.MetamodMatrixStructureError as exc:
+        rejected_audit = getattr(
+            exc,
+            "snapshot_audit",
+            {
+                "allow_shrink_requested": allow_shrink,
+                "allow_shrink_applied": False,
+                "existing_interaction_count": None,
+                "incoming_interaction_count": None,
+                "drop_ratio": None,
+                "minimum_allowed_count": None,
+                "guard_reason": None,
+            },
+        )
+        conn.execute(
+            "UPDATE ingest_run SET finished_at=datetime('now'), failed=1, elapsed_ms=?, "
+            "note=? WHERE run_id=?",
+            (
+                int((time.time() - started) * 1000),
+                json.dumps(
+                    {**rejected_audit, "status": "structure_rejected", "error": str(exc)},
+                    ensure_ascii=False,
+                ),
+                run_id,
+            ),
+        )
+        conn.commit()
+        raise
+    except Exception as exc:  # noqa: BLE001
+        _finish_metamod_failure(
+            conn,
+            run_id=run_id,
+            started=started,
+            status="extract_exception",
+            error=exc,
+            audit={"allow_shrink_requested": allow_shrink},
+        )
+        raise
+
+    elapsed_ms = int((time.time() - started) * 1000)
+    try:
+        blank_cells = [cell.canonical() for cell in stats.blank_cells]
+        note = json.dumps(
+            {
+                "page_content_hash": res.content_hash,
+                "from_cache": res.from_cache,
+                "sections": stats.sections,
+                "operation_rows": stats.operation_rows,
+                "explicit_cells": stats.explicit_cells,
+                "blank_cells": blank_cells,
+                "outcomes": stats.outcomes,
+                "version_scope": craftofexile_metamods.VERSION_SCOPE_UNKNOWN,
+                "source_url": craftofexile_metamods.METAMOD_SOURCE_URL,
+                "mirror_url": craftofexile_metamods.METAMOD_MIRROR_URL,
+                "boundary": "matrix_cells_only_no_execution_or_route_semantics",
+                **snapshot_audit,
+            },
+            ensure_ascii=False,
+        )
+        committed = _commit_metamod_snapshot(
+            conn,
+            interactions,
+            fetched_at=res.fetched_at,
+            run_id=run_id,
+            total=stats.total_cells,
+            skipped=len(stats.blank_cells),
+            elapsed_ms=elapsed_ms,
+            note=note,
+        )
+    except Exception as exc:  # noqa: BLE001
+        _finish_metamod_failure(
+            conn,
+            run_id=run_id,
+            started=started,
+            status="commit_exception",
+            error=exc,
+            audit=snapshot_audit,
+        )
+        raise
+    logger.info(
+        "Metamod 矩阵入库完成：分区 %d，操作 %d，明确单元格 %d，空白缺口 %d，"
+        "版本范围 unknown，耗时 %dms",
+        stats.sections,
+        stats.operation_rows,
+        committed,
+        len(stats.blank_cells),
+        elapsed_ms,
+    )
+    return 0
+
+
 def run_harvest(*, force: bool = False) -> int:
     """把索引页与全部词缀类别页抓到本地缓存。
 
@@ -1135,9 +1456,13 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--source", default="poedb", choices=["poedb"])
     ap.add_argument(
         "--category", default="unique_item",
-        choices=["unique_item", "unique_l2", "mods", "bench", "tree", "coverage", "all"],
+        choices=[
+            "unique_item", "unique_l2", "mods", "bench", "metamods", "tree",
+            "coverage", "all",
+        ],
         help="unique_item=唯一装备索引页, unique_l2=类别页补集+权威英文名+详情页兜底, "
              "mods=词缀, bench=工艺工作台目录与原始费用, "
+             "metamods=Craft of Exile 元词缀交互矩阵（POEDB 镜像）, "
              "tree=天赋树与 Atlas 天赋树, coverage=只刷新覆盖声明, all=全部",
     )
     ap.add_argument("--harvest", action="store_true",
@@ -1148,6 +1473,11 @@ def main(argv: list[str] | None = None) -> int:
         "--allow-bench-shrink",
         action="store_true",
         help="显式允许工艺台目录大幅缩减；仅在人工核对上游确实删项后使用",
+    )
+    ap.add_argument(
+        "--allow-metamod-shrink",
+        action="store_true",
+        help="显式允许 Metamod 矩阵大幅缩减；仅在人工核对源页面后使用",
     )
     args = ap.parse_args(argv)
 
@@ -1173,6 +1503,10 @@ def main(argv: list[str] | None = None) -> int:
             rc |= run_poedb_crafting(
                 force=args.force, allow_shrink=args.allow_bench_shrink
             )
+        if args.category in ("metamods", "all"):
+            rc |= run_poedb_metamods(
+                force=args.force, allow_shrink=args.allow_metamod_shrink
+            )
         if args.category in ("tree", "all"):
             rc |= run_passive_tree(force=args.force)
         # 覆盖声明总是最后刷新：它的每个数字都来自库里的实际行数，
@@ -1187,6 +1521,9 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     except poedb_crafting.CraftingBenchStructureError as exc:
         logger.error("工艺台目录结构断言失败，已拒绝写入：%s", exc)
+        return 2
+    except craftofexile_metamods.MetamodMatrixStructureError as exc:
+        logger.error("Metamod 矩阵结构断言失败，已拒绝写入：%s", exc)
         return 2
     except poedb_tree.TreeStructureError as exc:
         logger.error("天赋树结构断言失败，已拒绝写入：%s", exc)

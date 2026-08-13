@@ -89,6 +89,18 @@ def _prepare_tools() -> list[dict[str, Any]]:
     return REGISTRY.schemas(ALLOWED_TOOLS)
 
 
+def _tools_for_question(question: str) -> list[dict[str, Any]]:
+    """按本轮明确来源排除裁剪 schema；执行层仍会做第二次授权检查。"""
+    tools = _prepare_tools()
+    if _metamod_source_policy(question) != "excluded":
+        return tools
+    return [
+        schema for schema in tools
+        if str((schema.get("function") or {}).get("name") or "")
+        != "metamod_interaction_matrix"
+    ]
+
+
 def _gap_answer(question: str, data: dict[str, Any]) -> tuple[str, str]:
     """依据不足时生成缺据声明，并给出台账分类。
 
@@ -273,10 +285,228 @@ def _bench_precision_query(question: str) -> tuple[str, str, str]:
     return candidates[-1] if candidates else ("", "", "")
 
 
+_METAMOD_MATRIX_TERMS = (
+    "元词缀矩阵", "工艺互动矩阵", "metamodmatrix", "metamods矩阵",
+    "craftofexile矩阵", "来源矩阵",
+)
+
+
+def _known_metamod_pairs() -> tuple[tuple[str, str], ...]:
+    """读取事实键及最近成功快照的空白键，防止长操作回退成有值短子串。"""
+    try:
+        conn = dbmod.get_conn()
+        rows = conn.execute(
+            "SELECT operation_text, guard_text FROM craft_metamod_interaction "
+            "ORDER BY length(operation_text) DESC, operation_text, guard_text"
+        ).fetchall()
+        pairs = [
+            (str(row[0]), str(row[1])) for row in rows if row[0] and row[1]
+        ]
+        audit = conn.execute(
+            "SELECT note FROM ingest_run WHERE category='metamod_matrix' "
+            "AND succeeded>0 ORDER BY run_id DESC LIMIT 1"
+        ).fetchone()
+        if audit and audit[0]:
+            note = json.loads(audit[0])
+            for cell in note.get("blank_cells", []) if isinstance(note, dict) else []:
+                if not isinstance(cell, dict):
+                    continue
+                operation = cell.get("operation_text")
+                guard = cell.get("guard_text")
+                if operation and guard:
+                    pairs.append((str(operation), str(guard)))
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("Metamod 矩阵键不可用，不启用精确路由：%s", exc)
+        return ()
+    return tuple(
+        sorted(set(pairs), key=lambda pair: (-len(pair[0]), pair[0], pair[1]))
+    )
+
+
+def _metamod_source_policy(question: str) -> str:
+    """返回 positive / excluded / absent；来源排除同时约束路由与工具权限。"""
+    clauses = [
+        clause for raw in _CRAFT_CLAUSE_SPLIT_RE.split(question or "")
+        if (clause := _normalized(raw))
+    ]
+    negative_prefixes = ("不要", "请勿", "别", "不想", "不愿", "不用", "无需", "不需要", "不")
+    source_actions = (
+        "把", "将", "要", "用", "使用", "采用", "参考", "查看", "查询", "看", "查", "考虑",
+    )
+    source_left_negations = tuple(
+        prefix + action for prefix in negative_prefixes for action in source_actions
+    ) + ("不是问", "并非问", "并非询问", "排除")
+    source_left_positives = (
+        "只给", "只看", "只查", "只用", "仅给", "仅看", "仅查", "仅用", "而是问",
+        "改问", "实际想问", "真正想问",
+    )
+    source_right_negations = (
+        "不是我想问", "不是要问", "并非我想问", "并非要问", "我不想要", "我不想用",
+        "我不想参考", "我不想使用", "我不想采用", "我不愿用", "我不愿参考",
+        "我不要用", "不要用", "请勿使用", "不用", "无需", "不需要", "不看", "不查",
+        "别用", "不作为来源", "不要作为来源", "排除", "排除掉",
+    )
+    output_constraint_prefixes = (
+        "不要解释", "不用解释", "无需解释", "不需要解释", "别解释",
+        "不要展开", "不用展开", "无需展开", "不需要展开", "别展开",
+    )
+    source_scaffolding = (
+        "里的", "里", "中的", "中", "这个", "这类", "的话", "作为来源", "也", "则", "就", "先",
+    )
+
+    def strip_scaffolding(value: str) -> str:
+        changed = True
+        while changed and value:
+            changed = False
+            for scaffold in source_scaffolding:
+                if value.startswith(scaffold):
+                    value = value[len(scaffold):]
+                    changed = True
+                    break
+        return value
+
+    decisions: list[tuple[int, int, str]] = []
+    for clause_index, clause in enumerate(clauses):
+        next_clause = clauses[clause_index + 1] if clause_index + 1 < len(clauses) else ""
+        occurrences: list[tuple[int, str]] = []
+        for term in _METAMOD_MATRIX_TERMS:
+            start = 0
+            while (term_at := clause.find(term, start)) >= 0:
+                occurrences.append((term_at, term))
+                start = term_at + len(term)
+        for term_at, term in sorted(occurrences):
+            prefix = clause[max(0, term_at - 24):term_at]
+            suffix = strip_scaffolding(clause[term_at + len(term):])
+            adjacent = strip_scaffolding(next_clause)
+            left_negative_at = max(
+                (prefix.rfind(marker) for marker in source_left_negations),
+                default=-1,
+            )
+            left_positive_at = max(
+                (prefix.rfind(marker) for marker in source_left_positives),
+                default=-1,
+            )
+            left_negated = left_negative_at > left_positive_at
+            right_is_output_constraint = any(
+                suffix.startswith(marker) for marker in output_constraint_prefixes
+            )
+            adjacent_is_output_constraint = any(
+                adjacent.startswith(marker) for marker in output_constraint_prefixes
+            )
+            right_targets_other_source = any(
+                marker in suffix
+                for marker in (
+                    "其他来源", "其它来源", "其他资料", "其它资料", "其他证据", "其它证据",
+                )
+            )
+            adjacent_targets_other_source = any(
+                marker in adjacent
+                for marker in (
+                    "其他来源", "其它来源", "其他资料", "其它资料", "其他证据", "其它证据",
+                )
+            )
+            right_negated = (
+                not right_is_output_constraint
+                and not right_targets_other_source
+                and any(suffix.startswith(marker) for marker in source_right_negations)
+            )
+            adjacent_negated = (
+                not adjacent_is_output_constraint
+                and not adjacent_targets_other_source
+                and any(adjacent.startswith(marker) for marker in source_right_negations)
+            )
+            policy = (
+                "excluded"
+                if left_negated or right_negated or adjacent_negated
+                else "positive"
+            )
+            decisions.append((clause_index, term_at, policy))
+    if not decisions:
+        return "absent"
+    # 同一问题可先提及后改口；只采用文本中最后一次明确来源动作。
+    return max(decisions, key=lambda decision: (decision[0], decision[1]))[2]
+
+
+def _metamod_precision_query(question: str) -> tuple[str, str, str]:
+    """从明确矩阵问法中逐字冻结 operation + guard；歧义时拒绝路由。"""
+    normalized = _normalized(question)
+    if not normalized or _metamod_source_policy(question) != "positive":
+        return "", "", ""
+
+    positive_turns = (
+        "而是", "只给", "只看", "只查", "改查", "改看", "真正想问", "实际想问",
+    )
+    pair_negations = (
+        "不是", "不要", "不要用", "不要使用", "请勿", "请勿使用", "不用",
+        "无需", "不需要", "不必", "不看", "不查", "别", "别用", "排除", "忽略",
+    )
+    known_pairs = _known_metamod_pairs()
+    matched: list[tuple[str, str]] = []
+    for raw in _CRAFT_CLAUSE_SPLIT_RE.split(question or ""):
+        segment = _normalized(raw)
+        if not segment:
+            continue
+        # 正向转折/限定词之前可以是否定范围；之后只按 pair 自身 span 判极性。
+        turns = [
+            (segment.rfind(turn), turn)
+            for turn in positive_turns
+            if segment.rfind(turn) >= 0
+        ]
+        if turns:
+            turn_at, turn = max(turns, key=lambda item: item[0])
+            segment = segment[turn_at + len(turn):]
+
+        candidates = [
+            (operation, guard)
+            for operation, guard in known_pairs
+            if _normalized(operation) in segment and _normalized(guard) in segment
+        ]
+        if not candidates:
+            continue
+        # 先保留当前子句的最长 operation，再判极性；被否定的长 operation
+        # 不能以其内部短 operation（如“混沌石”）回退。
+        max_len = max(len(_normalized(operation)) for operation, _guard in candidates)
+        for operation, guard in candidates:
+            operation_norm = _normalized(operation)
+            guard_norm = _normalized(guard)
+            if len(operation_norm) != max_len:
+                continue
+            operation_at = segment.find(operation_norm)
+            guard_at = segment.find(guard_norm)
+            pair_start = min(operation_at, guard_at)
+            pair_end = max(
+                operation_at + len(operation_norm), guard_at + len(guard_norm)
+            )
+            prefix = segment[max(0, pair_start - 12):pair_start]
+            pair_span = segment[pair_start:pair_end]
+            if any(prefix.endswith(marker) for marker in pair_negations):
+                continue
+            if any(marker in pair_span for marker in pair_negations):
+                continue
+            matched.append((operation, guard))
+
+    if not matched:
+        # 已明确限定矩阵来源但键无法唯一冻结时仍保持精确 fail-closed 路径，
+        # 不能退回 general Citation 绕过矩阵 claim scope。
+        return normalized, "", ""
+    # 空白键参与最长匹配，绝不回退；多键歧义则拒绝路由。
+    max_operation_len = max(len(_normalized(operation)) for operation, _guard in matched)
+    unique = list(dict.fromkeys(
+        pair for pair in matched if len(_normalized(pair[0])) == max_operation_len
+    ))
+    if len(unique) != 1:
+        return normalized, "", ""
+    operation, guard = unique[0]
+    return normalized, operation, guard
+
+
 def _precision_tool_route(question: str) -> str:
     """只为参数可从问题逐字冻结的结构化能力放行精确工具。"""
     if _positive_craft_clause(question):
         return "check_mod_combination"
+    metamod_query = _metamod_precision_query(question)
+    if metamod_query[0]:
+        return "metamod_interaction_matrix"
     return "bench_recipe_catalog" if _bench_precision_query(question)[1] else ""
 
 
@@ -358,6 +588,20 @@ def _validate_precision_call(
                 return "item_class 必须逐字对应工艺台目录问题中的显式适用类别"
         elif item_class_raw is not None:
             return "当前工艺台目录问题没有显式 item_class，不得额外添加类别限定"
+        return ""
+
+    if tool_name == "metamod_interaction_matrix":
+        clause, expected_operation, expected_guard = _metamod_precision_query(question)
+        if not clause or not expected_operation or not expected_guard:
+            return "当前问题没有唯一可逐字冻结的 Metamod 矩阵键"
+        if set(arguments) != {"operation", "guard"}:
+            return "Metamod 矩阵调用必须且只能包含 operation 与 guard"
+        operation = str(arguments.get("operation") or "").strip()
+        guard = str(arguments.get("guard") or "").strip()
+        if operation != expected_operation:
+            return "operation 必须逐字对应来源矩阵中的操作名"
+        if guard != expected_guard:
+            return "guard 必须逐字对应来源矩阵中的列名"
         return ""
 
     if tool_name != "check_mod_combination":
@@ -445,6 +689,19 @@ def _precision_citations(
             and citation.get("claim_data")
             and citation.get("url")
         ]
+    if tool_name == "metamod_interaction_matrix":
+        return [
+            citation
+            for citation in result.citations
+            if str(citation.get("chunk_id") or "").startswith("metamod_interaction:")
+            and citation.get("channel") == "structured"
+            and citation.get("claim_scope") == "metamod_matrix"
+            and isinstance(citation.get("claim_data"), dict)
+            and citation.get("claim_data", {}).get("operation_text")
+            and citation.get("claim_data", {}).get("guard_text")
+            and citation.get("claim_data", {}).get("raw_value")
+            and citation.get("url")
+        ]
     return []
 
 
@@ -455,6 +712,14 @@ def _call_tool(
     raw_arguments: str,
 ) -> tuple[ToolResult, bool]:
     """执行工具，并返回它是否是参数归属正确且带 solver 证据的精确调用。"""
+    if (
+        name == "metamod_interaction_matrix"
+        and _metamod_source_policy(question) == "excluded"
+    ):
+        return ToolResult(
+            ok=False,
+            error="当前问题明确排除了 Metamod 矩阵来源，拒绝执行该工具",
+        ), False
     parsed = _safe_json(raw_arguments)
     if precision_tool and name == precision_tool:
         reason = _validate_precision_call(question, name, parsed)
@@ -483,6 +748,12 @@ def _initial_user_content(
             "工具参数中的底材、每个目标、来源和影响力都必须逐字对应用户问题。"
             "不得依据首轮候选或其它工具证据自行判断组合可行性。"
         )
+    elif precision_tool == "metamod_interaction_matrix":
+        instruction = (
+            "工具参数中的 operation 与 guard 必须逐字对应用户问题和来源矩阵键。"
+            "回答只能使用固定句式复述原始结果与原始注释；不得解释 YES/NO 的外延，"
+            "不得声称当前版本适用，也不得扩写可执行性、状态转移、步骤、概率、成本或路线。"
+        )
     else:
         instruction = (
             "工具参数中的目录关键词和可选 ItemClass 必须逐字对应用户问题。"
@@ -496,10 +767,24 @@ def _initial_user_content(
     )
 
 
+def _metamod_source_blank_answer(result: ToolResult) -> str:
+    """空白源格的确定性拒答；不让 LLM 把空白解释为 N/A。"""
+    data = result.data or {}
+    operation = str(data.get("operation") or "")
+    guard = str(data.get("guard") or "")
+    return (
+        f"来源页面中“{operation}”与“{guard}”对应的单元格为空，"
+        "没有可引用的明确结果；因此不能推断为 N/A、YES、NO 或其它交互结论。"
+    )
+
+
 def _precision_failure_answer(tool_name: str) -> str:
     if tool_name == "check_mod_combination":
         action = "因此不作组合判断"
         evidence_kind = "确定性求解证据"
+    elif tool_name == "metamod_interaction_matrix":
+        action = "因此不陈述该矩阵单元格的结果"
+        evidence_kind = "逐字键匹配的结构化矩阵证据"
     else:
         action = "因此不陈述工艺台目录事实"
         evidence_kind = "对应的结构化目录证据"
@@ -573,11 +858,12 @@ def run_turn(
 
     budget = TurnBudget(limit=int(cfg.get("llm.max_tokens_per_turn", 60000)))
     max_calls = int(cfg.get("llm.max_tool_calls", 12))
-    tools = _prepare_tools()
+    tools = _tools_for_question(question)
     answer_text = ""
     final_tool_results: dict[str, ToolResult] = {}
     precision_tool_succeeded = not bool(precision_tool)
     precision_call_invalidated = False
+    precision_source_blank: ToolResult | None = None
 
     try:
         for _ in range(max_calls + 1):
@@ -616,6 +902,13 @@ def run_turn(
                     tr, precision_match = _call_tool(
                         question, precision_tool, tc.name, tc.arguments
                     )
+                if (
+                    precision_tool == "metamod_interaction_matrix"
+                    and tc.name == precision_tool
+                    and tr.ok
+                    and bool((tr.data or {}).get("source_blank"))
+                ):
+                    precision_source_blank = tr
                 result.tool_calls.append(
                     _tool_record(tc.name, _safe_json(tc.arguments), tr)
                 )
@@ -646,6 +939,18 @@ def run_turn(
         # 消息已由 core/llm.py 脱敏，可安全写日志。
         logger.error("生成失败（trace=%s）：%s", trace_id, exc)
         result.answer = f"生成失败（{type(exc).__name__}），本轮不作答以免输出无据内容。"
+        result.elapsed_ms = int((time.monotonic() - started) * 1000)
+        _persist(result, conversation_id)
+        return result
+
+    if precision_source_blank is not None:
+        result.evidence_gap = True
+        result.answer = _metamod_source_blank_answer(precision_source_blank)
+        _record_gaps(
+            question,
+            [str((precision_source_blank.data or {}).get("missing_reason") or "来源矩阵单元格为空")],
+            category="制作系统 / metamod_matrix",
+        )
         result.elapsed_ms = int((time.monotonic() - started) * 1000)
         _persist(result, conversation_id)
         return result
@@ -762,7 +1067,7 @@ def stream_turn(
     ]
     budget = TurnBudget(limit=int(cfg.get("llm.max_tokens_per_turn", 60000)))
     max_calls = int(cfg.get("llm.max_tool_calls", 12))
-    tools = _prepare_tools()
+    tools = _tools_for_question(question)
 
     gate = StreamingGate(
         evidence,
@@ -773,6 +1078,7 @@ def stream_turn(
     final_tool_results: dict[str, ToolResult] = {}
     precision_tool_succeeded = not bool(precision_tool)
     precision_call_invalidated = False
+    precision_source_blank: ToolResult | None = None
 
     try:
         for _round in range(max_calls + 1):
@@ -838,6 +1144,13 @@ def stream_turn(
                     tr, precision_match = _call_tool(
                         question, precision_tool, tc.name, tc.arguments
                     )
+                if (
+                    precision_tool == "metamod_interaction_matrix"
+                    and tc.name == precision_tool
+                    and tr.ok
+                    and bool((tr.data or {}).get("source_blank"))
+                ):
+                    precision_source_blank = tr
                 result.tool_calls.append(
                     _tool_record(tc.name, _safe_json(tc.arguments), tr)
                 )
@@ -865,6 +1178,18 @@ def stream_turn(
     except LLMError as exc:
         logger.error("流式生成失败（trace=%s）：%s", trace_id, exc)
         yield {"type": "error", "message": f"生成失败（{type(exc).__name__}）"}
+
+    if precision_source_blank is not None:
+        result.evidence_gap = True
+        result.answer = _metamod_source_blank_answer(precision_source_blank)
+        _record_gaps(
+            question,
+            [str((precision_source_blank.data or {}).get("missing_reason") or "来源矩阵单元格为空")],
+            category="制作系统 / metamod_matrix",
+        )
+        yield {"type": "gap", "text": result.answer}
+        yield from _finish(result, conversation_id, started)
+        return
 
     if not precision_tool_succeeded or precision_call_invalidated:
         result.evidence_gap = True

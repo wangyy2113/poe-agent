@@ -402,6 +402,30 @@ DOMAINS: tuple[DomainSpec, ...] = (
         note="局部兼容不等于整体可制作；工具不提供制作步骤、概率或成本",
     ),
     DomainSpec(
+        key="metamod_matrix",
+        display_zh="元词缀交互页面矩阵（operation × guard）",
+        category=Category.CRAFTING,
+        authority_url="https://www.craftofexile.com/metamods",
+        count_sql="SELECT count(*) FROM craft_metamod_interaction",
+        channel_sql=(
+            "SELECT DISTINCT section FROM craft_metamod_interaction WHERE section<>''"
+        ),
+        tools=("metamod_interaction_matrix",),
+        hints=("元词缀矩阵", "工艺互动矩阵", "metamod matrix", "metamods矩阵"),
+        question_hints=(
+            "来源矩阵中某个逐字 operation 与 guard 的结果和原始注释",
+        ),
+        poedb_pages=("metamods",),
+        partial_note=(
+            "只收录来源页面有明确值的单元格；**空白格、当前版本适用性、给定装备"
+            "可执行性、完整状态转移、步骤、概率、成本和路线均不提供**"
+        ),
+        note=(
+            "原始内容来源为 Craft of Exile P4，经 POEDB 镜像采集；"
+            "不得因镜像宿主误标为 POEDB P1"
+        ),
+    ),
+    DomainSpec(
         key="craft_rule",
         display_zh="制作规则（前后缀名额 / 影响力 / 元词缀）",
         category=Category.CRAFTING,
@@ -415,8 +439,9 @@ DOMAINS: tuple[DomainSpec, ...] = (
         ),
         poedb_pages=("metamods",),
         note=(
-            "该领域仍未结构化；check_mod_combination 只能报告这些缺据，"
-            "不能据此判定整体 possible"
+            "Metamod 页面矩阵已有独立窄表，但不等于完整 craft_rule："
+            "前后缀容量、影响力条件与操作状态机仍未结构化；"
+            "check_mod_combination 仍不能据此判定整体 possible"
         ),
     ),
     # ── 地图系统 ──

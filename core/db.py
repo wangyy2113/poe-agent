@@ -192,6 +192,47 @@ CREATE TABLE IF NOT EXISTS craft_bench_recipe_cost (
 CREATE INDEX IF NOT EXISTS idx_bench_cost_currency
     ON craft_bench_recipe_cost(currency_slug);
 
+-- ── 元词缀交互矩阵（Craft of Exile P4，经 POEDB 镜像采集）──
+-- 一行只表示来源页面中一个 operation × guard 单元格的明确值。源页面空白格不入表，
+-- 也绝不推断为 N/A；完整装备状态转移、可执行性、步骤、概率和成本均不在此表范围内。
+CREATE TABLE IF NOT EXISTS craft_metamod_interaction (
+    interaction_id TEXT PRIMARY KEY,
+    section         TEXT NOT NULL CHECK(section <> ''),
+    operation_text  TEXT NOT NULL CHECK(operation_text <> ''),
+    guard_text      TEXT NOT NULL CHECK(guard_text <> ''),
+    outcome         TEXT NOT NULL CHECK(
+        outcome IN ('yes', 'no', 'not_applicable', 'conditional')
+    ),
+    raw_value       TEXT NOT NULL CHECK(
+        raw_value IN ('YES', 'NO', 'N/A', 'YES & NO')
+    ),
+    note_text       TEXT,
+    row_order       INTEGER NOT NULL CHECK(row_order >= 0),
+    column_order    INTEGER NOT NULL CHECK(column_order BETWEEN 0 AND 3),
+    source          TEXT NOT NULL CHECK(source = 'Craft of Exile'),
+    source_priority INTEGER NOT NULL CHECK(source_priority = 4),
+    source_url      TEXT NOT NULL CHECK(
+        source_url = 'https://www.craftofexile.com/metamods'
+    ),
+    mirror_url      TEXT NOT NULL CHECK(
+        mirror_url = 'https://poedb.tw/cn/metamods'
+    ),
+    content_hash    TEXT NOT NULL,
+    fetched_at      TEXT NOT NULL,
+    version_scope   TEXT NOT NULL CHECK(version_scope = 'unknown'),
+    updated_at      TEXT NOT NULL,
+    CHECK(
+        (raw_value = 'YES' AND outcome = 'yes') OR
+        (raw_value = 'NO' AND outcome = 'no') OR
+        (raw_value = 'N/A' AND outcome = 'not_applicable') OR
+        (raw_value = 'YES & NO' AND outcome = 'conditional')
+    ),
+    CHECK(outcome <> 'conditional' OR (note_text IS NOT NULL AND note_text <> '')),
+    UNIQUE(operation_text, guard_text)
+);
+CREATE INDEX IF NOT EXISTS idx_metamod_operation_guard
+    ON craft_metamod_interaction(operation_text, guard_text);
+
 -- ── 游戏常量（calc/ 的真源）──
 -- 标量逐个成行，这样每个常量都能被单独引用（需求 12：常量附来源与版本）。
 -- dat_source 记 GGG 原始表名（GameConstants.dat / Character.ot），

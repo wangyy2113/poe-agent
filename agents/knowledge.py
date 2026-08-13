@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 ALLOWED_TOOLS = [
     "check_mod_combination",  # 精确：目标词缀组合的三态可行性与缺据点
     "bench_recipe_catalog",   # 精确：工艺台页面目录、原始费用、适用类别与解锁信息
+    "metamod_interaction_matrix",  # 精确：来源矩阵逐字 operation × guard 单元格
     "mod_tiers",      # 精确：某类别上某词缀的完整 T 级梯度
     "stat_sources",   # 精确：某属性能从哪些渠道获得（逐渠道 + 未采集声明）
     "entity_lookup",  # 精确：按名查实体
@@ -48,6 +49,11 @@ POE1 的机制耦合极深，一个错误的小前提会让整条结论反向。
   `bench_recipe_catalog`。它只返回 POEDB 的目录记录。目录项**不证明**该工艺对用户当前
   装备可执行；装备状态转移、crafted-mod 上限、替换/移除语义与元词缀交互未采集，
   禁止把查询结果改写成制作步骤，也禁止据此给概率、市场成本或最快/最经济路线。
+- **Craft of Exile 元词缀页面矩阵中某个逐字 operation × guard 的结果/原始注释** →
+  `metamod_interaction_matrix`。参数必须逐字来自用户问题，不做同义词猜测。它只复述
+  `YES / NO / N/A / YES & NO` 与来源原始注释；页面没有可验证的版本范围，空白格也
+  不是 `N/A`。禁止把矩阵值解释成给定装备可执行性，禁止补完整状态转移、步骤、概率、
+  成本或路线；该工具结果也不能让 `check_mod_combination` 从 unknown 变成 possible。
 - **词缀的档位、物品等级、生成权重** → `mod_tiers`。它直查结构化词缀库，结果精确。
   用 `kb_search` 问这类问题只能命中一张卡片，容易读错行、也容易命中错的底材类别。
 - **「某属性能从哪些渠道获得」** → `stat_sources`。它逐个渠道分别列出（装备词缀 /
