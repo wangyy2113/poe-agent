@@ -574,7 +574,15 @@ V1 完成的判定标准（逐条实测，不以「无报错」代替验证）�
 - [ ] 防御分析（含最大抗性、吸纳、偷取、回复）与输出分析（单体/清图/Boss）
 - [ ] 低预算 / 高预算双档优化建议
 - [ ] 计算器全套（抗性、吸纳、偷取、暴击、保留、Max Hit、DOT、感电）+ 常量表附来源与版本
-- [ ] Craft Agent：路线、步骤、成功率、成本、替代方案
+- [ ] Craft Agent（按证据闭环拆分，禁止把局部能力标成完整 Planner）
+  - [x] 词缀组合可行性 v1：逐字目标召回、family 互斥求解、来源/影响力约束；容量无来源时保持 `unknown`
+  - [x] Bench Recipe Catalog v1：只复述工艺台选项、原始费用、适用类别与解锁信息，不外推可执行步骤
+  - [x] Metamod Interaction Matrix v1：逐字 operation × guard 四态矩阵；空白格确定性拒答
+  - [x] Body Armour Base Registry v1：PoB 123 个胸甲底材与 POEDB 中英文 slug 一一桥接，P1/P2 分字段溯源
+  - [x] Body Armour Normal Affix Pool & Conditional Raw Odds v1：具体底材、物等、prefix/suffix、normal 来源下，以页级整页快照摘要验证完整池，输出整数权重分子/分母、条件概率与独立选择数学期望；batch/stream scope gate 与真实七页只读探针已覆盖
+  - [ ] Affix capacity：现有来源尚无可靠前后缀容量规则，不硬编码 3/3 等经验值
+  - [ ] Operation semantics / state transition：按通货、精华、化石、Harvest、隐匿、Eldritch 等分别建立有据状态转移，不能从 normal raw odds 外推
+  - [ ] Economy adapter 与 Planner：接入价格、比较最快/最经济路线、逐步期望消耗；上述输入未齐前不得输出完整路线
 - [ ] Boss Agent：机制、防御门槛、药剂、流程；可结合已导入 Build
 - [ ] 角色 API 导入与截图识别
 - [ ] 天赋树链接解析

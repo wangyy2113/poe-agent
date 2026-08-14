@@ -156,6 +156,51 @@ CREATE INDEX IF NOT EXISTS idx_pobmod_group ON pob_mod(mod_group, ilvl);
 CREATE INDEX IF NOT EXISTS idx_pobmod_kind ON pob_mod(mod_kind);
 CREATE INDEX IF NOT EXISTS idx_pobmod_loose ON pob_mod(loose_template);
 
+-- ── PoB 胸甲底材注册表（P2 结构 + POEDB P1 中英文名称桥接）──
+-- 不写入 entity：本表的 name_en/tags 来自 PoB，name_zh/slug 来自 POEDB，
+-- 两侧必须一一对应后才入库。它只负责把具体胸甲底材唯一映射到词缀页；
+-- 不承载稀有度、词缀容量、影响力适用性、制作状态转移或可获得性结论。
+CREATE TABLE IF NOT EXISTS pob_base_item (
+    base_id         TEXT PRIMARY KEY,
+    name_en         TEXT NOT NULL CHECK(name_en <> ''),
+    name_zh         TEXT NOT NULL CHECK(name_zh <> ''),
+    poedb_slug      TEXT NOT NULL CHECK(poedb_slug <> ''),
+    item_class      TEXT NOT NULL CHECK(item_class = 'Body Armour'),
+    subtype         TEXT NOT NULL CHECK(subtype <> ''),
+    socket_limit    INTEGER NOT NULL CHECK(socket_limit > 0),
+    tags            TEXT NOT NULL CHECK(json_valid(tags) AND json_array_length(tags) > 0),
+    influence_tags  TEXT NOT NULL CHECK(json_valid(influence_tags)),
+    armour_tag      TEXT NOT NULL CHECK(armour_tag IN (
+        'str_armour', 'dex_armour', 'int_armour', 'str_dex_armour',
+        'str_int_armour', 'dex_int_armour', 'str_dex_int_armour'
+    )),
+    modifier_page   TEXT NOT NULL CHECK(modifier_page IN (
+        'Body_Armours_str', 'Body_Armours_dex', 'Body_Armours_int',
+        'Body_Armours_str_dex', 'Body_Armours_str_int', 'Body_Armours_dex_int',
+        'Body_Armours_str_dex_int'
+    )),
+    implicit_text   TEXT,
+    implicit_mod_types TEXT NOT NULL CHECK(json_valid(implicit_mod_types)),
+    implicit_ids    TEXT NOT NULL CHECK(json_valid(implicit_ids)),
+    defences        TEXT NOT NULL CHECK(json_valid(defences)),
+    requirements    TEXT NOT NULL CHECK(json_valid(requirements)),
+    source_file     TEXT NOT NULL CHECK(source_file = 'Data/Bases/body.lua'),
+    source          TEXT NOT NULL CHECK(source = 'Path of Building'),
+    source_priority INTEGER NOT NULL CHECK(source_priority = 2),
+    pob_url         TEXT NOT NULL CHECK(pob_url <> ''),
+    poedb_url       TEXT NOT NULL CHECK(poedb_url <> ''),
+    source_commit   TEXT NOT NULL CHECK(length(source_commit) = 40),
+    pob_version     TEXT,
+    game_version    TEXT,
+    content_hash    TEXT NOT NULL CHECK(content_hash <> ''),
+    updated_at      TEXT NOT NULL,
+    UNIQUE(name_en),
+    UNIQUE(name_zh),
+    UNIQUE(poedb_slug)
+);
+CREATE INDEX IF NOT EXISTS idx_pobbase_armour_tag ON pob_base_item(armour_tag);
+CREATE INDEX IF NOT EXISTS idx_pobbase_modifier_page ON pob_base_item(modifier_page);
+
 -- ── 工艺工作台目录（选项 / 原始费用 / 适用类别 / 解锁信息）──
 -- 这里只保存 POEDB 页面明确列出的目录事实，不承载「该动作对当前装备可执行」的
 -- 状态转移语义。后者必须等独立 craft_rule 有可靠来源后再开放。

@@ -173,10 +173,24 @@ DOMAINS: tuple[DomainSpec, ...] = (
         display_zh="底材（基础物品）",
         category=Category.ITEM,
         authority_url=f"{POEDB_BASE}/Items",
-        count_sql="SELECT count(*) FROM entity WHERE entity_type='base_item'",
-        hints=("底材", "基础物品", "白装底子"),
-        question_hints=("某底材的基础属性、需求、隐式词缀",),
-        poedb_pages=("Items",),
+        count_sql="SELECT count(*) FROM pob_base_item",
+        channel_sql="SELECT DISTINCT armour_tag FROM pob_base_item WHERE armour_tag<>''",
+        tools=("affix_pool_odds",),
+        hints=("底材", "基础物品", "白装底子", "胸甲底材"),
+        question_hints=(
+            "具体胸甲底材的中英文名、PoB 标签与 POEDB 词缀页映射",
+            "具体胸甲底材在明确物等和生成侧的普通词缀有效池",
+        ),
+        poedb_pages=("Items", "Body_Armours"),
+        pob_files=("Data/Bases/body.lua",),
+        partial_note=(
+            "仅入库 PoB 与 POEDB 中英文清单可逐条精确桥接的**胸甲底材**；"
+            "其它装备部位、可获得性、稀有度、影响力适用规则与词缀容量未采集"
+        ),
+        note=(
+            "英文名与生成标签来自钉 commit 的 PoB P2；中文名与 slug 来自 POEDB P1；"
+            "两侧不唯一时整条拒绝"
+        ),
         provides_stats=True,
     ),
     # ── 游戏基础 ──
@@ -400,6 +414,38 @@ DOMAINS: tuple[DomainSpec, ...] = (
             "因此无 family 冲突的组合只返回 unknown"
         ),
         note="局部兼容不等于整体可制作；工具不提供制作步骤、概率或成本",
+    ),
+    DomainSpec(
+        key="affix_pool_odds",
+        display_zh="胸甲普通词缀有效池与条件权重概率",
+        category=Category.CRAFTING,
+        authority_url=f"{POEDB_BASE}/Modifiers",
+        count_sql=(
+            "SELECT count(*) FROM mod_affix WHERE category='normal' AND weight>0 "
+            "AND item_class_page LIKE 'Body_Armours_%'"
+        ),
+        channel_sql=(
+            "SELECT DISTINCT item_class_page FROM mod_affix WHERE category='normal' "
+            "AND weight>0 AND item_class_page LIKE 'Body_Armours_%'"
+        ),
+        tools=("affix_pool_odds",),
+        hints=("有效池", "权重池", "原始权重概率", "条件概率", "词缀池"),
+        question_hints=(
+            "具体胸甲底材在明确物品等级、前缀或后缀侧的 normal 有效档位与总权重",
+            "唯一目标 correct_group 在完整同侧 normal 池中的条件权重概率",
+        ),
+        poedb_pages=(
+            "Body_Armours_str", "Body_Armours_dex", "Body_Armours_int",
+            "Body_Armours_str_dex", "Body_Armours_str_int", "Body_Armours_dex_int",
+            "Body_Armours_str_dex_int",
+        ),
+        pob_files=("Data/Bases/body.lua", "Data/ModExplicit.lua"),
+        partial_note=(
+            "只支持逐字具体胸甲底材、明确物等、prefix/suffix、normal 来源且未应用"
+            "已有 family 排除的下一次同侧加权选择；**不是通货/工艺成功率**，"
+            "不含当前装备状态、容量、影响力、特殊来源、步骤、实际期望通货、成本或路线"
+        ),
+        note="权重池以 POEDB P1 mod_affix 为真源；PoB P2 只支撑底材标签与交叉审计",
     ),
     DomainSpec(
         key="metamod_matrix",

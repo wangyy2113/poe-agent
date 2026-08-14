@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 #: 先前只有后两个，于是 93,875 条词缀记录里的 T 级与权重只能靠 BM25 命中卡片再
 #: 从表格里读——本可精确回答的问题变成了猜。
 ALLOWED_TOOLS = [
+    "affix_pool_odds",  # 精确：胸甲 normal 同侧有效池与条件权重概率
     "check_mod_combination",  # 精确：目标词缀组合的三态可行性与缺据点
     "bench_recipe_catalog",   # 精确：工艺台页面目录、原始费用、适用类别与解锁信息
     "metamod_interaction_matrix",  # 精确：来源矩阵逐字 operation × guard 单元格
@@ -41,6 +42,12 @@ POE1 的机制耦合极深，一个错误的小前提会让整条结论反向。
 
 # 选对工具：能精确算的不要猜
 
+- **具体胸甲底材在明确物等、前缀/后缀侧，某普通词缀组的有效池与原始权重** →
+  `affix_pool_odds`。问题必须逐字给出底材、物品等级、生成侧和目标；目标命中多个
+  `correct_group` 时必须先消歧。它只计算 `normal`、同侧、尚未应用已有 family 排除时
+  “下一次加权选择”的条件分布。这个数**不是**任何通货或具体工艺的一次使用成功率，
+  独立选择数学期望也**不是**期望通货消耗。禁止据此补已有装备状态、词缀容量、影响力、
+  精华/化石/Harvest/Metamod 语义、制作步骤、实际成本或最快/最经济路线。
 - **多个目标词缀能否共存 / 分别占前后缀** → `check_mod_combination`。它按指定底材页
   穷举候选并检查完整 `family_list`，返回 `possible / impossible / unknown` 三态。
   `unknown` 里的容量、影响力或来源缺据必须原样说明；禁止把「未发现冲突」改写成

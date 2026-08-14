@@ -3,8 +3,9 @@ from __future__ import annotations
 
 from tools.impl import bench as _bench  # noqa: F401  注册副作用
 from tools.impl import craft as _craft  # noqa: F401  注册副作用
+from tools.impl import craft_pool as _craft_pool  # noqa: F401  注册副作用
 from tools.impl import kb_search as _kb_search  # noqa: F401  注册副作用
 from tools.impl import metamods as _metamods  # noqa: F401  注册副作用
 from tools.impl import mods as _mods  # noqa: F401  注册副作用
 
-__all__ = ["_bench", "_craft", "_kb_search", "_metamods", "_mods"]
+__all__ = ["_bench", "_craft", "_craft_pool", "_kb_search", "_metamods", "_mods"]

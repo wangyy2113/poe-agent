@@ -34,6 +34,8 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
+from selectolax.parser import HTMLParser
+
 logger = logging.getLogger(__name__)
 
 MARKER = "new ModsView("
@@ -47,8 +49,7 @@ GEN_LABELS = {1: "前缀", 2: "后缀", 0: "其他"}
 #: 载荷里的非词缀键，遍历词缀组时要跳过
 META_KEYS = frozenset({"baseitem", "config", "gen", "opt", "crafter"})
 
-#: 抽取成功率下限：低于此值判为页面结构变更
-MIN_SUCCESS_RATIO = 0.95
+#: 完整词缀池要求逐行零失败；不能用成功率阈值掩盖分母缺行。
 
 
 class ModStructureError(ValueError):
@@ -172,7 +173,86 @@ class ModExtractStats:
 
 # ── 载荷提取 ────────────────────────────────────────────────
 
-def extract_payload(html: str) -> dict[str, Any]:
+_VERIFIED_EMPTY_MOD_PAGES = {
+    # 2026-08-13 真实页面人工核对：该底材只有固定/传奇内容，无 ModifiersCalc。
+    "Assembled_Eye_Jewel": "Assembled Eye Jewel",
+}
+_BODY_ARMOUR_PAGE_TAGS = {
+    "Body_Armours_str": "Str",
+    "Body_Armours_dex": "Dex",
+    "Body_Armours_int": "Int",
+    "Body_Armours_str_dex": "StrDex",
+    "Body_Armours_str_int": "StrInt",
+    "Body_Armours_dex_int": "DexInt",
+    "Body_Armours_str_dex_int": "StrDexInt",
+}
+
+
+def _verified_page_shell(html: str, page_slug: str, page_url: str) -> bool:
+    """核对目标页身份和完整文档尾部，拒绝重定向内容、挑战页与截断页。"""
+    if page_url.rstrip("/") != f"https://poedb.tw/cn/{page_slug}":
+        return False
+    if not html.rstrip().lower().endswith("</html>") or "poedb_footer." not in html:
+        return False
+    tree = HTMLParser(html)
+    root = tree.css_first("html")
+    title = tree.css_first("title")
+    footer = tree.css_first("footer")
+    if (
+        root is None
+        or str(root.attributes.get("lang") or "").lower() != "cn"
+        or title is None
+        or not title.text(deep=True).strip()
+        or footer is None
+    ):
+        return False
+    hrefs = {
+        str(node.attributes.get("href") or "").strip()
+        for node in tree.css("a[href]")
+    }
+    return (
+        f"/cn/{page_slug}" in hrefs
+        and f"/cn/marked?id={page_slug}" in hrefs
+    )
+
+
+def _verified_no_mods_page(html: str, page_slug: str, page_url: str) -> bool:
+    """只接受审计 allowlist 中、身份和完整尾部均可核对的真实空池页。"""
+    expected_base_type = _VERIFIED_EMPTY_MOD_PAGES.get(page_slug)
+    if expected_base_type is None or not _verified_page_shell(html, page_slug, page_url):
+        return False
+    tree = HTMLParser(html)
+    if tree.css_first("#ModifiersCalc") is not None or MARKER in html:
+        return False
+    for row in tree.css("tr"):
+        cells = row.css("td")
+        if len(cells) >= 2 and cells[0].text(deep=True).strip() == "BaseType":
+            if cells[1].text(deep=True).strip() == expected_base_type:
+                return True
+    return False
+
+
+def _validate_payload_page_identity(
+    html: str, payload: dict[str, Any], page_slug: str, page_url: str
+) -> None:
+    """把结构化载荷绑定到请求页面；胸甲页额外核对属性标签。"""
+    if not _verified_page_shell(html, page_slug, page_url):
+        raise ModStructureError(f"{page_slug} 页面身份或完整文档尾部无法核对")
+    expected_tag = _BODY_ARMOUR_PAGE_TAGS.get(page_slug)
+    if expected_tag is None:
+        return
+    baseitem = payload.get("baseitem")
+    if not isinstance(baseitem, dict) or (
+        str(baseitem.get("href") or "") != "Body_Armours"
+        or str(baseitem.get("cn") or "") != "Body Armour"
+        or str(baseitem.get("tags") or "") != expected_tag
+    ):
+        raise ModStructureError(
+            f"{page_slug} 的载荷身份不匹配：预期 Body Armour/{expected_tag}"
+        )
+
+
+def extract_payload(html: str, page_slug: str, page_url: str) -> dict[str, Any]:
     """从 `new ModsView({...})` 取出 JSON 载荷。
 
     不能用正则：载荷含大量转义引号与花括号。用括号配对扫描，
@@ -180,12 +260,16 @@ def extract_payload(html: str) -> dict[str, Any]:
     """
     start = html.find(MARKER)
     if start < 0:
-        # 区分「本来没有词缀池」与「结构变更」：
-        # 有 #ModifiersCalc 区块说明该页应当有词缀数据，此时找不到载荷是真问题。
-        if "ModifiersCalc" not in html:
-            raise NoModsDataError("页面无 ModifiersCalc 区块，该底材类别没有常规词缀池")
+        if "ModifiersCalc" in html:
+            raise ModStructureError(
+                "页面有 ModifiersCalc 区块却找不到 `new ModsView(` 载荷，POEDB 可能已改版"
+            )
+        if _verified_no_mods_page(html, page_slug, page_url):
+            raise NoModsDataError(
+                "页面身份、完整尾部和已审计空页 allowlist 均已核对，该底材类别没有常规词缀池"
+            )
         raise ModStructureError(
-            "页面有 ModifiersCalc 区块却找不到 `new ModsView(` 载荷，POEDB 可能已改版"
+            "响应缺少词缀载荷且无法验证为所请求的合法空池页面；拒绝用它清空旧页"
         )
 
     i = start + len(MARKER)
@@ -218,9 +302,13 @@ def extract_payload(html: str) -> dict[str, Any]:
             if depth == 0:
                 raw = html[begin : i + 1]
                 try:
-                    return json.loads(raw)
+                    payload = json.loads(raw)
                 except json.JSONDecodeError as exc:
                     raise ModStructureError(f"载荷 JSON 解析失败：{exc}") from exc
+                if not isinstance(payload, dict):
+                    raise ModStructureError("词缀载荷根节点不是对象")
+                _validate_payload_page_identity(html, payload, page_slug, page_url)
+                return payload
         i += 1
     raise ModStructureError("载荷括号未配对，HTML 可能被截断")
 
@@ -408,7 +496,7 @@ def extract_mods(
     html: str, page_slug: str, page_url: str
 ) -> tuple[list[ModRecord], ModExtractStats]:
     """从一个底材类别页抽取全部词缀。"""
-    payload = extract_payload(html)
+    payload = extract_payload(html, page_slug, page_url)
     stats = ModExtractStats()
 
     baseitem = payload.get("baseitem") or {}
@@ -491,11 +579,13 @@ def extract_mods(
             stats.succeeded += 1
             stats.categories[category] = stats.categories.get(category, 0) + 1
 
-    if stats.total and stats.success_ratio < MIN_SUCCESS_RATIO:
+    if not stats.total:
+        raise ModStructureError(f"{page_slug} 词缀载荷没有任何可识别行")
+    if stats.failed:
         detail = "; ".join(f"{i}: {r}" for i, r in stats.failures[:5])
         raise ModStructureError(
-            f"{page_slug} 词缀抽取成功率 {stats.success_ratio:.1%} 低于下限 "
-            f"{MIN_SUCCESS_RATIO:.0%}（{stats.succeeded}/{stats.total}）。失败样本：{detail}"
+            f"{page_slug} 有 {stats.failed}/{stats.total} 行抽取失败；完整池要求零丢失。"
+            f"失败样本：{detail}"
         )
 
     return out, stats
@@ -531,10 +621,15 @@ def _build_record(
         ilvl = int(rec.get("Level") or 0)
     except (TypeError, ValueError):
         ilvl = 0
+    raw_weight = rec.get("DropChance")
+    if category == "normal" and raw_weight in (None, ""):
+        raise ValueError("normal 词缀缺少 DropChance，不能把缺失权重当成 0")
     try:
-        weight = int(rec.get("DropChance") or 0)
-    except (TypeError, ValueError):
-        weight = 0
+        weight = int(raw_weight or 0)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"DropChance 不是整数：{raw_weight!r}") from exc
+    if weight < 0:
+        raise ValueError(f"DropChance 不能为负数：{weight}")
 
     text_zh = clean_mod_text(str(rec.get("str") or ""))
 
