@@ -90,14 +90,23 @@ def _prepare_tools() -> list[dict[str, Any]]:
 
 
 def _tools_for_question(question: str) -> list[dict[str, Any]]:
-    """按本轮明确来源排除裁剪 schema；执行层仍会做第二次授权检查。"""
+    """按本轮精确来源授权裁剪 schema；执行层仍会做第二次检查。"""
     tools = _prepare_tools()
-    if _metamod_source_policy(question) != "excluded":
-        return tools
+    affix_authorized = bool(_affix_pool_precision_query(question)[0])
+    metamod_excluded = _metamod_source_policy(question) == "excluded"
     return [
-        schema for schema in tools
-        if str((schema.get("function") or {}).get("name") or "")
-        != "metamod_interaction_matrix"
+        schema
+        for schema in tools
+        if not (
+            str((schema.get("function") or {}).get("name") or "")
+            == "metamod_interaction_matrix"
+            and metamod_excluded
+        )
+        and not (
+            str((schema.get("function") or {}).get("name") or "")
+            == "affix_pool_odds"
+            and not affix_authorized
+        )
     ]
 
 
@@ -500,6 +509,48 @@ def _metamod_precision_query(question: str) -> tuple[str, str, str]:
     return normalized, operation, guard
 
 
+_AFFIX_POOL_UNSUPPORTED_TERMS = (
+    "影响力", "裂界", "塑界", "精华", "化石", "收获", "harvest", "隐匿",
+    "异能", "eldritch", "synthesis", "metamod", "元词缀", "当前装备",
+    "已有词缀", "family排除", "词缀容量", "剩余前缀", "剩余后缀",
+    "改造石", "增幅石", "富豪石", "混沌石", "崇高石", "成功率",
+    "期望通货", "平均消耗", "制作步骤", "制作路线", "最快", "最经济",
+    "造价", "操作流程", "流程", "最划算", "划算", "多少通货", "成本",
+    "推荐", "怎么做", "如何做", "预计消耗",
+)
+_AFFIX_POOL_EXACT_QUERY_RE = re.compile(
+    r'^\s*(?:请)?(?:查询|计算|给出)?\s*'
+    r'(?:(?:normal|普通)\s*){1,2}(?:来源)?\s*(?:普通)?词缀(?:有效池|池)\s*[:：]\s*'
+    r'底材\s*[“"](?P<base>[^”"]+)[”"]\s*[，,]\s*'
+    r'(?:物品等级|物等|ilvl)\s*[:：]?\s*(?P<level>\d{1,3})\s*[，,]\s*'
+    r'(?P<side>前缀|后缀)侧\s*[，,]\s*'
+    r'目标(?:词缀)?\s*[“"](?P<target>[^”"]+)[”"]\s*的\s*'
+    r'(?:(?:原始权重|条件权重|条件概率|加权选择)(?:\s*(?:和|与|、)\s*)?)+'
+    r'[。！？!?]?\s*$',
+    re.I,
+)
+
+
+def _affix_pool_precision_query(
+    question: str,
+) -> tuple[str, str, int | None, str, str]:
+    """只接受完整固定语法，并逐字冻结四个条件；任何混合意图都拒绝。"""
+    raw = question or ""
+    normalized = _normalized(raw)
+    if not normalized or any(term in normalized for term in _AFFIX_POOL_UNSUPPORTED_TERMS):
+        return "", "", None, "", ""
+    match = _AFFIX_POOL_EXACT_QUERY_RE.fullmatch(raw)
+    if match is None:
+        return "", "", None, "", ""
+    base = match.group("base").strip()
+    target = match.group("target").strip()
+    level = int(match.group("level"))
+    side = "prefix" if match.group("side") == "前缀" else "suffix"
+    if not base or not target or not 1 <= level <= 100:
+        return "", "", None, "", ""
+    return raw, base, level, side, target
+
+
 def _precision_tool_route(question: str) -> str:
     """只为参数可从问题逐字冻结的结构化能力放行精确工具。"""
     if _positive_craft_clause(question):
@@ -507,6 +558,8 @@ def _precision_tool_route(question: str) -> str:
     metamod_query = _metamod_precision_query(question)
     if metamod_query[0]:
         return "metamod_interaction_matrix"
+    if _affix_pool_precision_query(question)[0]:
+        return "affix_pool_odds"
     return "bench_recipe_catalog" if _bench_precision_query(question)[1] else ""
 
 
@@ -602,6 +655,34 @@ def _validate_precision_call(
             return "operation 必须逐字对应来源矩阵中的操作名"
         if guard != expected_guard:
             return "guard 必须逐字对应来源矩阵中的列名"
+        return ""
+
+    if tool_name == "affix_pool_odds":
+        (
+            clause,
+            expected_base,
+            expected_level,
+            expected_side,
+            expected_target,
+        ) = _affix_pool_precision_query(question)
+        if not clause or expected_level is None:
+            return "当前问题没有可逐字冻结的普通词缀条件池查询"
+        if set(arguments) != {
+            "base_type", "item_level", "generation_side", "target_query"
+        }:
+            return (
+                "条件池调用必须且只能包含 base_type、item_level、"
+                "generation_side 与 target_query"
+            )
+        if str(arguments.get("base_type") or "").strip() != expected_base:
+            return "base_type 必须逐字对应问题中引号内的底材"
+        item_level = arguments.get("item_level")
+        if isinstance(item_level, bool) or item_level != expected_level:
+            return "item_level 必须等于问题中明确给出的物品等级整数"
+        if str(arguments.get("generation_side") or "") != expected_side:
+            return "generation_side 必须对应问题中唯一的前缀或后缀侧"
+        if str(arguments.get("target_query") or "").strip() != expected_target:
+            return "target_query 必须逐字对应问题中引号内的目标词缀"
         return ""
 
     if tool_name != "check_mod_combination":
@@ -702,6 +783,100 @@ def _precision_citations(
             and citation.get("claim_data", {}).get("raw_value")
             and citation.get("url")
         ]
+    if tool_name == "affix_pool_odds":
+        if not isinstance(result.data, dict) or result.data.get("status") != "exact":
+            return []
+        pob_citations = [
+            citation
+            for citation in result.citations
+            if str(citation.get("chunk_id") or "").startswith("affix_pool_pob_base:")
+            and citation.get("channel") == "structured"
+            and citation.get("claim_scope") == "affix_pool_odds"
+            and citation.get("source") == "Path of Building"
+            and citation.get("source_priority") == 2
+            and isinstance(citation.get("claim_data"), dict)
+            and citation.get("claim_data", {}).get("kind") == "pob_base"
+            and all(
+                citation.get("claim_data", {}).get(key)
+                for key in (
+                    "base_id", "name_en", "armour_tag", "source_commit", "pob_url",
+                )
+            )
+            and citation.get("url") == citation.get("claim_data", {}).get("pob_url")
+            and str(citation.get("claim_data", {}).get("source_commit"))
+            in str(citation.get("url") or "")
+        ]
+        mapping_citations = [
+            citation
+            for citation in result.citations
+            if str(citation.get("chunk_id") or "").startswith("affix_pool_base_mapping:")
+            and citation.get("channel") == "derived"
+            and citation.get("claim_scope") == "affix_pool_odds"
+            and citation.get("source") == "POEDB"
+            and citation.get("source_priority") == 1
+            and isinstance(citation.get("claim_data"), dict)
+            and citation.get("claim_data", {}).get("kind") == "base_mapping"
+            and all(
+                citation.get("claim_data", {}).get(key)
+                for key in (
+                    "mapping_version", "base_id", "name_en", "name_zh", "poedb_slug",
+                    "armour_tag", "modifier_page", "pob_url", "poedb_url",
+                )
+            )
+            and citation.get("url") == citation.get("claim_data", {}).get("poedb_url")
+        ]
+        pool_citations = [
+            citation
+            for citation in result.citations
+            if str(citation.get("chunk_id") or "").startswith("affix_pool:")
+            and citation.get("channel") == "derived"
+            and citation.get("claim_scope") == "affix_pool_odds"
+            and citation.get("source") == "POEDB"
+            and citation.get("source_priority") == 1
+            and isinstance(citation.get("claim_data"), dict)
+            and citation.get("claim_data", {}).get("kind") == "pool_odds"
+            and all(
+                citation.get("claim_data", {}).get(key) is not None
+                for key in (
+                    "base_id", "base_name_en", "base_name_zh", "armour_tag",
+                    "modifier_page", "poedb_base_url", "pob_url", "item_level",
+                    "generation_side", "generation_side_zh", "pool_size",
+                    "total_weight", "target_query", "target_group", "target_weight",
+                    "probability_numerator", "probability_denominator",
+                    "probability_decimal", "expected_independent_selections",
+                    "pool_digest", "page_row_count", "page_row_digest",
+                    "source_content_hash", "source_fetched_at", "source_total_rows",
+                    "source_deduped_rows",
+                )
+            )
+            and citation.get("claim_data", {}).get("source_category") == "normal"
+            and citation.get("claim_data", {}).get(
+                "existing_family_exclusions_applied"
+            ) is False
+            and citation.get("url")
+        ]
+        if not (
+            len(pob_citations) == len(mapping_citations) == len(pool_citations) == 1
+        ):
+            return []
+        pob = pob_citations[0]
+        mapping = mapping_citations[0]
+        pool = pool_citations[0]
+        p2 = pob["claim_data"]
+        bridge = mapping["claim_data"]
+        odds = pool["claim_data"]
+        if not (
+            p2["base_id"] == bridge["base_id"] == odds["base_id"]
+            and p2["name_en"] == bridge["name_en"] == odds["base_name_en"]
+            and bridge["name_zh"] == odds["base_name_zh"]
+            and p2["armour_tag"] == bridge["armour_tag"] == odds["armour_tag"]
+            and bridge["modifier_page"] == odds["modifier_page"]
+            and p2["pob_url"] == bridge["pob_url"] == odds["pob_url"]
+            and bridge["poedb_url"] == odds["poedb_base_url"]
+            and pool["url"] == f"https://poedb.tw/cn/{odds['modifier_page']}"
+        ):
+            return []
+        return [pob, mapping, pool]
     return []
 
 
@@ -711,7 +886,7 @@ def _call_tool(
     name: str,
     raw_arguments: str,
 ) -> tuple[ToolResult, bool]:
-    """执行工具，并返回它是否是参数归属正确且带 solver 证据的精确调用。"""
+    """执行工具，并返回它是否是参数归属正确且证据完整的精确调用。"""
     if (
         name == "metamod_interaction_matrix"
         and _metamod_source_policy(question) == "excluded"
@@ -719,6 +894,14 @@ def _call_tool(
         return ToolResult(
             ok=False,
             error="当前问题明确排除了 Metamod 矩阵来源，拒绝执行该工具",
+        ), False
+    if name == "affix_pool_odds" and precision_tool != "affix_pool_odds":
+        return ToolResult(
+            ok=False,
+            error=(
+                "当前问题未形成可逐字冻结的普通词缀条件池查询，"
+                "拒绝执行 affix_pool_odds"
+            ),
         ), False
     parsed = _safe_json(raw_arguments)
     if precision_tool and name == precision_tool:
@@ -754,6 +937,17 @@ def _initial_user_content(
             "回答只能使用固定句式复述原始结果与原始注释；不得解释 YES/NO 的外延，"
             "不得声称当前版本适用，也不得扩写可执行性、状态转移、步骤、概率、成本或路线。"
         )
+    elif precision_tool == "affix_pool_odds":
+        instruction = (
+            "工具参数必须逐字使用问题中引号内的底材与目标，并使用问题明确给出的"
+            "物品等级和唯一前缀/后缀侧。回答只能按固定句式陈述：PoB 英文底材/标签"
+            "证据与 POEDB 身份桥接共同支撑的底材到词缀页映射；normal 来源、该物品"
+            "等级、该侧且未应用已有 family 排除时的完整池总权重、目标组权重与条件"
+            "概率；以及独立同分布选择数学期望。映射句必须同时引用 PoB 与桥接证据，"
+            "权重和期望句必须同时引用 PoB、桥接与 POEDB 池证据。必须声明该条件概率"
+            "不是任何通货或具体工艺的一次使用成功率；不得扩写当前装备、容量、特殊"
+            "来源、步骤、实际期望通货、成本或路线。"
+        )
     else:
         instruction = (
             "工具参数中的目录关键词和可选 ItemClass 必须逐字对应用户问题。"
@@ -778,6 +972,33 @@ def _metamod_source_blank_answer(result: ToolResult) -> str:
     )
 
 
+def _affix_pool_unknown_answer(result: ToolResult) -> str:
+    """条件池 unknown 的确定性缺据；禁止把未命中或歧义改写成概率。"""
+    data = result.data or {}
+    gaps = data.get("gaps") if isinstance(data.get("gaps"), list) else []
+    messages = [
+        str(gap.get("message") or "").strip()
+        for gap in gaps
+        if isinstance(gap, dict) and str(gap.get("message") or "").strip()
+    ]
+    detail = "；".join(messages) or "工具没有形成完整、唯一的条件池证据"
+    candidates = data.get("candidate_groups")
+    candidate_names = [
+        str(candidate.get("correct_group") or "").strip()
+        for candidate in candidates if isinstance(candidate, dict)
+    ] if isinstance(candidates, list) else []
+    disambiguation = ""
+    if candidate_names:
+        disambiguation = (
+            " 候选 correct_group 为：" + "、".join(candidate_names)
+            + "；请从中选一个作为逐字目标后重试。"
+        )
+    return (
+        f"在当前窄化条件下无法输出下一次同侧普通加权选择的条件概率：{detail}。"
+        f"{disambiguation}未形成概率时不能解释为 0%，也不能外推为任何通货或具体工艺的成功率。"
+    )
+
+
 def _precision_failure_answer(tool_name: str) -> str:
     if tool_name == "check_mod_combination":
         action = "因此不作组合判断"
@@ -785,6 +1006,9 @@ def _precision_failure_answer(tool_name: str) -> str:
     elif tool_name == "metamod_interaction_matrix":
         action = "因此不陈述该矩阵单元格的结果"
         evidence_kind = "逐字键匹配的结构化矩阵证据"
+    elif tool_name == "affix_pool_odds":
+        action = "因此不输出条件权重概率"
+        evidence_kind = "完整的底材映射与同侧普通词缀池证据"
     else:
         action = "因此不陈述工艺台目录事实"
         evidence_kind = "对应的结构化目录证据"
@@ -864,6 +1088,7 @@ def run_turn(
     precision_tool_succeeded = not bool(precision_tool)
     precision_call_invalidated = False
     precision_source_blank: ToolResult | None = None
+    precision_affix_unknown: ToolResult | None = None
 
     try:
         for _ in range(max_calls + 1):
@@ -909,11 +1134,19 @@ def run_turn(
                     and bool((tr.data or {}).get("source_blank"))
                 ):
                     precision_source_blank = tr
+                if (
+                    precision_tool == "affix_pool_odds"
+                    and tc.name == precision_tool
+                    and tr.ok
+                    and (tr.data or {}).get("status") == "unknown"
+                ):
+                    precision_affix_unknown = tr
                 result.tool_calls.append(
                     _tool_record(tc.name, _safe_json(tc.arguments), tr)
                 )
                 final_tool_results[tc.name] = tr
                 if precision_match:
+                    precision_affix_unknown = None
                     precision_tool_succeeded = True
                     # 精确回答只允许使用本次、参数归属正确且类型匹配的证据。
                     evidence = number_evidence(_precision_citations(precision_tool, tr))
@@ -951,6 +1184,18 @@ def run_turn(
             [str((precision_source_blank.data or {}).get("missing_reason") or "来源矩阵单元格为空")],
             category="制作系统 / metamod_matrix",
         )
+        result.elapsed_ms = int((time.monotonic() - started) * 1000)
+        _persist(result, conversation_id)
+        return result
+
+    if (
+        precision_affix_unknown is not None
+        and not precision_tool_succeeded
+        and not precision_call_invalidated
+    ):
+        result.evidence_gap = True
+        result.answer = _affix_pool_unknown_answer(precision_affix_unknown)
+        _record_final_tool_result_gaps(question, final_tool_results)
         result.elapsed_ms = int((time.monotonic() - started) * 1000)
         _persist(result, conversation_id)
         return result
@@ -1079,6 +1324,7 @@ def stream_turn(
     precision_tool_succeeded = not bool(precision_tool)
     precision_call_invalidated = False
     precision_source_blank: ToolResult | None = None
+    precision_affix_unknown: ToolResult | None = None
 
     try:
         for _round in range(max_calls + 1):
@@ -1151,11 +1397,19 @@ def stream_turn(
                     and bool((tr.data or {}).get("source_blank"))
                 ):
                     precision_source_blank = tr
+                if (
+                    precision_tool == "affix_pool_odds"
+                    and tc.name == precision_tool
+                    and tr.ok
+                    and (tr.data or {}).get("status") == "unknown"
+                ):
+                    precision_affix_unknown = tr
                 result.tool_calls.append(
                     _tool_record(tc.name, _safe_json(tc.arguments), tr)
                 )
                 final_tool_results[tc.name] = tr
                 if precision_match:
+                    precision_affix_unknown = None
                     precision_tool_succeeded = True
                     evidence = number_evidence(_precision_citations(precision_tool, tr))
                     result.evidence = evidence
@@ -1187,6 +1441,18 @@ def stream_turn(
             [str((precision_source_blank.data or {}).get("missing_reason") or "来源矩阵单元格为空")],
             category="制作系统 / metamod_matrix",
         )
+        yield {"type": "gap", "text": result.answer}
+        yield from _finish(result, conversation_id, started)
+        return
+
+    if (
+        precision_affix_unknown is not None
+        and not precision_tool_succeeded
+        and not precision_call_invalidated
+    ):
+        result.evidence_gap = True
+        result.answer = _affix_pool_unknown_answer(precision_affix_unknown)
+        _record_final_tool_result_gaps(question, final_tool_results)
         yield {"type": "gap", "text": result.answer}
         yield from _finish(result, conversation_id, started)
         return
@@ -1322,6 +1588,11 @@ def _safe_json(raw: str) -> Any:
 
 _CRAFT_GAP_CATEGORIES = {
     "target_not_resolved": "not_recalled/mod_affix",
+    "target_ambiguous": "input_clarification/mod_affix_group",
+    "base_not_resolved": "input_clarification/base_item",
+    "pool_incomplete": "not_collected/mod_affix",
+    "pool_snapshot_unverified": "not_collected/mod_affix_snapshot",
+    "weight_incomplete": "not_collected/mod_affix_weight",
     "candidate_search_truncated": "analysis_limit/craft_feasibility",
     "assignment_search_truncated": "analysis_limit/craft_feasibility",
     "item_class_not_resolved": "input_clarification/item_class",

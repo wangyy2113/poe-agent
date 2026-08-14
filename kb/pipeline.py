@@ -1212,6 +1212,82 @@ def _upsert_mods(conn, records: list) -> int:  # noqa: ANN001
     return len(rows)
 
 
+def _replace_mod_page(conn, slug: str, records: list) -> tuple[int, str]:  # noqa: ANN001
+    """事务化整页替换并返回页摘要；失败时保留旧页，禁止半页概率池。"""
+    from craft.pool import affix_page_digest  # noqa: PLC0415
+
+    conn.execute("SAVEPOINT mod_affix_page")
+    try:
+        conn.execute("DELETE FROM mod_affix WHERE item_class_page=?", (slug,))
+        written = _upsert_mods(conn, records)
+        count, digest = affix_page_digest(conn, slug)
+        if count != written:
+            raise RuntimeError(f"整页替换行数不一致：written={written}, actual={count}")
+        conn.execute("RELEASE mod_affix_page")
+        return count, digest
+    except Exception:
+        conn.execute("ROLLBACK TO mod_affix_page")
+        conn.execute("RELEASE mod_affix_page")
+        raise
+
+
+def _mod_page_audit(
+    *,
+    slug: str,
+    url: str,
+    result,  # noqa: ANN001
+    rows: int,
+    digest: str,
+    stats=None,  # noqa: ANN001
+    explicit_no_mods: bool = False,
+) -> dict[str, object]:
+    """构造查询端可独立核验的来源级页审计。"""
+    if explicit_no_mods:
+        total = succeeded = failed = deduped = conflicts = 0
+        status = "verified_empty"
+    else:
+        if stats is None:
+            raise ValueError("非空词缀页缺少抽取统计")
+        total = int(stats.total)
+        succeeded = int(stats.succeeded)
+        failed = int(stats.failed)
+        deduped = int(stats.deduped)
+        conflicts = int(stats.dedup_conflicts)
+        if failed or conflicts or succeeded != rows or total != succeeded + deduped:
+            raise ValueError(
+                f"{slug} 来源行审计不闭合：total={total}, succeeded={succeeded}, "
+                f"failed={failed}, deduped={deduped}, conflicts={conflicts}, rows={rows}"
+            )
+        status = "complete"
+    content_hash = str(result.content_hash or "")
+    fetched_at = str(result.fetched_at or "")
+    final_url = str(result.final_url or "")
+    if (
+        result.url != url
+        or final_url != url
+        or len(content_hash) != 64
+        or any(char not in "0123456789abcdef" for char in content_hash.lower())
+        or not fetched_at
+    ):
+        raise ValueError(f"{slug} 抓取来源元数据、最终 URL 或页面身份不完整")
+    return {
+        "status": status,
+        "rows": rows,
+        "digest": digest,
+        "source_url": url,
+        "source_final_url": final_url,
+        "source_content_hash": content_hash,
+        "source_fetched_at": fetched_at,
+        "source_total_rows": total,
+        "source_succeeded_rows": succeeded,
+        "source_failed_rows": failed,
+        "source_deduped_rows": deduped,
+        "source_dedup_conflicts": conflicts,
+        "parse_complete": True,
+        "explicit_no_mods": explicit_no_mods,
+    }
+
+
 def run_poedb_mods(*, force: bool = False, rebuild: bool = False) -> int:
     """抽取全部 101 个底材类别页的词缀并入库。"""
     cfg = get_config()
@@ -1229,11 +1305,14 @@ def run_poedb_mods(*, force: bool = False, rebuild: bool = False) -> int:
         logger.info("rebuild：清空 mod_affix")
         conn.execute("DELETE FROM mod_affix")
 
+    from craft.pool import POOL_SNAPSHOT_MODE  # noqa: PLC0415
+
     slugs = poedb_index.discover_mod_class_pages(fetcher, force=force)
     total_records = 0
     pages_ok = pages_nodata = pages_failed = 0
     conflicts = 0
     failures: list[tuple[str, str]] = []
+    page_audits: dict[str, dict[str, object]] = {}
 
     for i, slug in enumerate(slugs, 1):
         url = f"{poedb_index.BASE}/{slug}"
@@ -1241,10 +1320,33 @@ def run_poedb_mods(*, force: bool = False, rebuild: bool = False) -> int:
             res = fetcher.fetch(url, force=force)
             if not res.ok:
                 raise RuntimeError(f"HTTP {res.status_code}")
+            if res.final_url != url:
+                raise RuntimeError(
+                    f"最终响应 URL 不匹配：requested={url}, final={res.final_url or '(missing)'}"
+                )
             mods, stats = poedb_mods.extract_mods(res.text, slug, url)
         except poedb_mods.NoModsDataError:
+            conn.execute("SAVEPOINT mod_affix_page_audit")
+            try:
+                count, digest = _replace_mod_page(conn, slug, [])
+                page_audits[slug] = _mod_page_audit(
+                    slug=slug,
+                    url=url,
+                    result=res,
+                    rows=count,
+                    digest=digest,
+                    explicit_no_mods=True,
+                )
+                conn.execute("RELEASE mod_affix_page_audit")
+            except Exception as exc:  # noqa: BLE001
+                conn.execute("ROLLBACK TO mod_affix_page_audit")
+                conn.execute("RELEASE mod_affix_page_audit")
+                pages_failed += 1
+                failures.append((slug, f"{type(exc).__name__}: verified empty replace failed"))
+                logger.error("[%d/%d] %-32s 空页替换失败：%s", i, len(slugs), slug, exc)
+                continue
             pages_nodata += 1
-            logger.info("[%d/%d] %-32s 无常规词缀池（合法）", i, len(slugs), slug)
+            logger.info("[%d/%d] %-32s 无常规词缀池（身份已核对）", i, len(slugs), slug)
             continue
         except Exception as exc:
             pages_failed += 1
@@ -1263,7 +1365,27 @@ def run_poedb_mods(*, force: bool = False, rebuild: bool = False) -> int:
             failures.append((slug, f"去重冲突 {stats.dedup_conflicts} 处"))
             continue
 
-        written = _upsert_mods(conn, mods)
+        conn.execute("SAVEPOINT mod_affix_page_audit")
+        try:
+            # 必须整页替换，不能仅 UPSERT：上游删除的词缀若残留，会进入概率分母。
+            count, digest = _replace_mod_page(conn, slug, mods)
+            page_audits[slug] = _mod_page_audit(
+                slug=slug,
+                url=url,
+                result=res,
+                rows=count,
+                digest=digest,
+                stats=stats,
+            )
+            conn.execute("RELEASE mod_affix_page_audit")
+            written = count
+        except Exception as exc:  # noqa: BLE001
+            conn.execute("ROLLBACK TO mod_affix_page_audit")
+            conn.execute("RELEASE mod_affix_page_audit")
+            pages_failed += 1
+            failures.append((slug, f"{type(exc).__name__}: page replace/audit failed"))
+            logger.error("[%d/%d] %-32s 整页替换或审计失败：%s", i, len(slugs), slug, exc)
+            continue
         total_records += written
         pages_ok += 1
         logger.info("[%d/%d] %-32s %5d 条（%d 组）", i, len(slugs), slug,
@@ -1284,8 +1406,17 @@ def run_poedb_mods(*, force: bool = False, rebuild: bool = False) -> int:
         "failed=?, skipped=?, elapsed_ms=?, note=? WHERE run_id=?",
         (
             len(slugs), pages_ok, pages_failed, pages_nodata, elapsed_ms,
-            json.dumps({"records": total_records, "no_mods_pages": pages_nodata,
-                        "failures": failures[:10]}, ensure_ascii=False),
+            json.dumps(
+                {
+                    "snapshot_mode": POOL_SNAPSHOT_MODE,
+                    "records": total_records,
+                    "no_mods_pages": pages_nodata,
+                    "pages": page_audits,
+                    "failures": failures[:10],
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+            ),
             run_id,
         ),
     )

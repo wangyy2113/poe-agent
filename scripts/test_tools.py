@@ -192,6 +192,40 @@ def main() -> int:
         if leaked:
             problems.append(f"bench_recipe_catalog 越界返回字段：{sorted(leaked)}")
 
+    # ── 6c. affix_pool_odds：无精确底材/快照时必须确定性 unknown ──
+    print("\n[6c] affix_pool_odds：严格 schema 与无据拒答")
+    spec = REGISTRY.spec("affix_pool_odds")
+    required = {"base_type", "item_level", "generation_side", "target_query"}
+    if spec is None:
+        problems.append("affix_pool_odds 未注册")
+    else:
+        parameters = spec.parameters
+        print(f"    required={parameters.get('required')} additionalProperties="
+              f"{parameters.get('additionalProperties')}")
+        if set(parameters.get("required") or []) != required:
+            problems.append("affix_pool_odds required 参数不完整")
+        if parameters.get("additionalProperties") is not False:
+            problems.append("affix_pool_odds 允许额外参数，模型可绕过参数冻结")
+    r = call(
+        "affix_pool_odds",
+        base_type="__不存在的胸甲底材__",
+        item_level=100,
+        generation_side="prefix",
+        target_query="IncreasedLife",
+    )
+    print(f"    ok={r.ok} status={(r.data or {}).get('status')} citations={len(r.citations)}")
+    if not r.ok or (r.data or {}).get("status") != "unknown":
+        problems.append("affix_pool_odds 对未知底材没有返回确定性 unknown")
+    if r.citations:
+        problems.append("affix_pool_odds unknown 不得伪造 Citation")
+    probability_fields = (
+        "probability_numerator", "probability_denominator", "probability_decimal"
+    )
+    if any((r.data or {}).get(field) is not None for field in probability_fields):
+        problems.append("affix_pool_odds unknown 不得返回概率数值")
+    if "不是任何通货或工艺成功率" not in ((r.data or {}).get("boundary") or ""):
+        problems.append("affix_pool_odds 缺少通货/工艺成功率边界")
+
     # ── 7. kb_coverage ──
     print("\n[7] kb_coverage")
     r = call("kb_coverage")

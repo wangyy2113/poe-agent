@@ -196,6 +196,46 @@ _METAMOD_FORBIDDEN: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("当前版本或赛季适用性", re.compile(r"当前版本|当前赛季|本赛季|现版本|3[.]\d+")),
 )
 
+#: Affix Pool v1 只允许底材映射、完整池整数权重、条件分数与独立选择数学期望。
+_AFFIX_POOL_BASE_CLAIM = re.compile(
+    r'^\s*底材[“"](.+?)[”"]（(.+?)）映射到\s*POEDB\s*词缀页[“"](.+?)[”"]\s*[。！？!?]*$',
+    re.I,
+)
+_AFFIX_POOL_WEIGHT_CLAIM = re.compile(
+    r'^\s*在\s*normal\s*来源、物品等级\s*(\d+)\s*、(前缀|后缀)侧且未应用'
+    r'已有词缀\s*family\s*排除的条件下，有效池总权重为\s*(\d+)\s*，'
+    r'目标词缀组[“"](.+?)[”"]权重为\s*(\d+)\s*，条件概率为\s*'
+    r'(\d+)\s*/\s*(\d+)\s*（([0-9]+(?:[.]\d+)?)）\s*[。！？!?]*$',
+    re.I,
+)
+_AFFIX_POOL_EXPECTED_CLAIM = re.compile(
+    r'^\s*在相同条件的独立同分布选择模型中，命中目标词缀组[“"](.+?)[”"]的'
+    r'数学期望选择次数为\s*(\d+(?:/\d+)?)\s*[。！？!?]*$',
+    re.I,
+)
+_AFFIX_POOL_PURE_BOUNDARY = re.compile(
+    r'^\s*(?:该)?条件概率不是任何通货或具体工艺的一次使用成功率\s*[。！？!?]*$'
+)
+_AFFIX_POOL_FORBIDDEN: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("具体通货或工艺成功率", re.compile(
+        r"(?:改造石|增幅石|富豪石|混沌石|精华|化石|收获|harvest|metamod|工艺).{0,12}(?:成功率|概率|几率|机率)",
+        re.I,
+    )),
+    ("实际期望通货消耗", re.compile(r"期望通货|平均需要.{0,12}(?:石|精华|化石|次工艺)|预计消耗")),
+    ("当前装备状态、容量或可执行性", re.compile(
+        r"当前装备|已有词缀|剩余(?:前缀|后缀|位置)|词缀容量|可执行|可以制作|能够制作"
+    )),
+    ("特殊来源或影响力外推", re.compile(
+        r"影响力|裂界|塑界|精华|化石|收获|harvest|隐匿|异能|synthesis|metamod",
+        re.I,
+    )),
+    ("制作步骤或操作顺序", re.compile(
+        r"制作步骤|操作步骤|操作顺序|制作流程|第一步|第二步|下一步|先.{0,20}再|依次"
+    )),
+    ("市场成本或价格", re.compile(r"市场成本|实际成本|市价|市场价|行情|折算价格|交易价格")),
+    ("最快、最经济或最优路线", re.compile(r"最快|最经济|最省|最便宜|最优|路线|方案比较|成本最低")),
+)
+
 
 @dataclass(frozen=True)
 class Evidence:
@@ -320,6 +360,10 @@ def render_evidence_block(evidence: list[Evidence]) -> str:
             tags.append("仅可支撑目录存在、效果原文、原始费用、ItemClasses 与解锁信息")
         if e.claim_scope == "metamod_matrix":
             tags.append("仅可支撑逐字 operation × guard 的原始结果与原始注释")
+        if e.claim_scope == "affix_pool_odds":
+            tags.append(
+                "仅可支撑具体胸甲底材映射、normal 同侧完整池权重、条件概率与独立选择数学期望"
+            )
         tag = f"（{'；'.join(tags)}）" if tags else ""
         parts.append(f"[{e.label}] 来源：{e.source} → {e.title}{tag}\n{e.text}")
     return "\n\n".join(parts)
@@ -390,6 +434,7 @@ def verify(
         lb for lb in result.used_labels
         if not (lb in seen_lb or seen_lb.add(lb))  # type: ignore[func-returns-value]
     ]
+    _enforce_affix_pool_complete_answer(result, by_label)
     return result
 
 
@@ -437,15 +482,25 @@ class StreamingGate:
     # ── 消费 ──
 
     def feed(self, delta: str) -> list[SentenceVerdict]:
-        """喂一个分片，返回本次新完成校验的句子（可能为空）。"""
+        """喂一个分片；条件池精确模式会整轮缓冲到 flush 后再统一放行。"""
         if not delta:
             return []
         self._buffer += delta
-        return self._drain(final=False)
+        out = self._drain(final=False)
+        if any(e.claim_scope == "affix_pool_odds" for e in self._by_label.values()):
+            return []
+        return out
 
     def flush(self) -> list[SentenceVerdict]:
-        """收尾：把缓冲区剩余内容当作最后一句处理（可能没有终止标点）。"""
-        return self._drain(final=True)
+        """收尾并执行全回答证据完整性约束。"""
+        out = self._drain(final=True)
+        if not any(e.claim_scope == "affix_pool_odds" for e in self._by_label.values()):
+            return out
+        result = self.result()
+        self.verdicts = list(result.verdicts)
+        self.blocked = result.blocked
+        self.gaps = list(result.gaps)
+        return list(self.verdicts)
 
     # ── 内部 ──
 
@@ -505,6 +560,7 @@ class StreamingGate:
                     seen.add(lb)
                     used.append(lb)
         res.used_labels = used
+        _enforce_affix_pool_complete_answer(res, self._by_label)
         return res
 
 
@@ -731,6 +787,127 @@ def _metamod_matrix_scope_error(
     return "矩阵未明确覆盖的事实语义"
 
 
+def _affix_pool_claims(
+    evidence: list[Evidence], required: set[str]
+) -> dict[str, dict[str, Any]] | None:
+    """按 kind 取唯一证据，并核对三类证据的关联键。"""
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for item in evidence:
+        kind = str(item.claim_data.get("kind") or "")
+        if kind:
+            grouped.setdefault(kind, []).append(item.claim_data)
+    if any(len(grouped.get(kind, [])) != 1 for kind in required):
+        return None
+    claims = {kind: grouped[kind][0] for kind in required}
+    pob = claims.get("pob_base")
+    mapping = claims.get("base_mapping")
+    pool = claims.get("pool_odds")
+    if pob and mapping and not (
+        pob.get("base_id") == mapping.get("base_id")
+        and pob.get("name_en") == mapping.get("name_en")
+        and pob.get("armour_tag") == mapping.get("armour_tag")
+        and pob.get("pob_url") == mapping.get("pob_url")
+    ):
+        return None
+    if pob and mapping and pool and not (
+        pool.get("base_id") == pob.get("base_id")
+        and pool.get("base_name_en") == pob.get("name_en")
+        and pool.get("base_name_zh") == mapping.get("name_zh")
+        and pool.get("armour_tag") == pob.get("armour_tag")
+        and pool.get("modifier_page") == mapping.get("modifier_page")
+        and pool.get("pob_url") == pob.get("pob_url")
+        and pool.get("poedb_base_url") == mapping.get("poedb_url")
+    ):
+        return None
+    return claims
+
+
+def _affix_pool_scope_error(
+    sentence: str,
+    evidence: list[Evidence],
+    kind: SentenceKind,
+) -> str:
+    """Affix Pool 精确模式只允许固定句式，并强制跨源证据共同使用。"""
+    normalized = sentence.strip()
+    if kind == "recommendation":
+        return "制作建议或路线采用结论"
+
+    if _AFFIX_POOL_PURE_BOUNDARY.fullmatch(normalized):
+        if _affix_pool_claims(evidence, {"pool_odds"}) is not None:
+            return ""
+        return "边界声明缺少 POEDB 池证据"
+
+    base_match = _AFFIX_POOL_BASE_CLAIM.fullmatch(normalized)
+    if base_match:
+        claims = _affix_pool_claims(evidence, {"pob_base", "base_mapping"})
+        if claims is None:
+            return "底材映射句必须同时绑定一致的 PoB 底材与 POEDB 桥接证据"
+        name_zh, name_en, modifier_page = base_match.groups()
+        pob = claims["pob_base"]
+        mapping = claims["base_mapping"]
+        if (
+            name_zh == str(mapping.get("name_zh") or "")
+            and name_en == str(pob.get("name_en") or "")
+            and modifier_page == str(mapping.get("modifier_page") or "")
+        ):
+            return ""
+        return "与 Citation 不一致的底材名称或词缀页映射"
+
+    weight_match = _AFFIX_POOL_WEIGHT_CLAIM.fullmatch(normalized)
+    if weight_match:
+        claims = _affix_pool_claims(
+            evidence, {"pob_base", "base_mapping", "pool_odds"}
+        )
+        if claims is None:
+            return "权重概率句必须同时绑定一致的 PoB、桥接与 POEDB 池证据"
+        (
+            item_level,
+            side_zh,
+            total_weight,
+            target_group,
+            target_weight,
+            numerator,
+            denominator,
+            decimal_value,
+        ) = weight_match.groups()
+        data = claims["pool_odds"]
+        if (
+            item_level == str(data.get("item_level"))
+            and side_zh == str(data.get("generation_side_zh") or "")
+            and total_weight == str(data.get("total_weight"))
+            and target_group == str(data.get("target_group") or "")
+            and target_weight == str(data.get("target_weight"))
+            and numerator == str(data.get("probability_numerator"))
+            and denominator == str(data.get("probability_denominator"))
+            and decimal_value == str(data.get("probability_decimal") or "")
+            and data.get("source_category") == "normal"
+            and data.get("existing_family_exclusions_applied") is False
+        ):
+            return ""
+        return "与 Citation 不一致的池条件、权重或条件概率"
+
+    expected_match = _AFFIX_POOL_EXPECTED_CLAIM.fullmatch(normalized)
+    if expected_match:
+        claims = _affix_pool_claims(
+            evidence, {"pob_base", "base_mapping", "pool_odds"}
+        )
+        if claims is None:
+            return "数学期望句必须同时绑定一致的 PoB、桥接与 POEDB 池证据"
+        target_group, expected = expected_match.groups()
+        data = claims["pool_odds"]
+        if (
+            target_group == str(data.get("target_group") or "")
+            and expected == str(data.get("expected_independent_selections") or "")
+        ):
+            return ""
+        return "与 Citation 不一致的独立选择数学期望"
+
+    for claim_name, pattern in _AFFIX_POOL_FORBIDDEN:
+        if pattern.search(normalized):
+            return claim_name
+    return "条件权重工具未明确覆盖的事实语义"
+
+
 def _check_sentence(
     sentence: str,
     by_label: dict[str, Evidence],
@@ -740,7 +917,16 @@ def _check_sentence(
     labels = extract_labels(sentence)
     stripped = _BINDING_RE.sub("", sentence)
     kind = classify(stripped, labels, terms, domain)
+    affix_pool_mode = any(
+        item.claim_scope == "affix_pool_odds" for item in by_label.values()
+    )
 
+    if affix_pool_mode and not labels:
+        return _block(
+            sentence, kind, labels,
+            "条件池精确模式要求每句绑定固定范围证据；无引用叙述或建议一律拒绝",
+            f"条件池精确回答出现未绑定句：{_excerpt(stripped)}",
+        )
     if kind == "narrative" and not labels:
         return SentenceVerdict(sentence, kind, labels, True, "无需绑定")
     if kind == "recommendation" and not labels:
@@ -801,6 +987,24 @@ def _check_sentence(
                 f"缺少可支撑{scope_error}的非矩阵证据：{_excerpt(stripped)}",
             )
 
+    pool_restricted = [e for e in bound if e.claim_scope == "affix_pool_odds"]
+    if pool_restricted:
+        marker_matches = list(_BINDING_RE.finditer(sentence))
+        marker_tail = sentence[marker_matches[0].start():] if marker_matches else ""
+        marker_tail_text = _BINDING_RE.sub("", marker_tail).strip(" \t\r\n。！？!?")
+        if marker_tail_text:
+            scope_error = "插入原字段内部的 Citation marker"
+        else:
+            scope_error = _affix_pool_scope_error(
+                _BINDING_RE.sub("", sentence), pool_restricted, kind
+            )
+        if scope_error:
+            return _block(
+                sentence, kind, labels,
+                f"条件权重证据仅支撑窄化池模型原字段，不能支撑{scope_error}",
+                f"缺少可支撑{scope_error}的非条件池证据：{_excerpt(stripped)}",
+            )
+
     weak = [e for e in bound if not e.can_support_facts]
     if weak and len(weak) == len(bound):
         return _block(
@@ -840,6 +1044,39 @@ def _check_sentence(
         )
 
     return SentenceVerdict(sentence, kind, labels, True, "通过")
+
+
+def _enforce_affix_pool_complete_answer(
+    result: BindingResult,
+    by_label: dict[str, Evidence],
+) -> None:
+    """精确池回答必须实际使用 P2 底材、跨源映射和 P1 池三类证据。"""
+    required_kinds = {"pob_base", "base_mapping", "pool_odds"}
+    labels_by_kind = {
+        str(evidence.claim_data.get("kind") or ""): label
+        for label, evidence in by_label.items()
+        if evidence.claim_scope == "affix_pool_odds"
+    }
+    if not required_kinds <= set(labels_by_kind):
+        return
+    used = set(result.used_labels)
+    missing = [labels_by_kind[kind] for kind in sorted(required_kinds) if labels_by_kind[kind] not in used]
+    if not missing:
+        return
+    reason = f"条件池 exact 回答未实际使用全部三类证据：缺少 {', '.join(missing)}"
+    if len(result.verdicts) == 1 and result.verdicts[0].reason == reason:
+        return
+    blocked = _block(
+        "".join(verdict.text for verdict in result.verdicts),
+        "factual",
+        (),
+        reason,
+        "条件池 exact 结论缺少 PoB 底材、跨源映射或 POEDB 池证据的完整绑定",
+    )
+    result.verdicts = [blocked]
+    result.blocked = 1
+    result.gaps = [blocked.missing_point]
+    result.used_labels = []
 
 
 def _block(

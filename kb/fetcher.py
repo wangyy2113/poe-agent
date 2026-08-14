@@ -86,12 +86,16 @@ class RobotsGate:
 
 @dataclass
 class FetchResult:
+    #: 调用方请求的 URL；缓存键也由它派生。
     url: str
     text: str
     content_hash: str
     from_cache: bool
     fetched_at: str
     status_code: int = 200
+    #: HTTP 跟随重定向后的最终 URL。缓存命中时仍使用原请求 URL，但上层必须
+    #: 另外核对响应正文内的页面身份，不能只信缓存键。
+    final_url: str = ""
 
     @property
     def ok(self) -> bool:
@@ -151,6 +155,7 @@ class Fetcher:
                 fetched_at=datetime.fromtimestamp(
                     cache_path.stat().st_mtime, tz=timezone.utc
                 ).isoformat(timespec="seconds"),
+                final_url=url,
             )
 
         if self.robots is not None and not self.robots.allowed(url):
@@ -172,6 +177,7 @@ class Fetcher:
                 from_cache=False,
                 fetched_at=_now_iso(),
                 status_code=resp.status_code,
+                final_url=str(resp.url),
             )
 
         text = resp.text
@@ -187,6 +193,7 @@ class Fetcher:
             from_cache=False,
             fetched_at=_now_iso(),
             status_code=resp.status_code,
+            final_url=str(resp.url),
         )
 
 
