@@ -78,17 +78,41 @@ class BridgeResult:
         return self.matched is not None
 
 
-def _slot_key(ilvl: int, ranges: list[tuple[float, float]]) -> str:
+# ── 阶梯指纹原语。**公开**，因为不止一处需要它 ──────────────────────
+#
+# 两源配对只有两种可能的判据：组名，或数值阶梯。组名不行——本模块顶部那段实测写着
+# 掉落词缀里同名组只占 11.5%，局部武器词缀是系统性命名不同。所以判据只能是阶梯。
+#
+# 提成公开 API 是因为 `scripts/verify_pob_mods.py`（跨来源对账）此前**按组名配对**，
+# 与本模块的结论直接矛盾，代价是 2729 条 `mod_review` 里 89.2% 的行在 PoB 侧根本
+# 没有对应阶梯——那不是数值冲突，是配对配错了。同一个概念不允许有两份判据。
+
+
+def slot_key(ilvl: int, ranges: list[tuple[float, float]]) -> str:
     """一个档位的规范化键：物品等级 + 区间序列。"""
     return f"{ilvl}:" + ",".join(f"{lo:g}-{hi:g}" for lo, hi in ranges)
 
 
-def _ladder_slots(rows: list[tuple[int, list[tuple[float, float]]]]) -> set[str]:
-    return {_slot_key(ilvl, ranges) for ilvl, ranges in rows}
+def ladder_slots(rows: list[tuple[int, list[tuple[float, float]]]]) -> set[str]:
+    """一条词缀阶梯的指纹：全部 (ilvl, 区间) 档位的集合。"""
+    return {slot_key(ilvl, ranges) for ilvl, ranges in rows}
 
 
-def _parse_ranges_json(raw: str | None) -> list[tuple[float, float]]:
+def ladder_overlap(a: set[str], b: set[str]) -> float:
+    """两条阶梯的 Jaccard 重合度。1.0 表示逐档全等，0 表示毫无共同档位。"""
+    if not a or not b:
+        return 0.0
+    return len(a & b) / len(a | b)
+
+
+def parse_ranges_json(raw: str | None) -> list[tuple[float, float]]:
     return [(float(a), float(b)) for a, b in json.loads(raw or "[]")]
+
+
+#: 旧的私有别名，保留给本模块内部既有调用点，避免这次改动牵连桥接逻辑。
+_slot_key = slot_key
+_ladder_slots = ladder_slots
+_parse_ranges_json = parse_ranges_json
 
 
 def bridge_english_mod(
