@@ -204,6 +204,20 @@ cases:
     expect_values: ["85"]
     note: 同上一条的 ilvl 字段，单独测是因为 T 级与 ilvl 常被读错行
 
+
+  - id: num_kaoms_req_level
+    query: 冈姆的壮志的需求等级是多少
+    kind: numeric
+    expect_slug: Kaoms_Heart
+    expect_values: ["68"]
+    note: 唯一装备的需求等级，POEDB 侧 1215 件全有，必须答得出来
+    lesson: >-
+      这条是**反例哨兵**，防的是技能石意图词被放宽。2026-08-18 为堵
+      `gap_skill_gem_numbers` 的漏出，给 skill_gem 领域加了「技能等级」「级时的基础伤害」
+      这类专指标记——一旦有人把它们放宽成「等级」或「级」，这句「需求等级」就会被
+      误判成技能石问题而拒答，而它的答案（68）明明在库里。
+      意图词必须专指，这是踩过三次的坑（「怪物」当 boss 意图、「知识库」当路由意图、
+      差点把「降临」当 POE2 标记）。
   - id: num_max_resistance_cap
     query: 抗性上限是多少
     kind: numeric
