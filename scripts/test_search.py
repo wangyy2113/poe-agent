@@ -1,9 +1,15 @@
 #!/usr/bin/env python3
-"""检索验证：专名查询、描述性查询、数值类查询、以及知识库确定不覆盖的查询。
+"""检索链路验证：专名查询、描述性查询、以及知识库确定不覆盖的查询。
 
 最后一类最关键——用来验证「无据不答」是否真的生效，而不是编一个答案。
 
-    python scripts/test_search.py
+**用例已迁到 `tests/golden/questions.yaml`**，本脚本只是按类别筛选后调用
+`scripts/eval_run.py` 的检索侧评测。原先这里内嵌一份 21 条的 CASES，与评测集
+是两份数据；两份用例迟早分叉，届时同一个查询在两处得到不同结论，哪个对都说不清。
+用例的来历与踩过的坑记在 yaml 的 `lesson` 字段里，不要删。
+
+    python scripts/test_search.py           # 专名 + 描述性 + 拒答类
+    python scripts/eval_run.py              # 全部类别与完整指标
 """
 
 from __future__ import annotations
@@ -12,152 +18,21 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from core import db as dbmod  # noqa: E402
-from core.config import get_config  # noqa: E402
-from core.logging_setup import setup_logging  # noqa: E402
-from retrieval.hybrid import retrieve  # noqa: E402
+from eval_run import main as eval_main  # noqa: E402
 
-# (查询, 期望命中的实体 slug；None=只要求有命中；"REFUSE"=必须拒答, 说明)
-REFUSE = "REFUSE"
-
-CASES: list[tuple[str, str | None, str]] = [
-    # ── 专名查询（中文）──
-    ("猎首", "Headhunter", "专名·中文"),
-    ("猎首这件装备有什么词缀", "Headhunter", "专名·带上下文提问"),
-    ("冈姆的壮志", "Kaoms_Heart", "专名·中文"),
-    # ── 专名查询（英文名与 slug 去下划线形式）──
-    ("Headhunter", "Headhunter", "专名·英文名"),
-    ("Abberaths Horn", "Abberaths_Horn", "专名·slug 去下划线（别名匹配）"),
-    ("Abberath's Horn", "Abberaths_Horn", "专名·权威英文名（带撇号，slug 反推不出）"),
-    ("Tabula Rasa", "Tabula_Rasa", "专名·英文名（L2 类别页补集来源）"),
-    # ── 描述性查询：考察 search_keywords 对向量通道缺失的补偿 ──
-    ("击败稀有怪物获得其属性修正的腰带", "Headhunter", "描述性·猎首效果"),
-    ("法术伤害提高 最大魔力 法杖", None, "数值类·只要求有命中"),
-    # ── L2 补全覆盖到的物品：曾被误记为「缺失」，现在必须命中 ──
-    # 教训：这两条原先是「已知缺失·必须拒答」用例，前提是错的。
-    #   · 无尽之衣(Tabula_Rasa) 确实不在 /cn/Unique_item 概览页上，但 /cn/Body_Armours
-    #     类别页有它，详情页也存在 → 是我们的采集面不全，不是 POEDB 没有。
-    #   · 「玄虚之靴」这个中文名 POEDB 根本没有；该装备真名是「神行靴」
-    #     (Seven-League Step)，而且一直就在库里。当初连 slug 都猜错了
-    #     （`Seven_League_Step` 实为 `Seven-League_Step`）。
-    # 把猜测当成「已知缺口」写进用例，会让真实缺口被掩盖，也会把正常命中判成漏出。
-    ("无尽之衣", "Tabula_Rasa", "L2 补集·索引页没有但类别页有"),
-    ("神行靴", "Seven-League_Step", "专名·中文（曾被误记为缺失项）"),
-    ("真知灼见", "Anatomical_Knowledge", "L2 补集·唯一珠宝（索引页对珠宝覆盖不全）"),
-    # ── 天赋树 / 升华 / Atlas 天赋 ──
-    # 期望值写成 `类型:slug*` 形式：天赋实体 id 末尾带内容哈希
-    # （同名节点按内容分成多个实体，见 kb/sources/poedb_tree.py），
-    # 写死哈希会在数据更新时变成假失败，所以按前缀断言。
-    # 断言到**类型**这一层是有意义的：查基石不该命中同名的唯一装备，
-    # 查 Atlas 天赋不该命中角色天赋树——实测 29 个天赋名与唯一装备重名。
-    ("神威之盾", "passive:Divine_Shield_*", "天赋树·基石专名"),
-    ("元素专精有哪些可选效果", "passive:Elemental_Mastery_*", "天赋树·大师天赋（效果选一）"),
-    ("结合尖塔", "ascendancy:Conjoined_Spire_*", "升华节点专名（独立于 passive 域）"),
-    ("精炼师的交易", "atlas_passive:Refiner_s_Bargain_*", "Atlas 天赋专名（不得混入角色天赋树）"),
-    # ── 知识库确定不覆盖：必须拒答，不得编造 ──
-    ("玄虚之靴有什么属性", REFUSE, "POEDB 无此名称·必须拒答（真名为神行靴）"),
-    ("流放之路2 的升华机制是什么", REFUSE, "越界·POE2"),
-    ("辛迪加情报网怎么运作", REFUSE, "越界·制作系统（V1 只采了唯一装备）"),
-    ("今天上海天气怎么样", REFUSE, "越界·非 POE 问题"),
-    # 编造的天赋名：天赋树已采集，所以这里考的是「已采集领域里的不存在条目」
-    # 也必须拒答，而不是拿一个名字相近的节点顶上。
-    #
-    # 选名时避开了与既有实体名的**子串**重叠。原先用的是「虚空壁垒」，结果被
-    # 唯一装备「虚空」（Null and Void）子串命中别名表 → `exact_hit` 直接判充分依据，
-    # 覆盖率只有 25% 也照样漏出。那考的是别名子串匹配的边界，不是天赋树，
-    # 换成不撞名的以免一条用例同时测两件事。
-    #
-    # 别名子串匹配的这个边界是**已知未修项**：它存在是为了让「猎首这件装备有什么词缀」
-    # 这类带上下文的专名查询能命中（需求 3.5），代价是查询里偶然包含某个实体名时
-    # 会被当成强证据。收紧它要同时保住带上下文的专名查询，风险不小，留作单独课题。
-    ("霜锻穹顶这个基石给什么属性", REFUSE, "天赋树里没有这个名字·必须拒答"),
-]
+#: 本脚本的历史职责就是这三类：能命中的、描述性能命中的、必须拒答的。
+#: 数值类与跨来源类的完整判定需要生成结果，走 eval_run.py。
+KINDS = "name,description,gap"
 
 
 def main() -> int:
-    if hasattr(sys.stdout, "reconfigure"):
-        sys.stdout.reconfigure(encoding="utf-8")
-
-    cfg = get_config()
-    setup_logging(cfg.logs_dir, "WARNING")
-    conn = dbmod.init_db(cfg.db_path)
-
-    total = conn.execute("SELECT count(*) FROM chunk").fetchone()[0]
-    print("=" * 76)
-    print(f"检索验证（索引内 {total} 条切片）")
-    print("=" * 76)
-
-    min_score = float(cfg.get("retrieval.min_score", 0.35))
-    min_coverage = float(cfg.get("retrieval.min_coverage", 0.5))
-    top_k = int(cfg.get("retrieval.top_k", 20))
-    print(f"  判据：查询词覆盖率 ≥ {min_coverage:.0%}（或实体精确命中）")
-    passed = failed = 0
-    wrong_refusals = leakages = 0
-
-    for query, expect, note in CASES:
-        r = retrieve(
-            conn,
-            query,
-            top_k=top_k,
-            min_score=min_score,
-            min_coverage=min_coverage,
-            rrf_k=int(cfg.get("retrieval.rrf_k", 60)),
-            priority_decay=float(cfg.get("retrieval.priority_decay", 0.08)),
-            vector_enabled=bool(cfg.get("retrieval.vector.enabled", False)),
-            rerank_enabled=bool(cfg.get("retrieval.rerank.enabled", False)),
-        )
-
-        top = r.hits[0] if r.hits else None
-        full_id = (top.entity_id or "") if top else ""
-        top_ent = full_id.split(":")[-1] if top else "-"
-
-        def _matches(exp: str) -> bool:
-            """期望值两种写法：
-            `slug`            —— 只比末段（唯一装备等 id 稳定的类型沿用旧写法）
-            `类型:slug*`      —— 比完整 entity_id 的前缀，并顺带断言实体类型。
-                                 天赋类实体的 id 末尾带内容哈希，只能按前缀比。
-            """
-            if ":" in exp:
-                return full_id.startswith(exp.rstrip("*"))
-            return top_ent == exp
-
-        if expect == REFUSE:
-            ok = not r.sufficient
-            verdict = "正确拒答" if ok else f"**漏出**：错误地给出依据（top={top_ent}）"
-            leakages += not ok
-        elif expect is None:
-            ok = r.sufficient and bool(r.hits)
-            verdict = f"有命中 top={top_ent}" if ok else "无命中（错误拒答）"
-            wrong_refusals += not ok
-        else:
-            ok = r.sufficient and _matches(expect)
-            if not r.sufficient:
-                verdict = f"**错误拒答**（应命中 {expect}）"
-                wrong_refusals += 1
-            else:
-                verdict = f"top={full_id or top_ent}" + ("" if ok else f"（期望 {expect}）")
-
-        passed += ok
-        failed += not ok
-        mark = "PASS" if ok else "FAIL"
-        print(f"\n[{mark}] {note}")
-        print(f"  查询   : {query}")
-        print(f"  命中   : {len(r.hits)} 条，通道={r.channels}，充分依据={r.sufficient}")
-        print(f"  覆盖率 : {r.top_coverage:.0%}   理由：{r.reason}")
-        print(f"  判定   : {verdict}")
-        for h in r.hits[:3]:
-            name = h.metadata.get("title", "?")
-            print(f"    - [{h.channel}] {name}  cov={h.coverage:.0%} "
-                  f"score={h.score:.3f} {h.source}(P{h.source_priority})")
-
-    print("\n" + "=" * 76)
-    print(f"结果：{passed} 通过 / {failed} 失败")
-    print(f"  无据漏出（必须为 0）: {leakages}")
-    print(f"  错误拒答            : {wrong_refusals}")
-    print("  两项须成对监控：只压漏出会退化成什么都不答，只压拒答会让推断重新漏出。")
-    dbmod.close_db()
-    return 0 if failed == 0 else 1
+    argv = sys.argv[1:]
+    if not any(a.startswith("--kind") for a in argv):
+        argv = ["--kind", KINDS, *argv]
+    sys.argv = [sys.argv[0], *argv]
+    return eval_main()
 
 
 if __name__ == "__main__":

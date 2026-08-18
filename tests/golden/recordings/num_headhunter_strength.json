@@ -1,0 +1,129 @@
+{
+  "format_version": 1,
+  "case_id": "num_headhunter_strength",
+  "query": "猎首提供多少力量",
+  "recorded_at": "2026-08-17T18:05:19+08:00",
+  "model": "glm-5.2",
+  "tokens": {
+    "prompt": 8557,
+    "output": 58,
+    "reasoning": 34,
+    "total": 8615
+  },
+  "tool_calls": [
+    ""
+  ],
+  "evidence_gap": false,
+  "gap_answer": "",
+  "blocked_claims": 0,
+  "elapsed_ms": 2604,
+  "evidence_fingerprint": "sha256:582a8b3506a2572bb4cbb63a357a2bc0",
+  "_warning": "raw_answer 是未过出口闸门的模型原文，含可能无据的断言，不得当作事实引用",
+  "raw_answer": "猎首（Headhunter）提供 **+(40-55) 力量**[[E1]]。",
+  "evidence": [
+    {
+      "label": "E1",
+      "chunk_id": "unique_item:Headhunter#0#456e5079b32c619a",
+      "entity_id": "unique_item:Headhunter",
+      "title": "猎首（Headhunter）",
+      "url": "https://poedb.tw/cn/Headhunter",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 猎首（Headhunter）\n类型：唯一装备 ｜ 底材：皮革腰带 ｜ 分类：其他\n\n**需求**：需求 等级 40\n\n**隐式词缀**\n- [隐式词缀] +(25-40) 最大生命\n\n**显式词缀**\n- [显式词缀] +(40-55) 力量\n- [显式词缀] +(40-55) 敏捷\n- [显式词缀] +(50-60) 最大生命\n- [显式词缀] 击中伤害对稀有怪物提高 (20-30)%\n- [显式词缀] 当你击败稀有怪物时，会获得该怪物属性修正 60 秒\n\n**附加说明**\n- [说明] ( 当你进入迷踪状态时, 你将不会被敌人所阻挡 )\n\n来源：POEDB → 猎首（Headhunter）\nhttps://poedb.tw/cn/Headhunter",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E2",
+      "chunk_id": "unique_item:Replica_Headhunter#0#1496799ce8df344f",
+      "entity_id": "unique_item:Replica_Headhunter",
+      "title": "猎首【仿品】（Replica Headhunter）",
+      "url": "https://poedb.tw/cn/Replica_Headhunter",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 猎首【仿品】（Replica Headhunter）\n类型：唯一装备 ｜ 底材：皮革腰带 ｜ 分类：其他\n\n**需求**：需求 等级 40\n\n**隐式词缀**\n- [隐式词缀] +(25-40) 最大生命\n\n**显式词缀**\n- [显式词缀] +(40-55) 力量\n- [显式词缀] +(40-55) 敏捷\n- [显式词缀] +(50-60) 最大生命\n- [显式词缀] 对抗魔法怪物时，击中伤害提高 (20-30)%\n- [显式词缀] 有 20% 几率在你击杀一个魔法怪物时获得其词缀，持续 60 秒。\n\n来源：POEDB → 猎首【仿品】（Replica Headhunter）\nhttps://poedb.tw/cn/Replica_Headhunter",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E3",
+      "chunk_id": "passive:Iron_Will_4cc8f5150e#964081b8e4287b9b",
+      "entity_id": "passive:Iron_Will_4cc8f5150e",
+      "title": "基石·钢铁意志（Iron Will）",
+      "url": "https://poedb.tw/cn/passive-skill-tree/",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 基石·钢铁意志（Iron Will）\n基石 ｜ 天赋树 3.29\n\n- 力量可以给所有法术伤害提供伤害加成\n\n来源：POEDB → 天赋树 · 钢铁意志（Iron Will）\nhttps://poedb.tw/cn/passive-skill-tree/",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E4",
+      "chunk_id": "mod_ladder:Body_Armours_str:FortifyOnMeleeHit#65ae179898d6a3ad",
+      "entity_id": "mod_ladder:Body_Armours_str:FortifyOnMeleeHit",
+      "title": "胸甲（力量） · FortifyOnMeleeHit",
+      "url": "https://poedb.tw/cn/Body_Armours_str#ModifiersCalc",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 胸甲（力量） · FortifyOnMeleeHit\n底材类别：胸甲（力量） ｜ 词缀组：FortifyOnMeleeHit ｜ 类型：其他 ｜ 来源渠道：1 个\n标签：攻击\n\n本词缀组在该底材上共 15 条，来自 1 个来源：灭界者。\n互斥规则：与本组（FortifyOnMeleeHit）有相同词缀组的其他词缀不能同时存在于一件装备上。\n\n## 灭界者 · 其他 · 15 条\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/1 | 次级古灵溶液 | 近战击中有 (6-7)% 的几率提供护体状态 | 75 | 500（0.3144%） |\n| T1/1 | 高级古灵溶液 | 近战击中有 (8-9)% 的几率提供护体状态 | 75 | 500（0.3144%） |\n| T1/1 | 上级古灵溶液 | 近战击中有 (10-11)% 的几率提供护体状态 | 75 | 500（0.3144%） |\n| T1/1 | 卓越古灵溶液 | 近战击中有 (12-13)% 的几率提供护体状态 | 75 | 500（0.3144%） |\n| T1/1 | 冲突石 | 近战击中有 (14-15)% 的几率提供护体状态 | 75 | 500（0.3144%） |\n| T1/1 | 冲突石 | 近战击中有 (16-17)% 的几率提供护体状态 | 75 | 500（0.3144%） |\n| T1/1 | 高级古灵溶液 | 有一个传奇怪物出现在你面前：近战击中有 (14-15)% 的几率提供护体状态 | 75 | 250（0.1572%） |\n| T1/1 | 上级古灵溶液 | 有一个传奇怪物出现在你面前：近战击中有 (16-17)% 的几率提供护体状态 | 75 | 250（0.1572%） |\n| T1/1 | 卓越古灵溶液 | 有一个传奇怪物出现在你面前：近战击中有 (18-19)% 的几率提供护体状态 | 75 | 250（0.1572%） |\n| T1/1 | 冲突石 | 有一个传奇怪物出现在你面前：近战击中有 (20-21)% 的几率提供护体状态 | 75 | 250（0.1572%） |\n| T1/1 | 冲突石 | 有一个传奇怪物出现在你面前：近战击中有 (22-23)% 的几率提供护体状态 | 75 | 250（0.1572%） |\n| T1/1 | 上级古灵溶液 | 有一个异界图鉴最终首领出现在你面前：近战击中有 (22-23)% 的几率提供护体状态 | 75 | 100（0.0629%） |\n| T1/1 | 卓越古灵溶液 | 有一个异界图鉴最终首领出现在你面前：近战击中有 (24-25)% 的几率提供护体状态 | 75 | 100（0.0629%） |\n| T1",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E5",
+      "chunk_id": "unique_item:The_Apostate#0#aef691c1eae31447",
+      "entity_id": "unique_item:The_Apostate",
+      "title": "破弃信仰（The Apostate）",
+      "url": "https://poedb.tw/cn/The_Apostate",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 破弃信仰（The Apostate）\n类型：唯一装备 ｜ 底材：秘术法衣 ｜ 分类：护甲\n\n**需求**：需求 等级 35\n\n**显式词缀**\n- [显式词缀] +(30-50) 力量\n- [显式词缀] +(20-30)% 所有元素抗性\n- [显式词缀] 装备护甲物品提供的能量护盾上限改为提供生命上限\n- [显式词缀] Has no Attribute Requirements or Energy Shield (Hidden)\n\n来源：POEDB → 破弃信仰（The Apostate）\nhttps://poedb.tw/cn/The_Apostate",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E6",
+      "chunk_id": "mod_ladder:Boots_str:IncreasedPhysicalDamageReductionRating#f21ca05d0229b817",
+      "entity_id": "mod_ladder:Boots_str:IncreasedPhysicalDamageReductionRating",
+      "title": "鞋子（力量） · IncreasedPhysicalDamageReductionRating",
+      "url": "https://poedb.tw/cn/Boots_str#ModifiersCalc",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 鞋子（力量） · IncreasedPhysicalDamageReductionRating\n底材类别：鞋子（力量） ｜ 词缀组：IncreasedPhysicalDamageReductionRating ｜ 类型：其他 ｜ 来源渠道：1 个\n标签：防御、护甲\n\n本词缀组在该底材上共 15 条，来自 1 个来源：灭界者。\n互斥规则：与本组（IncreasedPhysicalDamageReductionRating）有相同词缀组的其他词缀不能同时存在于一件装备上。\n\n## 灭界者 · 其他 · 15 条\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/1 | 次级古灵溶液 | 头部装备和手部装备提供的护甲值提高 (33-35)% | 75 | 1000（0.7365%） |\n| T1/1 | 高级古灵溶液 | 头部装备和手部装备提供的护甲值提高 (36-38)% | 75 | 1000（0.7365%） |\n| T1/1 | 上级古灵溶液 | 头部装备和手部装备提供的护甲值提高 (39-41)% | 75 | 1000（0.7365%） |\n| T1/1 | 卓越古灵溶液 | 头部装备和手部装备提供的护甲值提高 (42-44)% | 75 | 1000（0.7365%） |\n| T1/1 | 冲突石 | 头部装备和手部装备提供的护甲值提高 (45-47)% | 75 | 1000（0.7365%） |\n| T1/1 | 冲突石 | 头部装备和手部装备提供的护甲值提高 (48-50)% | 75 | 1000（0.7365%） |\n| T1/1 | 高级古灵溶液 | 有一个传奇怪物出现在你面前：头部装备和手部装备提供的护甲值提高 (45-47)% | 75 | 500（0.3682%） |\n| T1/1 | 上级古灵溶液 | 有一个传奇怪物出现在你面前：头部装备和手部装备提供的护甲值提高 (48-50)% | 75 | 500（0.3682%） |\n| T1/1 | 卓越古灵溶液 | 有一个传奇怪物出现在你面前：头部装备和手部装备提供的护甲值提高 (51-53)% | 75 | 500（0.3682%） |\n| T1/1 | 冲突石 | 有一个传奇怪物出现在你面前：头部装备和手部装备提供的护甲值提高 (54-57)% | 75 | 500（0.3682%） |\n| T1/1 | 冲突石 | 有一个传奇怪物出现在你面前：头部装备和手部装备提供的护甲值提高 (58-61)% | 75 | 500（0.3682%） |\n| T1/1 | 上级古灵溶液 | 有一个异界图鉴最终首领出现在你面前：头部装备和手部装备提供的护甲值提高 (57-59)% | 75 | 20",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E7",
+      "chunk_id": "mod_ladder:Gloves_str:EvasionRatingPercent#307ce5408d059fec",
+      "entity_id": "mod_ladder:Gloves_str:EvasionRatingPercent",
+      "title": "手套（力量） · EvasionRatingPercent",
+      "url": "https://poedb.tw/cn/Gloves_str#ModifiersCalc",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 手套（力量） · EvasionRatingPercent\n底材类别：手套（力量） ｜ 词缀组：EvasionRatingPercent ｜ 类型：其他 ｜ 来源渠道：1 个\n标签：防御、闪避值\n\n本词缀组在该底材上共 15 条，来自 1 个来源：灭界者。\n互斥规则：与本组（EvasionRatingPercent）有相同词缀组的其他词缀不能同时存在于一件装备上。\n\n## 灭界者 · 其他 · 15 条\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/1 | 次级古灵溶液 | 头部装备和脚部装备提供的闪避值提高 (33-35)% | 75 | 1000（0.5747%） |\n| T1/1 | 高级古灵溶液 | 头部装备和脚部装备提供的闪避值提高 (36-38)% | 75 | 1000（0.5747%） |\n| T1/1 | 上级古灵溶液 | 头部装备和脚部装备提供的闪避值提高 (39-41)% | 75 | 1000（0.5747%） |\n| T1/1 | 卓越古灵溶液 | 头部装备和脚部装备提供的闪避值提高 (42-44)% | 75 | 1000（0.5747%） |\n| T1/1 | 冲突石 | 头部装备和脚部装备提供的闪避值提高 (45-47)% | 75 | 1000（0.5747%） |\n| T1/1 | 冲突石 | 头部装备和脚部装备提供的闪避值提高 (48-50)% | 75 | 1000（0.5747%） |\n| T1/1 | 高级古灵溶液 | 有一个传奇怪物出现在你面前：头部装备和脚部装备提供的闪避值提高 (45-47)% | 75 | 500（0.2874%） |\n| T1/1 | 上级古灵溶液 | 有一个传奇怪物出现在你面前：头部装备和脚部装备提供的闪避值提高 (48-50)% | 75 | 500（0.2874%） |\n| T1/1 | 卓越古灵溶液 | 有一个传奇怪物出现在你面前：头部装备和脚部装备提供的闪避值提高 (51-53)% | 75 | 500（0.2874%） |\n| T1/1 | 冲突石 | 有一个传奇怪物出现在你面前：头部装备和脚部装备提供的闪避值提高 (54-57)% | 75 | 500（0.2874%） |\n| T1/1 | 冲突石 | 有一个传奇怪物出现在你面前：头部装备和脚部装备提供的闪避值提高 (58-61)% | 75 | 500（0.2874%） |\n| T1/1 | 上级古灵溶液 | 有一个异界图鉴最终首领出现在你面前：头部装备和脚部装备提供的闪避值提高 (57-59)% | 75 | 200（0.1149%） |\n| T1/1 | 卓越古灵溶液 | 有一个异界图鉴最终首领出现在你面前：头部装备",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E8",
+      "chunk_id": "mod_ladder:Helmets_str:IncreasedEnergyShield#c829e81793367131",
+      "entity_id": "mod_ladder:Helmets_str:IncreasedEnergyShield",
+      "title": "头部（力量） · IncreasedEnergyShield",
+      "url": "https://poedb.tw/cn/Helmets_str#ModifiersCalc",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 头部（力量） · IncreasedEnergyShield\n底材类别：头部（力量） ｜ 词缀组：IncreasedEnergyShield ｜ 类型：其他 ｜ 来源渠道：1 个\n标签：防御、能量护盾\n\n本词缀组在该底材上共 15 条，来自 1 个来源：灭界者。\n互斥规则：与本组（IncreasedEnergyShield）有相同词缀组的其他词缀不能同时存在于一件装备上。\n\n## 灭界者 · 其他 · 15 条\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/1 | 次级古灵溶液 | 手部装备和脚部装备提供的能量护盾上限提高 (33-35)% | 75 | 1000（0.6288%） |\n| T1/1 | 高级古灵溶液 | 手部装备和脚部装备提供的能量护盾上限提高 (36-38)% | 75 | 1000（0.6288%） |\n| T1/1 | 上级古灵溶液 | 手部装备和脚部装备提供的能量护盾上限提高 (39-41)% | 75 | 1000（0.6288%） |\n| T1/1 | 卓越古灵溶液 | 手部装备和脚部装备提供的能量护盾上限提高 (42-44)% | 75 | 1000（0.6288%） |\n| T1/1 | 冲突石 | 手部装备和脚部装备提供的能量护盾上限提高 (45-47)% | 75 | 1000（0.6288%） |\n| T1/1 | 冲突石 | 手部装备和脚部装备提供的能量护盾上限提高 (48-50)% | 75 | 1000（0.6288%） |\n| T1/1 | 高级古灵溶液 | 有一个传奇怪物出现在你面前：手部装备和脚部装备提供的能量护盾上限提高 (45-47)% | 75 | 500（0.3144%） |\n| T1/1 | 上级古灵溶液 | 有一个传奇怪物出现在你面前：手部装备和脚部装备提供的能量护盾上限提高 (48-50)% | 75 | 500（0.3144%） |\n| T1/1 | 卓越古灵溶液 | 有一个传奇怪物出现在你面前：手部装备和脚部装备提供的能量护盾上限提高 (51-53)% | 75 | 500（0.3144%） |\n| T1/1 | 冲突石 | 有一个传奇怪物出现在你面前：手部装备和脚部装备提供的能量护盾上限提高 (54-57)% | 75 | 500（0.3144%） |\n| T1/1 | 冲突石 | 有一个传奇怪物出现在你面前：手部装备和脚部装备提供的能量护盾上限提高 (58-61)% | 75 | 500（0.3144%） |\n| T1/1 | 上级古灵溶液 | 有一个异界图鉴最终首领出现在你面前：手部装备和脚部装备提供的能量护盾上限提高 (57-59)% | 75 | 200（0.1258%） |\n",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    }
+  ]
+}

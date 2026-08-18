@@ -93,6 +93,16 @@ class DomainSpec:
     pob_files: tuple[str, ...] = ()
     #: status=partial 时必须说明缺什么。
     partial_note: str = ""
+    #: `partial_note` 里那些未覆盖维度的**意图词**，供 `dimension_gap()` 判定。
+    #:
+    #: 为什么要有机器可读的一份：`partial_note` 是给人看的散文，判定不能去匹配散文。
+    #: 而缺了这一层，`partial` 领域会被当成整体可用——实测「从起点点到神威之盾要花
+    #: 几个天赋点」命中天赋节点即判依据充分，而 partial_note 明写着「天赋点消耗与
+    #: 连接关系未入库」。两者说的是同一件事，**改一处必须同步另一处**。
+    #:
+    #: 与 `hints` 的分工：`hints` 判「在问哪个领域」，这里判「问的是该领域里没有的
+    #: 那一面」。两者都是意图识别词，判错只会指路指错，不会输出错误的游戏事实。
+    missing_dimension_hints: tuple[str, ...] = ()
     note: str = ""
     #: 这个领域是否是**属性的独立来源**——即「某属性能从哪获得」的完整枚举必须
     #: 覆盖它。
@@ -174,18 +184,27 @@ DOMAINS: tuple[DomainSpec, ...] = (
         category=Category.ITEM,
         authority_url=f"{POEDB_BASE}/Items",
         count_sql="SELECT count(*) FROM pob_base_item",
-        channel_sql="SELECT DISTINCT armour_tag FROM pob_base_item WHERE armour_tag<>''",
+        # 渠道按类别看：18 个装备部位各算一个渠道，比原先按护甲属性标签分更有信息量
+        channel_sql="SELECT DISTINCT category_key FROM pob_base_item",
         tools=("affix_pool_odds",),
         hints=("底材", "基础物品", "白装底子", "胸甲底材"),
         question_hints=(
-            "具体胸甲底材的中英文名、PoB 标签与 POEDB 词缀页映射",
+            "某底材的中英文名、PoB 标签、隐式词缀原文与 POEDB 页面",
+            "某底材的基础数值（护甲/武器伤害/药剂）与属性需求",
             "具体胸甲底材在明确物等和生成侧的普通词缀有效池",
         ),
         poedb_pages=("Items", "Body_Armours"),
-        pob_files=("Data/Bases/body.lua",),
+        pob_files=("Data/Bases/*.lua",),
         partial_note=(
-            "仅入库 PoB 与 POEDB 中英文清单可逐条精确桥接的**胸甲底材**；"
-            "其它装备部位、可获得性、稀有度、影响力适用规则与词缀容量未采集"
+            "已入库 **18 个装备类别共 1,022 条**底材（PoB × POEDB 中英文清单逐条精确桥接，"
+            "覆盖 PoB 侧 96.1%）：中英文名、ItemClass、标签、影响力标签、隐式词缀原文、"
+            "基础数值与属性需求都有；"
+            "**尚缺**：41 条未桥接（实验底材 19 条、PoB 变体展开 13 条、伪条目 9 条，"
+            "已按类别登记在缺口台账）、可获得性与稀有度、影响力适用规则、词缀容量；"
+            "**按属性分的词缀页映射只有胸甲有**，所以条件权重概率仍只能算胸甲"
+        ),
+        missing_dimension_hints=(
+            "可获得性", "稀有度", "掉落等级", "词缀容量", "影响力要求",
         ),
         note=(
             "英文名与生成标签来自钉 commit 的 PoB P2；中文名与 slug 来自 POEDB P1；"
@@ -230,6 +249,10 @@ DOMAINS: tuple[DomainSpec, ...] = (
         partial_note=(
             "节点属性已入库；**天赋点消耗与连接关系未入库**，因此无法回答"
             "「点到某节点要花几点」「从某处到某处怎么走」"
+        ),
+        missing_dimension_hints=(
+            "要花", "花几", "几点", "几个天赋点", "点数", "消耗",
+            "连接", "怎么走", "怎么点", "路径", "路线", "加点顺序",
         ),
         note=(
             "数据取自 POEDB 的天赋树 JSON 端点（页面本身是 JS 空壳，抓页面拿不到数据）；"
@@ -295,6 +318,9 @@ DOMAINS: tuple[DomainSpec, ...] = (
             "升华**节点效果**已入库（随天赋树 JSON 一起）；"
             "升华试炼流程、升华点数获取、职业总览未采集"
         ),
+        missing_dimension_hints=(
+            "试炼", "迷宫", "怎么解锁", "如何解锁", "升华点", "职业总览", "有哪些职业",
+        ),
         provides_stats=True,
     ),
     DomainSpec(
@@ -321,6 +347,7 @@ DOMAINS: tuple[DomainSpec, ...] = (
         question_hints=("某精华赋予什么词缀", "某词缀由哪个精华赋予"),
         poedb_pages=("Essence",),
         partial_note="精华**赋予的词缀**已入库；精华物品本身的等级、掉落与兑换成本未采集",
+        missing_dimension_hints=("掉落", "兑换", "成本", "怎么获得", "如何获得", "哪里刷"),
     ),
     DomainSpec(
         key="fossil",
@@ -332,6 +359,7 @@ DOMAINS: tuple[DomainSpec, ...] = (
         hints=("化石", "共鸣器", "地心探索"),
         question_hints=("化石能出什么词缀",),
         partial_note="化石**词缀池**已入库；化石对权重的乘数与共鸣器组合规则未采集",
+        missing_dimension_hints=("乘数", "共鸣器组合", "组合规则", "怎么搭配", "成功率"),
     ),
     DomainSpec(
         key="crafting_bench",
@@ -353,6 +381,9 @@ DOMAINS: tuple[DomainSpec, ...] = (
             "目录、原始费用、适用 ItemClasses 与解锁信息已入库；"
             "**装备状态转移、crafted-mod 上限、替换/移除语义和元词缀交互未采集**，"
             "因此目录项不代表在给定装备状态下可执行，也不能作为制作步骤"
+        ),
+        missing_dimension_hints=(
+            "状态转移", "替换", "移除", "可执行", "制作步骤", "步骤", "成功率", "怎么做",
         ),
         note="工艺台词缀本体仍可由 stat_sources 查询；目录查询不提供概率或市场成本",
     ),
@@ -380,6 +411,9 @@ DOMAINS: tuple[DomainSpec, ...] = (
         question_hints=("隐匿词缀有哪些", "某条隐匿词缀怎么解锁"),
         poedb_pages=("Betrayal",),
         partial_note="隐匿**词缀**已入库；情报网的成员、部门与解锁流程未采集",
+        missing_dimension_hints=(
+            "成员", "部门", "怎么解锁", "如何解锁", "解锁流程", "情报网", "怎么运作",
+        ),
     ),
     DomainSpec(
         key="necropolis",
@@ -391,6 +425,7 @@ DOMAINS: tuple[DomainSpec, ...] = (
         hints=("纠缠", "纠缠词缀", "亡者之城", "墓地", "尸体"),
         question_hints=("纠缠词缀有哪些", "某条纠缠词缀在哪个部位可用"),
         partial_note="纠缠**词缀**已入库；尸体种类、墓地布局与调度规则未采集",
+        missing_dimension_hints=("尸体种类", "墓地布局", "调度", "怎么摆", "布局"),
         note="易与辛迪加的「隐匿」词缀混淆，两者是不同机制",
     ),
     DomainSpec(
@@ -412,6 +447,9 @@ DOMAINS: tuple[DomainSpec, ...] = (
             "已支持候选解析、完整 family_list 互斥与占位见证；"
             "**前后缀容量、来源适用条件、影响力与元词缀规则未采集**，"
             "因此无 family 冲突的组合只返回 unknown"
+        ),
+        missing_dimension_hints=(
+            "容量", "名额", "几条前缀", "几条后缀", "最多几条", "成功率", "成本", "步骤",
         ),
         note="局部兼容不等于整体可制作；工具不提供制作步骤、概率或成本",
     ),
@@ -518,6 +556,9 @@ DOMAINS: tuple[DomainSpec, ...] = (
         question_hints=("某异界天赋的效果", "某地图产出效果由哪些异界天赋提供"),
         poedb_pages=("atlas-skill-tree",),
         partial_note="节点属性已入库；天赋点消耗与连接关系未入库",
+        missing_dimension_hints=(
+            "要花", "花几", "几点", "点数", "消耗", "连接", "怎么走", "路径", "路线",
+        ),
         note="作用于**地图产出**而非角色属性，回答时不要与角色天赋树混为一谈",
         provides_stats=True,
     ),
@@ -527,9 +568,16 @@ DOMAINS: tuple[DomainSpec, ...] = (
         category=Category.ATLAS,
         authority_url=f"{POEDB_BASE}/Monsters",
         count_sql="SELECT count(*) FROM entity WHERE entity_type='boss'",
-        hints=("boss", "首领", "怪物", "机制", "打法"),
+        hints=("boss", "首领", "怪物技能", "怪物机制", "打法", "怎么打", "应对"),
         question_hints=("某 Boss 的技能与应对",),
         poedb_pages=("Monsters",),
+        note=(
+            "hints 里刻意**不放单独的「怪物」与「机制」**。这两个词在词缀与唯一装备"
+            "文本里到处都是（「当你击败稀有怪物时」），拿它们做领域意图识别会把有据的"
+            "装备问题误判到本领域：实测「击败稀有怪物获得其属性修正的腰带」与"
+            "「猎首获得稀有怪物属性修正持续多久」都因此被维度闸门拦成缺据，"
+            "属错误拒答。领域意图词必须足够专指。"
+        ),
     ),
     # ── 经济系统 ──
     DomainSpec(
@@ -859,6 +907,93 @@ def attribute_gap(conn: sqlite3.Connection, question: str) -> GapAttribution:
             continue
         (result.covered_domains if s.usable else result.missing_domains).append(s)
     return result
+
+
+@dataclass
+class DimensionVerdict:
+    """问题**所问的那个维度**上，本库到底有没有数据。
+
+    为什么需要它：充分依据判定只回答「查询词或实体是否出现在库里」。而
+    「实体在库里」不等于「被问的那一面有数据」——实测两条漏出都出在这个缝隙上：
+
+      「猎首现在值多少混沌石」  别名精确命中猎首 → 判依据充分，可价格维度
+                                （economy_price）一个字都没有
+      「点到神威之盾要花几个天赋点」 命中天赋节点 → 判依据充分，可 passive_tree 的
+                                partial_note 明写「天赋点消耗与连接关系未入库」
+
+    这一层就是把 (inventory × status) 那份自描述数据接到充分性判定上。
+    它**只能把「充分」改判为「不足」**，反过来不行——放宽依据要有新证据，
+    而这里没有引入任何新证据。
+    """
+
+    #: 命中且该维度确实有数据的领域
+    covered: list[DomainStatus] = field(default_factory=list)
+    #: 命中但该维度没有数据的领域（未采集 / 已抓未入库 / partial 且问的正是缺的那面）
+    uncovered: list[DomainStatus] = field(default_factory=list)
+    #: uncovered 中每个领域被判定的具体原因，与 `uncovered` 等长
+    why: list[str] = field(default_factory=list)
+
+    @property
+    def is_gap(self) -> bool:
+        """全部命中的领域都没有该维度的数据时才判缺据。
+
+        **有一个领域覆盖到就不拦**：复合问题（「猎首有哪些词缀，值多少钱」）里
+        有据的部分照答、无据的部分单独声明，这是需求里写明的拒答粒度——
+        整轮拦掉就把有据的那半也丢了。此时缺口由提示词的「覆盖边界」章节负责声明。
+        """
+        return bool(self.uncovered) and not self.covered
+
+    def reason(self) -> str:
+        """写进缺据声明的「判定依据」。逐条说清是未采集还是维度缺失。"""
+        parts = [
+            f"{s.spec.display_zh}（{STATUS_ZH[s.status]}）：{w}"
+            for s, w in zip(self.uncovered, self.why)
+        ]
+        return "问题所问的维度在知识库中没有数据 —— " + "；".join(parts)
+
+    def missing_points(self) -> list[str]:
+        """缺据声明里「缺失的信息点」。"""
+        return [f"{s.spec.display_zh}的数据" for s in self.uncovered]
+
+    def authority_urls(self) -> list[str]:
+        return [s.spec.authority_url for s in self.uncovered]
+
+    def category_label(self) -> str:
+        if self.uncovered:
+            return f"not_collected/{self.uncovered[0].spec.key}"
+        return "unknown"
+
+
+def dimension_gap(conn: sqlite3.Connection, question: str) -> DimensionVerdict:
+    """判断问题所问的维度有没有数据。
+
+    与 `attribute_gap()` 的分工：那个在**已经判定缺据之后**归因（是没采集还是没召回），
+    这个在**判定充分之后**复核（被问的维度是否真的有数据）。两者都靠 `hints` 做
+    意图识别，判错只会指路指错，不会输出错误的游戏事实。
+    """
+    verdict = DimensionVerdict()
+    for s in load(conn):
+        if not any(h and h in question for h in s.spec.hints):
+            continue
+        if not s.usable:
+            verdict.uncovered.append(s)
+            verdict.why.append(
+                "该领域一条都没有入库"
+                + (f"，权威来源 {s.spec.authority_url}" if s.spec.authority_url else "")
+            )
+            continue
+        asked_missing = [
+            h for h in s.spec.missing_dimension_hints if h and h in question
+        ]
+        if s.status == "partial" and asked_missing:
+            verdict.uncovered.append(s)
+            verdict.why.append(
+                f"该领域只是部分采集，而问题涉及的「{'、'.join(asked_missing[:3])}」"
+                f"正落在未采集的部分（{s.spec.partial_note or '见覆盖声明'}）"
+            )
+            continue
+        verdict.covered.append(s)
+    return verdict
 
 
 def render_manifest(conn: sqlite3.Connection, *, for_prompt: bool = True) -> str:

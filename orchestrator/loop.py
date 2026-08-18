@@ -51,6 +51,12 @@ class TurnResult:
     trace_id: str
     question: str
     answer: str
+    #: 模型**未过闸门**的原始正文。给评测录制回放用（`scripts/eval_run.py --record`）：
+    #: 要量「闸门拦得对不对」，就必须留下它拦之前的东西。
+    #:
+    #: **绝不外发。** `api/chat.py` 的 `ChatResponse` 不含这个字段，也不要加进去——
+    #: 它里面正是可能无据的断言。与 `reasoning_content` 同等对待。
+    raw_answer: str = ""
     #: 依据不足而未进入生成
     evidence_gap: bool = False
     citations: list[cit.RenderedCitation] = field(default_factory=list)
@@ -135,6 +141,34 @@ def _gap_answer(question: str, data: dict[str, Any]) -> tuple[str, str]:
                    attribution=attribution, authority_urls=urls),
         category,
     )
+
+
+def _apply_dimension_gate(question: str, data: dict[str, Any]) -> dict[str, Any]:
+    """充分性判定之后的第二道：**被问的维度**有没有数据（见 `kb.coverage.dimension_gap`）。
+
+    别名精确命中只证明「这个实体在库里」，不证明「被问的那一面有数据」。实测
+    「猎首现在值多少混沌石」命中猎首即判依据充分，而价格维度一个字都没有；
+    「点到某节点要花几点」命中天赋节点即判充分，而天赋点消耗未入库。
+
+    只做一个方向的改判（充分 → 不足）：放宽依据需要新证据，这里没有引入任何新证据。
+    探测失败时按检索判定继续——覆盖层不可用不该让问答停摆。
+    """
+    try:
+        from kb.coverage import dimension_gap  # noqa: PLC0415  延迟导入避免循环
+
+        verdict = dimension_gap(dbmod.get_conn(), question)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("维度覆盖检查失败，按检索判定继续：%s", exc)
+        return data
+    if not verdict.is_gap:
+        return data
+    logger.info("维度覆盖闸门改判为依据不足：%s", verdict.reason())
+    out = dict(data)
+    out["sufficient"] = False
+    out["reason"] = verdict.reason()
+    out["missing_terms"] = verdict.missing_points()
+    out["dimension_gate"] = True
+    return out
 
 
 def _domain_terms() -> tuple[str, ...]:
@@ -549,6 +583,134 @@ def _affix_pool_precision_query(
     if not base or not target or not 1 <= level <= 100:
         return "", "", None, "", ""
     return raw, base, level, side, target
+
+
+#: 问哪类信息 → 该由哪个精确工具回答。判据是**意图词**，与 `_precision_tool_route`
+#: 的区别在强度：那个要求参数能从问题里逐字冻结、工具不成功就整轮拒答；这个只
+#: 「强制第一次调用走这个工具」，参数仍由模型填，失败就把错误回传让它换个问法。
+#:
+#: 为什么要用代码判：`agents/knowledge.py` 的提示词已经逐条写了选工具规则，
+#: 而 2026-08-17 的评测实测 6 条路由用例只命中 3 条——`mod_tiers`、`entity_lookup`、
+#: `kb_coverage` 三类问题模型仍退回 `kb_search`。提示词约束不住，就落到代码。
+#: 强制手段是协议层的 `tool_choice`，不是再写一句「请务必调用」。
+_PREFERRED_TOOL_INTENTS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    # 词缀档位 / 物品等级 / 权重：kb_search 只能命中一张卡再读表格，容易读错行
+    ("mod_tiers", (
+        "几档", "多少档", "有几级", "档位", "阶级", "梯度", "T级", "t级",
+        "最高档", "最高级", "各档", "逐档", "生成权重", "词缀权重",
+    )),
+    # 「某属性能从哪来」是枚举问题：不完整的枚举被当成完整的呈现就是错误答案
+    ("stat_sources", (
+        "从哪些渠道", "从哪来", "哪些渠道", "哪里获得", "怎么获得", "从哪获得",
+        "有哪些来源", "哪些来源",
+    )),
+    # 关于知识库**覆盖范围**自身的元问题，答案不在 chunk 里。
+    # 意图词必须专指「覆盖」这件事：单独的「知识库」「你的库」太宽——
+    # 「知识库里有哪些已确认的跨来源数据冲突」问的是冲突不是覆盖，
+    # 误路由过去会把一个正确的缺据声明换成一份答非所问的覆盖清单（实测）。
+    # 与 boss 领域曾经把「怪物」当意图词是同一种错。
+    ("kb_coverage", (
+        "覆盖哪些", "覆盖了什么", "covered", "支持哪些领域", "采集了哪些",
+        "有哪些领域", "你能回答哪些", "你有哪些数据", "库里有什么数据",
+    )),
+)
+
+#: `entity_lookup` 单独判：它要求问题**就是**一个已知实体名，
+#: 靠意图词判不出来，得查别名表（见 `_preferred_tool_route`）。
+_ENTITY_LOOKUP_INTENTS = (
+    "完整词缀", "全部词缀", "有哪些词缀", "的词缀列表", "基础信息", "属性是什么",
+    "什么属性", "是什么装备",
+)
+
+
+def _preferred_tool_route(question: str) -> str:
+    """代码决定本轮该先调哪个精确工具；无把握时返回空串，交回模型自选。
+
+    只在**第一次**调用时强制（`tool_choice`），后续轮次放开——工具结果可能说明
+    需要换工具，锁死会让它无路可走。
+    """
+    for tool, intents in _PREFERRED_TOOL_INTENTS:
+        if any(intent in question for intent in intents):
+            return tool
+    if any(intent in question for intent in _ENTITY_LOOKUP_INTENTS):
+        # 实体名必须真的在别名表里才走精确查询，否则这条路由只会让工具空手而归
+        try:
+            from retrieval import alias as alias_mod  # noqa: PLC0415
+
+            if alias_mod.lookup(dbmod.get_conn(), question):
+                return "entity_lookup"
+        except Exception as exc:  # noqa: BLE001  别名表不可用不该影响主流程
+            logger.debug("实体路由探测失败，交回模型自选：%s", exc)
+    return ""
+
+
+#: 参数能在代码里推导的偏好工具 → 直接由代码调用，模型没有裁量权。
+#: 与强制检索 `kb_search` 同一个模式。
+#:
+#: **为什么不用协议层的 `tool_choice`**：2026-08-18 实测该网关**完全忽略**它——
+#: `auto` / `required` / 指定函数名三种写法都不产生工具调用（`tools=[get_weather]` +
+#: 「随便聊两句」时 `tool_calls` 恒为 0）。所以「强制调用」在这个网关上只能靠
+#: 代码自己调，或者靠裁剪 schema 把别的选项拿掉。
+_CODE_INVOKED_TOOLS: dict[str, dict[str, Any]] = {
+    # 路由时已确认该名字在别名表里命中，参数就是问题本身
+    "entity_lookup": {"name": "__question__"},
+    # 无参数
+    "kb_coverage": {},
+}
+
+#: 这些工具按设计**不产出引用**（覆盖声明是元信息不是游戏事实）。
+#: 「一条证据都没拿到就走缺据」的兜底要放过它们，否则它们永远进不了生成。
+_TOOLS_WITHOUT_CITATIONS = frozenset({"kb_coverage"})
+
+
+def _coverage_answer(tool_result: ToolResult) -> str:
+    """覆盖声明由**代码**生成，不经模型。
+
+    与缺据声明同一个理由：它必须完全可预测。让模型转述工具里的清单，会得到一篇
+    带数字却无引用的答案——实测 33 句里全部被出口闸门拦下（引用有效率从 59% 掉到 13%），
+    用户看到的是一堆拦截说明。而这些数字本来就来自运行时探测，不是需要溯源的游戏事实。
+    """
+    data = tool_result.data or {}
+    manifest = str(data.get("manifest") or "").strip()
+    total = data.get("domains_total")
+    usable = data.get("domains_usable")
+    head = "以下是本知识库当前的覆盖范围（由运行时探测生成，非模型转述）"
+    if isinstance(total, int) and isinstance(usable, int):
+        head += f"：共声明 {total} 个领域，其中 {usable} 个已有数据可作为依据"
+    return f"{head}。\n\n{manifest}"
+
+
+def _invoke_preferred_tool(
+    question: str, tool: str, result: TurnResult
+) -> ToolResult | None:
+    """由代码直接调用偏好工具。不可代码调用的返回 None，交回模型（schema 已裁剪）。"""
+    spec = _CODE_INVOKED_TOOLS.get(tool)
+    if spec is None:
+        return None
+    args = {k: (question if v == "__question__" else v) for k, v in spec.items()}
+    tr = REGISTRY.call(tool, json.dumps(args, ensure_ascii=False))
+    result.tool_calls.append(_tool_record(tool, args, tr))
+    if not tr.ok:
+        logger.warning("偏好工具 %s 代码调用失败：%s", tool, tr.error)
+    return tr
+
+
+def _first_round_tools(
+    tool: str, tools: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """第一轮只offer偏好工具本身。
+
+    网关忽略 `tool_choice`，所以「强制」只能靠**把别的选项拿掉**：强制检索已经
+    由代码跑过 `kb_search`，模型这一轮没有理由再退回它。裁剪只作用于第一轮，
+    后续轮次放开——工具结果可能说明需要换工具，锁死会让它无路可走。
+    """
+    if not tool:
+        return tools
+    subset = [
+        s for s in tools
+        if str((s.get("function") or {}).get("name") or "") == tool
+    ]
+    return subset or tools
 
 
 def _precision_tool_route(question: str) -> str:
@@ -1047,9 +1209,22 @@ def run_turn(
 
     data = first.data or {}
     precision_tool = _precision_tool_route(question)
+    # 代码决定的偏好工具（见 `_preferred_tool_route`）。它和精确路由一样要**豁免
+    # 检索不足**：这几类问题的证据本来就不在 chunk 里——「你的库覆盖哪些领域」
+    # 由 kb_coverage 回答、「某属性从哪来」由 stat_sources 逐渠道枚举，
+    # BM25 命不中是正常的。不豁免的话整轮在进生成前就被判缺据，工具根本没机会调。
+    # 兜底在后面：这一轮跑完若一条证据都没拿到，仍然走缺据声明而不是让闸门把答案撕碎。
+    preferred_tool = "" if precision_tool else _preferred_tool_route(question)
+    if preferred_tool:
+        result.retrieval_meta["preferred_tool"] = preferred_tool
     if precision_tool:
         result.retrieval_meta["precision_route"] = precision_tool
-    if not data.get("sufficient") and not precision_tool:
+    elif data.get("sufficient"):
+        # 精确路由不过这道闸：那类问题的维度由工具自己的缺据字段负责声明
+        data = _apply_dimension_gate(question, data)
+        if data.get("dimension_gate"):
+            result.retrieval_meta["dimension_gate"] = True
+    if not data.get("sufficient") and not precision_tool and not preferred_tool:
         # 依据不足且没有确定性精确工具路由 → 由代码生成缺据声明，模型完全不参与
         result.evidence_gap = True
         result.answer, gap_category = _gap_answer(question, data)
@@ -1066,6 +1241,13 @@ def run_turn(
         [] if precision_tool else (first.citations if data.get("sufficient") else [])
     )
     result.evidence = evidence
+
+    # 参数可在代码里推导的偏好工具直接由代码调用（见 `_CODE_INVOKED_TOOLS`）。
+    # 网关忽略 tool_choice，交给模型「请调用」是不可靠的。
+    preferred_result = _invoke_preferred_tool(question, preferred_tool, result)
+    if preferred_result is not None and preferred_result.ok and preferred_result.citations:
+        evidence = _merge_evidence(evidence, preferred_result.citations)
+        result.evidence = evidence
     if first.meta.get("degraded"):
         result.degraded_note = (
             f"检索以降级通道完成（{', '.join(first.meta.get('channels') or [])}）："
@@ -1090,11 +1272,29 @@ def run_turn(
     precision_source_blank: ToolResult | None = None
     precision_affix_unknown: ToolResult | None = None
 
+    # 代码已经调过的工具不必再让模型调一次
+    # 覆盖声明走代码生成路径，直接返回（理由见 `_coverage_answer`）
+    if (
+        preferred_tool == "kb_coverage"
+        and preferred_result is not None
+        and preferred_result.ok
+    ):
+        result.answer = _coverage_answer(preferred_result)
+        result.elapsed_ms = int((time.monotonic() - started) * 1000)
+        _persist(result, conversation_id)
+        return result
+
+    needs_model_call = preferred_tool and preferred_result is None
     try:
-        for _ in range(max_calls + 1):
+        for round_no in range(max_calls + 1):
+            # 第一轮裁剪 schema 代替 tool_choice（网关忽略后者，实测见 _first_round_tools）
+            round_tools = (
+                _first_round_tools(preferred_tool, tools)
+                if round_no == 0 and needs_model_call else tools
+            )
             resp = client.chat(
                 messages,
-                tools=tools,
+                tools=round_tools,
                 budget=budget,
                 allow_empty_content=True,  # 纯 tool_call 回复是合法的
             )
@@ -1207,6 +1407,27 @@ def run_turn(
         _persist(result, conversation_id)
         return result
 
+    # 偏好工具豁免了「检索不足」，兜底就在这里：这一轮跑完连一条证据都没拿到，
+    # 说明那个工具也没给出可引用的东西 → 仍然走缺据声明。
+    # 不兜的话答案会带着零条证据进闸门，每个事实句都被拦，用户看到一篇拦截说明——
+    # 那比一句「查不到」更糟，而且掩盖了「本轮其实无据」这个事实。
+    if preferred_tool and not evidence and preferred_tool not in _TOOLS_WITHOUT_CITATIONS:
+        result.evidence_gap = True
+        result.answer, gap_category = _gap_answer(question, {
+            "reason": (
+                f"已按问题类型改由精确工具 `{preferred_tool}` 回答，"
+                "但该工具本轮未返回任何可引用证据"
+            ),
+            "missing_terms": list(data.get("missing_terms") or []),
+        })
+        _record_gaps(
+            question, [f"[{preferred_tool}] 精确工具未返回可引用证据"],
+            category=gap_category, kind="tool_gap",
+        )
+        result.elapsed_ms = int((time.monotonic() - started) * 1000)
+        _persist(result, conversation_id)
+        return result
+
     _record_final_tool_result_gaps(question, final_tool_results)
     result.tokens = {
         "prompt": budget.used.prompt_tokens,
@@ -1216,6 +1437,7 @@ def run_turn(
     }
 
     # ── 第三步：出口闸门 ──
+    result.raw_answer = answer_text
     binding = verify(
         answer_text,
         evidence,
@@ -1234,7 +1456,7 @@ def run_turn(
             binding.blocked, trace_id,
             "; ".join(v.reason for v in binding.verdicts if not v.ok)[:300],
         )
-        _record_gaps(question, binding.gaps)
+        _record_binding_gaps(question, binding)
 
     result.elapsed_ms = int((time.monotonic() - started) * 1000)
     _persist(result, conversation_id)
@@ -1280,9 +1502,22 @@ def stream_turn(
 
     data = first.data or {}
     precision_tool = _precision_tool_route(question)
+    # 代码决定的偏好工具（见 `_preferred_tool_route`）。它和精确路由一样要**豁免
+    # 检索不足**：这几类问题的证据本来就不在 chunk 里——「你的库覆盖哪些领域」
+    # 由 kb_coverage 回答、「某属性从哪来」由 stat_sources 逐渠道枚举，
+    # BM25 命不中是正常的。不豁免的话整轮在进生成前就被判缺据，工具根本没机会调。
+    # 兜底在后面：这一轮跑完若一条证据都没拿到，仍然走缺据声明而不是让闸门把答案撕碎。
+    preferred_tool = "" if precision_tool else _preferred_tool_route(question)
+    if preferred_tool:
+        result.retrieval_meta["preferred_tool"] = preferred_tool
     if precision_tool:
         result.retrieval_meta["precision_route"] = precision_tool
-    if not data.get("sufficient") and not precision_tool:
+    elif data.get("sufficient"):
+        # 精确路由不过这道闸：那类问题的维度由工具自己的缺据字段负责声明
+        data = _apply_dimension_gate(question, data)
+        if data.get("dimension_gate"):
+            result.retrieval_meta["dimension_gate"] = True
+    if not data.get("sufficient") and not precision_tool and not preferred_tool:
         # 依据不足且没有确定性精确工具路由 → 缺据声明由代码生成
         result.evidence_gap = True
         result.answer, gap_category = _gap_answer(question, data)
@@ -1297,6 +1532,23 @@ def stream_turn(
         [] if precision_tool else (first.citations if data.get("sufficient") else [])
     )
     result.evidence = evidence
+
+    # 与非流式同一条路由：参数可推导的偏好工具由代码调用（网关忽略 tool_choice）
+    preferred_result = _invoke_preferred_tool(question, preferred_tool, result)
+    if preferred_result is not None and preferred_result.ok and preferred_result.citations:
+        evidence = _merge_evidence(evidence, preferred_result.citations)
+        result.evidence = evidence
+    needs_model_call = preferred_tool and preferred_result is None
+    if (
+        preferred_tool == "kb_coverage"
+        and preferred_result is not None
+        and preferred_result.ok
+    ):
+        result.answer = _coverage_answer(preferred_result)
+        yield {"type": "sentence", "text": result.answer,
+               "kind": "narrative", "labels": []}
+        yield from _finish(result, conversation_id, started)
+        return
     if first.meta.get("degraded"):
         result.degraded_note = (
             f"检索以降级通道完成（{', '.join(first.meta.get('channels') or [])}）："
@@ -1330,7 +1582,11 @@ def stream_turn(
         for _round in range(max_calls + 1):
             pending: list[Any] = []
             round_content: list[str] = []
-            for event in client.stream(messages, tools=tools, budget=budget):
+            round_tools = (
+                _first_round_tools(preferred_tool, tools)
+                if _round == 0 and needs_model_call else tools
+            )
+            for event in client.stream(messages, tools=round_tools, budget=budget):
                 if event.kind == "thinking":
                     if not announced_thinking:
                         announced_thinking = True
@@ -1488,7 +1744,7 @@ def stream_turn(
         logger.warning(
             "流式绑定校验拦截 %d 句（trace=%s）", binding.blocked, trace_id
         )
-        _record_gaps(question, binding.gaps)
+        _record_binding_gaps(question, binding)
 
     yield from _finish(result, conversation_id, started)
 
@@ -1637,14 +1893,21 @@ def _record_tool_result_gaps(
         category = _CRAFT_GAP_CATEGORIES.get(code, "not_collected/craft_rule")
         by_category.setdefault(category, []).append(f"[{code}] {message}")
     for category, points in by_category.items():
-        _record_gaps(question, points, category=category)
+        _record_gaps(question, points, category=category, kind="tool_gap")
 
 
-def _record_gaps(question: str, gaps: list[str], *, category: str = "") -> None:
+def _record_gaps(
+    question: str,
+    gaps: list[str],
+    *,
+    category: str = "",
+    kind: str = "retrieval_gap",
+) -> None:
     """写缺口台账。按频次排序即为采集优先级（需求 2.12）。
 
     `category` 来自覆盖归因（`not_collected/<域>` 或 `not_recalled/<域>`），
     它让台账能区分「该去采集」与「该改检索」——这是两类完全不同的待办。
+    `kind` 见 `core.db.GAP_KINDS`：只有 `retrieval_gap` 与 `tool_gap` 构成采集优先级。
 
     用 `ON CONFLICT(question, missing_point) DO UPDATE` 而非「先插再更新」：
     先前那种写法依赖一个**并不存在**的唯一约束，结果每次都插新行，随后的
@@ -1659,19 +1922,69 @@ def _record_gaps(question: str, gaps: list[str], *, category: str = "") -> None:
             conn.execute(
                 """
                 INSERT INTO knowledge_gap(question, missing_point, guessed_category,
-                                          hit_count, first_seen, last_seen)
-                VALUES (?,?,?,1,datetime('now'),datetime('now'))
+                                          kind, hit_count, first_seen, last_seen)
+                VALUES (?,?,?,?,1,datetime('now'),datetime('now'))
                 ON CONFLICT(question, missing_point) DO UPDATE SET
                     hit_count = hit_count + 1,
                     last_seen = datetime('now'),
+                    kind = COALESCE(excluded.kind, knowledge_gap.kind),
                     guessed_category = COALESCE(excluded.guessed_category,
                                                 knowledge_gap.guessed_category)
                 """,
-                (question, point[:500], category or None),
+                (question, point[:500], category or None, kind or None),
             )
         conn.commit()
     except Exception as exc:  # noqa: BLE001  台账失败不该让整轮失败
         logger.warning("写缺口台账失败：%s", exc)
+
+
+#: 归一化时丢掉的成分：绑定标记、Markdown 记号、纯数值。
+#: 数值必须丢——同一个缺口每次回答取的具体值不同（T2 vs T3、47 vs 52），
+#: 留着会让一个缺口散成 N 行。
+_GAP_KEY_STRIP_RE = re.compile(r"\[\[[^\]]*\]\]|[*#`>|~_\-]+|\d+(?:\.\d+)?")
+
+
+def _record_binding_gaps(question: str, binding: BindingResult) -> None:
+    """把出口闸门的拦截写入台账 —— 但**只写真正是知识缺口的那些**。
+
+    先前这里是 `_record_gaps(question, binding.gaps)`，直接把被拦句子的原文当作
+    `missing_point`。两个后果：
+
+      1. 排版元素与缺据声明句也被记成「缺口」。库里实测有
+         `缺少可引用依据：---`、`缺少可引用依据：）`、`缺少可引用依据：**隐式词缀**`
+         这类条目 —— 它们是闸门的分类误判，不是知识缺口。
+      2. 同一个缺口每次措辞不同就多一行（句中数值一变就是新行），
+         「按频次排序即采集优先级」因此失真。
+
+    所以：排版元素直接不入账（它们该进的是「确定误拦」这个观测量，见
+    `scripts/eval_run.py`）；其余按**实义词归一化**后入账，并带上覆盖归因，
+    让台账仍然能回答「该去采集什么」。
+    """
+    from orchestrator.binding import is_structural  # noqa: PLC0415  同包内延迟导入
+
+    category = ""
+    try:
+        from kb.coverage import attribute_gap  # noqa: PLC0415  延迟导入避免循环
+
+        category = attribute_gap(dbmod.get_conn(), question).category_label()
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("拦截归因失败，台账不带分类：%s", exc)
+
+    points: list[str] = []
+    for verdict in binding.verdicts:
+        if verdict.ok:
+            continue
+        if is_structural(verdict.text):
+            # 排版元素被拦是分类误判，不是知识缺口。记日志便于追，但不进台账。
+            logger.info("闸门拦下排版元素（不入台账）：%r", verdict.text.strip()[:60])
+            continue
+        key = " ".join(_GAP_KEY_STRIP_RE.sub(" ", verdict.text).split())[:120]
+        if not key:
+            continue
+        point = f"无据断言：{key}"
+        if point not in points:
+            points.append(point)
+    _record_gaps(question, points, category=category, kind="binding_block")
 
 
 def _persist(result: TurnResult, conversation_id: str | None) -> None:

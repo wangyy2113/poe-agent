@@ -165,16 +165,24 @@ CREATE TABLE IF NOT EXISTS pob_base_item (
     name_en         TEXT NOT NULL CHECK(name_en <> ''),
     name_zh         TEXT NOT NULL CHECK(name_zh <> ''),
     poedb_slug      TEXT NOT NULL CHECK(poedb_slug <> ''),
-    item_class      TEXT NOT NULL CHECK(item_class = 'Body Armour'),
-    subtype         TEXT NOT NULL CHECK(subtype <> ''),
-    socket_limit    INTEGER NOT NULL CHECK(socket_limit > 0),
+    -- 类别键与 POEDB 页面：`kb.sources.pob_bases.CATEGORIES` 的 key 与页面 slug。
+    -- 有了它们才能回答「这条底材属于哪个装备部位、词缀查哪一页」。
+    category_key    TEXT NOT NULL CHECK(category_key <> ''),
+    poedb_page      TEXT NOT NULL CHECK(poedb_page <> ''),
+    item_class      TEXT NOT NULL CHECK(item_class <> ''),
+    -- 腰带、戒指、箭袋等 PoB 不给 subType；首饰与药剂没有插槽。空串 / 0 是真实形态，
+    -- 原先的 `subtype <> ''` 与 `socket_limit > 0` 是照胸甲写的，泛化时必须放开。
+    subtype         TEXT NOT NULL,
+    socket_limit    INTEGER NOT NULL CHECK(socket_limit >= 0),
     tags            TEXT NOT NULL CHECK(json_valid(tags) AND json_array_length(tags) > 0),
     influence_tags  TEXT NOT NULL CHECK(json_valid(influence_tags)),
-    armour_tag      TEXT NOT NULL CHECK(armour_tag IN (
+    -- 只有护甲类有「按属性分的词缀页」。非护甲类两列都是空串，
+    -- 非空时仍必须落在原枚举里——`craft/pool.py` 的条件权重模型依赖这个约束。
+    armour_tag      TEXT NOT NULL CHECK(armour_tag = '' OR armour_tag IN (
         'str_armour', 'dex_armour', 'int_armour', 'str_dex_armour',
         'str_int_armour', 'dex_int_armour', 'str_dex_int_armour'
     )),
-    modifier_page   TEXT NOT NULL CHECK(modifier_page IN (
+    modifier_page   TEXT NOT NULL CHECK(modifier_page = '' OR modifier_page IN (
         'Body_Armours_str', 'Body_Armours_dex', 'Body_Armours_int',
         'Body_Armours_str_dex', 'Body_Armours_str_int', 'Body_Armours_dex_int',
         'Body_Armours_str_dex_int'
@@ -182,9 +190,12 @@ CREATE TABLE IF NOT EXISTS pob_base_item (
     implicit_text   TEXT,
     implicit_mod_types TEXT NOT NULL CHECK(json_valid(implicit_mod_types)),
     implicit_ids    TEXT NOT NULL CHECK(json_valid(implicit_ids)),
-    defences        TEXT NOT NULL CHECK(json_valid(defences)),
+    -- 数值表 + 它取自 PoB 的哪个键。原名 `defences` 只对护甲成立，
+    -- 拿它装武器伤害会让列名说谎。
+    stats           TEXT NOT NULL CHECK(json_valid(stats)),
+    stats_kind      TEXT NOT NULL CHECK(stats_kind IN ('armour','weapon','flask','none')),
     requirements    TEXT NOT NULL CHECK(json_valid(requirements)),
-    source_file     TEXT NOT NULL CHECK(source_file = 'Data/Bases/body.lua'),
+    source_file     TEXT NOT NULL CHECK(source_file LIKE 'Data/Bases/%.lua'),
     source          TEXT NOT NULL CHECK(source = 'Path of Building'),
     source_priority INTEGER NOT NULL CHECK(source_priority = 2),
     pob_url         TEXT NOT NULL CHECK(pob_url <> ''),
@@ -195,10 +206,17 @@ CREATE TABLE IF NOT EXISTS pob_base_item (
     content_hash    TEXT NOT NULL CHECK(content_hash <> ''),
     updated_at      TEXT NOT NULL,
     UNIQUE(name_en),
-    UNIQUE(name_zh),
     UNIQUE(poedb_slug)
+    -- **没有 UNIQUE(name_zh)**：POEDB 会把两个不同底材译成同一个中文名，实测 4 例
+    -- （`Silk Gloves` 与 `Fingerless Silk Gloves` 都叫「丝绸手套」，
+    -- `Convening Wand` 与 `Convoking Wand` 都叫「召集法杖」）。
+    -- 原先有这条约束是因为表里只有胸甲，那个范围内它恰好成立。
+    -- 中文名因此**不能当唯一键用**：按中文名查底材必须处理多命中，
+    -- `craft/pool.py._resolve_base` 已经是命中多条即拒绝，那是正确行为。
 );
 CREATE INDEX IF NOT EXISTS idx_pobbase_armour_tag ON pob_base_item(armour_tag);
+CREATE INDEX IF NOT EXISTS idx_pobbase_name_zh ON pob_base_item(name_zh);
+CREATE INDEX IF NOT EXISTS idx_pobbase_category ON pob_base_item(category_key);
 CREATE INDEX IF NOT EXISTS idx_pobbase_modifier_page ON pob_base_item(modifier_page);
 
 -- ── 工艺工作台目录（选项 / 原始费用 / 适用类别 / 解锁信息）──
@@ -416,6 +434,9 @@ CREATE TABLE IF NOT EXISTS knowledge_gap (
     question     TEXT NOT NULL,
     missing_point TEXT NOT NULL,
     guessed_category TEXT,
+    -- 条目来源，见 GAP_KINDS。**只有 retrieval_gap 与 tool_gap 构成采集优先级**：
+    -- binding_block 是闸门行为的观测量，混进来会让频次排序失真。
+    kind         TEXT,
     hit_count    INTEGER DEFAULT 1,
     first_seen   TEXT NOT NULL,
     last_seen    TEXT NOT NULL
@@ -540,10 +561,154 @@ def _migrate(conn: sqlite3.Connection) -> None:
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_gap_unique "
             "ON knowledge_gap(question, missing_point)"
         )
+        _migrate_gap_kind(conn)
+        _migrate_base_item_all_categories(conn)
         conn.commit()
     except sqlite3.Error as exc:
         # 迁移失败不能让启动失败——但必须告警，否则台账会继续悄悄积累重复
         logger.warning("缺口台账迁移未完成：%s", exc)
+
+
+#: 台账条目的来源。三者要分开，因为对应的待办完全不同：
+#:   retrieval_gap  检索判定依据不足        → 该去采集，或该改检索
+#:   tool_gap       结构化工具自报缺据      → 该去补那份结构化数据
+#:   binding_block  出口闸门拦下一句无据断言 → 该看是漏出还是错误拒答
+#: 只有前两类构成「采集优先级」，第三类是闸门行为的观测量。
+GAP_KINDS = ("retrieval_gap", "tool_gap", "binding_block", "binding_block_legacy")
+
+
+def _migrate_gap_kind(conn: sqlite3.Connection) -> None:
+    """给 `knowledge_gap` 补 `kind` 列，并把历史行按可辨识特征回填。
+
+    为什么必须分类：`_record_gaps` 曾把**被拦句子的原文**当作 missing_point 写进台账
+    且不带分类，于是台账里混进了 `缺少可引用依据：---`、`缺少可引用依据：）`、
+    `缺少可引用依据：**隐式词缀**` 这类条目——它们不是知识缺口，是闸门的分类误判。
+    需求 2.12 说「按频次排序即采集优先级」，混进这些噪声后那个排序就没有意义了。
+
+    历史行只**标记**不删除：台账是审计记录，删掉就无法回溯当初为什么积累了噪声。
+    标为 `binding_block_legacy` 后从采集优先级列表里过滤掉即可。
+    """
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(knowledge_gap)")}
+    if "kind" not in cols:
+        conn.execute("ALTER TABLE knowledge_gap ADD COLUMN kind TEXT")
+        logger.info("缺口台账迁移：已补 kind 列")
+    # 回填：历史上只有出口闸门会写「缺少可引用依据：」前缀且不带分类
+    updated = conn.execute(
+        "UPDATE knowledge_gap SET kind='binding_block_legacy' "
+        "WHERE kind IS NULL AND missing_point LIKE '缺少可引用依据：%'"
+    ).rowcount
+    conn.execute(
+        "UPDATE knowledge_gap SET kind='tool_gap' "
+        "WHERE kind IS NULL AND missing_point LIKE '[%]%'"
+    )
+    conn.execute("UPDATE knowledge_gap SET kind='retrieval_gap' WHERE kind IS NULL")
+    if updated:
+        logger.info(
+            "缺口台账迁移：%d 条历史闸门噪声已标为 binding_block_legacy"
+            "（不再计入采集优先级）", updated,
+        )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_gap_kind ON knowledge_gap(kind)")
+
+
+def _migrate_base_item_all_categories(conn: sqlite3.Connection) -> None:
+    """把 `pob_base_item` 从「只装胸甲」重建为「全装备类别」。
+
+    原表的 CHECK 把 `item_class` 钉死在 `'Body Armour'`、`source_file` 钉死在
+    `body.lua`，`subtype <> ''` 与 `socket_limit > 0` 也是照胸甲写的（腰带没有
+    subType、戒指没有插槽）。SQLite 改不了 CHECK，只能重建表。
+
+    旧行不丢：按 `category_key='body'` / `poedb_page='Body_Armours'` /
+    `stats_kind='armour'` 回填，`defences` 原样搬进 `stats`。
+    这三个值对旧数据是**事实**而不是猜测——旧表的 CHECK 保证了里面只有胸甲。
+    """
+    row = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='pob_base_item'"
+    ).fetchone()
+    if row is None:
+        return  # 表还没建，由 SCHEMA 负责
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(pob_base_item)")}
+    needs_columns = "stats" not in cols
+    # 第二处形态变更：去掉中文名上的唯一约束。POEDB 会把两个底材译成同一个中文名，
+    # 那条约束在只有胸甲时恰好成立，加入手套与法杖后立刻撞。
+    #
+    # **按真实索引判，不要匹配 SQL 文本**：SQLite 把建表语句连注释一起存进
+    # sqlite_master，而本表的注释里就写着那个约束名——按文本匹配会永远命中，
+    # 于是每次启动都重建一次表（实测踩到，日志里连着两条迁移记录）。
+    needs_unique_drop = _has_single_column_unique(conn, "pob_base_item", "name_zh")
+    if not (needs_columns or needs_unique_drop):
+        return
+
+    what = "补齐全类别列" if needs_columns else "去掉 UNIQUE(name_zh)"
+    logger.info("底材表迁移：重建 pob_base_item（%s）", what)
+    conn.execute("ALTER TABLE pob_base_item RENAME TO pob_base_item_old")
+    conn.executescript(_base_item_schema())
+    if needs_columns:
+        # body-only 旧结构：category_key / poedb_page / stats_kind 按事实回填
+        # （旧表的 CHECK 保证里面只有胸甲），`defences` 原样搬进 `stats`
+        select = (
+            "SELECT base_id,name_en,name_zh,poedb_slug,'body','Body_Armours',item_class,"
+            "subtype,socket_limit,tags,influence_tags,armour_tag,modifier_page,"
+            "implicit_text,implicit_mod_types,implicit_ids,defences,'armour',"
+            "requirements,source_file,source,source_priority,pob_url,poedb_url,"
+            "source_commit,pob_version,game_version,content_hash,updated_at"
+        )
+    else:
+        select = (
+            "SELECT base_id,name_en,name_zh,poedb_slug,category_key,poedb_page,item_class,"
+            "subtype,socket_limit,tags,influence_tags,armour_tag,modifier_page,"
+            "implicit_text,implicit_mod_types,implicit_ids,stats,stats_kind,"
+            "requirements,source_file,source,source_priority,pob_url,poedb_url,"
+            "source_commit,pob_version,game_version,content_hash,updated_at"
+        )
+    conn.execute(
+        """
+        INSERT INTO pob_base_item(
+            base_id,name_en,name_zh,poedb_slug,category_key,poedb_page,item_class,
+            subtype,socket_limit,tags,influence_tags,armour_tag,modifier_page,
+            implicit_text,implicit_mod_types,implicit_ids,stats,stats_kind,
+            requirements,source_file,source,source_priority,pob_url,poedb_url,
+            source_commit,pob_version,game_version,content_hash,updated_at
+        )
+        """
+        + select
+        + " FROM pob_base_item_old"
+    )
+    moved = conn.execute("SELECT count(*) FROM pob_base_item").fetchone()[0]
+    conn.execute("DROP TABLE pob_base_item_old")
+    logger.info("底材表迁移完成：搬入 %d 条既有记录", moved)
+
+
+def _has_single_column_unique(
+    conn: sqlite3.Connection, table: str, column: str
+) -> bool:
+    """表上是否有「只含该列」的唯一约束（`origin='u'` 即建表里的 UNIQUE(...)）。"""
+    for index in conn.execute(f"PRAGMA index_list({table})"):
+        if not index["unique"] or index["origin"] != "u":
+            continue
+        cols = [r["name"] for r in conn.execute(f"PRAGMA index_info({index['name']})")]
+        if cols == [column]:
+            return True
+    return False
+
+
+def _base_item_schema() -> str:
+    """从 SCHEMA 里切出 `pob_base_item` 的建表语句。
+
+    切而不是复制一份：复制的那份迟早与 SCHEMA 分叉，届时迁移建出来的表
+    与全新库建出来的表结构不同——那种 bug 只会在「升级过的库」上出现。
+    """
+    marker = "CREATE TABLE IF NOT EXISTS pob_base_item ("
+    start = SCHEMA.index(marker)
+    end = SCHEMA.index(");", start) + 2
+    stmt = SCHEMA[start:end]
+    tail = SCHEMA[end:]
+    # 连带把紧随其后的索引一起建出来
+    for line in tail.splitlines():
+        if line.strip().startswith("CREATE INDEX") and "pob_base_item" in line:
+            stmt += "\n" + line.strip()
+        elif line.strip().startswith("CREATE TABLE"):
+            break
+    return stmt
 
 
 def init_db(db_path: Path, vector_dim: int = 0) -> sqlite3.Connection:

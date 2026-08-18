@@ -1,0 +1,129 @@
+{
+  "format_version": 1,
+  "case_id": "num_headhunter_rare_duration",
+  "query": "猎首获得稀有怪物属性修正持续多久",
+  "recorded_at": "2026-08-17T18:05:25+08:00",
+  "model": "glm-5.2",
+  "tokens": {
+    "prompt": 6736,
+    "output": 93,
+    "reasoning": 55,
+    "total": 6829
+  },
+  "tool_calls": [
+    ""
+  ],
+  "evidence_gap": false,
+  "gap_answer": "",
+  "blocked_claims": 0,
+  "elapsed_ms": 2531,
+  "evidence_fingerprint": "sha256:0bebb320b77647a988fdca5a9dcd7c36",
+  "_warning": "raw_answer 是未过出口闸门的模型原文，含可能无据的断言，不得当作事实引用",
+  "raw_answer": "猎首（Headhunter）的显式词缀为「当你击败稀有怪物时，会获得该怪物属性修正 **60 秒**」[[E1]]。",
+  "evidence": [
+    {
+      "label": "E1",
+      "chunk_id": "unique_item:Headhunter#0#456e5079b32c619a",
+      "entity_id": "unique_item:Headhunter",
+      "title": "猎首（Headhunter）",
+      "url": "https://poedb.tw/cn/Headhunter",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 猎首（Headhunter）\n类型：唯一装备 ｜ 底材：皮革腰带 ｜ 分类：其他\n\n**需求**：需求 等级 40\n\n**隐式词缀**\n- [隐式词缀] +(25-40) 最大生命\n\n**显式词缀**\n- [显式词缀] +(40-55) 力量\n- [显式词缀] +(40-55) 敏捷\n- [显式词缀] +(50-60) 最大生命\n- [显式词缀] 击中伤害对稀有怪物提高 (20-30)%\n- [显式词缀] 当你击败稀有怪物时，会获得该怪物属性修正 60 秒\n\n**附加说明**\n- [说明] ( 当你进入迷踪状态时, 你将不会被敌人所阻挡 )\n\n来源：POEDB → 猎首（Headhunter）\nhttps://poedb.tw/cn/Headhunter",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E2",
+      "chunk_id": "unique_item:Replica_Headhunter#0#1496799ce8df344f",
+      "entity_id": "unique_item:Replica_Headhunter",
+      "title": "猎首【仿品】（Replica Headhunter）",
+      "url": "https://poedb.tw/cn/Replica_Headhunter",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 猎首【仿品】（Replica Headhunter）\n类型：唯一装备 ｜ 底材：皮革腰带 ｜ 分类：其他\n\n**需求**：需求 等级 40\n\n**隐式词缀**\n- [隐式词缀] +(25-40) 最大生命\n\n**显式词缀**\n- [显式词缀] +(40-55) 力量\n- [显式词缀] +(40-55) 敏捷\n- [显式词缀] +(50-60) 最大生命\n- [显式词缀] 对抗魔法怪物时，击中伤害提高 (20-30)%\n- [显式词缀] 有 20% 几率在你击杀一个魔法怪物时获得其词缀，持续 60 秒。\n\n来源：POEDB → 猎首【仿品】（Replica Headhunter）\nhttps://poedb.tw/cn/Replica_Headhunter",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E3",
+      "chunk_id": "unique_item:Inspired_Learning#0#15aa7614c202ecf8",
+      "entity_id": "unique_item:Inspired_Learning",
+      "title": "求知的热情（Inspired Learning）",
+      "url": "https://poedb.tw/cn/Inspired_Learning",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 求知的热情（Inspired Learning）\n类型：唯一装备 ｜ 底材：赤红珠宝 ｜ 分类：其他\n\n**需求**：需求 等级 20\n\n**显式词缀**\n- [显式词缀] 若范围内配置了 4 个关键天赋点，当你击败稀有怪物时，你会获得该怪物的 1 属性修正 20 秒\n\n来源：POEDB → 求知的热情（Inspired Learning）\nhttps://poedb.tw/cn/Inspired_Learning",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E4",
+      "chunk_id": "mod_ladder:Claws:GainRareMonsterModsOnKill#435dd5ef57ff02cc",
+      "entity_id": "mod_ladder:Claws:GainRareMonsterModsOnKill",
+      "title": "爪 · GainRareMonsterModsOnKill",
+      "url": "https://poedb.tw/cn/Claws#ModifiersCalc",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 爪 · GainRareMonsterModsOnKill\n底材类别：爪 ｜ 词缀组：GainRareMonsterModsOnKill ｜ 类型：后缀 ｜ 来源渠道：2 个\n\n本词缀组在该底材上共 3 条，来自 2 个来源：督军、裂界者。\n互斥规则：与本组（GainRareMonsterModsOnKill）有相同词缀组的其他词缀不能同时存在于一件装备上。\n⚠ 同一条词缀文本在本卡的多个来源里都出现 → 仅凭装备上的数值**无法判断**它出自哪个来源，回答时必须并列各种可能。\n\n## 督军 · 后缀 · 2 档\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/2 | 征服者之 | 当你击败稀有怪物时，有 (31-40)% 的几率获得该怪物的一种属性修正 10 秒 | 73 | 500（10.0%） |\n| T2/2 | 征服者之 | 当你击败稀有怪物时，有 (21-30)% 的几率获得该怪物的一种属性修正 10 秒 | 68 | 500（10.0%） |\n\n## 裂界者 · 后缀 · 1 条\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/1 | 裂界之 | 当你击败稀有怪物时，有 (15-20)% 的几率获得该怪物的一种属性修正 10 秒 | 68 | 1000（4.0%） |\n\n置信度说明：\n- T 级按 POEDB 的算法推导——在同一来源类别与词缀组内，把物品等级去重后降序排名，物品等级最高者为 T1（算法已复刻并通过不变量校验）\n\n来源：POEDB → 爪 · GainRareMonsterModsOnKill\nhttps://poedb.tw/cn/Claws#ModifiersCalc",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E5",
+      "chunk_id": "unique_item:Solstice_Vigil#0#4ac738ee06c333bf",
+      "entity_id": "unique_item:Solstice_Vigil",
+      "title": "至日不眠（Solstice Vigil）",
+      "url": "https://poedb.tw/cn/Solstice_Vigil",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 至日不眠（Solstice Vigil）\n类型：唯一装备 ｜ 底材：黑曜护身符 ｜ 分类：其他\n\n**需求**：需求 等级 64\n\n**隐式词缀**\n- [隐式词缀] +(10-16) 全属性\n\n**显式词缀**\n- [显式词缀] 伤害提高 (30-40)%\n- [显式词缀] +(50-70) 最大生命\n- [显式词缀] 每秒再生 (8-10) 魔力\n- [显式词缀] 击败稀有或者传奇敌人时，获得塑界者姿态，持续 10 秒\n- [显式词缀] 时空锁链以光环形式施放时没有保留效果\n\n**附加说明**\n- [说明] （塑界者姿态会使你和周围友军身上的效果消退速度减缓 20%）\n- [说明] （效果无法低于正常消退速率的 25%）\n\n来源：POEDB → 至日不眠（Solstice Vigil）\nhttps://poedb.tw/cn/Solstice_Vigil",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E6",
+      "chunk_id": "unique_item:The_Hallowed_Monarch#0#4979ee0381113011",
+      "entity_id": "unique_item:The_Hallowed_Monarch",
+      "title": "圣洁君临（The Hallowed Monarch）",
+      "url": "https://poedb.tw/cn/The_Hallowed_Monarch",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 圣洁君临（The Hallowed Monarch）\n类型：唯一装备 ｜ 底材：信仰之盔 ｜ 分类：护甲\n\n**需求**：需求 等级 73, 101 力量, 101 智慧\n\n**显式词缀**\n- [显式词缀] 该装备的护甲提高 (150-230)%\n- [显式词缀] +(25-35)% 所有元素抗性\n- [显式词缀] 照亮范围扩大 50%\n- [显式词缀] 羁绊技能能以可受伤的召唤生物为目标\n- [显式词缀] 你羁绊的召唤物受到的伤害总降 (65-75)%\n- [显式词缀] 消灭稀有怪物时，一个随机羁绊的召唤物获得其词缀，持续 60 秒\n\n来源：POEDB → 圣洁君临（The Hallowed Monarch）\nhttps://poedb.tw/cn/The_Hallowed_Monarch",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E7",
+      "chunk_id": "unique_item:Biscos_Leash#0#afc27dfc4362738a",
+      "entity_id": "unique_item:Biscos_Leash",
+      "title": "比斯克的缰绳（Bisco's Leash）",
+      "url": "https://poedb.tw/cn/Biscos_Leash",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 比斯克的缰绳（Bisco's Leash）\n类型：唯一装备 ｜ 底材：重革腰带 ｜ 分类：其他\n\n**需求**：需求 等级 30\n\n**隐式词缀**\n- [隐式词缀] +(25-35) 力量\n\n**显式词缀**\n- [显式词缀] +(10-15) 全属性\n- [显式词缀] +(20-40)% 冰霜抗性\n- [显式词缀] 每 15 层暴走能量增加 1% 物品稀有度\n- [显式词缀] 暴走\n\n**附加说明**\n- [说明] (属性分为力量，敏捷和智慧三种)\n- [说明] (快速连续击败怪物会获得额外暴走奖励)\n\n来源：POEDB → 比斯克的缰绳（Bisco's Leash）\nhttps://poedb.tw/cn/Biscos_Leash",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E8",
+      "chunk_id": "atlas_passive:Meticulous_Appraiser_f3f5f4d139#213ddb2068ef1560",
+      "entity_id": "atlas_passive:Meticulous_Appraiser_f3f5f4d139",
+      "title": "基石·严谨鉴定师（Meticulous Appraiser）",
+      "url": "https://poedb.tw/cn/atlas-skill-tree/",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 基石·严谨鉴定师（Meticulous Appraiser）\n基石 ｜ Atlas 天赋树 3.29\n\n- 地图中掉落物品数量的修正改为以 300% 的效果作用于地图中掉落物品的稀有度\n\n来源：POEDB → Atlas 天赋树 · 严谨鉴定师（Meticulous Appraiser）\nhttps://poedb.tw/cn/atlas-skill-tree/",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    }
+  ]
+}

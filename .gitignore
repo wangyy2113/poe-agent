@@ -32,3 +32,6 @@ desktop.ini
 # 临时
 .tmp/
 *.tmp
+
+# Claude Code 的个人覆盖（团队共享的在 .claude/settings.json，入库）
+.claude/settings.local.json

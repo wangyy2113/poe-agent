@@ -1,0 +1,129 @@
+{
+  "format_version": 1,
+  "case_id": "name_kaoms_heart_zh",
+  "query": "冈姆的壮志",
+  "recorded_at": "2026-08-17T18:02:19+08:00",
+  "model": "glm-5.2",
+  "tokens": {
+    "prompt": 6103,
+    "output": 346,
+    "reasoning": 97,
+    "total": 6449
+  },
+  "tool_calls": [
+    ""
+  ],
+  "evidence_gap": false,
+  "gap_answer": "",
+  "blocked_claims": 5,
+  "elapsed_ms": 5492,
+  "evidence_fingerprint": "sha256:42e005ce4ad4d289a9ba2cc7b4de9eb6",
+  "_warning": "raw_answer 是未过出口闸门的模型原文，含可能无据的断言，不得当作事实引用",
+  "raw_answer": "## 冈姆的壮志（Kaom's Heart）\n\n| 属性 | 内容 |\n|---|---|\n| 类型 | 唯一装备 |\n| 底材 | 荣耀战铠 |\n| 分类 | 护甲 |\n| 需求 | 等级 68，191 力量[[E1]] |\n\n### 显式词缀\n\n- **没有插槽**[[E1]]\n- **+1000 最大生命**[[E1]]\n\n该装备以牺牲全部六连插槽为代价，换取极高的 +1000 最大生命加成[[E1]]。\n\n---\n\n### 仿品版本：冈姆的壮志【仿品】（Replica Kaom's Heart）\n\n同为荣耀战铠底材的唯一装备，需求等级 68、191 力量[[E2]]，但词缀完全不同：\n\n- **没有插槽**[[E2]]\n- **闪电伤害提高 (30-40)%**[[E2]]\n- **+500 最大魔力**[[E2]]\n\n仿品版本同样没有插槽，但将原版的 +1000 最大生命替换为闪电伤害提高与 +500 最大魔力[[E2]]。",
+  "evidence": [
+    {
+      "label": "E1",
+      "chunk_id": "unique_item:Kaoms_Heart#0#69d0a9d66ada19c9",
+      "entity_id": "unique_item:Kaoms_Heart",
+      "title": "冈姆的壮志（Kaom's Heart）",
+      "url": "https://poedb.tw/cn/Kaoms_Heart",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 冈姆的壮志（Kaom's Heart）\n类型：唯一装备 ｜ 底材：荣耀战铠 ｜ 分类：护甲\n\n**需求**：需求 等级 68, 191 力量\n\n**显式词缀**\n- [显式词缀] 没有插槽\n- [显式词缀] +1000 最大生命\n\n来源：POEDB → 冈姆的壮志（Kaom's Heart）\nhttps://poedb.tw/cn/Kaoms_Heart",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E2",
+      "chunk_id": "unique_item:Replica_Kaoms_Heart#0#305ac76fafe89d05",
+      "entity_id": "unique_item:Replica_Kaoms_Heart",
+      "title": "冈姆的壮志【仿品】（Replica Kaom's Heart）",
+      "url": "https://poedb.tw/cn/Replica_Kaoms_Heart",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 冈姆的壮志【仿品】（Replica Kaom's Heart）\n类型：唯一装备 ｜ 底材：荣耀战铠 ｜ 分类：护甲\n\n**需求**：需求 等级 68, 191 力量\n\n**显式词缀**\n- [显式词缀] 没有插槽\n- [显式词缀] 闪电伤害提高 (30-40)%\n- [显式词缀] +500 最大魔力\n\n来源：POEDB → 冈姆的壮志【仿品】（Replica Kaom's Heart）\nhttps://poedb.tw/cn/Replica_Kaoms_Heart",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E3",
+      "chunk_id": "ascendancy:Kaom_s_Binding_c650238edf#c78c10f49ff4dd5f",
+      "entity_id": "ascendancy:Kaom_s_Binding_c650238edf",
+      "title": "升华节点·冈姆之束缚（Kaom's Binding）",
+      "url": "https://poedb.tw/cn/passive-skill-tree/",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 升华节点·冈姆之束缚（Kaom's Binding）\n升华节点 ｜ 贵族 · 守藏者 ｜ 天赋树 3.29\n\n- 周围敌人将物理伤害的 25% 转化为火焰伤害\n- 力量提高 15%\n\n来源：POEDB → 天赋树 · 冈姆之束缚（Kaom's Binding）\nhttps://poedb.tw/cn/passive-skill-tree/",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E4",
+      "chunk_id": "ascendancy:Kaom_s_Roots_e94f362366#de6c296254955eb5",
+      "entity_id": "ascendancy:Kaom_s_Roots_e94f362366",
+      "title": "升华节点·冈姆的稳重之靴（Kaom's Roots）",
+      "url": "https://poedb.tw/cn/passive-skill-tree/",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 升华节点·冈姆的稳重之靴（Kaom's Roots）\n升华节点 ｜ 贵族 · 守藏者 ｜ 天赋树 3.29\n\n- +100 最大生命\n- 无法被击退\n- 你的行动速度无法被减速至基础以下\n- 无法闪避敌人攻击\n  免疫晕眩\n\n来源：POEDB → 天赋树 · 冈姆的稳重之靴（Kaom's Roots）\nhttps://poedb.tw/cn/passive-skill-tree/",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E5",
+      "chunk_id": "unique_item:Kaoms_Sign#0#d4ea42a4454ec317",
+      "entity_id": "unique_item:Kaoms_Sign",
+      "title": "冈姆的远见（Kaom's Sign）",
+      "url": "https://poedb.tw/cn/Kaoms_Sign",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 冈姆的远见（Kaom's Sign）\n类型：唯一装备 ｜ 底材：珊瑚戒指 ｜ 分类：其他\n\n**需求**：需求 等级 1\n\n**隐式词缀**\n- [隐式词缀] +(20-30) 最大生命\n\n**显式词缀**\n- [显式词缀] 获得 10 级的主动技能坚决战吼\n- [显式词缀] +(10-20) 力量\n- [显式词缀] 耐力球数量上限 +1\n\n来源：POEDB → 冈姆的远见（Kaom's Sign）\nhttps://poedb.tw/cn/Kaoms_Sign",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E6",
+      "chunk_id": "unique_item:Lethal_Pride#0#3f7a8fc341ae7d35",
+      "entity_id": "unique_item:Lethal_Pride",
+      "title": "致命的骄傲（Lethal Pride）",
+      "url": "https://poedb.tw/cn/Lethal_Pride",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 致命的骄傲（Lethal Pride）\n类型：唯一装备 ｜ 底材：永恒珠宝 ｜ 分类：其他\n\n**需求**：需求 等级 20\n\n**显式词缀**\n- [显式词缀] 获得冈姆麾下 (10000-18000) 名武士的领导权范围内的天赋被卡鲁抑制\n- [显式词缀] 史实\n\n**附加说明**\n- [说明] (被抑制的天赋无法得到其它珠宝的加成)\n\n来源：POEDB → 致命的骄傲（Lethal Pride）\nhttps://poedb.tw/cn/Lethal_Pride",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E7",
+      "chunk_id": "unique_item:Kaoms_Roots#0#7debb02144cdfa96",
+      "entity_id": "unique_item:Kaoms_Roots",
+      "title": "冈姆的稳重之靴（Kaom's Roots）",
+      "url": "https://poedb.tw/cn/Kaoms_Roots",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 冈姆的稳重之靴（Kaom's Roots）\n类型：唯一装备 ｜ 底材：巨人胫甲 ｜ 分类：护甲\n\n**需求**：需求 等级 68, 120 力量\n\n**显式词缀**\n- [显式词缀] 没有插槽\n- [显式词缀] +(150-200) 最大生命\n- [显式词缀] 无法被击退\n- [显式词缀] 你的行动速度无法被减速至基础以下\n- [显式词缀] 烈士意志\n\n**附加说明**\n- [说明] (无法闪避敌人攻击。不会被晕眩)\n\n来源：POEDB → 冈姆的稳重之靴（Kaom's Roots）\nhttps://poedb.tw/cn/Kaoms_Roots",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E8",
+      "chunk_id": "unique_item:Kaoms_Command#0#2a110ceef450215a",
+      "entity_id": "unique_item:Kaoms_Command",
+      "title": "冈姆的命令（Kaom's Command）",
+      "url": "https://poedb.tw/cn/Kaoms_Command",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 冈姆的命令（Kaom's Command）\n类型：唯一装备 ｜ 底材：破城之盔 ｜ 分类：护甲\n\n**需求**：需求 等级 48, 101 力量\n\n**显式词缀**\n- [显式词缀] +(60-80) 最大生命\n- [显式词缀] 战吼施法速度加快 (25-35)%\n- [显式词缀] 当你使用战吼时，周围的灵柩爆炸，造成其生命 (5-10)% 的物理伤害\n- [显式词缀] 战吼技能的效果范围提高 (25-35)%\n\n来源：POEDB → 冈姆的命令（Kaom's Command）\nhttps://poedb.tw/cn/Kaoms_Command",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    }
+  ]
+}

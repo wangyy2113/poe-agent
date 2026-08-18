@@ -1,0 +1,129 @@
+{
+  "format_version": 1,
+  "case_id": "desc_mastery_elemental",
+  "query": "元素专精有哪些可选效果",
+  "recorded_at": "2026-08-17T18:04:46+08:00",
+  "model": "glm-5.2",
+  "tokens": {
+    "prompt": 6486,
+    "output": 180,
+    "reasoning": 26,
+    "total": 6666
+  },
+  "tool_calls": [
+    ""
+  ],
+  "evidence_gap": false,
+  "gap_answer": "",
+  "blocked_claims": 0,
+  "elapsed_ms": 4372,
+  "evidence_fingerprint": "sha256:f11c9529cdf40e5369fe3bc0e9862f76",
+  "_warning": "raw_answer 是未过出口闸门的模型原文，含可能无据的断言，不得当作事实引用",
+  "raw_answer": "元素专精（Elemental Mastery）共有 6 个可选效果，**只能选定其中一个**，不是同时获得[[E1]]：\n\n1. 你施加的曝露效果对受影响的抗性至少 -18%[[E1]]\n2. 阻挡受到的 +60% 反射元素伤害[[E1]]\n3. 你受到的曝露效果降低 50%[[E1]]\n4. 击中有 15% 的几率将敌方怪物的元素抗性视作反转[[E1]]\n5. 对你产生的暴击本身不造成元素异常状态[[E1]]\n6. 击中有 3% 的几率额外造成等同于物理伤害 300% 的随机元素伤害[[E1]]",
+  "evidence": [
+    {
+      "label": "E1",
+      "chunk_id": "passive:Elemental_Mastery_08b8cf9ddc#db4b863d5e1a90e5",
+      "entity_id": "passive:Elemental_Mastery_08b8cf9ddc",
+      "title": "大师天赋·元素专精（Elemental Mastery）",
+      "url": "https://poedb.tw/cn/passive-skill-tree/",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 大师天赋·元素专精（Elemental Mastery）\n大师天赋 ｜ 天赋树 3.29 ｜ 树上 6 处（同名同效，可分别点取）\n\n以下 6 个效果**只能选定其中一个**，不是同时获得：\n1. 你施加的曝露效果对受影响的抗性至少 -18%\n2. 阻挡受到的 +60% 反射元素伤害\n3. 你受到的曝露效果降低 50%\n4. 击中有 15% 的几率将敌方怪物的元素抗性视作反转\n5. 对你产生的暴击本身不造成元素异常状态\n6. 击中有 3% 的几率额外造成等同于物理伤害 300% 的随机元素伤害\n\n来源：POEDB → 天赋树 · 元素专精（Elemental Mastery）\nhttps://poedb.tw/cn/passive-skill-tree/",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E2",
+      "chunk_id": "passive:Duration_Mastery_42adcf2642#950bc677bd13dd93",
+      "entity_id": "passive:Duration_Mastery_42adcf2642",
+      "title": "大师天赋·持续时间专精（Duration Mastery）",
+      "url": "https://poedb.tw/cn/passive-skill-tree/",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 大师天赋·持续时间专精（Duration Mastery）\n大师天赋 ｜ 天赋树 3.29 ｜ 树上 2 处（同名同效，可分别点取）\n\n以下 4 个效果**只能选定其中一个**，不是同时获得：\n1. 技能效果持续时间总增 10%\n2. 技能效果持续时间总降 10%\n3. 你身上的减益效果消失速度加快 15%\n4. 自身受到的元素异常状态时间缩短 20%\n\n来源：POEDB → 天赋树 · 持续时间专精（Duration Mastery）\nhttps://poedb.tw/cn/passive-skill-tree/",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E3",
+      "chunk_id": "passive:Reservation_Mastery_d18f9cbdaf#924931d007cf031a",
+      "entity_id": "passive:Reservation_Mastery_d18f9cbdaf",
+      "title": "大师天赋·保留专精（Reservation Mastery）",
+      "url": "https://poedb.tw/cn/passive-skill-tree/",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 大师天赋·保留专精（Reservation Mastery）\n大师天赋 ｜ 天赋树 3.29 ｜ 树上 8 处（同名同效，可分别点取）\n\n以下 6 个效果**只能选定其中一个**，不是同时获得：\n1. 伤害按照你身上每种影响你的光环或捷提高 8%\n2. 若你有保留的生命和魔力，所有元素抗性上限 +1%\n3. 技能的生命保留效能提高 20%\n4. 光环技能范围提高 30%\n5. 你技能的光环在你身上的效果提高 10%\n6. 非诅咒光环技能的持续时间延长 50%\n\n来源：POEDB → 天赋树 · 保留专精（Reservation Mastery）\nhttps://poedb.tw/cn/passive-skill-tree/",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E4",
+      "chunk_id": "passive:Minion_Offence_Mastery_aa4ece63d8#f10e5424226047d4",
+      "entity_id": "passive:Minion_Offence_Mastery_aa4ece63d8",
+      "title": "大师天赋·召唤生物斗志专精（Minion Offence Mastery）",
+      "url": "https://poedb.tw/cn/passive-skill-tree/",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 大师天赋·召唤生物斗志专精（Minion Offence Mastery）\n大师天赋 ｜ 天赋树 3.29 ｜ 树上 8 处（同名同效，可分别点取）\n\n以下 6 个效果**只能选定其中一个**，不是同时获得：\n1. 召唤生物的击中有 50% 的几率忽略敌人的物理伤害减免\n2. 召唤生物穿透 8% 被诅咒的敌人的元素抗性\n3. 击败敌人时，召唤生物有 25% 的几率获得不洁之力 4 秒\n4. 召唤生物的效果区域扩大 30%\n5. 召唤生物的冷却回复率提高 20%\n6. 奉献效果提高 20%\n\n来源：POEDB → 天赋树 · 召唤生物斗志专精（Minion Offence Mastery）\nhttps://poedb.tw/cn/passive-skill-tree/",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E5",
+      "chunk_id": "passive:Minion_Defence_Mastery_f0f159cb77#7b8fa3f0693bcfa2",
+      "entity_id": "passive:Minion_Defence_Mastery_f0f159cb77",
+      "title": "大师天赋·召唤生物防御专精（Minion Defence Mastery）",
+      "url": "https://poedb.tw/cn/passive-skill-tree/",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 大师天赋·召唤生物防御专精（Minion Defence Mastery）\n大师天赋 ｜ 天赋树 3.29 ｜ 树上 5 处（同名同效，可分别点取）\n\n以下 6 个效果**只能选定其中一个**，不是同时获得：\n1. 召唤生物获得 +8% 最大全元素抗性\n2. 羁绊技能能以可受伤的召唤生物为目标\n3. 召唤生物获得 1% 生命偷取\n4. 号召的冷却回复率提高 40%\n5. 召唤生物的生命回复率降低 15%\n   - 召唤生物的最大生命提高 30%\n6. 召唤生物被击败时，其它召唤生物回复 5% 生命\n\n来源：POEDB → 天赋树 · 召唤生物防御专精（Minion Defence Mastery）\nhttps://poedb.tw/cn/passive-skill-tree/",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E6",
+      "chunk_id": "passive:Spell_Suppression_Mastery_6761ad1087#120e457148ef7a60",
+      "entity_id": "passive:Spell_Suppression_Mastery_6761ad1087",
+      "title": "大师天赋·范围法术压制专精（Spell Suppression Mastery）",
+      "url": "https://poedb.tw/cn/passive-skill-tree/",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 大师天赋·范围法术压制专精（Spell Suppression Mastery）\n大师天赋 ｜ 天赋树 3.29 ｜ 树上 3 处（同名同效，可分别点取）\n\n以下 6 个效果**只能选定其中一个**，不是同时获得：\n1. 阻挡被压制的法术伤害 +3%\n2. 压制敌人的法术伤害时施加火焰曝露、冰霜曝露和闪电曝露\n3. 近期每次被压制的击中可穿透 +1% 的压制法术伤害\n   - 近期每次被压制的击中使法术压制几率提高 -2%\n4. 被压制的法术伤害无法对你施加元素异常状态\n5. 若你近期压制过法术伤害，则获得迷踪效果\n   - 拥有迷踪时法术压制几率提高 +8%\n6. 法术压制几率特别幸运\n\n来源：POEDB → 天赋树 · 范围法术压制专精（Spell Suppression Mastery）\nhttps://poedb.tw/cn/passive-skill-tree/",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E7",
+      "chunk_id": "passive:Flask_Mastery_56b250b95a#877d3dd5417fb3f5",
+      "entity_id": "passive:Flask_Mastery_56b250b95a",
+      "title": "大师天赋·药剂专精（Flask Mastery）",
+      "url": "https://poedb.tw/cn/passive-skill-tree/",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 大师天赋·药剂专精（Flask Mastery）\n大师天赋 ｜ 天赋树 3.29 ｜ 树上 8 处（同名同效，可分别点取）\n\n以下 6 个效果**只能选定其中一个**，不是同时获得：\n1. 生命药剂每 3 秒获得 1 次充能\n   - 魔力药剂每 3 秒获得 1 次充能\n2. 使用魔力药剂时也会移除 1 个随机元素异常状态\n3. 你使用生命药剂时移除一个随机非元素异常状态\n4. 暴击时有 25% 的几率获得 1 充能\n5. 击败受元素异常状态影响的敌人\n     提高 100% 药剂充能\n6. 你使用药剂时回复 4% 生命\n\n来源：POEDB → 天赋树 · 药剂专精（Flask Mastery）\nhttps://poedb.tw/cn/passive-skill-tree/",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E8",
+      "chunk_id": "passive:Blind_Mastery_7a6b2f85dd#bd6f18a72f490b66",
+      "entity_id": "passive:Blind_Mastery_7a6b2f85dd",
+      "title": "大师天赋·致盲专精（Blind Mastery）",
+      "url": "https://poedb.tw/cn/passive-skill-tree/",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 大师天赋·致盲专精（Blind Mastery）\n大师天赋 ｜ 天赋树 3.29 ｜ 树上 2 处（同名同效，可分别点取）\n\n以下 4 个效果**只能选定其中一个**，不是同时获得：\n1. 致盲效果提高40%\n2. 致盲的持续时间延长 100%\n3. 对致盲敌人的暴击率提高 60%\n4. 100% 几率避免致盲\n\n来源：POEDB → 天赋树 · 致盲专精（Blind Mastery）\nhttps://poedb.tw/cn/passive-skill-tree/",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    }
+  ]
+}

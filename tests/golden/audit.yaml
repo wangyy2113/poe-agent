@@ -1,0 +1,543 @@
+meta:
+  auditor: claude-opus-5（**非独立人工**：由实现者逐条核对，结论待人工抽检复核）
+  audited_at: '2026-08-17'
+  note: verdict 取值：passed 池 supported/unsupported；blocked 池 correct_block/wrong_block。留空表示待判。
+items:
+- id: cross_lifeleech_amulet#7001a78d
+  case: cross_lifeleech_amulet
+  sentence: 共 **3 档**[[E9]]：
+  labels:
+  - E9
+  evidence_excerpt:
+    E9: '### 项链 · 后缀 · LifeLeech（Base）
+
+
+      共 3 档。
+
+
+      | T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |
+
+      | --- | --- | --- | --- | --- |
+
+      | T1/3 | 吸血鬼之 | 物理攻击伤害的 (1-1.2)% 会转化为生命偷取 | 70 | 250（0.200%） |
+
+      | T2/3 | 七鳃鳗之 | 物理攻击伤害的 (0.6-0.8)% 会转化为生命偷取 | 60 | 500（0.399%） |
+
+      | T3/3 | 鲫鱼之 | 物理攻击伤害的 (0.2-0.4)% 会转化为生命偷取 | 50 | 1000（0.798%） |
+
+
+      置信度：T 级按 POEDB 前端算法推导（已通过不变量校验），非页面原文直接标注
+
+
+      来源：POEDB https://poedb.tw/cn/Amulets#ModifiersCalc'
+  verdict: ''
+  note: ''
+  pool: passed
+- id: desc_headhunter_effect#52c16648
+  case: desc_headhunter_effect
+  sentence: '- **底材**：皮革腰带，需求等级 40[[E1]]'
+  labels:
+  - E1
+  evidence_excerpt:
+    E1: '# 猎首（Headhunter）
+
+      类型：唯一装备 ｜ 底材：皮革腰带 ｜ 分类：其他
+
+
+      **需求**：需求 等级 40
+
+
+      **隐式词缀**
+
+      - [隐式词缀] +(25-40) 最大生命
+
+
+      **显式词缀**
+
+      - [显式词缀] +(40-55) 力量
+
+      - [显式词缀] +(40-55) 敏捷
+
+      - [显式词缀] +(50-60) 最大生命
+
+      - [显式词缀] 击中伤害对稀有怪物提高 (20-30)%
+
+      - [显式词缀] 当你击败稀有怪物时，会获得该怪物属性修正 60 秒
+
+
+      **附加说明**
+
+      - [说明] ( 当你进入迷踪状态时, 你将不会被敌人所阻挡 )
+
+
+      来源：POEDB → 猎首（Headhunter）
+
+      https://poedb.tw/cn/Headhunter'
+  verdict: supported
+  note: E1 有「底材：皮革腰带」「需求 等级 40」
+  pool: passed
+- id: desc_life_regen_source#6ea3a475
+  case: desc_life_regen_source
+  sentence: 含"生命再生"的词缀出现在以下底材类别 × 来源组合中[[E9]]：
+  labels:
+  - E9
+  evidence_excerpt:
+    E9: '### 装备词缀：含「生命再生」的词缀出现在这些 (底材类别 × 来源) 组合上
+
+
+      | 底材类别 | 来源 | 前后缀 | 词缀组 | 条数 | 最低物品等级 | 有生成权重 |
+
+      | --- | --- | --- | --- | --- | --- | --- |
+
+      | 头部 | 灭界者 | 其他 | EnemyLifeRegenerationRate | 90 | 75 | 是 |
+
+      | 鞋子 | 灭界者 | 其他 | LifeRegenerationRate | 90 | 75 | 是 |
+
+      | 头部 | Base | 后缀 | LifeRegenerationRate | 15 | 46 | 是 |
+
+      | 手套 | Base | 后缀 | LifeRegenerationRate | 15 | 46 | 是 |
+
+      | 符文战靴 | 灭界者 | 其他 | LifeRegenerationRat'
+  verdict: ''
+  note: ''
+  pool: passed
+- id: desc_mastery_elemental#fba04d4c
+  case: desc_mastery_elemental
+  sentence: 元素专精（Elemental Mastery）共有 6 个可选效果，**只能选定其中一个**，不是同时获得[[E1]]：
+  labels:
+  - E1
+  evidence_excerpt:
+    E1: '# 大师天赋·元素专精（Elemental Mastery）
+
+      大师天赋 ｜ 天赋树 3.29 ｜ 树上 6 处（同名同效，可分别点取）
+
+
+      以下 6 个效果**只能选定其中一个**，不是同时获得：
+
+      1. 你施加的曝露效果对受影响的抗性至少 -18%
+
+      2. 阻挡受到的 +60% 反射元素伤害
+
+      3. 你受到的曝露效果降低 50%
+
+      4. 击中有 15% 的几率将敌方怪物的元素抗性视作反转
+
+      5. 对你产生的暴击本身不造成元素异常状态
+
+      6. 击中有 3% 的几率额外造成等同于物理伤害 300% 的随机元素伤害
+
+
+      来源：POEDB → 天赋树 · 元素专精（Elemental Mastery）
+
+      https://poedb.tw/cn/passive-skill-tree/'
+  verdict: supported
+  note: E1 明写「以下 6 个效果只能选定其中一个，不是同时获得」
+  pool: passed
+- id: desc_spell_damage_staff#db2942a0
+  case: desc_spell_damage_staff
+  sentence: 该词缀组在**法杖**上为**前缀**，来自 **Base** 来源，共 **7 档**，互斥规则为同组词缀不能同时存在于一件装备上[[E1]]。
+  labels:
+  - E1
+  evidence_excerpt:
+    E1: '# 法杖 · SpellDamageAndMana
+
+      底材类别：法杖 ｜ 词缀组：SpellDamageAndMana ｜ 类型：前缀 ｜ 来源渠道：1 个
+
+      标签：魔力、伤害、施法
+
+
+      本词缀组在该底材上共 7 条，来自 1 个来源：Base。
+
+      互斥规则：与本组（SpellDamageAndMana）有相同词缀组的其他词缀不能同时存在于一件装备上。
+
+
+      ## Base · 前缀 · 7 档
+
+
+      | T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |
+
+      | --- | --- | --- | --- | --- |
+
+      | T1/7 | 巫妖的 | 法术伤害提高 (44-49)% / +(42-45) 最大魔力 | 80 | 100（0.1258%） |
+
+      | T2/7 | 大法师的 | 法术伤害提高 (37-43)% / +(38-41) 最大魔力 | 58 | 200（0.2517%） |'
+  verdict: supported
+  note: E1 明写法杖 / 前缀 / Base / 共 7 条 / 互斥规则，逐项对得上
+  pool: passed
+- id: desc_steal_mods_belt#68c69c68
+  case: desc_steal_mods_belt
+  sentence: '- **其他底材**：偷取词缀确实存在于装备词缀池中，但出现在**手套、头部、符文手甲**等其他底材上，而非腰带[[E9]]。'
+  labels:
+  - E9
+  evidence_excerpt:
+    E9: '### 装备词缀：含「偷取」的词缀出现在这些 (底材类别 × 来源) 组合上
+
+
+      | 底材类别 | 来源 | 前后缀 | 词缀组 | 条数 | 最低物品等级 | 有生成权重 |
+
+      | --- | --- | --- | --- | --- | --- | --- |
+
+      | 手套 | 灭界者 | 其他 | ChaosDamageLifeLeech | 90 | 75 | 是 |
+
+      | 手套 | 灭界者 | 其他 | ColdDamageLifeLeech | 90 | 75 | 是 |
+
+      | 手套 | 灭界者 | 其他 | FireDamageLifeLeech | 90 | 75 | 是 |
+
+      | 手套 | 灭界者 | 其他 | LightningDamageLifeLeech | 90 | 75 | 是 |
+
+      | 手套 | 灭界者 | 其他 | PhysicalDamageLifeLeech | 90'
+  verdict: supported
+  note: E9 表格里偷取类词缀的底材类别是手套、头部等，确实不含腰带
+  pool: passed
+- id: name_abberaths_horn_apostrophe#9ebb11a6
+  case: name_abberaths_horn_apostrophe
+  sentence: '**类型**：唯一装备 ｜ 底材：羊角法杖 ｜ 分类：武器 [[E1]](https://poedb.tw/cn/Abberaths_Horn)'
+  labels:
+  - E1
+  evidence_excerpt:
+    E1: '# 艾贝拉斯之角（Abberath''s Horn）
+
+      类型：唯一装备 ｜ 底材：羊角法杖 ｜ 分类：武器
+
+
+      **需求**：需求 等级 6, 29 智慧
+
+
+      **隐式词缀**
+
+      - [隐式词缀] 攻击和法术附加 (1-2)-(3-4) 基础火焰伤害
+
+
+      **显式词缀**
+
+      - [显式词缀] +(30-50)% 暴击导致的点燃持续伤害加成
+
+      - [显式词缀] 给法术附加 (4-6) 到 (8-12) 点火焰伤害
+
+      - [显式词缀] 全域暴击率提高 (80-120)%
+
+      - [显式词缀] 每击败一名被点燃的敌人获得10点生命
+
+      - [显式词缀] 敌人被点燃的持续时间缩短 25%
+
+
+      来源：POEDB → 艾贝拉斯之角（Abberath''s Horn）
+
+      https://poedb.tw/cn/Abberaths_Horn'
+  verdict: supported
+  note: 类型/底材/分类三项与 E1 首行一致。**但该句自己贴了 URL**，违反提示词「不要自己贴 URL，引用列表由系统生成」——是格式违规不是无据
+  pool: passed
+- id: name_abberaths_horn_slug#243cdcaa
+  case: name_abberaths_horn_slug
+  sentence: '**类型**：唯一装备 ｜ 底材：羊角法杖 ｜ 分类：武器[[E1]]'
+  labels:
+  - E1
+  evidence_excerpt:
+    E1: '# 艾贝拉斯之角（Abberath''s Horn）
+
+      类型：唯一装备 ｜ 底材：羊角法杖 ｜ 分类：武器
+
+
+      **需求**：需求 等级 6, 29 智慧
+
+
+      **隐式词缀**
+
+      - [隐式词缀] 攻击和法术附加 (1-2)-(3-4) 基础火焰伤害
+
+
+      **显式词缀**
+
+      - [显式词缀] +(30-50)% 暴击导致的点燃持续伤害加成
+
+      - [显式词缀] 给法术附加 (4-6) 到 (8-12) 点火焰伤害
+
+      - [显式词缀] 全域暴击率提高 (80-120)%
+
+      - [显式词缀] 每击败一名被点燃的敌人获得10点生命
+
+      - [显式词缀] 敌人被点燃的持续时间缩短 25%
+
+
+      来源：POEDB → 艾贝拉斯之角（Abberath''s Horn）
+
+      https://poedb.tw/cn/Abberaths_Horn'
+  verdict: supported
+  note: 同上，与 E1 首行一致
+  pool: passed
+- id: name_anatomical_knowledge#82bf65e8
+  case: name_anatomical_knowledge
+  sentence: '**类型**：唯一装备 ｜ 底材：钴蓝珠宝（Cobalt Jewel） ｜ 分类：钴蓝珠宝 [[E1]]'
+  labels:
+  - E1
+  evidence_excerpt:
+    E1: '# 真知灼见（Anatomical Knowledge）
+
+      类型：唯一装备 ｜ 底材：钴蓝珠宝 ｜ 分类：钴蓝珠宝
+
+
+      **需求**：需求 等级 20
+
+
+      **显式词缀**
+
+      - [显式词缀] 生命上限提高 (6-8)%
+
+      - [显式词缀] 范围内每配置 3 点智慧，最大生命提高 1 点
+
+
+      来源：POEDB → 真知灼见（Anatomical Knowledge）
+
+      https://poedb.tw/cn/Anatomical_Knowledge'
+  verdict: supported
+  note: 与 E1 一致；括号里补的英文名也来自 E1 标题
+  pool: passed
+- id: name_ascendancy_conjoined_spire#ff8e7d47
+  case: name_ascendancy_conjoined_spire
+  sentence: '**升华核心 ｜ 天赋树 3.29**[[E1]]'
+  labels:
+  - E1
+  evidence_excerpt:
+    E1: '# 升华核心·结合尖塔（Conjoined Spire）
+
+      升华核心 ｜ 天赋树 3.29
+
+
+      - 当你召唤图腾时，其他所有已召唤图腾死亡
+
+      - 图腾使用的技能的效果区域按召唤图腾数量上限总增 5%
+
+      - 图腾使用的技能造成的伤害按召唤图腾数量上限总增 10%
+
+      - 图腾的生命按召唤图腾数量上限总增 5%
+
+
+      来源：POEDB → 天赋树 · 结合尖塔（Conjoined Spire）
+
+      https://poedb.tw/cn/passive-skill-tree/'
+  verdict: supported
+  note: E1 第二行就是「升华核心 ｜ 天赋树 3.29」
+  pool: passed
+- id: name_atlas_refiners_bargain#3dafaf94
+  case: name_atlas_refiners_bargain
+  sentence: '- 你地图中被附身的怪物掉落的具有稀有度的装备物品有 **5%** 的几率被转化为奇术之尘[[E1]]'
+  labels:
+  - E1
+  evidence_excerpt:
+    E1: '# 基石·精炼师的交易（Refiner''s Bargain）
+
+      基石 ｜ Atlas 天赋树 3.29
+
+
+      - 你地图中被附身的怪物掉落的具有稀有度的装备物品有 5% 的几率被转化为奇术之尘
+
+      - 你地图中找到的亚硫酸改为提供 10% 数量的随机矿石
+
+      - 你地图中找到的命能改为提供 250% 数量的随机作物。
+
+
+      来源：POEDB → Atlas 天赋树 · 精炼师的交易（Refiner''s Bargain）
+
+      https://poedb.tw/cn/atlas-skill-tree/'
+  verdict: supported
+  note: E1 逐字有「有 5% 的几率被转化为奇术之尘」
+  pool: passed
+- id: name_headhunter_context#7f1c8965
+  case: name_headhunter_context
+  sentence: 猎首的底材是**皮革腰带**，需求等级 40[[E1]]。
+  labels:
+  - E1
+  evidence_excerpt:
+    E1: '# 猎首（Headhunter）
+
+      类型：唯一装备 ｜ 底材：皮革腰带 ｜ 分类：其他
+
+
+      **需求**：需求 等级 40
+
+
+      **隐式词缀**
+
+      - [隐式词缀] +(25-40) 最大生命
+
+
+      **显式词缀**
+
+      - [显式词缀] +(40-55) 力量
+
+      - [显式词缀] +(40-55) 敏捷
+
+      - [显式词缀] +(50-60) 最大生命
+
+      - [显式词缀] 击中伤害对稀有怪物提高 (20-30)%
+
+      - [显式词缀] 当你击败稀有怪物时，会获得该怪物属性修正 60 秒
+
+
+      **附加说明**
+
+      - [说明] ( 当你进入迷踪状态时, 你将不会被敌人所阻挡 )
+
+
+      来源：POEDB → 猎首（Headhunter）
+
+      https://poedb.tw/cn/Headhunter'
+  verdict: supported
+  note: E1 有「底材：皮革腰带」与「需求 等级 40」
+  pool: passed
+- id: cross_lifeleech_amulet#f5fa9968
+  case: cross_lifeleech_amulet
+  sentence: 基于查询结果，项链上与生命偷取相关的词缀组共检索到 **37 个梯度（ladders）**，但结果被截断，仅返回了 **6 个**。
+  labels: []
+  evidence_excerpt: {}
+  verdict: ''
+  note: ''
+  pool: blocked
+  gate_reason: 事实句未绑定引用
+- id: desc_headhunter_effect#c8211ec0
+  case: desc_headhunter_effect
+  sentence: 根据检索到的证据，**猎首（Headhunter）** 是唯一符合条件的腰带：
+  labels: []
+  evidence_excerpt: {}
+  verdict: correct_block
+  note: 「唯一符合条件的腰带」是穷尽性断言，必须有据
+  pool: blocked
+  gate_reason: 事实句未绑定引用
+- id: desc_life_regen_source#bc52dc2d
+  case: desc_life_regen_source
+  sentence: 根据已检索证据，"生命再生"相关的属性可从以下渠道获得或受其影响。
+  labels: []
+  evidence_excerpt: {}
+  verdict: ''
+  note: ''
+  pool: blocked
+  gate_reason: 事实句未绑定引用
+- id: desc_spell_damage_staff#c89f5e04
+  case: desc_spell_damage_staff
+  sentence: '| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |
+
+    | --- | --- | --- | --- | --- |
+
+    | T1/7 | 巫妖的 | 法术伤害提高 (44-49)% / +(42-45) 最大魔力 | 80 | 100（0.1258%） |
+
+    | T2/7 | 大法师的 | 法术伤害提高 (37-43)% / +(38-41) 最大魔力 | 58 | 200（0.2517%） |
+
+    | T3/7 | 魔导师的 | 法术伤害提高 (31-36)% / +(34-37) 最大魔力 | 46 | 400（0.5034%） |
+
+    | T4/7 | 术士的 | 法术伤害提高 (25-30)% / +(29-33) 最大魔力 | 35 | 800（1.0067%） |
+
+    | T5/7 | 巫师的 | 法术伤害提高 (19-24)% / +(25-28) 最大魔力 | 23 | 1000（1.2584%） |
+
+    | T6/7 | 咒术师的 | 法术伤害提高 (13-18)% / +(21-24) 最大魔力 | 11 | 1000（1.2584%） |
+
+    | T7/7 | 施放者的 | 法术伤害提高 (8-12)% / +(17-20) 最大魔力 | 2 | 1000（1.2584%） |'
+  labels: []
+  evidence_excerpt: {}
+  verdict: correct_block
+  note: 整张表都没有绑定标记，数据虽与 E1 一致，但规则要求绑定
+  pool: blocked
+  gate_reason: 事实句未绑定引用
+- id: desc_steal_mods_belt#20ee7766
+  case: desc_steal_mods_belt
+  sentence: 直接在腰带底材上查询偷取相关关键词也无任何结果。
+  labels: []
+  evidence_excerpt: {}
+  verdict: wrong_block
+  note: 「也无任何结果」同族缺据声明：_DISCLOSURE_RE 的「无 + 量词 + 动词」构式要求动词是包含/涉及/列出这类，而这里是「无任何结果」（名词收尾）。**本轮不再继续修**——每修一条就有新句子进池，再迭代会开始过拟合这
+    24 条样本。留给下一轮：给缺据声明构式补「无 + 量词 + 结果/记录/条目」的名词收尾形
+  pool: blocked
+  gate_reason: 事实句未绑定引用
+- id: name_abberaths_horn_apostrophe#e72ea471
+  case: name_abberaths_horn_apostrophe
+  sentence: 这件武器是一把低等级（需求等级 6）的火焰/点燃 themed 法杖，围绕点燃机制设计：提供暴击点燃伤害加成、法术火焰伤害附加、全域暴击率提升，并通过击杀被点燃的敌人回血。
+  labels: []
+  evidence_excerpt: {}
+  verdict: correct_block
+  note: 带需求等级 6 的整体性描述与设计意图概括，未绑定
+  pool: blocked
+  gate_reason: 事实句未绑定引用
+- id: name_abberaths_horn_slug#651f878f
+  case: name_abberaths_horn_slug
+  sentence: '- 攻击和法术附加 (1-2)-(3-4) 基础火焰伤害'
+  labels: []
+  evidence_excerpt: {}
+  verdict: correct_block
+  note: 按现行规则正确（逐句绑定）。**但形态与表格问题同类**：模型把标记标在列表标题上、逐条列项不带标记，值得单独量一次
+  pool: blocked
+  gate_reason: 事实句未绑定引用
+- id: name_atlas_refiners_bargain#981cae14
+  case: name_atlas_refiners_bargain
+  sentence: '**类型**：基石（Atlas 天赋树）｜ 版本 3.29'
+  labels: []
+  evidence_excerpt: {}
+  verdict: correct_block
+  note: 含版本号 3.29 的元信息行，按「带数字的标签仍走事实句校验」是设计如此
+  pool: blocked
+  gate_reason: 事实句未绑定引用
+- id: name_headhunter_zh#0b2ece5e
+  case: name_headhunter_zh
+  sentence: '- 类型：唯一装备'
+  labels: []
+  evidence_excerpt: {}
+  verdict: correct_block
+  note: 「- 类型：唯一装备」确实是事实断言，只是没绑定
+  pool: blocked
+  gate_reason: 事实句未绑定引用
+- id: name_kaoms_heart_zh#e98fb55a
+  case: name_kaoms_heart_zh
+  sentence: 仿品版本同样没有插槽，但将原版的 +1000 最大生命替换为闪电伤害提高与 +500 最大魔力[[E2]]。
+  labels:
+  - E2
+  evidence_excerpt:
+    E2: '# 冈姆的壮志【仿品】（Replica Kaom''s Heart）
+
+      类型：唯一装备 ｜ 底材：荣耀战铠 ｜ 分类：护甲
+
+
+      **需求**：需求 等级 68, 191 力量
+
+
+      **显式词缀**
+
+      - [显式词缀] 没有插槽
+
+      - [显式词缀] 闪电伤害提高 (30-40)%
+
+      - [显式词缀] +500 最大魔力
+
+
+      来源：POEDB → 冈姆的壮志【仿品】（Replica Kaom''s Heart）
+
+      https://poedb.tw/cn/Replica_Kaoms_Heart'
+  verdict: correct_block
+  note: 只绑了 E2（仿品卡），却引用了原版的 +1000——数值回填校验抓得准，正是它该抓的
+  pool: blocked
+  gate_reason: 数值 +1000 未出现在绑定证据 E2 中
+- id: name_passive_divine_shield#679f6e19
+  case: name_passive_divine_shield
+  sentence: 补充说明：你提供的证据 [E2]–[E8] 涉及的是另一项技能「暴风之盾」（Tempest Shield）的增益效果词缀（TempestShieldBuffEffect），出现在各类胸甲底材上，来源为焚界者。
+  labels: []
+  evidence_excerpt: {}
+  verdict: correct_block
+  note: 开头是缺据式说明，但后半句断言了「出现在各类胸甲底材上，来源为焚界者」——这是关于证据内容的实质事实，该绑定。取安全侧
+  pool: blocked
+  gate_reason: 事实句未绑定引用
+- id: name_seven_league_step#8419d1b0
+  case: name_seven_league_step
+  sentence: '| 属性 | 内容 |
+
+    |------|------|
+
+    | **类型** | 唯一装备 |
+
+    | **底材** | 生皮短靴 |
+
+    | **分类** | 护甲 |
+
+    | **需求** | 等级 1, 11 敏捷 |'
+  labels: []
+  evidence_excerpt: {}
+  verdict: correct_block
+  note: 整张属性表一个绑定标记都没有。表格已按整块算一个断言单位，但「要不要绑定」没放宽
+  pool: blocked
+  gate_reason: 事实句未绑定引用

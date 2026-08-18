@@ -70,6 +70,8 @@ python scripts/setup.py          # Windows: python scripts\setup.py
 
 # 4) 建知识库（首次会抓 POEDB，之后走本地缓存）
 .venv/bin/python -m kb.pipeline --category all
+#    可单独跑：unique_item / unique_l2 / mods / bench（工艺台目录）
+#              / metamods（元词缀矩阵）/ tree（天赋树与 Atlas）/ coverage（只刷覆盖声明）
 
 # 5) 启动服务
 .venv/bin/python main.py
@@ -454,13 +456,44 @@ PoB 排 P2 而不是 P1：它在数值上更接近一手，但不含中文名与
 | `scripts/verify_chat.py` | `/chat`、`/chat/stream`、`/item` 端到端验证，58 项（`--gap-only` 31 项，不需要凭证） |
 | `scripts/check_spec_refs.py` | 校验 spec 里的需求交叉引用 |
 
+| `scripts/eval_run.py` | 黄金问答集评测：检索侧指标 / 录制回放 / 出口闸门指标 / 人工审计清单 |
+| `scripts/import_pob_bases.py` | 导入 PoB 底材注册表，18 个装备类别（默认不联网；`--dry-run` 清点、`--category` 单类、`--fetch` 缺页补抓） |
+
+### 评测：四项指标与黄金问答集
+
+`config.yaml` 里的阈值与 `orchestrator/binding.py` 的闸门规则都需要判据，否则改动之后
+无法判断是变好还是变坏。判据来自 `tests/golden/questions.yaml`（47 条，六类样本：
+专名 / 描述性 / 数值 / 跨来源 / **确定不覆盖** / 工具路由），基线与结论记在
+`tests/golden/BASELINE.md`。
+
+```bash
+# 检索侧指标，全离线（只读 data/poe.db，不调模型）
+.venv/bin/python scripts/eval_run.py
+.venv/bin/python scripts/eval_run.py --sweep 0.3,0.5,0.7   # 扫 min_coverage 看成对代价
+
+# 录一批真实响应（需要 LLM 凭证，会消耗 token），之后离线重放
+.venv/bin/python scripts/eval_run.py --record
+.venv/bin/python scripts/eval_run.py --gate
+
+# 生成人工审计清单，结论回填 tests/golden/audit.yaml
+.venv/bin/python scripts/eval_run.py --audit
+```
+
+**录制回放而不是每次联网**：录一次真实响应存进 `tests/golden/recordings/`，之后重放
+就能回归出口闸门的行为。录制里存的是**未过闸门的模型原文**（待检材料，不是答案），
+并按 `chunk_id` 逐条校验证据正文是否仍然一致——变了就报「录制过期需重录」，
+绝不静默给出错数字。
+
+`scripts/test_search.py` 现在也读同一份 `questions.yaml`（原先内嵌了第二份用例，
+两份迟早分叉）。
+
 单元测试用标准库 `unittest`，不引入 pytest：
 
 ```bash
 .venv/bin/python -m unittest discover -s tests -t .
 ```
 
-目前 140 项：
+目前 309 项，其中与「无据不答」直接相关的：
 
 | 组 | 项数 | 重点 |
 | --- | --- | --- |
@@ -470,6 +503,10 @@ PoB 排 P2 而不是 P1：它在数值上更接近一手，但不含中文名与
 | 装备分析报告 | 15 | 「不给价格」「三项价值判断都不给结论」「最高档位不跨来源类别」 |
 | 游戏常量访问 | 14 | 缺失即抛异常，绝不给默认值 |
 | 流式闸门一致性 | 9 | 流式与批量校验的判定必须完全一致 |
+| 表格断言单位 | 10 | 表格整块算一个断言；绑定位置放宽但「要不要绑定」没放宽；表格未收齐不下发 |
+| 维度覆盖闸门 | 14 | 实体在库里 ≠ 被问的维度有数据；复合问题不整轮拒答 |
+| 缺口台账 | 10 | 排版元素不入账、归一化合并、三类来源分开 |
+| 黄金问答集自检 | 17 | 评测集本身写错会给出「看起来正常的错数字」，比报错危险 |
 
 装备相关的测试全部离线：解析器不连库，T 级匹配用内存 SQLite 打桩。
 fixture 来源逐个标注在 `tests/unit/fixtures/items/README.md`——样本的可信度决定
@@ -489,7 +526,11 @@ api/                    路由层：只做校验与编排调用，不写业务�
 orchestrator/           主循环、出口绑定闸门、引用装配
                           loop.py / binding.py / citation.py
 agents/                 领域 Agent：提示词 + 允许工具集 + 输出契约
-tools/                  工具注册与实现（kb_search / entity_lookup）
+tools/                  工具注册与实现。顺序即推荐优先级：
+                          affix_pool_odds / check_mod_combination / bench_recipe_catalog
+                          / metamod_interaction_matrix / mod_tiers / stat_sources
+                          / entity_lookup / kb_coverage / kb_search（兜底）
+craft/                  制作分析：feasibility.py 组合三态可行性 / pool.py 胸甲条件权重概率
 calc/                   常量访问层与计算器（constants.py 缺失即抛异常）
 parsers/                输入解析：装备文本、词缀档位匹配、分析报告
                           item_text.py（纯文本，不连库）/ item_mods.py / mod_bridge.py / item_report.py
@@ -498,7 +539,8 @@ kb/                     采集管线与各来源抽取器（poedb / pob）
 retrieval/              FTS5、别名、混合检索融合、分词、领域词表
 static/                 单页前端：index.html / app.js / style.css（无构建步骤）
 tests/unit/             单元测试（unittest）
-scripts/                初始化、体检、验证、导入
+tests/golden/           黄金问答集、录制回放、人工审计结论、指标基线
+scripts/                初始化、体检、验证、导入、评测
 config.yaml             声明式行为：路由前缀、检索参数、来源优先级、领域词表
 .env                    密钥（不入版本库）
 data/                   SQLite 单文件 + HTTP 缓存（不入版本库）
@@ -520,7 +562,9 @@ logs/                   按日期命名的日志（不入版本库）
   没有 tier 列，所以英文走「PoB 阶梯 ⊇ POEDB 阶梯」的指纹比对。实测弓 5/5、
   手套 5/6，但特殊来源词缀（天灾、附魔、影响词）大多桥不过去。**用 Ctrl+Alt+C
   进阶复制可以绕开这个限制**——游戏会自己带上 T 级。
-- **隐式词缀拿不到 T 级与数值范围。** 隐式来自底材，而底材库尚未入库（见下条）。
+- **隐式词缀拿不到 T 级与数值范围。** 底材库已入库（18 类 1022 条，含**英文**隐式词缀原文），
+  但 T 级与数值区间在 POEDB 的底材**详情页**上，类别列表页没有；中文隐式文本同理。
+  所以装备分析里的隐式词缀仍只能标「未匹配」。
 - **PoB 码只能识别不能解析。** 前端认得出来并明说未实现，排在 V2。
 - **会话历史只存在浏览器 `localStorage` 里**（上限 30 条）。换浏览器或清缓存就看不到
   列表了——消息本身在 `data/poe.db` 里，但没有按用户维度检索会话的接口。
@@ -536,7 +580,7 @@ logs/                   按日期命名的日志（不入版本库）
 - **混合词缀在普通复制下仍会失配。** 带 ` / ` 的多行词缀（如「+X% 全抗 /
   召唤生物 +Y% 抗性」）在库里是一条、在装备上是两行，而普通复制看不出这两行属于
   同一条词缀。进阶复制能看出来（同一个 `{ }` 头下），此时会正确拼接后反查。
-- **底材 / 技能 / 天赋树尚未入库。** PoB 有完整数据但无中文名，需先补 POEDB 对应中文页，
+- **技能石 / 万神殿 / Boss 尚未入库。**（底材与天赋树已入库。）PoB 有完整数据但无中文名，需先补 POEDB 对应中文页，
   否则 `name_zh` 只能填英文，违背中文输出要求。这条限制会传染到装备分析：隐式词缀
   查不到、护甲类只能按整个类别（多个底材页面）查 T 级而定不到具体页面。
 - **稀有装备的前后缀数量上限没有可引用来源。** `game_constant` 里查无此键，所以

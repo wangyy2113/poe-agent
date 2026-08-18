@@ -1,0 +1,20 @@
+{
+  "format_version": 1,
+  "case_id": "route_kb_coverage",
+  "query": "你的知识库covered哪些领域",
+  "recorded_at": "2026-08-18T11:51:19+08:00",
+  "model": "",
+  "tokens": {},
+  "tool_calls": [
+    "kb_search",
+    "kb_coverage"
+  ],
+  "evidence_gap": false,
+  "gap_answer": "",
+  "blocked_claims": 0,
+  "elapsed_ms": 5,
+  "evidence_fingerprint": "sha256:e3b0c44298fc1c149afbf4c8996fb924",
+  "_warning": "raw_answer 是未过出口闸门的模型原文，含可能无据的断言，不得当作事实引用",
+  "raw_answer": "",
+  "evidence": []
+}

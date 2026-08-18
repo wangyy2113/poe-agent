@@ -1,0 +1,51 @@
+{
+  "format_version": 1,
+  "case_id": "name_headhunter_zh",
+  "query": "猎首",
+  "recorded_at": "2026-08-17T18:02:09+08:00",
+  "model": "glm-5.2",
+  "tokens": {
+    "prompt": 5254,
+    "output": 595,
+    "reasoning": 50,
+    "total": 5849
+  },
+  "tool_calls": [
+    ""
+  ],
+  "evidence_gap": false,
+  "gap_answer": "",
+  "blocked_claims": 4,
+  "elapsed_ms": 10438,
+  "evidence_fingerprint": "sha256:3009c425f3374a62966232c8345bcdfa",
+  "_warning": "raw_answer 是未过出口闸门的模型原文，含可能无据的断言，不得当作事实引用",
+  "raw_answer": "# 猎首（Headhunter）\n\n**基本信息**\n- 类型：唯一装备\n- 底材：皮革腰带\n- 分类：其他\n- 需求等级：40 [[E1]]\n\n---\n\n## 猎首（原版）\n\n**隐式词缀**\n- +(25-40) 最大生命 [[E1]]\n\n**显式词缀**\n- +(40-55) 力量 [[E1]]\n- +(40-55) 敏捷 [[E1]]\n- +(50-60) 最大生命 [[E1]]\n- 击中伤害对稀有怪物提高 (20-30)% [[E1]]\n- 当你击败稀有怪物时，会获得该怪物属性修正 60 秒 [[E1]]\n\n**附加说明**\n- 当你进入迷踪状态时，你将不会被敌人所阻挡 [[E1]]\n\n---\n\n## 猎首【仿品】（Replica Headhunter）\n\n**隐式词缀**\n- +(25-40) 最大生命 [[E2]]\n\n**显式词缀**\n- +(40-55) 力量 [[E2]]\n- +(40-55) 敏捷 [[E2]]\n- +(50-60) 最大生命 [[E2]]\n- 对抗魔法怪物时，击中伤害提高 (20-30)% [[E2]]\n- 有 20% 几率在你击杀一个魔法怪物时获得其词缀，持续 60 秒 [[E2]]\n\n---\n\n## 两版差异对比\n\n两者底材、等级需求和基础词缀（力量、敏捷、最大生命）完全相同 [[E1,E2]]，核心差异在于最后两条显式词缀：\n\n| 属性 | 猎首（原版） | 猎首【仿品】 |\n|---|---|---|\n| 增伤条件 | 击中伤害**对稀有怪物**提高 (20-30)% [[E1]] | 对抗**魔法怪物**时击中伤害提高 (20-30)% [[E2]] |\n| 偷取词缀 | 击败**稀有怪物**时**必定**获得其属性修正，持续 60 秒 [[E1]] | 击杀**魔法怪物**时有 **20% 几率**获得其词缀，持续 60 秒 [[E2]] |\n\n简言之，原版猎首针对**稀有（Rare）怪物**且偷取为确定性触发 [[E1]]，仿品猎首针对**魔法（Magic）怪物**且偷取为 20% 概率触发 [[E2]]。",
+  "evidence": [
+    {
+      "label": "E1",
+      "chunk_id": "unique_item:Headhunter#0#456e5079b32c619a",
+      "entity_id": "unique_item:Headhunter",
+      "title": "猎首（Headhunter）",
+      "url": "https://poedb.tw/cn/Headhunter",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 猎首（Headhunter）\n类型：唯一装备 ｜ 底材：皮革腰带 ｜ 分类：其他\n\n**需求**：需求 等级 40\n\n**隐式词缀**\n- [隐式词缀] +(25-40) 最大生命\n\n**显式词缀**\n- [显式词缀] +(40-55) 力量\n- [显式词缀] +(40-55) 敏捷\n- [显式词缀] +(50-60) 最大生命\n- [显式词缀] 击中伤害对稀有怪物提高 (20-30)%\n- [显式词缀] 当你击败稀有怪物时，会获得该怪物属性修正 60 秒\n\n**附加说明**\n- [说明] ( 当你进入迷踪状态时, 你将不会被敌人所阻挡 )\n\n来源：POEDB → 猎首（Headhunter）\nhttps://poedb.tw/cn/Headhunter",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E2",
+      "chunk_id": "unique_item:Replica_Headhunter#0#1496799ce8df344f",
+      "entity_id": "unique_item:Replica_Headhunter",
+      "title": "猎首【仿品】（Replica Headhunter）",
+      "url": "https://poedb.tw/cn/Replica_Headhunter",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 猎首【仿品】（Replica Headhunter）\n类型：唯一装备 ｜ 底材：皮革腰带 ｜ 分类：其他\n\n**需求**：需求 等级 40\n\n**隐式词缀**\n- [隐式词缀] +(25-40) 最大生命\n\n**显式词缀**\n- [显式词缀] +(40-55) 力量\n- [显式词缀] +(40-55) 敏捷\n- [显式词缀] +(50-60) 最大生命\n- [显式词缀] 对抗魔法怪物时，击中伤害提高 (20-30)%\n- [显式词缀] 有 20% 几率在你击杀一个魔法怪物时获得其词缀，持续 60 秒。\n\n来源：POEDB → 猎首【仿品】（Replica Headhunter）\nhttps://poedb.tw/cn/Replica_Headhunter",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    }
+  ]
+}

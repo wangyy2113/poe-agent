@@ -179,6 +179,8 @@ class TestPrecisionRoute(unittest.TestCase):
         stack.enter_context(patch("orchestrator.loop._domain_terms", return_value=()))
         stack.enter_context(patch("orchestrator.loop._persist"))
         stack.enter_context(patch("orchestrator.loop._record_gaps"))
+        # 闸门拦截也走台账，同样要挡住：不挡的话单测会写真实的 data/poe.db
+        stack.enter_context(patch("orchestrator.loop._record_binding_gaps"))
         stack.enter_context(patch("orchestrator.loop.REGISTRY.call", side_effect=registry_call))
         return stack
 
@@ -793,17 +795,21 @@ class TestStructuredGapLedger(unittest.TestCase):
             loop._record_tool_result_gaps("问题", result, seen=seen)
             loop._record_tool_result_gaps("问题", result, seen=seen)
 
+        # kind='tool_gap'：结构化工具自报的缺据与检索缺口、闸门拦截分属三类待办，
+        # 台账按 kind 分组后只有前两类参与采集优先级排序（见 core.db.GAP_KINDS）。
         self.assertEqual(record.call_count, 3)
         record.assert_any_call(
-            "问题", ["[target_not_resolved] 目标未召回"], category="not_recalled/mod_affix"
+            "问题", ["[target_not_resolved] 目标未召回"],
+            category="not_recalled/mod_affix", kind="tool_gap",
         )
         record.assert_any_call(
             "问题",
             ["[candidate_search_truncated] 候选超过上限"],
-            category="analysis_limit/craft_feasibility",
+            category="analysis_limit/craft_feasibility", kind="tool_gap",
         )
         record.assert_any_call(
-            "问题", ["[affix_capacity] 容量规则缺失"], category="not_collected/craft_rule"
+            "问题", ["[affix_capacity] 容量规则缺失"],
+            category="not_collected/craft_rule", kind="tool_gap",
         )
 
 

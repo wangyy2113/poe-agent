@@ -1,0 +1,130 @@
+{
+  "format_version": 1,
+  "case_id": "route_entity_lookup",
+  "query": "冈姆的壮志的完整词缀列表",
+  "recorded_at": "2026-08-18T11:51:19+08:00",
+  "model": "glm-5.2",
+  "tokens": {
+    "prompt": 9885,
+    "output": 385,
+    "reasoning": 185,
+    "total": 10270
+  },
+  "tool_calls": [
+    "kb_search",
+    "entity_lookup"
+  ],
+  "evidence_gap": false,
+  "gap_answer": "",
+  "blocked_claims": 3,
+  "elapsed_ms": 7452,
+  "evidence_fingerprint": "sha256:f3f31168a4a17cd6f2c4450859233938",
+  "_warning": "raw_answer 是未过出口闸门的模型原文，含可能无据的断言，不得当作事实引用",
+  "raw_answer": "## 冈姆的壮志（Kaom's Heart）完整词缀列表\n\n根据检索到的证据，冈姆的壮志的完整信息如下：\n\n- **类型**：唯一装备　底材：荣耀战铠　分类：护甲[[E1]]\n- **需求**：等级 68，力量 191[[E1]]\n\n### 显式词缀\n\n| # | 词缀文本 |\n|---|---------|\n| 1 | 没有插槽[[E1]] |\n| 2 | +1000 最大生命[[E1]] |\n\n以上即为证据 [E1] 中列出的全部显式词缀，共 2 条。\n\n**注意**：证据 [E1] 未列出该装备的隐式词缀。如果荣耀战铠底材本身有隐式词缀，上述清单不包含隐式部分。如需确认隐式词缀，建议查阅 POEDB 的底材页面。",
+  "evidence": [
+    {
+      "label": "E1",
+      "chunk_id": "unique_item:Kaoms_Heart#0#69d0a9d66ada19c9",
+      "entity_id": "unique_item:Kaoms_Heart",
+      "title": "冈姆的壮志（Kaom's Heart）",
+      "url": "https://poedb.tw/cn/Kaoms_Heart",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 冈姆的壮志（Kaom's Heart）\n类型：唯一装备 ｜ 底材：荣耀战铠 ｜ 分类：护甲\n\n**需求**：需求 等级 68, 191 力量\n\n**显式词缀**\n- [显式词缀] 没有插槽\n- [显式词缀] +1000 最大生命\n\n来源：POEDB → 冈姆的壮志（Kaom's Heart）\nhttps://poedb.tw/cn/Kaoms_Heart",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E2",
+      "chunk_id": "mod_ladder:Body_Armours_dex:Keystone#7ef0851e0427fca3",
+      "entity_id": "mod_ladder:Body_Armours_dex:Keystone",
+      "title": "胸甲（敏捷） · Keystone",
+      "url": "https://poedb.tw/cn/Body_Armours_dex#ModifiersCalc",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 胸甲（敏捷） · Keystone\n底材类别：胸甲（敏捷） ｜ 词缀组：Keystone ｜ 类型：其他/后缀 ｜ 来源渠道：2 个\n标签：防御、闪避值、护甲、生命、能量护盾、魔力、伤害、元素、火焰、召唤生物、攻击、暴击、施法、物理、异常状态、光环、诅咒\n\n本词缀组在该底材上共 69 条，来自 2 个来源：异度天灾 有利、重组器。\n互斥规则：与本组（Keystone）有相同词缀组的其他词缀不能同时存在于一件装备上。\n⚠ 同一条词缀文本在本卡的多个来源里都出现 → 仅凭装备上的数值**无法判断**它出自哪个来源，回答时必须并列各种可能。\n\n## 异度天灾 有利 · 其他 · 39 条\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/1 | HellscapeUpsideMonsterNemesisOndarsGuile1__ | 投射物闪避 | 68 | 10（0.0199%） |\n| T1/1 | HellscapeUpsideConduit1 | 能量连接 | 68 | 10（0.0199%） |\n| T1/1 | HellscapeUpsideIronReflexes1__ | 霸体 | 68 | 10（0.0199%） |\n| T1/1 | HellscapeUpsideUnwaveringStance1 | 烈士意志 | 68 | 10（0.0199%） |\n| T1/1 | HellscapeUpsideEternalYouth1_ | 靑春永驻 | 68 | 10（0.0199%） |\n| T1/1 | HellscapeUpsideWindDancer1 | 风舞者 | 68 | 10（0.0199%） |\n| T1/1 | HellscapeUpsideGlancingBlows1 | 斗转星移 | 68 | 10（0.0199%） |\n| T1/1 | HellscapeUpsideSacredBastion1_ | 失衡卫士 | 68 | 10（0.0199%） |\n| T1/1 | HellscapeUpsideManaShield1_ | 心灵升华 | 68 | 10（0.0199%） |\n| T1/1 | HellscapeUpsideWickedWard1 | 恶毒结界 | 68 | 10（0.0199%） |\n| T1/1 | HellscapeUpsideKeystoneMinionInstability | 复仇之灵 | 68 | 10（0.0199%） |\n| T1/1 | HellscapeUpsideKeystoneResoluteTechnique | 坚毅之心 | 68 | 10（0.0199%） |\n| T1/1",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E3",
+      "chunk_id": "mod_ladder:Body_Armours_int:Keystone#1196fc6cc215f3c9",
+      "entity_id": "mod_ladder:Body_Armours_int:Keystone",
+      "title": "胸甲（智慧） · Keystone",
+      "url": "https://poedb.tw/cn/Body_Armours_int#ModifiersCalc",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 胸甲（智慧） · Keystone\n底材类别：胸甲（智慧） ｜ 词缀组：Keystone ｜ 类型：其他/后缀 ｜ 来源渠道：2 个\n标签：防御、闪避值、护甲、生命、能量护盾、魔力、伤害、元素、火焰、召唤生物、攻击、暴击、施法、物理、异常状态、光环、诅咒\n\n本词缀组在该底材上共 69 条，来自 2 个来源：异度天灾 有利、重组器。\n互斥规则：与本组（Keystone）有相同词缀组的其他词缀不能同时存在于一件装备上。\n⚠ 同一条词缀文本在本卡的多个来源里都出现 → 仅凭装备上的数值**无法判断**它出自哪个来源，回答时必须并列各种可能。\n\n## 异度天灾 有利 · 其他 · 39 条\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/1 | HellscapeUpsideMonsterNemesisOndarsGuile1__ | 投射物闪避 | 68 | 10（0.0199%） |\n| T1/1 | HellscapeUpsideConduit1 | 能量连接 | 68 | 10（0.0199%） |\n| T1/1 | HellscapeUpsideIronReflexes1__ | 霸体 | 68 | 10（0.0199%） |\n| T1/1 | HellscapeUpsideUnwaveringStance1 | 烈士意志 | 68 | 10（0.0199%） |\n| T1/1 | HellscapeUpsideEternalYouth1_ | 靑春永驻 | 68 | 10（0.0199%） |\n| T1/1 | HellscapeUpsideWindDancer1 | 风舞者 | 68 | 10（0.0199%） |\n| T1/1 | HellscapeUpsideGlancingBlows1 | 斗转星移 | 68 | 10（0.0199%） |\n| T1/1 | HellscapeUpsideSacredBastion1_ | 失衡卫士 | 68 | 10（0.0199%） |\n| T1/1 | HellscapeUpsideManaShield1_ | 心灵升华 | 68 | 10（0.0199%） |\n| T1/1 | HellscapeUpsideWickedWard1 | 恶毒结界 | 68 | 10（0.0199%） |\n| T1/1 | HellscapeUpsideKeystoneMinionInstability | 复仇之灵 | 68 | 10（0.0199%） |\n| T1/1 | HellscapeUpsideKeystoneResoluteTechnique | 坚毅之心 | 68 | 10（0.0199%） |\n| T1/1",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E4",
+      "chunk_id": "mod_ladder:Body_Armours_str:Keystone#387e7aa6125cdd69",
+      "entity_id": "mod_ladder:Body_Armours_str:Keystone",
+      "title": "胸甲（力量） · Keystone",
+      "url": "https://poedb.tw/cn/Body_Armours_str#ModifiersCalc",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 胸甲（力量） · Keystone\n底材类别：胸甲（力量） ｜ 词缀组：Keystone ｜ 类型：其他/后缀 ｜ 来源渠道：2 个\n标签：防御、闪避值、护甲、生命、能量护盾、魔力、伤害、元素、火焰、召唤生物、攻击、暴击、施法、物理、异常状态、光环、诅咒\n\n本词缀组在该底材上共 69 条，来自 2 个来源：异度天灾 有利、重组器。\n互斥规则：与本组（Keystone）有相同词缀组的其他词缀不能同时存在于一件装备上。\n⚠ 同一条词缀文本在本卡的多个来源里都出现 → 仅凭装备上的数值**无法判断**它出自哪个来源，回答时必须并列各种可能。\n\n## 异度天灾 有利 · 其他 · 39 条\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/1 | HellscapeUpsideMonsterNemesisOndarsGuile1__ | 投射物闪避 | 68 | 10（0.0199%） |\n| T1/1 | HellscapeUpsideConduit1 | 能量连接 | 68 | 10（0.0199%） |\n| T1/1 | HellscapeUpsideIronReflexes1__ | 霸体 | 68 | 10（0.0199%） |\n| T1/1 | HellscapeUpsideUnwaveringStance1 | 烈士意志 | 68 | 10（0.0199%） |\n| T1/1 | HellscapeUpsideEternalYouth1_ | 靑春永驻 | 68 | 10（0.0199%） |\n| T1/1 | HellscapeUpsideWindDancer1 | 风舞者 | 68 | 10（0.0199%） |\n| T1/1 | HellscapeUpsideGlancingBlows1 | 斗转星移 | 68 | 10（0.0199%） |\n| T1/1 | HellscapeUpsideSacredBastion1_ | 失衡卫士 | 68 | 10（0.0199%） |\n| T1/1 | HellscapeUpsideManaShield1_ | 心灵升华 | 68 | 10（0.0199%） |\n| T1/1 | HellscapeUpsideWickedWard1 | 恶毒结界 | 68 | 10（0.0199%） |\n| T1/1 | HellscapeUpsideKeystoneMinionInstability | 复仇之灵 | 68 | 10（0.0199%） |\n| T1/1 | HellscapeUpsideKeystoneResoluteTechnique | 坚毅之心 | 68 | 10（0.0199%） |\n| T1/1",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E5",
+      "chunk_id": "mod_ladder:Body_Armours_dex_int:Keystone#d1b4acad3c4bd62b",
+      "entity_id": "mod_ladder:Body_Armours_dex_int:Keystone",
+      "title": "胸甲（敏智） · Keystone",
+      "url": "https://poedb.tw/cn/Body_Armours_dex_int#ModifiersCalc",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 胸甲（敏智） · Keystone\n底材类别：胸甲（敏智） ｜ 词缀组：Keystone ｜ 类型：其他/后缀 ｜ 来源渠道：2 个\n标签：防御、闪避值、护甲、生命、能量护盾、魔力、伤害、元素、火焰、召唤生物、攻击、暴击、施法、物理、异常状态、光环、诅咒\n\n本词缀组在该底材上共 69 条，来自 2 个来源：异度天灾 有利、重组器。\n互斥规则：与本组（Keystone）有相同词缀组的其他词缀不能同时存在于一件装备上。\n⚠ 同一条词缀文本在本卡的多个来源里都出现 → 仅凭装备上的数值**无法判断**它出自哪个来源，回答时必须并列各种可能。\n\n## 异度天灾 有利 · 其他 · 39 条\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/1 | HellscapeUpsideMonsterNemesisOndarsGuile1__ | 投射物闪避 | 68 | 10（0.0191%） |\n| T1/1 | HellscapeUpsideConduit1 | 能量连接 | 68 | 10（0.0191%） |\n| T1/1 | HellscapeUpsideIronReflexes1__ | 霸体 | 68 | 10（0.0191%） |\n| T1/1 | HellscapeUpsideUnwaveringStance1 | 烈士意志 | 68 | 10（0.0191%） |\n| T1/1 | HellscapeUpsideEternalYouth1_ | 靑春永驻 | 68 | 10（0.0191%） |\n| T1/1 | HellscapeUpsideWindDancer1 | 风舞者 | 68 | 10（0.0191%） |\n| T1/1 | HellscapeUpsideGlancingBlows1 | 斗转星移 | 68 | 10（0.0191%） |\n| T1/1 | HellscapeUpsideSacredBastion1_ | 失衡卫士 | 68 | 10（0.0191%） |\n| T1/1 | HellscapeUpsideManaShield1_ | 心灵升华 | 68 | 10（0.0191%） |\n| T1/1 | HellscapeUpsideWickedWard1 | 恶毒结界 | 68 | 10（0.0191%） |\n| T1/1 | HellscapeUpsideKeystoneMinionInstability | 复仇之灵 | 68 | 10（0.0191%） |\n| T1/1 | HellscapeUpsideKeystoneResoluteTechnique | 坚毅之心 | 68 | 10（0.0191%） |\n| T1/1",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E6",
+      "chunk_id": "mod_ladder:Body_Armours_str_dex:Keystone#1ae74556fdc4bf63",
+      "entity_id": "mod_ladder:Body_Armours_str_dex:Keystone",
+      "title": "胸甲（力敏） · Keystone",
+      "url": "https://poedb.tw/cn/Body_Armours_str_dex#ModifiersCalc",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 胸甲（力敏） · Keystone\n底材类别：胸甲（力敏） ｜ 词缀组：Keystone ｜ 类型：其他/后缀 ｜ 来源渠道：2 个\n标签：防御、闪避值、护甲、生命、能量护盾、魔力、伤害、元素、火焰、召唤生物、攻击、暴击、施法、物理、异常状态、光环、诅咒\n\n本词缀组在该底材上共 69 条，来自 2 个来源：异度天灾 有利、重组器。\n互斥规则：与本组（Keystone）有相同词缀组的其他词缀不能同时存在于一件装备上。\n⚠ 同一条词缀文本在本卡的多个来源里都出现 → 仅凭装备上的数值**无法判断**它出自哪个来源，回答时必须并列各种可能。\n\n## 异度天灾 有利 · 其他 · 39 条\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/1 | HellscapeUpsideMonsterNemesisOndarsGuile1__ | 投射物闪避 | 68 | 10（0.0191%） |\n| T1/1 | HellscapeUpsideConduit1 | 能量连接 | 68 | 10（0.0191%） |\n| T1/1 | HellscapeUpsideIronReflexes1__ | 霸体 | 68 | 10（0.0191%） |\n| T1/1 | HellscapeUpsideUnwaveringStance1 | 烈士意志 | 68 | 10（0.0191%） |\n| T1/1 | HellscapeUpsideEternalYouth1_ | 靑春永驻 | 68 | 10（0.0191%） |\n| T1/1 | HellscapeUpsideWindDancer1 | 风舞者 | 68 | 10（0.0191%） |\n| T1/1 | HellscapeUpsideGlancingBlows1 | 斗转星移 | 68 | 10（0.0191%） |\n| T1/1 | HellscapeUpsideSacredBastion1_ | 失衡卫士 | 68 | 10（0.0191%） |\n| T1/1 | HellscapeUpsideManaShield1_ | 心灵升华 | 68 | 10（0.0191%） |\n| T1/1 | HellscapeUpsideWickedWard1 | 恶毒结界 | 68 | 10（0.0191%） |\n| T1/1 | HellscapeUpsideKeystoneMinionInstability | 复仇之灵 | 68 | 10（0.0191%） |\n| T1/1 | HellscapeUpsideKeystoneResoluteTechnique | 坚毅之心 | 68 | 10（0.0191%） |\n| T1/1",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E7",
+      "chunk_id": "mod_ladder:Body_Armours_str_int:Keystone#d77e597b47925fa7",
+      "entity_id": "mod_ladder:Body_Armours_str_int:Keystone",
+      "title": "胸甲（力智） · Keystone",
+      "url": "https://poedb.tw/cn/Body_Armours_str_int#ModifiersCalc",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 胸甲（力智） · Keystone\n底材类别：胸甲（力智） ｜ 词缀组：Keystone ｜ 类型：其他/后缀 ｜ 来源渠道：2 个\n标签：防御、闪避值、护甲、生命、能量护盾、魔力、伤害、元素、火焰、召唤生物、攻击、暴击、施法、物理、异常状态、光环、诅咒\n\n本词缀组在该底材上共 69 条，来自 2 个来源：异度天灾 有利、重组器。\n互斥规则：与本组（Keystone）有相同词缀组的其他词缀不能同时存在于一件装备上。\n⚠ 同一条词缀文本在本卡的多个来源里都出现 → 仅凭装备上的数值**无法判断**它出自哪个来源，回答时必须并列各种可能。\n\n## 异度天灾 有利 · 其他 · 39 条\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/1 | HellscapeUpsideMonsterNemesisOndarsGuile1__ | 投射物闪避 | 68 | 10（0.0191%） |\n| T1/1 | HellscapeUpsideConduit1 | 能量连接 | 68 | 10（0.0191%） |\n| T1/1 | HellscapeUpsideIronReflexes1__ | 霸体 | 68 | 10（0.0191%） |\n| T1/1 | HellscapeUpsideUnwaveringStance1 | 烈士意志 | 68 | 10（0.0191%） |\n| T1/1 | HellscapeUpsideEternalYouth1_ | 靑春永驻 | 68 | 10（0.0191%） |\n| T1/1 | HellscapeUpsideWindDancer1 | 风舞者 | 68 | 10（0.0191%） |\n| T1/1 | HellscapeUpsideGlancingBlows1 | 斗转星移 | 68 | 10（0.0191%） |\n| T1/1 | HellscapeUpsideSacredBastion1_ | 失衡卫士 | 68 | 10（0.0191%） |\n| T1/1 | HellscapeUpsideManaShield1_ | 心灵升华 | 68 | 10（0.0191%） |\n| T1/1 | HellscapeUpsideWickedWard1 | 恶毒结界 | 68 | 10（0.0191%） |\n| T1/1 | HellscapeUpsideKeystoneMinionInstability | 复仇之灵 | 68 | 10（0.0191%） |\n| T1/1 | HellscapeUpsideKeystoneResoluteTechnique | 坚毅之心 | 68 | 10（0.0191%） |\n| T1/1",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E8",
+      "chunk_id": "mod_ladder:Body_Armours_str_dex_int:Keystone#1e5b22d7dc53b896",
+      "entity_id": "mod_ladder:Body_Armours_str_dex_int:Keystone",
+      "title": "胸甲（力敏智） · Keystone",
+      "url": "https://poedb.tw/cn/Body_Armours_str_dex_int#ModifiersCalc",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 胸甲（力敏智） · Keystone\n底材类别：胸甲（力敏智） ｜ 词缀组：Keystone ｜ 类型：其他/后缀 ｜ 来源渠道：2 个\n标签：防御、闪避值、护甲、生命、能量护盾、魔力、伤害、元素、火焰、召唤生物、攻击、暴击、施法、物理、异常状态、光环、诅咒\n\n本词缀组在该底材上共 69 条，来自 2 个来源：异度天灾 有利、重组器。\n互斥规则：与本组（Keystone）有相同词缀组的其他词缀不能同时存在于一件装备上。\n⚠ 同一条词缀文本在本卡的多个来源里都出现 → 仅凭装备上的数值**无法判断**它出自哪个来源，回答时必须并列各种可能。\n\n## 异度天灾 有利 · 其他 · 39 条\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/1 | HellscapeUpsideMonsterNemesisOndarsGuile1__ | 投射物闪避 | 68 | 10（0.0185%） |\n| T1/1 | HellscapeUpsideConduit1 | 能量连接 | 68 | 10（0.0185%） |\n| T1/1 | HellscapeUpsideIronReflexes1__ | 霸体 | 68 | 10（0.0185%） |\n| T1/1 | HellscapeUpsideUnwaveringStance1 | 烈士意志 | 68 | 10（0.0185%） |\n| T1/1 | HellscapeUpsideEternalYouth1_ | 靑春永驻 | 68 | 10（0.0185%） |\n| T1/1 | HellscapeUpsideWindDancer1 | 风舞者 | 68 | 10（0.0185%） |\n| T1/1 | HellscapeUpsideGlancingBlows1 | 斗转星移 | 68 | 10（0.0185%） |\n| T1/1 | HellscapeUpsideSacredBastion1_ | 失衡卫士 | 68 | 10（0.0185%） |\n| T1/1 | HellscapeUpsideManaShield1_ | 心灵升华 | 68 | 10（0.0185%） |\n| T1/1 | HellscapeUpsideWickedWard1 | 恶毒结界 | 68 | 10（0.0185%） |\n| T1/1 | HellscapeUpsideKeystoneMinionInstability | 复仇之灵 | 68 | 10（0.0185%） |\n| T1/1 | HellscapeUpsideKeystoneResoluteTechnique | 坚毅之心 | 68 | 10（0.0185%） |\n| T1",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    }
+  ]
+}

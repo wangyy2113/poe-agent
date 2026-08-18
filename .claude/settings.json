@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "permissions": {
+    "allow": [
+      "Bash(.venv/bin/python -m unittest*)",
+      "Bash(.venv/bin/python scripts/selfcheck.py*)",
+      "Bash(.venv/bin/python scripts/check_spec_refs.py*)",
+      "Bash(.venv/bin/python scripts/test_search.py*)",
+      "Bash(.venv/bin/python scripts/eval_run.py)",
+      "Bash(.venv/bin/python scripts/eval_run.py --gate*)",
+      "Bash(.venv/bin/python scripts/eval_run.py --audit*)",
+      "Bash(.venv/bin/python scripts/eval_run.py --sweep*)",
+      "Bash(.venv/bin/python scripts/eval_run.py --kind*)",
+      "Bash(.venv/bin/python scripts/eval_run.py --json*)",
+      "Bash(.venv/bin/python scripts/eval_run.py -v*)",
+      "Bash(.venv/bin/python scripts/verify_mods.py*)",
+      "Bash(.venv/bin/python scripts/verify_uniques.py*)",
+      "Bash(.venv/bin/python scripts/verify_pob_mods.py*)",
+      "Bash(.venv/bin/python scripts/verify_pob_uniques.py*)",
+      "Bash(.venv/bin/python scripts/verify_craft_pool.py*)",
+      "Bash(.venv/bin/python scripts/verify_tree.py*)",
+      "Bash(.venv/bin/python scripts/verify_index_pages.py*)",
+      "Bash(.venv/bin/python scripts/verify_against_detail.py*)",
+      "Bash(.venv/bin/python scripts/verify_chat.py --gap-only*)",
+      "Bash(.venv/bin/python scripts/verify_llm.py --offline*)",
+      "Bash(.venv/bin/python scripts/probe_pob.py*)",
+      "Bash(.venv/bin/python scripts/import_pob_bases.py --dry-run*)",
+      "Bash(.venv/bin/python scripts/import_pob_mods.py --dry-run*)",
+      "Bash(.venv/bin/python -m kb.pipeline --category coverage*)",
+      "Bash(git status*)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(git show*)",
+      "Bash(curl -s http://127.0.0.1:8787/*)",
+      "Bash(curl -sS http://127.0.0.1:8787/*)",
+      "Bash(lsof -nP -iTCP:8787*)"
+    ],
+    "ask": [
+      "Bash(.venv/bin/python scripts/eval_run.py --record*)",
+      "Bash(.venv/bin/python scripts/verify_llm.py)",
+      "Bash(.venv/bin/python scripts/verify_chat.py)",
+      "Bash(.venv/bin/python scripts/probe_gateway.py*)",
+      "Bash(.venv/bin/python -m kb.pipeline*)",
+      "Edit(.env)",
+      "Write(.env)"
+    ],
+    "deny": [
+      "Bash(rm -rf data*)",
+      "Bash(rm -r data*)",
+      "Bash(rm data/poe.db*)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "if": "Edit",
+            "command": "jq -c 'if ((.tool_input.file_path // .tool_response.filePath // \"\") | test(\"(orchestrator/(binding|loop)|retrieval/hybrid|kb/coverage)\\\\.py$\")) then {systemMessage:\"⚠️ 改动了闸门/检索层：跑 scripts/eval_run.py（检索侧）与 --gate（闸门），与 tests/golden/BASELINE.md 成对对比 —— 错误拒答与无据漏出必须一起看\", hookSpecificOutput:{hookEventName:\"PostToolUse\", additionalContext:\"刚改的是「无据不答」的判定层。收工前请跑这三项并与 tests/golden/BASELINE.md 的基线对比：(1) .venv/bin/python -m unittest discover -s tests -t . (2) .venv/bin/python scripts/eval_run.py (3) .venv/bin/python scripts/eval_run.py --gate 。收紧规则会带来错误拒答，放宽会带来无据漏出，两个方向必须成对报告，只压一头不算完成。\"}} else empty end'",
+            "statusMessage": "检查是否改到了闸门层"
+          }
+        ]
+      }
+    ]
+  }
+}

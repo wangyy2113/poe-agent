@@ -1,0 +1,129 @@
+{
+  "format_version": 1,
+  "case_id": "name_headhunter_context",
+  "query": "猎首这件装备有什么词缀",
+  "recorded_at": "2026-08-17T18:02:13+08:00",
+  "model": "glm-5.2",
+  "tokens": {
+    "prompt": 10185,
+    "output": 204,
+    "reasoning": 31,
+    "total": 10389
+  },
+  "tool_calls": [
+    ""
+  ],
+  "evidence_gap": false,
+  "gap_answer": "",
+  "blocked_claims": 0,
+  "elapsed_ms": 4624,
+  "evidence_fingerprint": "sha256:9c0f596954a775319ffd614672511e29",
+  "_warning": "raw_answer 是未过出口闸门的模型原文，含可能无据的断言，不得当作事实引用",
+  "raw_answer": "## 猎首（Headhunter）词缀一览\n\n猎首的底材是**皮革腰带**，需求等级 40[[E1]]。\n\n### 隐式词缀\n- **+(25-40) 最大生命**[[E1]]\n\n### 显式词缀\n- **+(40-55) 力量**[[E1]]\n- **+(40-55) 敏捷**[[E1]]\n- **+(50-60) 最大生命**[[E1]]\n- **击中伤害对稀有怪物提高 (20-30)%**[[E1]]\n- **当你击败稀有怪物时，会获得该怪物属性修正 60 秒**[[E1]]\n\n### 附加说明\n- 当你进入迷踪状态时，你将不会被敌人所阻挡[[E1]]",
+  "evidence": [
+    {
+      "label": "E1",
+      "chunk_id": "unique_item:Headhunter#0#456e5079b32c619a",
+      "entity_id": "unique_item:Headhunter",
+      "title": "猎首（Headhunter）",
+      "url": "https://poedb.tw/cn/Headhunter",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 猎首（Headhunter）\n类型：唯一装备 ｜ 底材：皮革腰带 ｜ 分类：其他\n\n**需求**：需求 等级 40\n\n**隐式词缀**\n- [隐式词缀] +(25-40) 最大生命\n\n**显式词缀**\n- [显式词缀] +(40-55) 力量\n- [显式词缀] +(40-55) 敏捷\n- [显式词缀] +(50-60) 最大生命\n- [显式词缀] 击中伤害对稀有怪物提高 (20-30)%\n- [显式词缀] 当你击败稀有怪物时，会获得该怪物属性修正 60 秒\n\n**附加说明**\n- [说明] ( 当你进入迷踪状态时, 你将不会被敌人所阻挡 )\n\n来源：POEDB → 猎首（Headhunter）\nhttps://poedb.tw/cn/Headhunter",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E2",
+      "chunk_id": "mod_ladder:Bows:CriticalStrikeChanceIncrease#3fdc2dc9804b294f",
+      "entity_id": "mod_ladder:Bows:CriticalStrikeChanceIncrease",
+      "title": "弓 · CriticalStrikeChanceIncrease",
+      "url": "https://poedb.tw/cn/Bows#ModifiersCalc",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 弓 · CriticalStrikeChanceIncrease\n底材类别：弓 ｜ 词缀组：CriticalStrikeChanceIncrease ｜ 类型：后缀/其他 ｜ 来源渠道：8 个\n标签：攻击、暴击、属性、伤害\n\n本词缀组在该底材上共 26 条，来自 8 个来源：Base、工艺工作台、精华、虚空忆境、已腐化、裂界者、塑界者、隐匿。\n互斥规则：与本组（CriticalStrikeChanceIncrease）有相同词缀组的其他词缀不能同时存在于一件装备上。\n⚠ 同一条词缀文本在本卡的多个来源里都出现 → 仅凭装备上的数值**无法判断**它出自哪个来源，回答时必须并列各种可能。\n\n## Base · 后缀 · 6 档\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/6 | 手术之 | 该装备的攻击暴击率提高 (35-38)% | 73 | 1000（1.692%） |\n| T2/6 | 穿透之 | 该装备的攻击暴击率提高 (30-34)% | 59 | 1000（1.692%） |\n| T3/6 | 穿孔之 | 该装备的攻击暴击率提高 (25-29)% | 44 | 1000（1.692%） |\n| T4/6 | 刺穿之 | 该装备的攻击暴击率提高 (20-24)% | 30 | 1000（1.692%） |\n| T5/6 | 刺痛之 | 该装备的攻击暴击率提高 (15-19)% | 20 | 1000（1.692%） |\n| T6/6 | 针刺之 | 该装备的攻击暴击率提高 (10-14)% | 1 | 1000（1.692%） |\n\n## 工艺工作台 · 后缀 · 5 档\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/3 | 工艺之 | 该装备的攻击暴击率提高 (25-27)% | 75 | 无数据 |\n| T1/3 | 工艺之 | +(20-24) 力量和智慧 / 该装备的攻击暴击率提高 (21-25)% | 75 | 无数据 |\n| T2/3 | 工艺之 | 该装备的攻击暴击率提高 (20-24)% | 60 | 无数据 |\n| T2/3 | 工艺之 | +(15-19) 力量和智慧 / 该装备的攻击暴击率提高 (15-20)% | 60 | 无数据 |\n| T3/3 | 工艺之 | 该装备的攻击暴击率提高 (17-19)% | 40 | 无数据 |\n\n> 本来源无生成权重数据，**不能据此给出成功率或概率**。\n\n## 精华 · 后缀 · 4 档\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- ",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E3",
+      "chunk_id": "mod_ladder:Staves:CriticalStrikeChanceIncrease#05b25cc791c48fa9",
+      "entity_id": "mod_ladder:Staves:CriticalStrikeChanceIncrease",
+      "title": "长杖 · CriticalStrikeChanceIncrease",
+      "url": "https://poedb.tw/cn/Staves#ModifiersCalc",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 长杖 · CriticalStrikeChanceIncrease\n底材类别：长杖 ｜ 词缀组：CriticalStrikeChanceIncrease ｜ 类型：后缀/其他 ｜ 来源渠道：8 个\n标签：攻击、暴击、属性、伤害\n\n本词缀组在该底材上共 26 条，来自 8 个来源：Base、工艺工作台、精华、虚空忆境、已腐化、裂界者、塑界者、隐匿。\n互斥规则：与本组（CriticalStrikeChanceIncrease）有相同词缀组的其他词缀不能同时存在于一件装备上。\n⚠ 同一条词缀文本在本卡的多个来源里都出现 → 仅凭装备上的数值**无法判断**它出自哪个来源，回答时必须并列各种可能。\n\n## Base · 后缀 · 6 档\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/6 | 手术之 | 该装备的攻击暴击率提高 (35-38)% | 73 | 1000（1.0935%） |\n| T2/6 | 穿透之 | 该装备的攻击暴击率提高 (30-34)% | 59 | 1000（1.0935%） |\n| T3/6 | 穿孔之 | 该装备的攻击暴击率提高 (25-29)% | 44 | 1000（1.0935%） |\n| T4/6 | 刺穿之 | 该装备的攻击暴击率提高 (20-24)% | 30 | 1000（1.0935%） |\n| T5/6 | 刺痛之 | 该装备的攻击暴击率提高 (15-19)% | 20 | 1000（1.0935%） |\n| T6/6 | 针刺之 | 该装备的攻击暴击率提高 (10-14)% | 1 | 1000（1.0935%） |\n\n## 工艺工作台 · 后缀 · 5 档\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/3 | 工艺之 | 该装备的攻击暴击率提高 (25-27)% | 75 | 无数据 |\n| T1/3 | 工艺之 | +(20-24) 力量和智慧 / 该装备的攻击暴击率提高 (21-25)% | 75 | 无数据 |\n| T2/3 | 工艺之 | 该装备的攻击暴击率提高 (20-24)% | 60 | 无数据 |\n| T2/3 | 工艺之 | +(15-19) 力量和智慧 / 该装备的攻击暴击率提高 (15-20)% | 60 | 无数据 |\n| T3/3 | 工艺之 | 该装备的攻击暴击率提高 (17-19)% | 40 | 无数据 |\n\n> 本来源无生成权重数据，**不能据此给出成功率或概率**。\n\n## 精华 · 后缀 · 4 档\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E4",
+      "chunk_id": "mod_ladder:Warstaves:CriticalStrikeChanceIncrease#1bb681f9038875fe",
+      "entity_id": "mod_ladder:Warstaves:CriticalStrikeChanceIncrease",
+      "title": "战杖 · CriticalStrikeChanceIncrease",
+      "url": "https://poedb.tw/cn/Warstaves#ModifiersCalc",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 战杖 · CriticalStrikeChanceIncrease\n底材类别：战杖 ｜ 词缀组：CriticalStrikeChanceIncrease ｜ 类型：后缀/其他 ｜ 来源渠道：8 个\n标签：攻击、暴击、属性、伤害\n\n本词缀组在该底材上共 26 条，来自 8 个来源：Base、工艺工作台、精华、虚空忆境、已腐化、裂界者、塑界者、隐匿。\n互斥规则：与本组（CriticalStrikeChanceIncrease）有相同词缀组的其他词缀不能同时存在于一件装备上。\n⚠ 同一条词缀文本在本卡的多个来源里都出现 → 仅凭装备上的数值**无法判断**它出自哪个来源，回答时必须并列各种可能。\n\n## Base · 后缀 · 6 档\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/6 | 手术之 | 该装备的攻击暴击率提高 (35-38)% | 73 | 1000（1.1442%） |\n| T2/6 | 穿透之 | 该装备的攻击暴击率提高 (30-34)% | 59 | 1000（1.1442%） |\n| T3/6 | 穿孔之 | 该装备的攻击暴击率提高 (25-29)% | 44 | 1000（1.1442%） |\n| T4/6 | 刺穿之 | 该装备的攻击暴击率提高 (20-24)% | 30 | 1000（1.1442%） |\n| T5/6 | 刺痛之 | 该装备的攻击暴击率提高 (15-19)% | 20 | 1000（1.1442%） |\n| T6/6 | 针刺之 | 该装备的攻击暴击率提高 (10-14)% | 1 | 1000（1.1442%） |\n\n## 工艺工作台 · 后缀 · 5 档\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/3 | 工艺之 | 该装备的攻击暴击率提高 (25-27)% | 75 | 无数据 |\n| T1/3 | 工艺之 | +(20-24) 力量和智慧 / 该装备的攻击暴击率提高 (21-25)% | 75 | 无数据 |\n| T2/3 | 工艺之 | 该装备的攻击暴击率提高 (20-24)% | 60 | 无数据 |\n| T2/3 | 工艺之 | +(15-19) 力量和智慧 / 该装备的攻击暴击率提高 (15-20)% | 60 | 无数据 |\n| T3/3 | 工艺之 | 该装备的攻击暴击率提高 (17-19)% | 40 | 无数据 |\n\n> 本来源无生成权重数据，**不能据此给出成功率或概率**。\n\n## 精华 · 后缀 · 4 档\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E5",
+      "chunk_id": "mod_ladder:Claws:CriticalStrikeChanceIncrease#b2cb81fde399fbc1",
+      "entity_id": "mod_ladder:Claws:CriticalStrikeChanceIncrease",
+      "title": "爪 · CriticalStrikeChanceIncrease",
+      "url": "https://poedb.tw/cn/Claws#ModifiersCalc",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 爪 · CriticalStrikeChanceIncrease\n底材类别：爪 ｜ 词缀组：CriticalStrikeChanceIncrease ｜ 类型：后缀/其他 ｜ 来源渠道：7 个\n标签：攻击、暴击、属性、宝石\n\n本词缀组在该底材上共 24 条，来自 7 个来源：Base、工艺工作台、精华、虚空忆境、已腐化、塑界者、隐匿。\n互斥规则：与本组（CriticalStrikeChanceIncrease）有相同词缀组的其他词缀不能同时存在于一件装备上。\n⚠ 同一条词缀文本在本卡的多个来源里都出现 → 仅凭装备上的数值**无法判断**它出自哪个来源，回答时必须并列各种可能。\n\n## Base · 后缀 · 6 档\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/6 | 手术之 | 该装备的攻击暴击率提高 (35-38)% | 73 | 1000（1.7316%） |\n| T2/6 | 穿透之 | 该装备的攻击暴击率提高 (30-34)% | 59 | 1000（1.7316%） |\n| T3/6 | 穿孔之 | 该装备的攻击暴击率提高 (25-29)% | 44 | 1000（1.7316%） |\n| T4/6 | 刺穿之 | 该装备的攻击暴击率提高 (20-24)% | 30 | 1000（1.7316%） |\n| T5/6 | 刺痛之 | 该装备的攻击暴击率提高 (15-19)% | 20 | 1000（1.7316%） |\n| T6/6 | 针刺之 | 该装备的攻击暴击率提高 (10-14)% | 1 | 1000（1.7316%） |\n\n## 工艺工作台 · 后缀 · 5 档\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/3 | 工艺之 | 该装备的攻击暴击率提高 (25-27)% | 75 | 无数据 |\n| T1/3 | 工艺之 | +(20-24) 力量和智慧 / 该装备的攻击暴击率提高 (21-25)% | 75 | 无数据 |\n| T2/3 | 工艺之 | 该装备的攻击暴击率提高 (20-24)% | 60 | 无数据 |\n| T2/3 | 工艺之 | +(15-19) 力量和智慧 / 该装备的攻击暴击率提高 (15-20)% | 60 | 无数据 |\n| T3/3 | 工艺之 | 该装备的攻击暴击率提高 (17-19)% | 40 | 无数据 |\n\n> 本来源无生成权重数据，**不能据此给出成功率或概率**。\n\n## 精华 · 后缀 · 4 档\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E6",
+      "chunk_id": "mod_ladder:Daggers:CriticalStrikeChanceIncrease#40c133f48dedca46",
+      "entity_id": "mod_ladder:Daggers:CriticalStrikeChanceIncrease",
+      "title": "匕首 · CriticalStrikeChanceIncrease",
+      "url": "https://poedb.tw/cn/Daggers#ModifiersCalc",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 匕首 · CriticalStrikeChanceIncrease\n底材类别：匕首 ｜ 词缀组：CriticalStrikeChanceIncrease ｜ 类型：后缀/其他 ｜ 来源渠道：7 个\n标签：攻击、暴击、属性、宝石\n\n本词缀组在该底材上共 24 条，来自 7 个来源：Base、工艺工作台、精华、虚空忆境、已腐化、塑界者、隐匿。\n互斥规则：与本组（CriticalStrikeChanceIncrease）有相同词缀组的其他词缀不能同时存在于一件装备上。\n⚠ 同一条词缀文本在本卡的多个来源里都出现 → 仅凭装备上的数值**无法判断**它出自哪个来源，回答时必须并列各种可能。\n\n## Base · 后缀 · 6 档\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/6 | 手术之 | 该装备的攻击暴击率提高 (35-38)% | 73 | 1000（1.5798%） |\n| T2/6 | 穿透之 | 该装备的攻击暴击率提高 (30-34)% | 59 | 1000（1.5798%） |\n| T3/6 | 穿孔之 | 该装备的攻击暴击率提高 (25-29)% | 44 | 1000（1.5798%） |\n| T4/6 | 刺穿之 | 该装备的攻击暴击率提高 (20-24)% | 30 | 1000（1.5798%） |\n| T5/6 | 刺痛之 | 该装备的攻击暴击率提高 (15-19)% | 20 | 1000（1.5798%） |\n| T6/6 | 针刺之 | 该装备的攻击暴击率提高 (10-14)% | 1 | 1000（1.5798%） |\n\n## 工艺工作台 · 后缀 · 5 档\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/3 | 工艺之 | 该装备的攻击暴击率提高 (25-27)% | 75 | 无数据 |\n| T1/3 | 工艺之 | +(20-24) 力量和智慧 / 该装备的攻击暴击率提高 (21-25)% | 75 | 无数据 |\n| T2/3 | 工艺之 | 该装备的攻击暴击率提高 (20-24)% | 60 | 无数据 |\n| T2/3 | 工艺之 | +(15-19) 力量和智慧 / 该装备的攻击暴击率提高 (15-20)% | 60 | 无数据 |\n| T3/3 | 工艺之 | 该装备的攻击暴击率提高 (17-19)% | 40 | 无数据 |\n\n> 本来源无生成权重数据，**不能据此给出成功率或概率**。\n\n## 精华 · 后缀 · 4 档\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | ",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E7",
+      "chunk_id": "mod_ladder:Thrusting_One_Hand_Swords:CriticalStrikeChanceIncrease#bf03a45394f36e40",
+      "entity_id": "mod_ladder:Thrusting_One_Hand_Swords:CriticalStrikeChanceIncrease",
+      "title": "细剑 · CriticalStrikeChanceIncrease",
+      "url": "https://poedb.tw/cn/Thrusting_One_Hand_Swords#ModifiersCalc",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 细剑 · CriticalStrikeChanceIncrease\n底材类别：细剑 ｜ 词缀组：CriticalStrikeChanceIncrease ｜ 类型：后缀/其他 ｜ 来源渠道：7 个\n标签：攻击、暴击、属性、宝石\n\n本词缀组在该底材上共 24 条，来自 7 个来源：Base、工艺工作台、精华、虚空忆境、已腐化、塑界者、隐匿。\n互斥规则：与本组（CriticalStrikeChanceIncrease）有相同词缀组的其他词缀不能同时存在于一件装备上。\n⚠ 同一条词缀文本在本卡的多个来源里都出现 → 仅凭装备上的数值**无法判断**它出自哪个来源，回答时必须并列各种可能。\n\n## Base · 后缀 · 6 档\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/6 | 手术之 | 该装备的攻击暴击率提高 (35-38)% | 73 | 1000（1.6194%） |\n| T2/6 | 穿透之 | 该装备的攻击暴击率提高 (30-34)% | 59 | 1000（1.6194%） |\n| T3/6 | 穿孔之 | 该装备的攻击暴击率提高 (25-29)% | 44 | 1000（1.6194%） |\n| T4/6 | 刺穿之 | 该装备的攻击暴击率提高 (20-24)% | 30 | 1000（1.6194%） |\n| T5/6 | 刺痛之 | 该装备的攻击暴击率提高 (15-19)% | 20 | 1000（1.6194%） |\n| T6/6 | 针刺之 | 该装备的攻击暴击率提高 (10-14)% | 1 | 1000（1.6194%） |\n\n## 工艺工作台 · 后缀 · 5 档\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/3 | 工艺之 | 该装备的攻击暴击率提高 (25-27)% | 75 | 无数据 |\n| T1/3 | 工艺之 | +(20-24) 力量和智慧 / 该装备的攻击暴击率提高 (21-25)% | 75 | 无数据 |\n| T2/3 | 工艺之 | 该装备的攻击暴击率提高 (20-24)% | 60 | 无数据 |\n| T2/3 | 工艺之 | +(15-19) 力量和智慧 / 该装备的攻击暴击率提高 (15-20)% | 60 | 无数据 |\n| T3/3 | 工艺之 | 该装备的攻击暴击率提高 (17-19)% | 40 | 无数据 |\n\n> 本来源无生成权重数据，**不能据此给出成功率或概率**。\n\n## 精华 · 后缀 · 4 档\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | ",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E8",
+      "chunk_id": "mod_ladder:Daggers:LocalChaosDamage#7521578a2f51d220",
+      "entity_id": "mod_ladder:Daggers:LocalChaosDamage",
+      "title": "匕首 · LocalChaosDamage",
+      "url": "https://poedb.tw/cn/Daggers#ModifiersCalc",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 匕首 · LocalChaosDamage\n底材类别：匕首 ｜ 词缀组：LocalChaosDamage ｜ 类型：前缀/其他 ｜ 来源渠道：5 个\n标签：伤害、混沌、攻击\n\n本词缀组在该底材上共 14 条，来自 5 个来源：Base、精华、异度天灾 有利、已腐化、虚空忆境。\n互斥规则：与本组（LocalChaosDamage）有相同词缀组的其他词缀不能同时存在于一件装备上。\n⚠ 同一条词缀文本在本卡的多个来源里都出现 → 仅凭装备上的数值**无法判断**它出自哪个来源，回答时必须并列各种可能。\n\n## Base · 前缀 · 1 条\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/1 | 恶意的 | 该装备附加 (56-87) - (105-160) 基础混沌伤害 | 83 | 600（0.877%） |\n\n## 精华 · 前缀 · 3 档\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T5/3 | 忌妒之咆哮精华 | 该装备附加 (37-59) - (79-103) 基础混沌伤害 | 62 | 无数据 |\n| T6/3 | 忌妒之尖啸精华 | 该装备附加 (43-67) - (89-113) 基础混沌伤害 | 74 | 无数据 |\n| T7/3 | 忌妒之破空精华 | 该装备附加 (53-79) - (101-131) 基础混沌伤害 | 82 | 无数据 |\n\n> 本来源无生成权重数据，**不能据此给出成功率或概率**。\n\n## 异度天灾 有利 · 其他 · 4 档\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/3 | HellscapeUpsideLocalChaosDamage1h3____ | 该装备附加 (10-12) - (23-27) 基础混沌伤害 | 68 | 500（1.2255%） |\n| T1/3 | HellscapeUpsideLocalChaosDamage1h4 | 该装备附加 (13-15) - (29-33) 基础混沌伤害 | 68 | 500（1.2255%） |\n| T2/3 | HellscapeUpsideLocalChaosDamage1h2 | 该装备附加 (7-9) - (19-21) 基础混沌伤害 | 45 | 500（1.2255%） |\n| T3/3 | HellscapeUpsideLocalChaosDamage1h1_ | 该装备附加 (5-6) - (13-17) 基础混沌伤害 | 1 | 500（1.2",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    }
+  ]
+}

@@ -1,0 +1,38 @@
+{
+  "format_version": 1,
+  "case_id": "name_anatomical_knowledge",
+  "query": "真知灼见",
+  "recorded_at": "2026-08-17T18:02:54+08:00",
+  "model": "glm-5.2",
+  "tokens": {
+    "prompt": 4950,
+    "output": 185,
+    "reasoning": 54,
+    "total": 5135
+  },
+  "tool_calls": [
+    ""
+  ],
+  "evidence_gap": false,
+  "gap_answer": "",
+  "blocked_claims": 0,
+  "elapsed_ms": 3873,
+  "evidence_fingerprint": "sha256:2f67747e5a6e73dd0f2b541fb4ce35f6",
+  "_warning": "raw_answer 是未过出口闸门的模型原文，含可能无据的断言，不得当作事实引用",
+  "raw_answer": "## 真知灼见（Anatomical Knowledge）\n\n**类型**：唯一装备 ｜ 底材：钴蓝珠宝（Cobalt Jewel） ｜ 分类：钴蓝珠宝 [[E1]]\n\n**需求**：等级 20 [[E1]]\n\n**显式词缀**：\n\n- 生命上限提高 (6-8)% [[E1]]\n- 范围内每配置 3 点智慧，最大生命提高 1 点 [[E1]]\n\n---\n\n如果你需要进一步了解该物品的获取途径、词缀搭配建议或与其他装备的共存性检查，可以继续提问。",
+  "evidence": [
+    {
+      "label": "E1",
+      "chunk_id": "unique_item:Anatomical_Knowledge#0#9b34ce21ab40eee3",
+      "entity_id": "unique_item:Anatomical_Knowledge",
+      "title": "真知灼见（Anatomical Knowledge）",
+      "url": "https://poedb.tw/cn/Anatomical_Knowledge",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 真知灼见（Anatomical Knowledge）\n类型：唯一装备 ｜ 底材：钴蓝珠宝 ｜ 分类：钴蓝珠宝\n\n**需求**：需求 等级 20\n\n**显式词缀**\n- [显式词缀] 生命上限提高 (6-8)%\n- [显式词缀] 范围内每配置 3 点智慧，最大生命提高 1 点\n\n来源：POEDB → 真知灼见（Anatomical Knowledge）\nhttps://poedb.tw/cn/Anatomical_Knowledge",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    }
+  ]
+}

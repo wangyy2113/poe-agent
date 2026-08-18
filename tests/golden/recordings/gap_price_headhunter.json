@@ -1,0 +1,19 @@
+{
+  "format_version": 1,
+  "case_id": "gap_price_headhunter",
+  "query": "猎首现在值多少混沌石",
+  "recorded_at": "2026-08-17T18:07:57+08:00",
+  "model": "",
+  "tokens": {},
+  "tool_calls": [
+    ""
+  ],
+  "evidence_gap": true,
+  "gap_answer": "知识库中查不到回答这个问题所需的依据，因此不作答——给一个听起来合理但没有依据的\n答案，代价比说查不到高得多。\n\n**为什么查不到**\n问题涉及的领域**本知识库尚未采集**，不是检索没找到：\n- 通货（已抓取未入库）　权威来源：https://poedb.tw/cn/Currency\n- 市场价格（未采集）　权威来源：https://api.poe.watch\n\n**缺失的信息点**\n- 通货的数据\n- 市场价格的数据\n\n**判定依据**\n问题所问的维度在知识库中没有数据 —— 通货（已抓取未入库）：该领域一条都没有入库，权威来源 https://poedb.tw/cn/Currency；市场价格（未采集）：该领域一条都没有入库，权威来源 https://api.poe.watch\n\n**建议的查证途径**\n- https://poedb.tw/cn/Currency\n- https://api.poe.watch\n- POEDB 站内搜索：<https://poedb.tw/cn/search?q=通货的数据 市场价格的数据>\n- PoE Wiki：<https://www.poewiki.net/index.php?search=通货的数据 市场价格的数据>\n- 若属新赛季内容，可查 GGG 官方 Patch Notes\n",
+  "blocked_claims": 0,
+  "elapsed_ms": 18,
+  "evidence_fingerprint": "sha256:e3b0c44298fc1c149afbf4c8996fb924",
+  "_warning": "raw_answer 是未过出口闸门的模型原文，含可能无据的断言，不得当作事实引用",
+  "raw_answer": "",
+  "evidence": []
+}
