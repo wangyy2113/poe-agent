@@ -25,18 +25,47 @@ def stats() -> dict[str, Any]:
             "ORDER BY run_id DESC LIMIT 20"
         )
     ]
+    # 采集优先级只看 retrieval_gap 与 tool_gap。出口闸门的拦截（binding_block）
+    # 是闸门行为的观测量，混进这张表会让频次排序失真：一次回答里被拦的每句话
+    # 都会占一行，而它们大多不是「该去采集什么」。
     gaps = [
         dict(r)
         for r in conn.execute(
-            "SELECT gap_id, question, missing_point, guessed_category, hit_count, "
-            "first_seen, last_seen FROM knowledge_gap ORDER BY hit_count DESC LIMIT 50"
+            "SELECT gap_id, question, missing_point, guessed_category, kind, hit_count, "
+            "first_seen, last_seen FROM knowledge_gap "
+            "WHERE COALESCE(kind,'retrieval_gap') IN ('retrieval_gap','tool_gap') "
+            "ORDER BY hit_count DESC LIMIT 50"
+        )
+    ]
+    by_kind = {
+        str(r["kind"] or "retrieval_gap"): r["n"]
+        for r in conn.execute(
+            "SELECT COALESCE(kind,'retrieval_gap') AS kind, count(*) AS n "
+            "FROM knowledge_gap GROUP BY 1 ORDER BY 2 DESC"
+        )
+    }
+    blocked = [
+        dict(r)
+        for r in conn.execute(
+            "SELECT question, missing_point, guessed_category, hit_count, last_seen "
+            "FROM knowledge_gap WHERE kind='binding_block' "
+            "ORDER BY hit_count DESC LIMIT 20"
         )
     ]
     sizes = {
         t: conn.execute(f"SELECT count(*) FROM {t}").fetchone()[0]  # noqa: S608
         for t in ("entity", "chunk", "alias", "mod_affix", "pob_mod", "source_conflict")
     }
-    return {"tables": sizes, "ingest_runs": runs, "knowledge_gaps": gaps}
+    return {
+        "tables": sizes,
+        "ingest_runs": runs,
+        #: 采集优先级：按频次排序即下一步该补哪类数据
+        "knowledge_gaps": gaps,
+        #: 台账各来源的条目数。`binding_block_legacy` 是迁移前混入的闸门噪声
+        "gap_counts_by_kind": by_kind,
+        #: 出口闸门拦下的无据断言，按归一化后的句子聚合。这是闸门观测量，不是采集待办
+        "blocked_claims": blocked,
+    }
 
 
 @router.get("/conflicts")

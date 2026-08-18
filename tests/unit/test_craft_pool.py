@@ -270,9 +270,25 @@ class TestBaseSnapshotStorage(unittest.TestCase):
                             return (126,)
                     return Cursor()
 
+            # 相对缩减护栏只在**过了绝对下限之后**才有机会触发，所以两条护栏的
+            # 可触发区间是相互约束的：既有行数必须大于 下限/(1-20%) ≈ 1125，
+            # 否则「缩掉 20%」的结果早已低于绝对下限 900，先撞的是下限那条。
+            # 当前实际是 1022 行，所以线上是绝对下限在守；这里用 1500 才测得到相对那条。
+            class BigSnapshot:
+                @staticmethod
+                def execute(_sql):  # noqa: ANN001
+                    class Cursor:
+                        @staticmethod
+                        def fetchone():
+                            return (1500,)
+                    return Cursor()
+
             with self.assertRaisesRegex(BaseStructureError, "相对缩减"):
-                validate_snapshot_size(ExistingSnapshot(), 100)
-            validate_snapshot_size(ExistingSnapshot(), 100, allow_shrink=True)
+                validate_snapshot_size(BigSnapshot(), 1000)
+            validate_snapshot_size(BigSnapshot(), 1000, allow_shrink=True)
+            # 单类别导入时下限由调用方给（胸甲仍是 100）
+            with self.assertRaisesRegex(BaseStructureError, "绝对下限 100"):
+                validate_snapshot_size(ExistingSnapshot(), 50, minimum=100)
         finally:
             conn.close()
 

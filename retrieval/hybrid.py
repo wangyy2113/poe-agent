@@ -23,6 +23,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import sqlite3
 from dataclasses import dataclass, field
 
@@ -59,6 +60,38 @@ RECALL_MULTIPLIER = 4
 def _looks_like_mod_query(query: str) -> bool:
     """判断查询是否表现出词缀类意图。"""
     return any(term in query for term in _MOD_INTENT_TERMS)
+
+
+#: 通用量词与疑问词。它们**永远不可能是专名**，因此不参与「全库为零即无依据」判定。
+#:
+#: 与 `_MOD_INTENT_TERMS` 分开写：那个是词缀领域的意图词（「档位」「权重」），
+#: 这个是与领域无关的问法成分。只靠前者是打地鼠——修好「档位」之后，
+#: 「腰带上的力量词缀**一共**有几档，**每档**要求什么物品等级」又因为
+#: 「一共、每档」全库为零而被判无依据（实测）。
+_GENERIC_ASK_RE = re.compile(
+    r"^(?:一共|总共|合计|每[档级条个件种]?|各[档级条个件种]?|多少|几[档级条个件只种]?"
+    r"|哪些|哪个|哪种|什么|怎么|如何|是否|能否|可否|分别|所有|全部|以及|还有"
+    r"|区别|差异|不同|对比|比较)$"
+)
+
+
+def _drop_intent_terms(terms: list[str]) -> list[str]:
+    """剔除意图词与通用问法成分，只留可能是问题**主体**的词。
+
+    只给「未覆盖词是否全库为零」那道判据用。那道判据要抓的是**专名不存在**
+    （「玄虚之靴」「流放之路2」），而意图词表达的是「想问哪类信息」，不是主体：
+
+        「腰带上力量词缀的最高档位是多少」
+          覆盖率 80% 达标、正确的梯度卡也召回了，却因为「档位」全库为零而拒答。
+          库里写的是「T 级 / 阶级 / 梯度」，「档位」是用户口语——而它本来就已经
+          登记在 `_MOD_INTENT_TERMS` 里。
+
+    这类误伤属于错误拒答，与漏出同样要压（需求 16.7）。
+    """
+    return [
+        t for t in terms
+        if t not in _MOD_INTENT_TERMS and not _GENERIC_ASK_RE.match(t)
+    ]
 
 
 @dataclass
@@ -239,7 +272,7 @@ def retrieve(
         # 恰是那个 POEDB 上不存在的名字；「流放之路2 的升华机制是什么」靠
         # `升华`+`机制` 过线，未覆盖的 `流放之路2` 恰是「问的是另一款游戏」的标志。
         # 一个词全库为零，答案就不可能在库里——此时其余词覆盖多少都不算依据。
-        absent = absent_from_corpus(conn, result.missing_terms)
+        absent = absent_from_corpus(conn, _drop_intent_terms(result.missing_terms))
         if absent:
             result.sufficient = False
             result.reason = (

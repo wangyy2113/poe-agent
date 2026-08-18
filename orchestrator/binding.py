@@ -52,6 +52,11 @@ _MD_RULE_RE = re.compile(r"^\s{0,3}([-*_])(?:\s*\1){2,}\s*$")
 _MD_LABEL_RE = re.compile(r"^\s*(?:[-*+]\s+)?\*{1,3}([^*\n]{1,40})\*{1,3}\s*[：:]?\s*$")
 _MD_BULLET_ONLY_RE = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s*$")
 
+#: Markdown 表格行与分隔行。
+#: 表格必须整块当一个断言单位看，见 `_merge_table_blocks` 的说明。
+_MD_TABLE_ROW_RE = re.compile(r"^\s{0,3}\|.*\|\s*$")
+_MD_TABLE_SEP_RE = re.compile(r"^\s{0,3}\|(?:\s*:?-{2,}:?\s*\|)+\s*$")
+
 #: 纯过渡/元话语句：只描述回答本身的组织，不承载游戏事实。
 #: 这是**白名单**——判不出来的一律按事实句处理（见 `classify`）。
 #: 锚定在句首并限制长度，避免「另外，猎首还会让你免疫冰冻」这类
@@ -60,6 +65,23 @@ _NARRATIVE_RE = re.compile(
     r"^[\s，,、]*(?:下面|以下|接下来|下文|综上|综合以上|总结|小结|先说结论"
     r"|需要说明的?是|说明如下|分别说明|逐条说明|简要说明|回答如下)"
     r"[^。！？\n]{0,12}[。！？：:\s]*$"
+)
+
+#: 冒号收尾的引导句：`该核心节点具有以下效果：`、`显式词缀如下：`、`按来源渠道分别列出：`。
+#:
+#: 单独一条规则而不是放宽 `_NARRATIVE_RE`：那个正则锚定句首，而这类句子的引导词
+#: 常在**句中**（「具有以下效果」）。而单纯放宽前缀等于允许标记之前出现任意内容，
+#: 「它会免疫冰冻，效果如下：」就会跟着漏出去——那正是 classify 默认判事实句要防的。
+#:
+#: 三道结构性限制把风险收窄，缺一不可：
+#:   **以引导词 + 冒号收尾**  冒号意味着内容在后面，而后面的句子各自过闸门；断言不以冒号结尾
+#:   **整句不含逗号**        逗号意味着有子句，也就是可能夹带断言
+#:                           （「猎首会偷取词缀，说明如下：」因此不放行）
+#:   **不含任何数值**        数值是编造的主要载体，含数值一律回事实句校验（在 classify 里判）
+_COLON_LEAD_IN_RE = re.compile(
+    r"^[^。！？，,、\n]{0,20}?"
+    r"(?:如下|以下|下列|分别是|列出|包括)"
+    r"[^。！？，,、\n]{0,8}[：:]\s*$"
 )
 
 #: 数值。带千分位与小数，含正负号与百分号。
@@ -80,11 +102,21 @@ _DERIVED_HINTS = ("因此", "所以", "计算得", "推导", "合计", "= ", "�
 #: 用**正则**而非关键词表：实测两轮各撞一次同类假阳性，只是措辞不同
 #: （「未包含」→「不包含」、「本次证据」→「本轮证据」）。枚举词表补不完，
 #: 按「否定词 + 提供类动词」的构式匹配才收得住。
+#: 第三轮补的两类构式（2026-08-17 人工审计实测，两条都属错误拒答）：
+#:   「根据结构化词缀库的直接查询…**均返回无匹配结果**」  查询结果为空的声明
+#:   「证据 [E2]–[E8] 全部为…**与技能石数值无关**」        证据与问题不相关的声明
+#: 两者与既有构式是同一件事——断言的是**信息的缺失或不相关**，本质上无法绑定证据，
+#: 要求它带引用是自相矛盾的。
 _DISCLOSURE_RE = re.compile(
-    r"(?:未|不|没(?:有)?|无)\s*(?:包含|涉及|提供|给出|收录|说明|记载|列出)"
+    # 否定词与动词之间允许一个量词：「**没有一条**涉及偷取」实测被拦（错误拒答）
+    r"(?:未|不|没(?:有)?|无)\s*(?:任何|任一|一条|一项|一个|哪一?条)?\s*"
+    r"(?:包含|涉及|提供|给出|收录|说明|记载|列出)"
     r"|(?:本次|本轮|当前|以上|上述|该批)\s*证据"
     r"|证据(?:中|里)?(?:没有|不含|未)"
     r"|(?:知识库|库)(?:中|里)?(?:没有|查不到|未收录)"
+    r"|(?:无|未)(?:匹配|命中|检索到|查到|返回)(?:结果|结论|记录|条目|数据)?"
+    r"|(?:返回|查询|检索)(?:结果)?为空"
+    r"|与[^。！？\n]{0,20}?(?:无关|不相关)"
     r"|查不到|无法确认|缺少依据|需(?:另行|进一步)查证"
 )
 
@@ -537,6 +569,17 @@ class StreamingGate:
         if final:
             # 收尾时全部交出。多于一句就先给第一句，其余留待下一轮循环。
             return parts[0], "".join(parts[1:])
+        # 表格整块才是一个断言单位（见 `_merge_table_blocks`），所以**表格没结束
+        # 就不能下发**：提前放行会让流式按行校验、批量按整块校验，判定就分叉了。
+        #
+        # 两个条件都要判：
+        #   只剩表格一段            —— 后面可能还有行，等
+        #   缓冲区最后一行还在表内  —— 下一行只写到 `|` 时 split 会切出两段，
+        #                              于是上一行被提前放行。实测就是这样把
+        #                              流式与批量的一致率从 32/32 打到 18/32 的。
+        tail_line = buf.rsplit("\n", 1)[-1].lstrip()
+        if _is_table_line(parts[0]) and (len(parts) == 1 or tail_line.startswith("|")):
+            return None, buf
         if len(parts) == 1 and not _ends_sentence(buf):
             # 只有一段且没说完，继续等
             return None, buf
@@ -607,7 +650,91 @@ def split_sentences(text: str) -> list[str]:
         pos = end
     if pos < len(text):
         out.append(text[pos:])
+    return _merge_table_blocks(out)
+
+
+def _is_table_line(piece: str) -> bool:
+    """这个片段是否以表格行开头（含已合并的多行表格块）。
+
+    只看**首行**：`_MD_TABLE_ROW_RE` 里的 `.` 不匹配换行，直接拿整块去 match 时
+    合并后的表格块必然返回 False。踩过这个坑——流式因此照旧按行放行，
+    与批量的判定一致率停在 18/32 不动。
+    """
+    first = piece.strip("\n").split("\n", 1)[0]
+    # 先剥绑定标记：行末的 `|[[E1]]` 会让 `\|\s*$` 匹配不上，
+    # 于是**带引用的表格行反而认不出是表格**——正好是最该放行的那一类。
+    return bool(_MD_TABLE_ROW_RE.match(_BINDING_RE.sub("", first).strip()))
+
+
+def _merge_table_blocks(pieces: list[str]) -> list[str]:
+    """把连续的表格行并成**一个**断言单位。
+
+    为什么必须整块看：分句按行切，于是一张表被撕成表头、分隔行和若干数据行。
+    实测（32 条真实回答）192 句拦截里 **92 句（48%）是表格行**，两种形态都是错误拒答：
+
+      `| T 级 | 词缀文本 | 物品等级 |`        表头不承载断言，却被判「事实句未绑定引用」
+      `| T1/1 | …… | 60 | 3000 |`             模型把 `[[E1]]` 标在表格前后而不是每一行，
+                                              于是每行都被判未绑定
+
+    而表格的断言单位本来就是整张表：它的每个数值都由表头那一列的含义决定，
+    单看一行既判不出类型也校不准数值。整块看之后，绑定标记出现在表内任何位置
+    （表头、某一行、末行）都对整张表生效，数值仍然逐个回填校验——**该校的没放过**。
+
+    拼回去与原文等价（只是把相邻片段连起来），所以下发内容不变。
+    """
+    if not pieces:
+        return pieces
+    out: list[str] = []
+    buf: list[str] = []
+    for piece in pieces:
+        if _is_table_line(piece):
+            buf.append(piece)
+            continue
+        if buf:
+            out.append("".join(buf))
+            buf = []
+        out.append(piece)
+    if buf:
+        out.append("".join(buf))
     return out
+
+
+def _table_rows(block: str) -> list[list[str]]:
+    """表格块 → 数据行的单元格矩阵（跳过分隔行）。"""
+    rows: list[list[str]] = []
+    for line in block.splitlines():
+        s = _BINDING_RE.sub("", line).strip()
+        if not _MD_TABLE_ROW_RE.match(s) or _MD_TABLE_SEP_RE.match(s):
+            continue
+        rows.append([c.strip() for c in s.strip("|").split("|")])
+    return rows
+
+
+def _index_column_numbers(block: str) -> set[str]:
+    """检出**序号列**里的数字，这些数字不参与回填校验。
+
+    模型会给表格加一列 1/2/3……，那是排版而不是断言：它的含义不来自证据，
+    要求它可溯源必然失败（实测「数值 3 未出现在绑定证据 E1 中」，那个 3 是行号）。
+
+    判据刻意保守：只有当某一列在**全部数据行**上都是纯整数、且构成从 1 开始的
+    连续序列时，才认定为序号列。物品等级 60、权重 1000 这类真实数值不会连成
+    1,2,3,…，因此不会被误判放过。
+    """
+    rows = _table_rows(block)
+    if len(rows) < 2:
+        return set()
+    width = min(len(r) for r in rows)
+    ignored: set[str] = set()
+    for col in range(width):
+        cells = [r[col] for r in rows]
+        if not all(re.fullmatch(r"\d{1,3}", c) for c in cells):
+            continue
+        values = [int(c) for c in cells]
+        # 表头行也会被算进来（它那一格不是数字，上面的 fullmatch 已排除整列），
+        # 所以这里的 values 全部来自数据行。
+        if values == list(range(1, len(values) + 1)):
+            ignored.update(_norm_num(c) for c in cells)
+    return ignored
 
 
 def _claim_value_norm(value: Any) -> str:
@@ -1020,6 +1147,11 @@ def _check_sentence(
     # 数值回填校验：句中数值必须能在绑定证据里找到。
     # 编造的具体形态就是数字，这一条抓得最准。
     missing = unsupported_numbers(stripped, bound)
+    if missing and _is_table_line(sentence.strip("\n").splitlines()[0] if sentence.strip() else ""):
+        # 表格的序号列是排版，不是断言（见 `_index_column_numbers`）
+        ignored = _index_column_numbers(sentence)
+        if ignored:
+            missing = [m for m in missing if _norm_num(m) not in ignored]
 
     if kind == "derived":
         # 计算派生（需求 15.3、10）：结论数值本来就不在证据里——那是算出来的，
@@ -1145,6 +1277,11 @@ def classify(
     if labels:
         # 模型自己标了引用，说明它认为这是事实句 —— 按事实句校验
         return "factual"
+    # 引导句必须在领域词判定**之前**：`显式词缀如下：` 里的「词缀」是 factual_terms
+    # 成员，按领域词判就成了事实句、被要求绑定引用，而它一个断言都没有。
+    # 这类引导句在本领域的答案里极常见，拦它会把答案结构撕碎（与 Markdown 标题同理）。
+    if not _NUM_RE.search(s) and _COLON_LEAD_IN_RE.match(s):
+        return "narrative"
     if any(t in s for t in terms) or any(t in s for t in domain_terms):
         return "factual"
     if _NUM_RE.search(s):
@@ -1157,6 +1294,14 @@ def classify(
 #: 有实义内容：至少含一个中日韩字符、拉丁字母或数字。
 #: 只剩标点的碎片（分句时被切散的孤立 `）`）不承载断言。
 _HAS_CONTENT_RE = re.compile(r"[\u4e00-\u9fff\u3040-\u30ffA-Za-z0-9]")
+
+#: \u6807\u9898/\u5217\u8868\u9879\u5f00\u5934\u7684**\u5e8f\u53f7**\uff1a`### 1. \u88c5\u5907\u8bcd\u7f00`\u3001`2\u3001\u6309\u6765\u6e90`\u3002
+#: \u4e0e\u8868\u683c\u7684\u5e8f\u53f7\u5217\u540c\u4e00\u65cf\u2014\u2014\u5b83\u662f\u6392\u7248\u800c\u4e0d\u662f\u65ad\u8a00\u6570\u503c\uff0c\u5265\u6389\u4e4b\u540e\u518d\u5224\u300c\u6807\u9898\u91cc\u6709\u6ca1\u6709\u6570\u503c\u300d\u3002
+#: \u4e0d\u5265\u7684\u8bdd `### 1. \u88c5\u5907\u8bcd\u7f00` \u4f1a\u56e0\u4e3a\u90a3\u4e2a 1 \u8d70\u4e8b\u5b9e\u53e5\u6821\u9a8c\u5e76\u88ab\u8981\u6c42\u7ed1\u5b9a\u5f15\u7528\uff08\u5b9e\u6d4b\u7684\u9519\u8bef\u62d2\u7b54\uff09\u3002
+_LEADING_ORDINAL_RE = re.compile(r"^\s*\d{1,3}\s*[.\u3001)\uff09:\uff1a]\s*")
+
+#: \u6574\u884c\u53ea\u6709\u4e00\u4e2a URL\u3002\u4e0d\u627f\u8f7d\u65ad\u8a00\uff0c\u8981\u6c42\u5b83\u7ed1\u5b9a\u5f15\u7528\u6ca1\u6709\u610f\u4e49\u3002
+_BARE_URL_RE = re.compile(r"^\s*[<\uff08(\[]?\s*https?://\S+?\s*[>\uff09)\]]?\s*$")
 
 
 def is_structural(sentence: str) -> bool:
@@ -1174,9 +1319,13 @@ def is_structural(sentence: str) -> bool:
         return True
     if _MD_RULE_RE.match(s) or _MD_BULLET_ONLY_RE.match(s):
         return True
+    if _BARE_URL_RE.match(s):
+        return True
     for pattern in (_MD_HEADING_RE, _MD_LABEL_RE):
         m = pattern.match(s)
-        if m and not _NUM_RE.search(m.group(1)):
+        # 先剥前导序号再判数值：`### 1. 装备词缀` 的 1 是章节号不是断言，
+        # 而 `## 生命上限 1000` 的 1000 必须继续走事实句校验。
+        if m and not _NUM_RE.search(_LEADING_ORDINAL_RE.sub("", m.group(1))):
             return True
     return False
 

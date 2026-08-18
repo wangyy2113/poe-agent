@@ -358,16 +358,31 @@ def _json_string_tuple(value: Any) -> tuple[str, ...] | None:
 
 
 def _resolve_base(conn: sqlite3.Connection, base_type: str) -> tuple[BasePoolRef | None, str]:
+    """按名字解析胸甲底材。非胸甲要给**准确**的理由。
+
+    底材注册表已扩到全部 18 个装备类别（1022 条），所以这里现在会命中头盔、戒指、
+    法杖……而本模块的条件权重模型只对胸甲成立（同侧普通池 + 按属性分的词缀页）。
+    命中非胸甲时必须说清「本工具只建模胸甲」，而不是让下面的必填字段检查报一句
+    「注册记录不完整」——那会把「工具范围之外」说成「数据有问题」，
+    是两件完全不同的事，排查方向也不同。
+    """
     rows = conn.execute(
         "SELECT * FROM pob_base_item WHERE name_en=? OR name_zh=? ORDER BY base_id",
         (base_type, base_type),
     ).fetchall()
     if not rows:
-        return None, f"底材 {base_type!r} 没有逐字匹配的胸甲注册记录"
+        return None, f"底材 {base_type!r} 没有逐字匹配的底材注册记录"
     unique = {str(row["base_id"]): row for row in rows}
     if len(unique) != 1:
+        # POEDB 会把两个底材译成同一个中文名（「丝绸手套」「召集法杖」各两条），
+        # 此时拒绝而不是挑一条 —— 挑错了整份池就是错的
         return None, f"底材 {base_type!r} 命中 {len(unique)} 条记录，无法唯一确定"
     row = next(iter(unique.values()))
+    if str(row["category_key"] or "") != "body":
+        return None, (
+            f"底材 {base_type!r} 是{row['item_class']}，不是胸甲；"
+            "本工具只建模胸甲的同侧普通词缀池，其它部位的条件权重模型尚未建立"
+        )
     tags = _json_string_tuple(row["tags"])
     required = (
         row["name_en"], row["name_zh"], row["poedb_slug"], row["armour_tag"],
