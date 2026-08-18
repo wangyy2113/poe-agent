@@ -87,6 +87,7 @@ class Report:
     no_ladder: int = 0           # 同名组存在，但 PoB 侧没有与之重合的阶梯 → 不是冲突
     ladder_identical: int = 0    # 阶梯逐档全等：两源同一条词缀，且逐档一致
     ladder_ambiguous: int = 0    # 多个 PoB 组共享同一条阶梯 → 对手不唯一，不敢判一致
+    ladder_ambiguous_agreed: int = 0  # 身份不唯一，但每个候选身份下数值都一致 → 与身份无关地判一致
     unmapped_category: Counter = field(default_factory=Counter)
     reviews: list[dict] = field(default_factory=list)
     pob_only_groups: set[str] = field(default_factory=set)
@@ -247,11 +248,19 @@ def reconcile(conn, group_filter: str | None) -> Report:  # noqa: ANN001
         # 同名组在并列里就优先它——最不意外的对齐
         best_group = group if group in best_groups else (best_groups[0] if best_groups else "")
 
-        if best_score >= 1.0 and best_group != group and len(best_groups) == 1:
-            # 阶梯逐档全等、**组名不同、且这条阶梯在 PoB 侧唯一**——这就是两源系统性
-            # 命名差异（POEDB `LifeLeech` ↔ PoB `LifeLeechPermyriad`）。第一关只在同名
-            # 组里找区间，所以没命中；按阶梯配对后，该行区间只要出现在这条阶梯里，
-            # 两源在这个档位上就是一致的，不是分歧。实测这一支占原「待核对」的 831 条。
+        if best_score >= LADDER_MIN_OVERLAP and best_group != group and len(best_groups) == 1:
+            # **一致性检查也要在阶梯配对出来的那个组里做**，不是只在同名组里做。
+            #
+            # 第一关只查同名组，而两源组名系统性不同（POEDB `LifeLeech` ↔ PoB
+            # `LifeLeechPermyriad`、POEDB 弓上的 `PhysicalDamage` ↔ PoB
+            # `LocalPhysicalDamage`），所以真正的对手常常不在同名组里。
+            #
+            # 阈值用 `LADDER_MIN_OVERLAP` 而不是「逐档全等」：实测 POEDB 弓上
+            # 「附加 (13-17) - (28-32) 基础物理伤害」与 PoB「Adds (13-17) to (28-32)
+            # Physical Damage」**区间与词缀名（砥砺的/Honed）都对得上**，只是两条阶梯的
+            # 档位集合不完全相同（各自多几档），所以卡在 <1.0。只要该行的区间在对手组里
+            # 出现，这个档位上两源就是一致的——阶梯是否逐档全等是**组**层面的事，
+            # 不该拦住**行**层面的一致判定。
             #
             # **唯一性是必需条件。** 阶梯形状并不唯一：`+(15-20) to Strength` 与
             # `+(15-20) to Dexterity` 的 (ilvl, 区间) 阶梯完全一样。并列时任取一个
@@ -266,8 +275,28 @@ def reconcile(conn, group_filter: str | None) -> Report:  # noqa: ANN001
                 rep.ladder_identical += 1
                 continue
 
-        if best_score >= 1.0 and len(best_groups) > 1:
-            # 多个 PoB 组共享同一条阶梯 → 无法确定对手是哪条词缀，如实登记歧义
+        if best_score >= LADDER_MIN_OVERLAP and len(best_groups) > 1:
+            # 多个 PoB 组共享同一条阶梯 → 对手身份不唯一。
+            #
+            # 但**身份不唯一不等于数值不可判**：若该行的区间在**每一个**并列组里都出现，
+            # 那么无论正确对手是哪一个，两源在这个档位上的取值都一致 —— 与身份无关地成立。
+            # 实测这一支占歧义行的 66%：POEDB 弓上的火焰/冰霜/闪电附加伤害阶梯完全相同
+            # （GGG 给三元素同一组数值），词缀名也同为「升级的/Upgraded」，
+            # 连词缀名锚点都分不开；但三个组里那一档的区间是同一个，所以数值没有分歧。
+            #
+            # 反之，只要有**一个**并列身份下数值对不上，就仍然要人看——那种情况下
+            # 「判一致」等于挑了一个看着顺眼的身份，正是 mod_bridge 禁止的做法。
+            if all(
+                any(
+                    norm_ranges(c["ranges"]) == want
+                    for kind in kinds
+                    for c in pob_all.get((kind, tied), [])
+                )
+                for tied in best_groups
+            ):
+                rep.agree += 1
+                rep.ladder_ambiguous_agreed += 1
+                continue
             rep.ladder_ambiguous += 1
         elif best_score >= 1.0:
             # 逐档全等、组名也相同，却没在第一关命中：同一条词缀内部的抽取问题，
@@ -278,13 +307,20 @@ def reconcile(conn, group_filter: str | None) -> Report:  # noqa: ANN001
             continue
 
         rep.needs_review += 1
-        # PoB 侧取**同 ilvl** 的那一条；没有就取阶梯重合度最高那个组里的第一条。
-        # 不再用 `near[0]`：那让 review 行显示的是任意一条候选，
-        # 人看到的「冲突」多半是拿 T3 去比 T1 的产物。
-        aligned = [c for c in candidates if c["ilvl"] == r["ilvl"]]
-        if not aligned and best_group:
-            aligned = [c for c in candidates if c["mod_group"] == best_group]
-        near = aligned or candidates
+        # PoB 侧展示谁，决定了这张清单能不能看。取法：**最佳重合组** × **同 ilvl**。
+        #
+        # 两次都踩在这里：第一版用 `near[0]`（同名组里任取一条），人看到的「冲突」多半是
+        # 拿 T3 比 T1 的产物；第二版改成按 ilvl 对齐，但候选池仍限在**同名组**里——
+        # 实测 POEDB 弓·命中值 与 PoB 同名组 `IncreasedAccuracy` 的阶梯重合度是 **0.000**，
+        # 最佳重合的是另一个组。于是展示出来的仍然是不相干的那条。
+        #
+        # 所以候选池要取自 `best_group`（可能与同名组不同），再按 ilvl 对齐。
+        pool = (
+            [c for kind in kinds for c in pob_all.get((kind, best_group), [])]
+            if best_group and best_group != group else candidates
+        ) or candidates
+        aligned = [c for c in pool if c["ilvl"] == r["ilvl"]]
+        near = aligned or pool
         rep.reviews.append({
             "group": group,
             # 带上 POEDB uid 前缀：同一 group+ilvl+底材类别下可能有多条
@@ -301,8 +337,11 @@ def reconcile(conn, group_filter: str | None) -> Report:  # noqa: ANN001
             "pob_ranges": norm_ranges(near[0]["ranges"]),
             "pob_url": near[0]["url"],
             "candidates": len(candidates),
+            # cause 必须与上面的计数分支同一套判据。改了分支忘了改这里，
+            # 结果就是 `rep.ladder_ambiguous` 加了 1 而落库的 cause 写成 partial——
+            # 「按成因分批核对」立刻失真（单测抓到过一次）。
             "cause": (
-                "ladder_ambiguous" if best_score >= 1.0 and len(best_groups) > 1
+                "ladder_ambiguous" if len(best_groups) > 1
                 else "ladder_identical" if best_score >= 1.0
                 else "ladder_partial"
             ),
@@ -392,6 +431,8 @@ def main() -> int:
               f"  ← 两源数值互相验证通过")
     print(f"  混合词缀不判定    : {rep.hybrid:,}（两源分组语义不同，非数值分歧）")
     print(f"  阶梯无重合不判定  : {rep.no_ladder:,}（PoB 侧没有这条阶梯 → 覆盖缺口，非数值分歧）")
+    print(f"  身份歧义但数值一致: {rep.ladder_ambiguous_agreed:,}"
+          f"（多个 PoB 组共享该阶梯，但每个候选身份下取值都相同）")
     print(f"  待人工核对        : {rep.needs_review:,}"
           f"  ← **不是**已确认冲突，见下方说明")
     if rep.reviews:

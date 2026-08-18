@@ -92,7 +92,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 427 项，秒级
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 430 项，秒级
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选
@@ -184,7 +184,7 @@ POST /chat[/stream]  api/chat.py（只做校验与编排调用）
 本机 `data/poe.db` 现状（`GET /healthz` 与 `/admin/stats` 可查）：`entity` 3812、
 `mod_affix` 93897、`pob_mod` 25487、`chunk` 17062、`alias` 5407、`game_constant` 499、
 `craft_bench_recipe` 783、`pob_base_item` **1022**（18 个装备类别，PoB × POEDB 逐条桥接，
-覆盖 PoB 侧 96.1%；未桥接的 41 条已按类别登记在台账）、`source_conflict` **1617**（`mod_review` 1392 + `unique_review` 222 + `tree_review` 3）。
+覆盖 PoB 侧 96.1%；未桥接的 41 条已按类别登记在台账）、`source_conflict` **479**（`mod_review` 254 + `unique_review` 222 + `tree_review` 3）。
 
 `craft_metamod_interaction` **134** 行（5 个小节 × 34 行操作，2 个空白格只进审计不成为
 证据）。这张表长期是 0 行，而文档一直写着「需联网跑」——**那句是错的**：pipeline 只抓
@@ -193,15 +193,19 @@ POEDB 镜像，而镜像页一直在 `data/http_cache` 里、抽取器对它跑�
 
 一处数据缺口会直接影响判断：
 
-- **`source_conflict` 里 `kind='mod'`（已确认冲突）仍是 0 条**，`mod_review` **1392** 条
-  （`ladder_partial` 1081 + `ladder_ambiguous` 311，见 `cause` 列）。按需求 15.5，
-  `mod_review` **不得当作冲突呈现**，所以「跨来源冲突并列展示」这条能力仍未验收，
-  `citation.conflict_block` 也仍是不可达代码。
-  但**卡点已经从「人工核对」变成「按成因分批核对」**：原先 2729 条无从下手，
-  查因发现不是人没来核对，而是**配对判据错了**——对账按 `correct_group` 组名配对，而
-  `parsers/mod_bridge.py` 早就实测过两侧组名系统性对不上（掉落词缀同名组仅 11.5%）。
-  改用**阶梯指纹**配对后：817 条其实是「PoB 侧没有这条阶梯」（覆盖缺口，不是冲突）、
-  831 条其实一致（正确对手在不同名的组里，如 POEDB `LifeLeech` ↔ PoB `LifeLeechPermyriad`）。
+- **`source_conflict` 里 `kind='mod'`（已确认冲突）是 0 条，而这次是个结论、不是缺口。**
+  `mod_review` **254** 条（`ladder_ambiguous` 222 + `ladder_partial` 32，见 `cause` 列）。
+
+  原先 2729 条待核对、文档把卡点写成「缺的是人工核对，不是代码」——**那个判断是错的**。
+  真正的原因是配对判据错了：对账按 `correct_group` 组名配对，而 `parsers/mod_bridge.py`
+  早就实测过两侧组名系统性对不上（掉落词缀同名组仅 11.5%）。改用**阶梯指纹**配对后
+  2729 → 254（−91%），区间一致率 86.5% → **92.7%**。
+
+  逐条看完剩下的 32 条 `ladder_partial`：**全是不同词缀的巧合配对**（POEDB 武器局部命中值
+  vs PoB「Minions have +(456-545) to Accuracy」，下界恰好都是 456；定值再生 vs 百分比
+  充能速率；穿刺效果 vs 狂怒球）。也就是说**在可比范围内两源没有真正的数值分歧**。
+  所以「跨来源冲突并列展示」（需求 15.5）没有东西可展示，`citation.conflict_block`
+  仍不可达——但现在是因为**没有冲突**，而不是因为判据坏了。改数据源版本后要重跑对账。
 
 ## 技术栈边界（不要替换、不要引入）
 
@@ -257,7 +261,7 @@ POEDB 镜像，而镜像页一直在 `data/http_cache` 里、抽取器对它跑�
    越靠上越可预测。**能在上层解决的绝不放到下层。**
 3. **大胆重构、拒绝补丁**：同一概念多处各写一份判据、白名单加语义重叠的新项、
    按用例名特判的 `if`、排序层反复加权 —— 见到就停下来重构，不要再加分支。
-   安全网是 427 项秒级单测 + `--gate` 离线重放 + 流式批量一致性，重构前后必须持平或变好。
+   安全网是 430 项秒级单测 + `--gate` 离线重放 + 流式批量一致性，重构前后必须持平或变好。
 4. **该删就删**：不留「以后可能有用」的函数，不为自己刚写的旧行为留兼容分支；
    约束本身是错的就删约束（`UNIQUE(name_zh)`），别绕开它。删除要证明没丢能力。
 5. **防漏改**：成对点清单在规约第 5 条。最高频的是批量 vs 流式、提示词 vs 闸门。
