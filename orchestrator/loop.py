@@ -116,6 +116,60 @@ def _tools_for_question(question: str) -> list[dict[str, Any]]:
     ]
 
 
+#: 《流放之路 2》（Path of Exile 2 / 流放之路：降临）的标记词。
+#:
+#: **本项目只覆盖 POE1。** 这不是一句声明，而是必须由代码执行的边界：两款游戏大量概念
+#: 同名（升华、词缀、通货、地图、暴击），拿 POE1 的数值回答 POE2 的问题，用户看不出来，
+#: 而「一个错误的小前提会让整条结论反向」正是本项目的第一原则要防的。
+#:
+#: **在原始问题串上匹配，不走分词**——这是关键。实测分词会把数字标记吃掉：
+#: `poe2 词缀怎么洗` → `['poe', '词缀']`、`流放之路2 的升华机制` → `['流放', '升华', '机制']`。
+#: 于是「poe2 词缀怎么洗」的查询词覆盖率变成 100%，被判**依据充分**——一个 POE2 问题
+#: 拿到了 POE1 的词缀数据。靠覆盖率拦不住这类问题，只有专指标记能拦。
+#:
+#: 每个标记都在 POE1 语料里核对过出现次数为 0。**刻意不收单独的「降临」**：
+#: POE1 有天赋节点「先祖降临」「惊寒降临」，拿它当标记会把这两个正常问题拒掉——
+#: 与 boss 领域曾把「怪物」当意图词是同一种错，意图词必须专指。
+_POE2_MARKERS: tuple[str, ...] = (
+    "流放之路2", "流放之路 2", "流放之路二", "流放之路：降临", "流放之路:降临",
+    "poe2", "poe 2", "poe ii", "path of exile 2", "pathofexile2",
+    "第二部", "二代",
+)
+
+#: POE2 的权威来源。缺据声明必须指路，否则用户以为「游戏里没这东西」。
+_POE2_AUTHORITIES = (
+    "https://poe2db.tw/cn/  （POE2 的数据站，与本库用的 poedb.tw 是两个站）",
+    "https://pathofbuilding.community/  的 Path of Building 2（POE2 是独立的 app）",
+)
+
+
+def poe2_marker(question: str) -> str:
+    """问题里出现的第一个 POE2 标记；没有则返回空串。
+
+    公开函数而非私有：黄金问答集与单测都要按同一套判据核对，
+    复制一份判据出去迟早分叉。
+    """
+    lowered = (question or "").lower()
+    for marker in _POE2_MARKERS:
+        if marker in lowered:
+            return marker
+    return ""
+
+
+def _out_of_scope_answer(question: str, marker: str) -> str:
+    """POE2 越界声明。由代码生成、不经模型——与缺据声明同一个理由：必须完全可预测。"""
+    lines = "\n".join(f"- {url}" for url in _POE2_AUTHORITIES)
+    return (
+        f"这个问题指向《流放之路 2》（问题里出现了「{marker}」），"
+        "而本助手只覆盖**《流放之路 1》**，因此不作答。\n\n"
+        "**为什么不能拿 POE1 的数据回答**\n"
+        "两款游戏大量概念同名（升华、词缀、通货、地图、暴击），但机制与数值并不通用。"
+        "用 POE1 的数值回答 POE2 的问题，得到的是一个看起来合理、实际错误的答案，"
+        "而你无法从答案里看出这一点。\n\n"
+        f"**建议的查证途径**\n{lines}\n"
+    )
+
+
 def _gap_answer(question: str, data: dict[str, Any]) -> tuple[str, str]:
     """依据不足时生成缺据声明，并给出台账分类。
 
@@ -1237,6 +1291,21 @@ def run_turn(
     trace_id = uuid.uuid4().hex
     result = TurnResult(trace_id=trace_id, question=question, answer="")
 
+    # ── 第零步：POE1/POE2 边界。放在检索**之前**——越界问题不该消耗检索，
+    # 更不该产生任何可能被当作依据的证据（见 `_POE2_MARKERS`）。
+    marker = poe2_marker(question)
+    if marker:
+        result.evidence_gap = True
+        result.answer = _out_of_scope_answer(question, marker)
+        result.retrieval_meta["out_of_scope"] = marker
+        _record_gaps(
+            question, [f"越界：《流放之路 2》问题（标记「{marker}」），本库只覆盖 POE1"],
+            category="out_of_scope/poe2", kind="retrieval_gap",
+        )
+        result.elapsed_ms = int((time.monotonic() - started) * 1000)
+        _persist(result, conversation_id)
+        return result
+
     # ── 第一步：强制检索。不让模型决定「要不要查」 ──
     first = REGISTRY.call("kb_search", json.dumps({"query": question}, ensure_ascii=False))
     result.tool_calls.append(_tool_record("kb_search", {"query": question}, first))
@@ -1532,6 +1601,20 @@ def stream_turn(
     trace_id = uuid.uuid4().hex
     result = TurnResult(trace_id=trace_id, question=question, answer="")
     yield {"type": "meta", "trace_id": trace_id, "conversation_id": conversation_id}
+
+    # ── POE1/POE2 边界（与非流式同一套判据，见 `_POE2_MARKERS`）──
+    marker = poe2_marker(question)
+    if marker:
+        result.evidence_gap = True
+        result.answer = _out_of_scope_answer(question, marker)
+        result.retrieval_meta["out_of_scope"] = marker
+        _record_gaps(
+            question, [f"越界：《流放之路 2》问题（标记「{marker}」），本库只覆盖 POE1"],
+            category="out_of_scope/poe2", kind="retrieval_gap",
+        )
+        yield {"type": "gap", "text": result.answer}
+        yield from _finish(result, conversation_id, started)
+        return
 
     # ── 强制检索 ──
     first = REGISTRY.call("kb_search", json.dumps({"query": question}, ensure_ascii=False))
