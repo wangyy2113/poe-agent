@@ -1,0 +1,51 @@
+{
+  "format_version": 1,
+  "case_id": "name_abberaths_horn_slug",
+  "query": "Abberaths Horn",
+  "recorded_at": "2026-08-17T18:02:31+08:00",
+  "model": "glm-5.2",
+  "tokens": {
+    "prompt": 5343,
+    "output": 248,
+    "reasoning": 37,
+    "total": 5591
+  },
+  "tool_calls": [
+    ""
+  ],
+  "evidence_gap": false,
+  "gap_answer": "",
+  "blocked_claims": 7,
+  "elapsed_ms": 4040,
+  "evidence_fingerprint": "sha256:dbf994a94fc21a225e12d81a6badddc7",
+  "_warning": "raw_answer 是未过出口闸门的模型原文，含可能无据的断言，不得当作事实引用",
+  "raw_answer": "## 艾贝拉斯之角（Abberath's Horn）\n\n**类型**：唯一装备 ｜ 底材：羊角法杖 ｜ 分类：武器[[E1]]\n\n**需求**：等级 6, 29 智慧[[E1]]\n\n**隐式词缀**[[E1]]\n- 攻击和法术附加 (1-2)-(3-4) 基础火焰伤害\n\n**显式词缀**[[E1]]\n- +(30-50)% 暴击导致的点燃持续伤害加成\n- 给法术附加 (4-6) 到 (8-12) 点火焰伤害\n- 全域暴击率提高 (80-120)%\n- 每击败一名被点燃的敌人获得 10 点生命\n- 敌人被点燃的持续时间缩短 25%\n\n---\n\n如果你还想了解与之配套的独特物品「地动（Abberath's Hooves）」或其它细节，可以继续提问。",
+  "evidence": [
+    {
+      "label": "E1",
+      "chunk_id": "unique_item:Abberaths_Horn#0#0d099beedd0a2f9f",
+      "entity_id": "unique_item:Abberaths_Horn",
+      "title": "艾贝拉斯之角（Abberath's Horn）",
+      "url": "https://poedb.tw/cn/Abberaths_Horn",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 艾贝拉斯之角（Abberath's Horn）\n类型：唯一装备 ｜ 底材：羊角法杖 ｜ 分类：武器\n\n**需求**：需求 等级 6, 29 智慧\n\n**隐式词缀**\n- [隐式词缀] 攻击和法术附加 (1-2)-(3-4) 基础火焰伤害\n\n**显式词缀**\n- [显式词缀] +(30-50)% 暴击导致的点燃持续伤害加成\n- [显式词缀] 给法术附加 (4-6) 到 (8-12) 点火焰伤害\n- [显式词缀] 全域暴击率提高 (80-120)%\n- [显式词缀] 每击败一名被点燃的敌人获得10点生命\n- [显式词缀] 敌人被点燃的持续时间缩短 25%\n\n来源：POEDB → 艾贝拉斯之角（Abberath's Horn）\nhttps://poedb.tw/cn/Abberaths_Horn",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E2",
+      "chunk_id": "unique_item:Abberaths_Hooves#0#b6e4970e6c264cbb",
+      "entity_id": "unique_item:Abberaths_Hooves",
+      "title": "地动（Abberath's Hooves）",
+      "url": "https://poedb.tw/cn/Abberaths_Hooves",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 地动（Abberath's Hooves）\n类型：唯一装备 ｜ 底材：羊皮短靴 ｜ 分类：护甲\n\n**需求**：需求 等级 12, 26 敏捷\n\n**显式词缀**\n- [显式词缀] 装备时施放 7 级的艾贝拉斯之怒\n- [显式词缀] +(20-30) 力量\n- [显式词缀] 移动速度加快 15%\n- [显式词缀] 有 (6-10)% 的几率点燃\n- [显式词缀] 当你击败 1 名点燃敌人，对周围敌人造成相同的点燃效果\n- [显式词缀] 每 20 点力量可使火焰伤害提高 1%\n- [显式词缀] 燃烧蹄印\n\n**附加说明**\n- [说明] (点燃会造成持续燃烧的火焰伤害, 取决于技能的基础火焰伤害, 持续4秒)\n- [说明] (点燃会造成持续燃烧的火焰伤害)\n\n来源：POEDB → 地动（Abberath's Hooves）\nhttps://poedb.tw/cn/Abberaths_Hooves",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    }
+  ]
+}

@@ -1,0 +1,129 @@
+{
+  "format_version": 1,
+  "case_id": "desc_spell_damage_staff",
+  "query": "法术伤害提高 最大魔力 法杖",
+  "recorded_at": "2026-08-17T18:04:42+08:00",
+  "model": "glm-5.2",
+  "tokens": {
+    "prompt": 8273,
+    "output": 830,
+    "reasoning": 85,
+    "total": 9103
+  },
+  "tool_calls": [
+    ""
+  ],
+  "evidence_gap": false,
+  "gap_answer": "",
+  "blocked_claims": 10,
+  "elapsed_ms": 14190,
+  "evidence_fingerprint": "sha256:ca9f1407aabe63220a510f03d8073b92",
+  "_warning": "raw_answer 是未过出口闸门的模型原文，含可能无据的断言，不得当作事实引用",
+  "raw_answer": "## 法杖 · SpellDamageAndMana 词缀梯度\n\n该词缀组在**法杖**上为**前缀**，来自 **Base** 来源，共 **7 档**，互斥规则为同组词缀不能同时存在于一件装备上[[E1]]。\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/7 | 巫妖的 | 法术伤害提高 (44-49)% / +(42-45) 最大魔力 | 80 | 100（0.1258%） |\n| T2/7 | 大法师的 | 法术伤害提高 (37-43)% / +(38-41) 最大魔力 | 58 | 200（0.2517%） |\n| T3/7 | 魔导师的 | 法术伤害提高 (31-36)% / +(34-37) 最大魔力 | 46 | 400（0.5034%） |\n| T4/7 | 术士的 | 法术伤害提高 (25-30)% / +(29-33) 最大魔力 | 35 | 800（1.0067%） |\n| T5/7 | 巫师的 | 法术伤害提高 (19-24)% / +(25-28) 最大魔力 | 23 | 1000（1.2584%） |\n| T6/7 | 咒术师的 | 法术伤害提高 (13-18)% / +(21-24) 最大魔力 | 11 | 1000（1.2584%） |\n| T7/7 | 施放者的 | 法术伤害提高 (8-12)% / +(17-20) 最大魔力 | 2 | 1000（1.2584%） |\n\n[[E1]]\n\n### 要点\n\n- **最高档 T1（巫妖的）**需要物品等级 **80**，提供法术伤害提高 (44-49)% 和 +(42-45) 最大魔力[[E1]]。\n- **最低档 T7（施放者的）**仅需物品等级 **2**，提供法术伤害提高 (8-12)% 和 +(17-20) 最大魔力[[E1]]。\n- T 级按 POEDB 算法推导：在同一来源类别与词缀组内，把物品等级去重后降序排名，物品等级最高者为 T1[[E1]]。\n- 括号内百分比（如 0.1258%）为该档在该底材全部词缀池中的条件权重占比，**不等于**任何通货或工艺的一次使用成功率。\n\n### 补充对比\n\n同一条词缀组（SpellDamageAndMana）也出现在其他法系底材上，数值梯度因底材而异：\n\n- **长杖**的数值显著更高，T1 为法术伤害提高 (77-86)% / +(60-64) 最大魔力[[E7]]。\n- **短杖**[[E6]]、**符文匕首**[[E8]] 的数值区间与法杖相同，但生成权重不同（法杖 T1 权重 100，短杖与符文匕首 T1 权重 75）[[E1,E6,E8]]。\n- **召集法杖**在同一词缀组下额外包含召唤生物伤害变体（如\"国王的\"），共 14 档[[E2]]。",
+  "evidence": [
+    {
+      "label": "E1",
+      "chunk_id": "mod_ladder:Wands:SpellDamageAndMana#d15d2efd6102146e",
+      "entity_id": "mod_ladder:Wands:SpellDamageAndMana",
+      "title": "法杖 · SpellDamageAndMana",
+      "url": "https://poedb.tw/cn/Wands#ModifiersCalc",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 法杖 · SpellDamageAndMana\n底材类别：法杖 ｜ 词缀组：SpellDamageAndMana ｜ 类型：前缀 ｜ 来源渠道：1 个\n标签：魔力、伤害、施法\n\n本词缀组在该底材上共 7 条，来自 1 个来源：Base。\n互斥规则：与本组（SpellDamageAndMana）有相同词缀组的其他词缀不能同时存在于一件装备上。\n\n## Base · 前缀 · 7 档\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/7 | 巫妖的 | 法术伤害提高 (44-49)% / +(42-45) 最大魔力 | 80 | 100（0.1258%） |\n| T2/7 | 大法师的 | 法术伤害提高 (37-43)% / +(38-41) 最大魔力 | 58 | 200（0.2517%） |\n| T3/7 | 魔导师的 | 法术伤害提高 (31-36)% / +(34-37) 最大魔力 | 46 | 400（0.5034%） |\n| T4/7 | 术士的 | 法术伤害提高 (25-30)% / +(29-33) 最大魔力 | 35 | 800（1.0067%） |\n| T5/7 | 巫师的 | 法术伤害提高 (19-24)% / +(25-28) 最大魔力 | 23 | 1000（1.2584%） |\n| T6/7 | 咒术师的 | 法术伤害提高 (13-18)% / +(21-24) 最大魔力 | 11 | 1000（1.2584%） |\n| T7/7 | 施放者的 | 法术伤害提高 (8-12)% / +(17-20) 最大魔力 | 2 | 1000（1.2584%） |\n\n置信度说明：\n- T 级按 POEDB 的算法推导——在同一来源类别与词缀组内，把物品等级去重后降序排名，物品等级最高者为 T1（算法已复刻并通过不变量校验）\n\n来源：POEDB → 法杖 · SpellDamageAndMana\nhttps://poedb.tw/cn/Wands#ModifiersCalc",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E2",
+      "chunk_id": "mod_ladder:Convoking_Wand:SpellDamageAndMana#10d43267576c8949",
+      "entity_id": "mod_ladder:Convoking_Wand:SpellDamageAndMana",
+      "title": "召集法杖 · SpellDamageAndMana",
+      "url": "https://poedb.tw/cn/Convoking_Wand#ModifiersCalc",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 召集法杖 · SpellDamageAndMana\n底材类别：召集法杖 ｜ 词缀组：SpellDamageAndMana ｜ 类型：前缀 ｜ 来源渠道：1 个\n标签：魔力、伤害、施法、召唤生物\n\n本词缀组在该底材上共 14 条，来自 1 个来源：Base。\n互斥规则：与本组（SpellDamageAndMana）有相同词缀组的其他词缀不能同时存在于一件装备上。\n\n## Base · 前缀 · 14 档\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/7 | 巫妖的 | 法术伤害提高 (44-49)% / +(42-45) 最大魔力 | 80 | 100（0.0998%） |\n| T1/7 | 国王的 | +(42-45) 最大魔力 / 召唤生物的伤害提高 (44-49)% | 80 | 200（0.1996%） |\n| T2/7 | 大法师的 | 法术伤害提高 (37-43)% / +(38-41) 最大魔力 | 58 | 200（0.1996%） |\n| T2/7 | 亲王的 | +(38-41) 最大魔力 / 召唤生物的伤害提高 (37-43)% | 58 | 400（0.3992%） |\n| T3/7 | 魔导师的 | 法术伤害提高 (31-36)% / +(34-37) 最大魔力 | 46 | 400（0.3992%） |\n| T3/7 | 公爵的 | +(34-37) 最大魔力 / 召唤生物的伤害提高 (31-36)% | 46 | 800（0.7984%） |\n| T4/7 | 术士的 | 法术伤害提高 (25-30)% / +(29-33) 最大魔力 | 35 | 800（0.7984%） |\n| T4/7 | 伯爵的 | +(29-33) 最大魔力 / 召唤生物的伤害提高 (25-30)% | 35 | 1600（1.5967%） |\n| T5/7 | 巫师的 | 法术伤害提高 (19-24)% / +(25-28) 最大魔力 | 23 | 1000（0.9979%） |\n| T5/7 | 侯爵的 | +(25-28) 最大魔力 / 召唤生物的伤害提高 (19-24)% | 23 | 2000（1.9959%） |\n| T6/7 | 咒术师的 | 法术伤害提高 (13-18)% / +(21-24) 最大魔力 | 11 | 1000（0.9979%） |\n| T6/7 | 子爵的 | +(21-24) 最大魔力 / 召唤生物的伤害提高 (13-18)% | 11 | 2000（1.9959%） |\n| T7/7 | 施放者的 | 法术伤害提高 (8-12)% / +(17-20) 最大魔力 | 2 | 1000（0.9979%） |\n| T7",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E3",
+      "chunk_id": "unique_item:Lifesprig#0#fedf9deee79db40e",
+      "entity_id": "unique_item:Lifesprig",
+      "title": "生机之记（Lifesprig）",
+      "url": "https://poedb.tw/cn/Lifesprig",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 生机之记（Lifesprig）\n类型：唯一装备 ｜ 底材：朽木法杖 ｜ 分类：武器\n\n**需求**：需求 等级 1, 14 智慧\n\n**隐式词缀**\n- [隐式词缀] 法术伤害提高 (8-12)%\n\n**显式词缀**\n- [显式词缀] 此物品上装备的法术技能石等级 +1\n- [显式词缀] 法术伤害提高 (20-28)%\n- [显式词缀] 施法速度加快 (5-8)%\n- [显式词缀] +(15-20) 最大生命\n- [显式词缀] +(15-20) 最大魔力\n- [显式词缀] 你施放法术后 1 秒内再生 (6-8) 生命\n\n来源：POEDB → 生机之记（Lifesprig）\nhttps://poedb.tw/cn/Lifesprig",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E4",
+      "chunk_id": "unique_item:Void_Battery#0#aec9531579c49fe1",
+      "entity_id": "unique_item:Void_Battery",
+      "title": "潜能魔棒（Void Battery）",
+      "url": "https://poedb.tw/cn/Void_Battery",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 潜能魔棒（Void Battery）\n类型：唯一装备 ｜ 底材：箴言法杖 ｜ 分类：武器\n\n**需求**：需求 等级 68, 245 智慧\n\n**隐式词缀**\n- [隐式词缀] 法术伤害提高 (36-40)%\n\n**显式词缀**\n- [显式词缀] 法术伤害降低 50%\n- [显式词缀] 施法速度加快 (10-20)%\n- [显式词缀] 全域暴击率提高 (50-65)%\n- [显式词缀] +(100-120) 最大魔力\n- [显式词缀] 暴击球数量上限 +1\n- [显式词缀] 每个暴击球使法术伤害提高 (10-15)%\n\n来源：POEDB → 潜能魔棒（Void Battery）\nhttps://poedb.tw/cn/Void_Battery",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E5",
+      "chunk_id": "passive:Spell_Damage_and_Mana_c6b5dbce41#ff7282770637806e",
+      "entity_id": "passive:Spell_Damage_and_Mana_c6b5dbce41",
+      "title": "普通天赋·法术伤害和魔力（Spell Damage and Mana）",
+      "url": "https://poedb.tw/cn/passive-skill-tree/",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 普通天赋·法术伤害和魔力（Spell Damage and Mana）\n普通天赋 ｜ 天赋树 3.29\n\n- 法术伤害提高 16%\n- +16 最大魔力\n\n来源：POEDB → 天赋树 · 法术伤害和魔力（Spell Damage and Mana）\nhttps://poedb.tw/cn/passive-skill-tree/",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E6",
+      "chunk_id": "mod_ladder:Sceptres:SpellDamageAndMana#72385ede52f2ca80",
+      "entity_id": "mod_ladder:Sceptres:SpellDamageAndMana",
+      "title": "短杖 · SpellDamageAndMana",
+      "url": "https://poedb.tw/cn/Sceptres#ModifiersCalc",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 短杖 · SpellDamageAndMana\n底材类别：短杖 ｜ 词缀组：SpellDamageAndMana ｜ 类型：前缀 ｜ 来源渠道：1 个\n标签：魔力、伤害、施法\n\n本词缀组在该底材上共 7 条，来自 1 个来源：Base。\n互斥规则：与本组（SpellDamageAndMana）有相同词缀组的其他词缀不能同时存在于一件装备上。\n\n## Base · 前缀 · 7 档\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/7 | 巫妖的 | 法术伤害提高 (44-49)% / +(42-45) 最大魔力 | 80 | 75（0.0855%） |\n| T2/7 | 大法师的 | 法术伤害提高 (37-43)% / +(38-41) 最大魔力 | 58 | 150（0.171%） |\n| T3/7 | 魔导师的 | 法术伤害提高 (31-36)% / +(34-37) 最大魔力 | 46 | 300（0.342%） |\n| T4/7 | 术士的 | 法术伤害提高 (25-30)% / +(29-33) 最大魔力 | 35 | 600（0.6841%） |\n| T5/7 | 巫师的 | 法术伤害提高 (19-24)% / +(25-28) 最大魔力 | 23 | 750（0.8551%） |\n| T6/7 | 咒术师的 | 法术伤害提高 (13-18)% / +(21-24) 最大魔力 | 11 | 750（0.8551%） |\n| T7/7 | 施放者的 | 法术伤害提高 (8-12)% / +(17-20) 最大魔力 | 2 | 750（0.8551%） |\n\n置信度说明：\n- T 级按 POEDB 的算法推导——在同一来源类别与词缀组内，把物品等级去重后降序排名，物品等级最高者为 T1（算法已复刻并通过不变量校验）\n\n来源：POEDB → 短杖 · SpellDamageAndMana\nhttps://poedb.tw/cn/Sceptres#ModifiersCalc",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E7",
+      "chunk_id": "mod_ladder:Staves:SpellDamageAndMana#d03d21ece89a34af",
+      "entity_id": "mod_ladder:Staves:SpellDamageAndMana",
+      "title": "长杖 · SpellDamageAndMana",
+      "url": "https://poedb.tw/cn/Staves#ModifiersCalc",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 长杖 · SpellDamageAndMana\n底材类别：长杖 ｜ 词缀组：SpellDamageAndMana ｜ 类型：前缀 ｜ 来源渠道：1 个\n标签：魔力、伤害、施法\n\n本词缀组在该底材上共 7 条，来自 1 个来源：Base。\n互斥规则：与本组（SpellDamageAndMana）有相同词缀组的其他词缀不能同时存在于一件装备上。\n\n## Base · 前缀 · 7 档\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/7 | 巫妖的 | 法术伤害提高 (77-86)% / +(60-64) 最大魔力 | 80 | 75（0.0791%） |\n| T2/7 | 大法师的 | 法术伤害提高 (64-76)% / +(54-59) 最大魔力 | 58 | 150（0.1583%） |\n| T3/7 | 魔导师的 | 法术伤害提高 (54-63)% / +(48-53) 最大魔力 | 46 | 300（0.3166%） |\n| T4/7 | 术士的 | 法术伤害提高 (44-53)% / +(42-47) 最大魔力 | 35 | 600（0.6332%） |\n| T5/7 | 巫师的 | 法术伤害提高 (33-43)% / +(36-41) 最大魔力 | 23 | 1500（1.5829%） |\n| T6/7 | 咒术师的 | 法术伤害提高 (23-32)% / +(31-35) 最大魔力 | 11 | 1500（1.5829%） |\n| T7/7 | 施放者的 | 法术伤害提高 (14-22)% / +(26-30) 最大魔力 | 2 | 1500（1.5829%） |\n\n置信度说明：\n- T 级按 POEDB 的算法推导——在同一来源类别与词缀组内，把物品等级去重后降序排名，物品等级最高者为 T1（算法已复刻并通过不变量校验）\n\n来源：POEDB → 长杖 · SpellDamageAndMana\nhttps://poedb.tw/cn/Staves#ModifiersCalc",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E8",
+      "chunk_id": "mod_ladder:Rune_Daggers:SpellDamageAndMana#bf7f7dcbc0816856",
+      "entity_id": "mod_ladder:Rune_Daggers:SpellDamageAndMana",
+      "title": "符文匕首 · SpellDamageAndMana",
+      "url": "https://poedb.tw/cn/Rune_Daggers#ModifiersCalc",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 符文匕首 · SpellDamageAndMana\n底材类别：符文匕首 ｜ 词缀组：SpellDamageAndMana ｜ 类型：前缀 ｜ 来源渠道：1 个\n标签：魔力、伤害、施法\n\n本词缀组在该底材上共 7 条，来自 1 个来源：Base。\n互斥规则：与本组（SpellDamageAndMana）有相同词缀组的其他词缀不能同时存在于一件装备上。\n\n## Base · 前缀 · 7 档\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/7 | 巫妖的 | 法术伤害提高 (44-49)% / +(42-45) 最大魔力 | 80 | 75（0.0834%） |\n| T2/7 | 大法师的 | 法术伤害提高 (37-43)% / +(38-41) 最大魔力 | 58 | 150（0.1669%） |\n| T3/7 | 魔导师的 | 法术伤害提高 (31-36)% / +(34-37) 最大魔力 | 46 | 300（0.3337%） |\n| T4/7 | 术士的 | 法术伤害提高 (25-30)% / +(29-33) 最大魔力 | 35 | 600（0.6675%） |\n| T5/7 | 巫师的 | 法术伤害提高 (19-24)% / +(25-28) 最大魔力 | 23 | 750（0.8344%） |\n| T6/7 | 咒术师的 | 法术伤害提高 (13-18)% / +(21-24) 最大魔力 | 11 | 750（0.8344%） |\n| T7/7 | 施放者的 | 法术伤害提高 (8-12)% / +(17-20) 最大魔力 | 2 | 750（0.8344%） |\n\n置信度说明：\n- T 级按 POEDB 的算法推导——在同一来源类别与词缀组内，把物品等级去重后降序排名，物品等级最高者为 T1（算法已复刻并通过不变量校验）\n\n来源：POEDB → 符文匕首 · SpellDamageAndMana\nhttps://poedb.tw/cn/Rune_Daggers#ModifiersCalc",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    }
+  ]
+}

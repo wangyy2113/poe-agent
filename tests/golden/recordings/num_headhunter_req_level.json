@@ -1,0 +1,129 @@
+{
+  "format_version": 1,
+  "case_id": "num_headhunter_req_level",
+  "query": "猎首的需求等级是多少",
+  "recorded_at": "2026-08-17T18:05:23+08:00",
+  "model": "glm-5.2",
+  "tokens": {
+    "prompt": 6590,
+    "output": 42,
+    "reasoning": 23,
+    "total": 6632
+  },
+  "tool_calls": [
+    ""
+  ],
+  "evidence_gap": false,
+  "gap_answer": "",
+  "blocked_claims": 0,
+  "elapsed_ms": 1560,
+  "evidence_fingerprint": "sha256:c4577f551494f6424bc122795be45898",
+  "_warning": "raw_answer 是未过出口闸门的模型原文，含可能无据的断言，不得当作事实引用",
+  "raw_answer": "猎首（Headhunter）的需求等级为 **40**[[E1]]。",
+  "evidence": [
+    {
+      "label": "E1",
+      "chunk_id": "unique_item:Headhunter#0#456e5079b32c619a",
+      "entity_id": "unique_item:Headhunter",
+      "title": "猎首（Headhunter）",
+      "url": "https://poedb.tw/cn/Headhunter",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 猎首（Headhunter）\n类型：唯一装备 ｜ 底材：皮革腰带 ｜ 分类：其他\n\n**需求**：需求 等级 40\n\n**隐式词缀**\n- [隐式词缀] +(25-40) 最大生命\n\n**显式词缀**\n- [显式词缀] +(40-55) 力量\n- [显式词缀] +(40-55) 敏捷\n- [显式词缀] +(50-60) 最大生命\n- [显式词缀] 击中伤害对稀有怪物提高 (20-30)%\n- [显式词缀] 当你击败稀有怪物时，会获得该怪物属性修正 60 秒\n\n**附加说明**\n- [说明] ( 当你进入迷踪状态时, 你将不会被敌人所阻挡 )\n\n来源：POEDB → 猎首（Headhunter）\nhttps://poedb.tw/cn/Headhunter",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E2",
+      "chunk_id": "unique_item:Replica_Headhunter#0#1496799ce8df344f",
+      "entity_id": "unique_item:Replica_Headhunter",
+      "title": "猎首【仿品】（Replica Headhunter）",
+      "url": "https://poedb.tw/cn/Replica_Headhunter",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 猎首【仿品】（Replica Headhunter）\n类型：唯一装备 ｜ 底材：皮革腰带 ｜ 分类：其他\n\n**需求**：需求 等级 40\n\n**隐式词缀**\n- [隐式词缀] +(25-40) 最大生命\n\n**显式词缀**\n- [显式词缀] +(40-55) 力量\n- [显式词缀] +(40-55) 敏捷\n- [显式词缀] +(50-60) 最大生命\n- [显式词缀] 对抗魔法怪物时，击中伤害提高 (20-30)%\n- [显式词缀] 有 20% 几率在你击杀一个魔法怪物时获得其词缀，持续 60 秒。\n\n来源：POEDB → 猎首【仿品】（Replica Headhunter）\nhttps://poedb.tw/cn/Replica_Headhunter",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E3",
+      "chunk_id": "unique_item:Mj%C3%B6lner#0#a8b1e24eec9ac121",
+      "entity_id": "unique_item:Mj%C3%B6lner",
+      "title": "沉默之雷（Mjölner）",
+      "url": "https://poedb.tw/cn/Mj%C3%B6lner",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 沉默之雷（Mjölner）\n类型：唯一装备 ｜ 底材：坚锤 ｜ 分类：武器\n\n**需求**：需求 等级 60, 412 力量, 智慧 300\n\n**隐式词缀**\n- [隐式词缀] 敌人晕眩门槛降低 15%\n\n**显式词缀**\n- [显式词缀] 击中时触发一个插入的闪电法术，它有 0.25 秒冷却时间插入的闪电法术触发时无花费\n- [显式词缀] +300 智慧需求\n- [显式词缀] +200 力量需求\n- [显式词缀] 物理伤害提高 (80-120)%\n- [显式词缀] 闪电伤害提高 (80-100)%\n- [显式词缀] 技能可以连锁弹射 +1 次\n\n来源：POEDB → 沉默之雷（Mjölner）\nhttps://poedb.tw/cn/Mj%C3%B6lner",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E4",
+      "chunk_id": "unique_item:Greeds_Embrace#0#a347b360fa2552d7",
+      "entity_id": "unique_item:Greeds_Embrace",
+      "title": "贪婪之拥（Greed's Embrace）",
+      "url": "https://poedb.tw/cn/Greeds_Embrace",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 贪婪之拥（Greed's Embrace）\n类型：唯一装备 ｜ 底材：金耀之铠 ｜ 分类：护甲\n\n**需求**：需求 等级 56, 106.4 力量\n\n**显式词缀**\n- [显式词缀] 力量需求降低 30%\n- [显式词缀] 物品稀有度提高 100%\n- [显式词缀] -10% 火焰抗性\n- [显式词缀] +(20-30)% 冰霜抗性\n- [显式词缀] (-20--10)% 闪电抗性\n- [显式词缀] 移动速度减慢 20%\n\n来源：POEDB → 贪婪之拥（Greed's Embrace）\nhttps://poedb.tw/cn/Greeds_Embrace",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E5",
+      "chunk_id": "unique_item:Akoyas_Gaze#0#cc5a211984d9f1a7",
+      "entity_id": "unique_item:Akoyas_Gaze",
+      "title": "阿寇亚之凝视（Akoya's Gaze）",
+      "url": "https://poedb.tw/cn/Akoyas_Gaze",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 阿寇亚之凝视（Akoya's Gaze）\n类型：唯一装备 ｜ 底材：弑君之面 ｜ 分类：护甲\n\n**需求**：需求 等级 52, 58 敏捷, 58 智慧, 力量 100\n\n**显式词缀**\n- [显式词缀] +100 力量需求\n- [显式词缀] 战吼施法速度加快 (20-25)%\n- [显式词缀] 增助攻击的生命偷取立即生效\n- [显式词缀] 非增助攻击无法造成伤害\n\n来源：POEDB → 阿寇亚之凝视（Akoya's Gaze）\nhttps://poedb.tw/cn/Akoyas_Gaze",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E6",
+      "chunk_id": "unique_item:Crystallised_Omniscience#0#5e7e67590b09481b",
+      "entity_id": "unique_item:Crystallised_Omniscience",
+      "title": "结晶全知（Crystallised Omniscience）",
+      "url": "https://poedb.tw/cn/Crystallised_Omniscience",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 结晶全知（Crystallised Omniscience）\n类型：唯一装备 ｜ 底材：黑曜护身符 ｜ 分类：其他\n\n**需求**：需求 等级 61\n\n**隐式词缀**\n- [隐式词缀] +(10-16) 全属性\n\n**显式词缀**\n- [显式词缀] 属性词缀改为适配全知\n- [显式词缀] 所有元素抗性按照每 15 点全知 +1%\n- [显式词缀] 元素抗性按照每 15 点全知穿透 1%\n- [显式词缀] 属性需求可由 (15-25)% 的全知满足\n\n来源：POEDB → 结晶全知（Crystallised Omniscience）\nhttps://poedb.tw/cn/Crystallised_Omniscience",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E7",
+      "chunk_id": "unique_item:Repentance#0#f27bf04b34d71817",
+      "entity_id": "unique_item:Repentance",
+      "title": "悔悟之掌（Repentance）",
+      "url": "https://poedb.tw/cn/Repentance",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 悔悟之掌（Repentance）\n类型：唯一装备 ｜ 底材：圣战手套 ｜ 分类：护甲\n\n**需求**：需求 等级 66, 306 力量, 306 智慧\n\n**显式词缀**\n- [显式词缀] 属性需求提高 500%\n- [显式词缀] 力量提高 (6-12)%\n- [显式词缀] 该装备的护甲与能量护盾提高 (400-500)%\n- [显式词缀] 钢铁意志\n\n**附加说明**\n- [说明] (属性分为力量，敏捷和智慧三种)\n- [说明] （力量提供的物理伤害加成同样作用于法术伤害）\n\n来源：POEDB → 悔悟之掌（Repentance）\nhttps://poedb.tw/cn/Repentance",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E8",
+      "chunk_id": "unique_item:Replica_Atziris_Foible#0#1263dbe5c18cfb55",
+      "entity_id": "unique_item:Replica_Atziris_Foible",
+      "title": "阿兹里圣徽【仿品】（Replica Atziri's Foible）",
+      "url": "https://poedb.tw/cn/Replica_Atziris_Foible",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 阿兹里圣徽【仿品】（Replica Atziri's Foible）\n类型：唯一装备 ｜ 底材：海灵护身符 ｜ 分类：其他\n\n**需求**：需求 等级 16\n\n**隐式词缀**\n- [隐式词缀] 每秒再生 (1-2)% 生命\n\n**显式词缀**\n- [显式词缀] +100 最大生命\n- [显式词缀] 生命再生速度提高 (20-25)%\n- [显式词缀] 装备和技能石的属性需求降低 25%\n\n**附加说明**\n- [说明] (属性分为力量，敏捷和智慧三种)\n\n来源：POEDB → 阿兹里圣徽【仿品】（Replica Atziri's Foible）\nhttps://poedb.tw/cn/Replica_Atziris_Foible",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    }
+  ]
+}

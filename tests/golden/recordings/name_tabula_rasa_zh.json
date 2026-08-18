@@ -1,0 +1,129 @@
+{
+  "format_version": 1,
+  "case_id": "name_tabula_rasa_zh",
+  "query": "无尽之衣",
+  "recorded_at": "2026-08-17T18:02:46+08:00",
+  "model": "glm-5.2",
+  "tokens": {
+    "prompt": 6100,
+    "output": 206,
+    "reasoning": 37,
+    "total": 6306
+  },
+  "tool_calls": [
+    ""
+  ],
+  "evidence_gap": false,
+  "gap_answer": "",
+  "blocked_claims": 6,
+  "elapsed_ms": 3818,
+  "evidence_fingerprint": "sha256:62ac26f321fc605e0b2c431f56e3b278",
+  "_warning": "raw_answer 是未过出口闸门的模型原文，含可能无据的断言，不得当作事实引用",
+  "raw_answer": "## 无尽之衣（Tabula Rasa）\n\n| 属性 | 内容 |\n|------|------|\n| **类型** | 唯一装备 |\n| **底材** | 简易之袍 |\n| **分类** | 胸甲 |\n| **需求** | 等级 3，17 智慧 |\n\n**显式词缀**：\n\n- 六插槽连线[[E1]]\n- 插槽皆为白色[[E1]]\n- 无等级需求与无能量护盾[[E1]]\n\n这是一件以**六连全白孔**为核心特色的胸甲，需求等级仅 3 级，但没有能量护盾值[[E1]]。全白插槽意味着任何颜色的技能石都可以插入，非常适合早期过渡或需要灵活搭配技能的场景。",
+  "evidence": [
+    {
+      "label": "E1",
+      "chunk_id": "unique_item:Tabula_Rasa#0#c8a418a6a571ceb3",
+      "entity_id": "unique_item:Tabula_Rasa",
+      "title": "无尽之衣（Tabula Rasa）",
+      "url": "https://poedb.tw/cn/Tabula_Rasa",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 无尽之衣（Tabula Rasa）\n类型：唯一装备 ｜ 底材：简易之袍 ｜ 分类：胸甲\n\n**需求**：需求 等级 3, 17 智慧\n\n**显式词缀**\n- [显式词缀] local six linked white sockets [1]\n- [显式词缀] local unique tabula rasa no requirement or energy shield [1]\n- [显式词缀] [六插槽連線]\n- [显式词缀] [插槽皆為白色]\n\n来源：POEDB → 无尽之衣（Tabula Rasa）\nhttps://poedb.tw/cn/Tabula_Rasa",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E2",
+      "chunk_id": "atlas_passive:Compulsive_Hoarder_d397134830#f6d3b1a4995694f2",
+      "entity_id": "atlas_passive:Compulsive_Hoarder_d397134830",
+      "title": "核心天赋·无尽贪欲（Compulsive Hoarder）",
+      "url": "https://poedb.tw/cn/atlas-skill-tree/",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 核心天赋·无尽贪欲（Compulsive Hoarder）\n核心天赋 ｜ Atlas 天赋树 3.29\n\n- 地图内的惊悸迷雾遭遇战有 8% 的几率产生三个额外奖励类型\n\n来源：POEDB → Atlas 天赋树 · 无尽贪欲（Compulsive Hoarder）\nhttps://poedb.tw/cn/atlas-skill-tree/",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E3",
+      "chunk_id": "passive:Relentless_Pursuit_7af76deb87#227dad8c0b945fbe",
+      "entity_id": "passive:Relentless_Pursuit_7af76deb87",
+      "title": "核心天赋·无尽追踪（Relentless Pursuit）",
+      "url": "https://poedb.tw/cn/passive-skill-tree/",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 核心天赋·无尽追踪（Relentless Pursuit）\n核心天赋 ｜ 天赋树 3.29\n\n- 若你近期施放过印记法术，攻击速度加快 10%\n- 移动速度在你近期内施放过印记法术的情况下加快 10%\n\n> ( 近期内意指 4 秒内 )\n\n来源：POEDB → 天赋树 · 无尽追踪（Relentless Pursuit）\nhttps://poedb.tw/cn/passive-skill-tree/",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E4",
+      "chunk_id": "passive:Insatiable_Killer_67af62d496#2922de0256d1486d",
+      "entity_id": "passive:Insatiable_Killer_67af62d496",
+      "title": "核心天赋·无尽杀戮（Insatiable Killer）",
+      "url": "https://poedb.tw/cn/passive-skill-tree/",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 核心天赋·无尽杀戮（Insatiable Killer）\n核心天赋 ｜ 天赋树 3.29\n\n- 双持武器时，攻击技能的伤害提高 20%\n- 双持攻击的攻击速度加快 5%\n- 双持武器时，有 5% 的几率在击败敌人时获得一个狂怒球\n\n来源：POEDB → 天赋树 · 无尽杀戮（Insatiable Killer）\nhttps://poedb.tw/cn/passive-skill-tree/",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E5",
+      "chunk_id": "unique_item:Lightbane_Raiment#0#8a90a4c8715d23c8",
+      "entity_id": "unique_item:Lightbane_Raiment",
+      "title": "魔道之衣（Lightbane Raiment）",
+      "url": "https://poedb.tw/cn/Lightbane_Raiment",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 魔道之衣（Lightbane Raiment）\n类型：唯一装备 ｜ 底材：华丽环甲 ｜ 分类：护甲\n\n**需求**：需求 等级 47, 69 力量, 69 智慧\n\n**显式词缀**\n- [显式词缀] 该装备的护甲与能量护盾提高 (120-140)%\n- [显式词缀] 30% 的物理伤害转换为混沌伤害\n- [显式词缀] 反射 30 混沌伤害给近战攻击者\n- [显式词缀] 照亮范围缩小 25%\n- [显式词缀] 格挡时有 100% 的几率制造腐化地面\n- [显式词缀] desecrate on block base chaos damage to deal per minute [15000]\n- [显式词缀] desecrate on block base radius [16]\n- [显式词缀] desecrate on block duration ms [8000]\n\n**附加说明**\n- [说明] (在冰缓地面上你将收到持续的混沌伤害）\n\n来源：POEDB → 魔道之衣（Lightbane Raiment）\nhttps://poedb.tw/cn/Lightbane_Raiment",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E6",
+      "chunk_id": "atlas_passive:Unending_Nightmare_53ddcf476f#deeed95769dcf366",
+      "entity_id": "atlas_passive:Unending_Nightmare_53ddcf476f",
+      "title": "基石·无尽梦魇（Unending Nightmare）",
+      "url": "https://poedb.tw/cn/atlas-skill-tree/",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 基石·无尽梦魇（Unending Nightmare）\n基石 ｜ Atlas 天赋树 3.29\n\n- 你地图中的惊悸迷雾永不消散\n  根据与镜子的距离，区域内的惊悸迷雾的难度翻倍\n  你的地图中无法找到梦魇拟像裂片\n  你的地图中无法找到雾魇宝珠\n\n来源：POEDB → Atlas 天赋树 · 无尽梦魇（Unending Nightmare）\nhttps://poedb.tw/cn/atlas-skill-tree/",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E7",
+      "chunk_id": "atlas_passive:Endless_Tide_35488eb48d#fff8cadc28170b33",
+      "entity_id": "atlas_passive:Endless_Tide_35488eb48d",
+      "title": "基石·无尽之潮（Endless Tide）",
+      "url": "https://poedb.tw/cn/atlas-skill-tree/",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 基石·无尽之潮（Endless Tide）\n基石 ｜ Atlas 天赋树 3.29\n\n- 地图中的穿越传送门无法生成传奇首领\n  你地图中的穿越传送门的融合范围总降 50%\n\n> （在生成传奇超越首领后，超越时空之门和超越恶魔将会停止生成）\n> （在融合范围的超越时空之门可以融合产生超越恶魔）\n\n来源：POEDB → Atlas 天赋树 · 无尽之潮（Endless Tide）\nhttps://poedb.tw/cn/atlas-skill-tree/",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E8",
+      "chunk_id": "unique_item:Endless_Misery#0#362b6beb88856828",
+      "entity_id": "unique_item:Endless_Misery",
+      "title": "无尽之苦（Endless Misery）",
+      "url": "https://poedb.tw/cn/Endless_Misery",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 无尽之苦（Endless Misery）\n类型：唯一装备 ｜ 底材：钴蓝珠宝 ｜ 分类：钴蓝珠宝\n\n**需求**：需求 等级 20\n\n**显式词缀**\n- [显式词缀] 元素伤害提高 (7-10)%\n- [显式词缀] 若范围内至少有 40 点智慧，解放的效果区域总降 60%\n- [显式词缀] 若范围内至少有 40 点智慧，解放的冷却时间为 250 毫秒\n- [显式词缀] 若范围内至少有 40 点智慧，解放的伤害总降 60%\n\n来源：POEDB → 无尽之苦（Endless Misery）\nhttps://poedb.tw/cn/Endless_Misery",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    }
+  ]
+}

@@ -1,0 +1,129 @@
+{
+  "format_version": 1,
+  "case_id": "name_abberaths_horn_apostrophe",
+  "query": "Abberath's Horn",
+  "recorded_at": "2026-08-17T18:02:38+08:00",
+  "model": "glm-5.2",
+  "tokens": {
+    "prompt": 6147,
+    "output": 474,
+    "reasoning": 36,
+    "total": 6621
+  },
+  "tool_calls": [
+    ""
+  ],
+  "evidence_gap": false,
+  "gap_answer": "",
+  "blocked_claims": 1,
+  "elapsed_ms": 7225,
+  "evidence_fingerprint": "sha256:68a9e37a48c9ef2bfe389e26a9c3e39b",
+  "_warning": "raw_answer 是未过出口闸门的模型原文，含可能无据的断言，不得当作事实引用",
+  "raw_answer": "## 艾贝拉斯之角（Abberath's Horn）\n\n**类型**：唯一装备 ｜ 底材：羊角法杖 ｜ 分类：武器 [[E1]](https://poedb.tw/cn/Abberaths_Horn)\n\n**需求**：等级 6，29 智慧 [[E1]](https://poedb.tw/cn/Abberaths_Horn)\n\n### 隐式词缀\n- 攻击和法术附加 (1-2)-(3-4) 基础火焰伤害 [[E1]](https://poedb.tw/cn/Abberaths_Horn)\n\n### 显式词缀\n- +(30-50)% 暴击导致的点燃持续伤害加成 [[E1]](https://poedb.tw/cn/Abberaths_Horn)\n- 给法术附加 (4-6) 到 (8-12) 点火焰伤害 [[E1]](https://poedb.tw/cn/Abberaths_Horn)\n- 全域暴击率提高 (80-120)% [[E1]](https://poedb.tw/cn/Abberaths_Horn)\n- 每击败一名被点燃的敌人获得 10 点生命 [[E1]](https://poedb.tw/cn/Abberaths_Horn)\n- 敌人被点燃的持续时间缩短 25% [[E1]](https://poedb.tw/cn/Abberaths_Horn)\n\n---\n\n这件武器是一把低等级（需求等级 6）的火焰/点燃 themed 法杖，围绕点燃机制设计：提供暴击点燃伤害加成、法术火焰伤害附加、全域暴击率提升，并通过击杀被点燃的敌人回血。同系列的另一件装备是**地动（Abberath's Hooves）**，一双羊皮短靴，装备时施放 7 级艾贝拉斯之怒，并具有与点燃联动的机制 [[E2]](https://poedb.tw/cn/Abberaths_Hooves)。",
+  "evidence": [
+    {
+      "label": "E1",
+      "chunk_id": "unique_item:Abberaths_Horn#0#0d099beedd0a2f9f",
+      "entity_id": "unique_item:Abberaths_Horn",
+      "title": "艾贝拉斯之角（Abberath's Horn）",
+      "url": "https://poedb.tw/cn/Abberaths_Horn",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 艾贝拉斯之角（Abberath's Horn）\n类型：唯一装备 ｜ 底材：羊角法杖 ｜ 分类：武器\n\n**需求**：需求 等级 6, 29 智慧\n\n**隐式词缀**\n- [隐式词缀] 攻击和法术附加 (1-2)-(3-4) 基础火焰伤害\n\n**显式词缀**\n- [显式词缀] +(30-50)% 暴击导致的点燃持续伤害加成\n- [显式词缀] 给法术附加 (4-6) 到 (8-12) 点火焰伤害\n- [显式词缀] 全域暴击率提高 (80-120)%\n- [显式词缀] 每击败一名被点燃的敌人获得10点生命\n- [显式词缀] 敌人被点燃的持续时间缩短 25%\n\n来源：POEDB → 艾贝拉斯之角（Abberath's Horn）\nhttps://poedb.tw/cn/Abberaths_Horn",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E2",
+      "chunk_id": "unique_item:Abberaths_Hooves#0#b6e4970e6c264cbb",
+      "entity_id": "unique_item:Abberaths_Hooves",
+      "title": "地动（Abberath's Hooves）",
+      "url": "https://poedb.tw/cn/Abberaths_Hooves",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 地动（Abberath's Hooves）\n类型：唯一装备 ｜ 底材：羊皮短靴 ｜ 分类：护甲\n\n**需求**：需求 等级 12, 26 敏捷\n\n**显式词缀**\n- [显式词缀] 装备时施放 7 级的艾贝拉斯之怒\n- [显式词缀] +(20-30) 力量\n- [显式词缀] 移动速度加快 15%\n- [显式词缀] 有 (6-10)% 的几率点燃\n- [显式词缀] 当你击败 1 名点燃敌人，对周围敌人造成相同的点燃效果\n- [显式词缀] 每 20 点力量可使火焰伤害提高 1%\n- [显式词缀] 燃烧蹄印\n\n**附加说明**\n- [说明] (点燃会造成持续燃烧的火焰伤害, 取决于技能的基础火焰伤害, 持续4秒)\n- [说明] (点燃会造成持续燃烧的火焰伤害)\n\n来源：POEDB → 地动（Abberath's Hooves）\nhttps://poedb.tw/cn/Abberaths_Hooves",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E3",
+      "chunk_id": "unique_item:The_Draugurs_Lantern#0#e307e2bb43f50b17",
+      "entity_id": "unique_item:The_Draugurs_Lantern",
+      "title": "The Draugur's Lantern（The Draugur's Lantern）",
+      "url": "https://poedb.tw/cn/The_Draugurs_Lantern",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# The Draugur's Lantern（The Draugur's Lantern）\n类型：唯一装备 ｜ 底材：远古魔盾 ｜ 分类：盾牌\n\n**需求**：需求 等级 45, 110 智慧\n\n**隐式词缀**\n- [隐式词缀] 法术伤害提高 (5-10)%\n\n**显式词缀**\n- [显式词缀] 20% 法术格挡几率\n- [显式词缀] +81 to maximum Life\n- [显式词缀] 你造成的点燃的伤害生效速度加快 20%\n- [显式词缀] Draugurflames burn enemies for 8 seconds after you Ignite a target\n\n来源：POEDB → The Draugur's Lantern（The Draugur's Lantern）\nhttps://poedb.tw/cn/The_Draugurs_Lantern",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E4",
+      "chunk_id": "atlas_passive:Arcanist_s_and_Artisan_s_Strongbox_Chance_ad9bb812fe#e7a2a588aee4fe95",
+      "entity_id": "atlas_passive:Arcanist_s_and_Artisan_s_Strongbox_Chance_ad9bb812fe",
+      "title": "普通天赋·奥术师和工匠的保险箱几率（Arcanist's and Artisan's Strongbox Chance）",
+      "url": "https://poedb.tw/cn/atlas-skill-tree/",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 普通天赋·奥术师和工匠的保险箱几率（Arcanist's and Artisan's Strongbox Chance）\n普通天赋 ｜ Atlas 天赋树 3.29 ｜ 树上 2 处（同名同效，可分别点取）\n\n- 你地图中的保险箱为工匠保险箱的几率提高 30%\n- 地图内的保险箱是奥术师的保险箱的几率提高 30%\n\n来源：POEDB → Atlas 天赋树 · 奥术师和工匠的保险箱几率（Arcanist's and Artisan's Strongbox Chance）\nhttps://poedb.tw/cn/atlas-skill-tree/",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E5",
+      "chunk_id": "passive:Thief_s_Craft_72476cceaa#ddd49782bd831e50",
+      "entity_id": "passive:Thief_s_Craft_72476cceaa",
+      "title": "核心天赋·盗贼工艺（Thief's Craft）",
+      "url": "https://poedb.tw/cn/passive-skill-tree/",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 核心天赋·盗贼工艺（Thief's Craft）\n核心天赋 ｜ 天赋树 3.29\n\n- +30 智慧\n\n来源：POEDB → 天赋树 · 盗贼工艺（Thief's Craft）\nhttps://poedb.tw/cn/passive-skill-tree/",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E6",
+      "chunk_id": "passive:Zealot_s_Oath_c2665d3b40#b5853ee3826cc374",
+      "entity_id": "passive:Zealot_s_Oath_c2665d3b40",
+      "title": "基石·狂热誓言（Zealot's Oath）",
+      "url": "https://poedb.tw/cn/passive-skill-tree/",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 基石·狂热誓言（Zealot's Oath）\n基石 ｜ 天赋树 3.29\n\n- 生命再生改为能量护盾再生\n\n来源：POEDB → 天赋树 · 狂热誓言（Zealot's Oath）\nhttps://poedb.tw/cn/passive-skill-tree/",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E7",
+      "chunk_id": "unique_item:Kalandras_Touch#0#79c0c3c7e3b019d3",
+      "entity_id": "unique_item:Kalandras_Touch",
+      "title": "卡兰德之触（Kalandra's Touch）",
+      "url": "https://poedb.tw/cn/Kalandras_Touch",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 卡兰德之触（Kalandra's Touch）\n类型：唯一装备 ｜ 底材：戒指 ｜ 分类：其他\n\n**需求**：需求 等级 1\n\n**显式词缀**\n- [显式词缀] 反射另一个戒指\n\n来源：POEDB → 卡兰德之触（Kalandra's Touch）\nhttps://poedb.tw/cn/Kalandras_Touch",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E8",
+      "chunk_id": "passive:Golem_s_Blood_cb270cdfb5#fd084430f9c38376",
+      "entity_id": "passive:Golem_s_Blood_cb270cdfb5",
+      "title": "核心天赋·魔像血统（Golem's Blood）",
+      "url": "https://poedb.tw/cn/passive-skill-tree/",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 核心天赋·魔像血统（Golem's Blood）\n核心天赋 ｜ 天赋树 3.29\n\n- 生命上限提高 10%\n- 每秒再生 1.6% 生命\n\n来源：POEDB → 天赋树 · 魔像血统（Golem's Blood）\nhttps://poedb.tw/cn/passive-skill-tree/",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    }
+  ]
+}

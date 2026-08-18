@@ -1,0 +1,77 @@
+{
+  "format_version": 1,
+  "case_id": "name_ascendancy_conjoined_spire",
+  "query": "结合尖塔",
+  "recorded_at": "2026-08-17T18:03:09+08:00",
+  "model": "glm-5.2",
+  "tokens": {
+    "prompt": 5905,
+    "output": 168,
+    "reasoning": 50,
+    "total": 6073
+  },
+  "tool_calls": [
+    ""
+  ],
+  "evidence_gap": false,
+  "gap_answer": "",
+  "blocked_claims": 1,
+  "elapsed_ms": 4215,
+  "evidence_fingerprint": "sha256:63fcf46115484527cb41722f36fee6d8",
+  "_warning": "raw_answer 是未过出口闸门的模型原文，含可能无据的断言，不得当作事实引用",
+  "raw_answer": "## 结合尖塔（Conjoined Spire）\n\n**升华核心 ｜ 天赋树 3.29**[[E1]]\n\n该核心节点具有以下效果：\n\n- 当你召唤图腾时，其他所有已召唤图腾死亡[[E1]]\n- 图腾使用的技能的效果区域按召唤图腾数量上限总增 5%[[E1]]\n- 图腾使用的技能造成的伤害按召唤图腾数量上限总增 10%[[E1]]\n- 图腾的生命按召唤图腾数量上限总增 5%[[E1]]",
+  "evidence": [
+    {
+      "label": "E1",
+      "chunk_id": "ascendancy:Conjoined_Spire_dec9a682aa#097e9e43dbf98e07",
+      "entity_id": "ascendancy:Conjoined_Spire_dec9a682aa",
+      "title": "升华核心·结合尖塔（Conjoined Spire）",
+      "url": "https://poedb.tw/cn/passive-skill-tree/",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 升华核心·结合尖塔（Conjoined Spire）\n升华核心 ｜ 天赋树 3.29\n\n- 当你召唤图腾时，其他所有已召唤图腾死亡\n- 图腾使用的技能的效果区域按召唤图腾数量上限总增 5%\n- 图腾使用的技能造成的伤害按召唤图腾数量上限总增 10%\n- 图腾的生命按召唤图腾数量上限总增 5%\n\n来源：POEDB → 天赋树 · 结合尖塔（Conjoined Spire）\nhttps://poedb.tw/cn/passive-skill-tree/",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E2",
+      "chunk_id": "mod_ladder:Conqueror_Idol:MapRelicAbyssTroveDropScarabChance#beb3f5984f24b064",
+      "entity_id": "mod_ladder:Conqueror_Idol:MapRelicAbyssTroveDropScarabChance",
+      "title": "征服者雕像 · MapRelicAbyssTroveDropScarabChance",
+      "url": "https://poedb.tw/cn/Conqueror_Idol#ModifiersCalc",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 征服者雕像 · MapRelicAbyssTroveDropScarabChance\n底材类别：征服者雕像 ｜ 词缀组：MapRelicAbyssTroveDropScarabChance ｜ 类型：后缀 ｜ 来源渠道：1 个\n\n本词缀组在该底材上共 1 条，来自 1 个来源：Base。\n互斥规则：与本组（MapRelicAbyssTroveDropScarabChance）有相同词缀组的其他词缀不能同时存在于一件装备上。\n\n## Base · 后缀 · 1 条\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/1 | 深渊之 | 你地图中的冥渊尖塔和深渊保险箱有 (3-5)% 几率掉落深渊圣甲虫 | 68 | 600（1.6054%） |\n\n置信度说明：\n- T 级按 POEDB 的算法推导——在同一来源类别与词缀组内，把物品等级去重后降序排名，物品等级最高者为 T1（算法已复刻并通过不变量校验）\n\n来源：POEDB → 征服者雕像 · MapRelicAbyssTroveDropScarabChance\nhttps://poedb.tw/cn/Conqueror_Idol#ModifiersCalc",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E3",
+      "chunk_id": "mod_ladder:Burial_Idol:MapRelicIncreasedAbyssSpireChance#83e80157c2b604b0",
+      "entity_id": "mod_ladder:Burial_Idol:MapRelicIncreasedAbyssSpireChance",
+      "title": "埋葬雕像 · MapRelicIncreasedAbyssSpireChance",
+      "url": "https://poedb.tw/cn/Burial_Idol#ModifiersCalc",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 埋葬雕像 · MapRelicIncreasedAbyssSpireChance\n底材类别：埋葬雕像 ｜ 词缀组：MapRelicIncreasedAbyssSpireChance ｜ 类型：后缀 ｜ 来源渠道：1 个\n\n本词缀组在该底材上共 1 条，来自 1 个来源：Base。\n互斥规则：与本组（MapRelicIncreasedAbyssSpireChance）有相同词缀组的其他词缀不能同时存在于一件装备上。\n\n## Base · 后缀 · 1 条\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/1 | 深渊之 | 你地图中未通向绝望深渊的深渊会通向冥渊尖塔的几率提高 (40-60)% | 68 | 800（1.9689%） |\n\n置信度说明：\n- T 级按 POEDB 的算法推导——在同一来源类别与词缀组内，把物品等级去重后降序排名，物品等级最高者为 T1（算法已复刻并通过不变量校验）\n\n来源：POEDB → 埋葬雕像 · MapRelicIncreasedAbyssSpireChance\nhttps://poedb.tw/cn/Burial_Idol#ModifiersCalc",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E4",
+      "chunk_id": "mod_ladder:Totemic_Idol:MapRelicIncreasedAbyssSpireChance#1046eedecf149620",
+      "entity_id": "mod_ladder:Totemic_Idol:MapRelicIncreasedAbyssSpireChance",
+      "title": "图腾雕像 · MapRelicIncreasedAbyssSpireChance",
+      "url": "https://poedb.tw/cn/Totemic_Idol#ModifiersCalc",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 图腾雕像 · MapRelicIncreasedAbyssSpireChance\n底材类别：图腾雕像 ｜ 词缀组：MapRelicIncreasedAbyssSpireChance ｜ 类型：后缀 ｜ 来源渠道：1 个\n\n本词缀组在该底材上共 1 条，来自 1 个来源：Base。\n互斥规则：与本组（MapRelicIncreasedAbyssSpireChance）有相同词缀组的其他词缀不能同时存在于一件装备上。\n\n## Base · 后缀 · 1 条\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/1 | 深渊之 | 你地图中未通向绝望深渊的深渊会通向冥渊尖塔的几率提高 (40-60)% | 68 | 800（1.9689%） |\n\n置信度说明：\n- T 级按 POEDB 的算法推导——在同一来源类别与词缀组内，把物品等级去重后降序排名，物品等级最高者为 T1（算法已复刻并通过不变量校验）\n\n来源：POEDB → 图腾雕像 · MapRelicIncreasedAbyssSpireChance\nhttps://poedb.tw/cn/Totemic_Idol#ModifiersCalc",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    }
+  ]
+}

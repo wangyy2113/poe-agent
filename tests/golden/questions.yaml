@@ -1,0 +1,384 @@
+# 黄金问答集（任务 2.7 / 需求 3.7、3.9、16.7）
+#
+# 这是评测的**唯一真源**：`scripts/eval_run.py` 与 `scripts/test_search.py` 都读它，
+# 不再各自内嵌一份用例，否则两份迟早分叉、哪个对都说不清。
+#
+# 字段
+#   id                    稳定标识。录制文件与人工审计结论都按它索引，**不要改已有 id**
+#   query                 用户问题原文
+#   kind                  name | description | numeric | cross_source | gap | tool_route
+#   expect_slug           期望命中的实体。两种写法：
+#                           `slug`        只比 entity_id 末段（唯一装备等 id 稳定的类型）
+#                           `类型:slug*`  比完整 entity_id 前缀，并顺带断言实体类型
+#                                         （天赋类实体 id 末尾带内容哈希，写死会假失败）
+#   expect_any_hit        只要求有命中，不指定命中谁
+#   expect_gap            必须判为依据不足，走缺据声明
+#   expect_evidence_text  证据原文里必须出现的串。**离线可校验**，考的是召回质量
+#   expect_values         答案里应出现且必须可溯源的数值。需要生成结果，重放/在线时校验
+#   expect_in_answer      答案里必须出现的表述。用于「该说的话有没有说」这类断言
+#   forbid_in_answer      答案里不得出现的表述。用于负向断言
+#   expect_tool           期望模型选用的工具（tool_route 类专用，需要在线或录制）
+#   note                  一句话说明这条考什么
+#   lesson                这条用例的来历。**不要删**——它记录的是曾经踩过的坑
+#
+# 期望值来源：数值类与 cross_source 类的期望全部从 data/poe.db 逐条核对后写死
+# （2026-08-17，mod_affix 93897 行 / entity 3812 行）。数据更新后若断言失败，
+# 先核对上游再改这里，不要为了让测试变绿而改期望。
+
+meta:
+  version: 1
+  updated: "2026-08-17"
+  db_snapshot:
+    entity: 3812
+    mod_affix: 93897
+    chunk: 17062
+    game_constant: 499
+
+cases:
+
+  # ══ 专名查询：正确依据来自别名表（Tier A 精确层）══════════════════════
+
+  - id: name_headhunter_zh
+    query: 猎首
+    kind: name
+    expect_slug: Headhunter
+    note: 专名·中文
+
+  - id: name_headhunter_context
+    query: 猎首这件装备有什么词缀
+    kind: name
+    expect_slug: Headhunter
+    note: 专名·带上下文提问（需求 3.5）
+
+  - id: name_kaoms_heart_zh
+    query: 冈姆的壮志
+    kind: name
+    expect_slug: Kaoms_Heart
+    note: 专名·中文
+
+  - id: name_headhunter_en
+    query: Headhunter
+    kind: name
+    expect_slug: Headhunter
+    note: 专名·英文名
+
+  - id: name_abberaths_horn_slug
+    query: Abberaths Horn
+    kind: name
+    expect_slug: Abberaths_Horn
+    note: 专名·slug 去下划线形式（别名匹配）
+
+  - id: name_abberaths_horn_apostrophe
+    query: Abberath's Horn
+    kind: name
+    expect_slug: Abberaths_Horn
+    note: 专名·权威英文名（带撇号，slug 反推不出）
+
+  - id: name_tabula_rasa_en
+    query: Tabula Rasa
+    kind: name
+    expect_slug: Tabula_Rasa
+    note: 专名·英文名（L2 类别页补集来源）
+
+  - id: name_tabula_rasa_zh
+    query: 无尽之衣
+    kind: name
+    expect_slug: Tabula_Rasa
+    note: L2 补集·索引页没有但类别页有
+    lesson: >-
+      原先是「已知缺失·必须拒答」用例，前提是错的。无尽之衣确实不在 /cn/Unique_item
+      概览页上，但 /cn/Body_Armours 类别页有它、详情页也存在——是采集面不全，
+      不是 POEDB 没有。把猜测当成已知缺口写进用例，会让真实缺口被掩盖。
+
+  - id: name_seven_league_step
+    query: 神行靴
+    kind: name
+    expect_slug: Seven-League_Step
+    note: 专名·中文（曾被误记为缺失项）
+    lesson: >-
+      「玄虚之靴」这个中文名 POEDB 根本没有，该装备真名是神行靴，而且一直在库里。
+      当初连 slug 都猜错（Seven_League_Step 实为 Seven-League_Step）。
+
+  - id: name_anatomical_knowledge
+    query: 真知灼见
+    kind: name
+    expect_slug: Anatomical_Knowledge
+    note: L2 补集·唯一珠宝（索引页对珠宝覆盖不全）
+
+  - id: name_passive_divine_shield
+    query: 神威之盾
+    kind: name
+    expect_slug: "passive:Divine_Shield_*"
+    note: 天赋树·基石专名
+    lesson: >-
+      断言到**类型**这一层是有意义的：实测 29 个天赋名与唯一装备重名，
+      查基石不该命中同名的唯一装备。
+
+  - id: name_ascendancy_conjoined_spire
+    query: 结合尖塔
+    kind: name
+    expect_slug: "ascendancy:Conjoined_Spire_*"
+    note: 升华节点专名（独立于 passive 域）
+
+  - id: name_atlas_refiners_bargain
+    query: 精炼师的交易
+    kind: name
+    expect_slug: "atlas_passive:Refiner_s_Bargain_*"
+    note: Atlas 天赋专名（不得混入角色天赋树）
+
+  # ══ 描述性查询：考察 search_keywords 对向量通道缺失的补偿 ═══════════════
+
+  - id: desc_headhunter_effect
+    query: 击败稀有怪物获得其属性修正的腰带
+    kind: description
+    expect_slug: Headhunter
+    note: 描述性·猎首效果
+
+  - id: desc_steal_mods_belt
+    query: 偷取词缀的腰带
+    kind: description
+    expect_any_hit: true
+    note: 描述性·走词缀意图通道
+
+  - id: desc_spell_damage_staff
+    query: 法术伤害提高 最大魔力 法杖
+    kind: description
+    expect_any_hit: true
+    note: 描述性·多词组合，只要求有命中
+
+  - id: desc_mastery_elemental
+    query: 元素专精有哪些可选效果
+    kind: description
+    expect_slug: "passive:Elemental_Mastery_*"
+    note: 天赋树·大师天赋（效果选一）
+
+  - id: desc_life_regen_source
+    query: 生命再生能从哪些渠道获得
+    kind: description
+    expect_any_hit: true
+    note: 枚举类·应由 stat_sources 逐渠道回答并声明未采集维度
+
+  # ══ 数值类：期望值逐条从库里核对后写死 ═══════════════════════════════
+
+  - id: num_headhunter_strength
+    query: 猎首提供多少力量
+    kind: numeric
+    expect_slug: Headhunter
+    expect_evidence_text: "+(40-55) 力量"
+    expect_values: ["40", "55"]
+    note: 唯一装备显式词缀区间
+
+  - id: num_headhunter_implicit_life
+    query: 猎首的隐式词缀是什么
+    kind: numeric
+    expect_slug: Headhunter
+    expect_evidence_text: "+(25-40) 最大生命"
+    expect_values: ["25", "40"]
+    note: 隐式词缀（来自底材皮革腰带）
+
+  - id: num_headhunter_req_level
+    query: 猎首的需求等级是多少
+    kind: numeric
+    expect_slug: Headhunter
+    expect_values: ["40"]
+    note: 需求等级。POEDB 侧 76% 唯一装备缺这个字段，猎首有
+
+  - id: num_headhunter_rare_duration
+    query: 猎首获得稀有怪物属性修正持续多久
+    kind: numeric
+    expect_slug: Headhunter
+    expect_evidence_text: "60 秒"
+    expect_values: ["60"]
+    note: 固定数值（非区间）
+
+  - id: num_belt_strength_t1
+    query: 腰带上力量词缀的最高档位是多少
+    kind: numeric
+    expect_evidence_text: "+(56-60) 力量"
+    expect_values: ["56", "60"]
+    note: 词缀 T 级梯度。腰带力量 T1/10，要求物品等级 85，权重 1000
+
+  - id: num_belt_strength_t1_ilvl
+    query: 腰带 T1 力量词缀要求多少物品等级
+    kind: numeric
+    expect_values: ["85"]
+    note: 同上一条的 ilvl 字段，单独测是因为 T 级与 ilvl 常被读错行
+
+  - id: num_max_resistance_cap
+    query: 抗性上限是多少
+    kind: numeric
+    expect_values: ["75"]
+    note: 游戏常量 characterConstants.base_maximum_all_resistances_% = 75
+    lesson: >-
+      常量走 calc/constants.py，缺失即抛异常绝不给默认值。这条同时验证
+      game_constant 表（P2 PoB，钉 commit）能被检索到。
+
+  - id: num_max_phys_reduction
+    query: 物理伤害减免的上限是多少
+    kind: numeric
+    expect_values: ["90"]
+    note: 游戏常量 maximum_physical_damage_reduction_% = 90
+
+  # ══ 跨来源：本轮只能测负向 ═════════════════════════════════════════════
+  # 库里 kind='mod' 的**已确认冲突是 0 条**，只有 mod_review 2729 条
+  # （两源对不上、待人工核对）。按需求 15.5 与 /admin/conflicts 的约定，
+  # mod_review 不得当作冲突呈现，所以这一类只能验证「不要谎报冲突」。
+  # 等人工核对把某条改成 kind='mod' 之后，再补正向用例（并列展示 + 推荐 POEDB）。
+
+  - id: cross_lifeleech_amulet
+    query: 护身符上的生命偷取词缀有几档
+    kind: cross_source
+    expect_any_hit: true
+    forbid_in_answer: ["存在冲突", "两个来源冲突", "数据冲突"]
+    note: POEDB T3/3 与 PoB LifeLeech1 区间对不上，但那是 mod_review，不得说成冲突
+
+  - id: cross_no_confirmed_conflict
+    query: 知识库里有哪些已确认的跨来源数据冲突
+    kind: cross_source
+    expect_gap: true
+    forbid_in_answer: ["待核对", "mod_review"]
+    note: >-
+      已确认冲突为 0 条，且 source_conflict 表不进 chunk 索引（只由 /admin/conflicts
+      暴露），所以普通问答确实无依据 → 应走缺据声明，且不得把待核对项列为冲突
+
+  - id: cross_pob_priority
+    query: 词缀数值以 POEDB 还是 Path of Building 为准
+    kind: cross_source
+    expect_in_answer: ["POEDB"]
+    note: 来源优先级 P1 > P2，冲突时推荐 POEDB
+    lesson: >-
+      这条曾写成 expect_any_hit，跑出来是「错误拒答」——但期望本身错了：
+      知识库里没有任何描述来源优先级的文档 chunk，这个策略写在 config.yaml
+      的 sources.priority 与系统提示词里，本就不该由文档检索来回答。
+      改为答案级断言（需要生成结果），检索侧不对它判定。
+
+  # ══ 知识库确定不覆盖：必须拒答 ═════════════════════════════════════════
+  # V1 验收里最关键的一类。判据是 sufficient=false 且不伪造引用。
+
+  - id: gap_xuanxu_boots
+    query: 玄虚之靴有什么属性
+    kind: gap
+    expect_gap: true
+    note: POEDB 无此名称·必须拒答（真名为神行靴）
+
+  - id: gap_poe2_ascendancy
+    query: 流放之路2 的升华机制是什么
+    kind: gap
+    expect_gap: true
+    note: 越界·POE2
+    lesson: >-
+      靠「升华」+「机制」能拿到 67% 覆盖率过线，未覆盖的「流放之路2」恰是
+      「问的是另一款游戏」的标志。因此覆盖率达标后还要检查未覆盖词是否全库为零。
+
+  - id: gap_syndicate_network
+    query: 辛迪加情报网怎么运作
+    kind: gap
+    expect_gap: true
+    note: 隐匿词缀已入库，但情报网成员/部门/解锁流程未采集
+
+  - id: gap_weather
+    query: 今天上海天气怎么样
+    kind: gap
+    expect_gap: true
+    note: 越界·非 POE 问题
+
+  - id: gap_fake_keystone
+    query: 霜锻穹顶这个基石给什么属性
+    kind: gap
+    expect_gap: true
+    note: 天赋树已采集，但没有这个名字·必须拒答
+    lesson: >-
+      选名要避开与既有实体名的**子串**重叠。原先用「虚空壁垒」，被唯一装备
+      「虚空」(Null and Void) 子串命中别名表 → exact_hit 直接判充分依据，
+      覆盖率 25% 也照样漏出。别名子串匹配这个边界是已知未修项：它存在是为了让
+      带上下文的专名查询能命中（需求 3.5），收紧要同时保住那条，留作单独课题。
+
+  - id: gap_next_league_guess
+    query: 请你猜一下下个赛季会加什么新机制
+    kind: gap
+    expect_gap: true
+    forbid_in_answer: ["可能会", "预计", "大概"]
+    note: 用户明确索要猜测·必须说明本助手不提供猜测
+
+  - id: gap_price_headhunter
+    query: 猎首现在值多少混沌石
+    kind: gap
+    expect_gap: true
+    forbid_in_answer: ["大约", "左右", "参考价"]
+    note: 经济源未接入（economy_price = not_collected），不得按同类物品类推价格
+
+  - id: gap_cluster_jewel_notables
+    query: 大型星团珠宝能开出哪些大点
+    kind: gap
+    expect_gap: true
+    note: cluster_jewel = not_collected
+    lesson: >-
+      易误判：ModJewelCluster.lua 已入库，但那是星团珠宝**自身的词缀**，
+      不是它能开出的天赋点定义。
+
+  - id: gap_prefix_capacity
+    query: 稀有装备最多能有几条前缀
+    kind: gap
+    expect_gap: true
+    note: craft_rule 未结构化，game_constant 里查无此键·不得硬编码 3/3
+
+  - id: gap_skill_gem_numbers
+    query: 冰霜脉冲在 20 级时的基础伤害是多少
+    kind: gap
+    expect_gap: true
+    note: skill_gem = harvested（页面已抓、一条未入库）
+
+  - id: gap_boss_mechanics
+    query: 潜伏之主的技能怎么应对
+    kind: gap
+    expect_gap: true
+    note: boss = harvested
+
+  - id: gap_passive_path_cost
+    query: 从起点点到神威之盾要花几个天赋点
+    kind: gap
+    expect_gap: true
+    note: >-
+      天赋树节点属性已入库，但**天赋点消耗与连接关系未入库**（passive_tree=partial）。
+      这条考的是「领域部分采集」时能否说清缺的是哪个维度，而不是笼统说查不到
+
+  # ══ 工具路由：能精确算的不要猜（需要在线或录制）══════════════════════════
+  # ALLOWED_TOOLS 的顺序即推荐优先级，这一类验证模型是否按该优先级选工具。
+  # 本类不设门槛，作为附加观测记录——路由错不一定导致答案错，但会让本可精确
+  # 回答的问题退化成 BM25 命中一张卡再读表格。
+
+  - id: route_mod_tiers
+    query: 腰带上的力量词缀一共有几档，每档要求什么物品等级
+    kind: tool_route
+    expect_tool: mod_tiers
+    note: 词缀档位/物品等级/权重 → mod_tiers，不该用 kb_search
+
+  - id: route_stat_sources
+    query: 法术压制能从哪些渠道获得
+    kind: tool_route
+    expect_tool: stat_sources
+    note: 枚举类「某属性能从哪来」→ stat_sources（逐渠道 + 未采集声明）
+
+  - id: route_entity_lookup
+    query: 冈姆的壮志的完整词缀列表
+    kind: tool_route
+    expect_tool: entity_lookup
+    note: 已知确切名称的实体 → entity_lookup
+
+  - id: route_kb_coverage
+    query: 你的知识库covered哪些领域
+    kind: tool_route
+    expect_tool: kb_coverage
+    note: 不确定本库有没有某领域 → kb_coverage
+
+  - id: route_check_mod_combination
+    query: 精金胸甲上「+最大生命」和「+火焰抗性」能不能同时存在
+    kind: tool_route
+    expect_tool: check_mod_combination
+    note: 多目标词缀共存 → check_mod_combination（三态，unknown 要原样说明）
+
+  - id: route_bench_recipe
+    query: 工艺工作台上有没有加最大生命的选项，费用是多少
+    kind: tool_route
+    expect_tool: bench_recipe_catalog
+    note: 工艺台目录/原始费用 → bench_recipe_catalog，不得改写成制作步骤

@@ -1,0 +1,19 @@
+{
+  "format_version": 1,
+  "case_id": "gap_prefix_capacity",
+  "query": "稀有装备最多能有几条前缀",
+  "recorded_at": "2026-08-17T18:07:57+08:00",
+  "model": "",
+  "tokens": {},
+  "tool_calls": [
+    ""
+  ],
+  "evidence_gap": true,
+  "gap_answer": "知识库中查不到回答这个问题所需的依据，因此不作答——给一个听起来合理但没有依据的\n答案，代价比说查不到高得多。\n\n**为什么查不到**\n问题涉及的领域（装备词缀（T 级 / 物品等级 / 生成权重））本知识库**已采集**，但这次没有召回到足够依据——可能是用词与库中表述不一致。换用更具体的专名或词缀原文再试可能有效。\n\n**缺失的信息点**\n- 最多能\n\n**判定依据**\n查询词覆盖率 75% 虽达标，但「最多能」在知识库中完全不存在——命中的只是与问题主体无关的通用词，不构成依据\n\n**建议的查证途径**\n- POEDB 站内搜索：<https://poedb.tw/cn/search?q=最多能>\n- PoE Wiki：<https://www.poewiki.net/index.php?search=最多能>\n- 若属新赛季内容，可查 GGG 官方 Patch Notes\n",
+  "blocked_claims": 0,
+  "elapsed_ms": 124,
+  "evidence_fingerprint": "sha256:e3b0c44298fc1c149afbf4c8996fb924",
+  "_warning": "raw_answer 是未过出口闸门的模型原文，含可能无据的断言，不得当作事实引用",
+  "raw_answer": "",
+  "evidence": []
+}

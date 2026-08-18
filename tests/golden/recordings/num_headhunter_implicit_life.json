@@ -1,0 +1,129 @@
+{
+  "format_version": 1,
+  "case_id": "num_headhunter_implicit_life",
+  "query": "猎首的隐式词缀是什么",
+  "recorded_at": "2026-08-17T18:05:21+08:00",
+  "model": "glm-5.2",
+  "tokens": {
+    "prompt": 7071,
+    "output": 53,
+    "reasoning": 25,
+    "total": 7124
+  },
+  "tool_calls": [
+    ""
+  ],
+  "evidence_gap": false,
+  "gap_answer": "",
+  "blocked_claims": 0,
+  "elapsed_ms": 2301,
+  "evidence_fingerprint": "sha256:b18a1d770e122f2d1cb71aee060b0ae8",
+  "_warning": "raw_answer 是未过出口闸门的模型原文，含可能无据的断言，不得当作事实引用",
+  "raw_answer": "猎首（Headhunter）的隐式词缀为 **+(25-40) 最大生命**[[E1]]。",
+  "evidence": [
+    {
+      "label": "E1",
+      "chunk_id": "unique_item:Headhunter#0#456e5079b32c619a",
+      "entity_id": "unique_item:Headhunter",
+      "title": "猎首（Headhunter）",
+      "url": "https://poedb.tw/cn/Headhunter",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 猎首（Headhunter）\n类型：唯一装备 ｜ 底材：皮革腰带 ｜ 分类：其他\n\n**需求**：需求 等级 40\n\n**隐式词缀**\n- [隐式词缀] +(25-40) 最大生命\n\n**显式词缀**\n- [显式词缀] +(40-55) 力量\n- [显式词缀] +(40-55) 敏捷\n- [显式词缀] +(50-60) 最大生命\n- [显式词缀] 击中伤害对稀有怪物提高 (20-30)%\n- [显式词缀] 当你击败稀有怪物时，会获得该怪物属性修正 60 秒\n\n**附加说明**\n- [说明] ( 当你进入迷踪状态时, 你将不会被敌人所阻挡 )\n\n来源：POEDB → 猎首（Headhunter）\nhttps://poedb.tw/cn/Headhunter",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E2",
+      "chunk_id": "unique_item:Replica_Headhunter#0#1496799ce8df344f",
+      "entity_id": "unique_item:Replica_Headhunter",
+      "title": "猎首【仿品】（Replica Headhunter）",
+      "url": "https://poedb.tw/cn/Replica_Headhunter",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 猎首【仿品】（Replica Headhunter）\n类型：唯一装备 ｜ 底材：皮革腰带 ｜ 分类：其他\n\n**需求**：需求 等级 40\n\n**隐式词缀**\n- [隐式词缀] +(25-40) 最大生命\n\n**显式词缀**\n- [显式词缀] +(40-55) 力量\n- [显式词缀] +(40-55) 敏捷\n- [显式词缀] +(50-60) 最大生命\n- [显式词缀] 对抗魔法怪物时，击中伤害提高 (20-30)%\n- [显式词缀] 有 20% 几率在你击杀一个魔法怪物时获得其词缀，持续 60 秒。\n\n来源：POEDB → 猎首【仿品】（Replica Headhunter）\nhttps://poedb.tw/cn/Replica_Headhunter",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E3",
+      "chunk_id": "mod_ladder:Conqueror_Idol:MapRelicMapModEffectPerMapMod#66da6238cd2a6bcd",
+      "entity_id": "mod_ladder:Conqueror_Idol:MapRelicMapModEffectPerMapMod",
+      "title": "征服者雕像 · MapRelicMapModEffectPerMapMod",
+      "url": "https://poedb.tw/cn/Conqueror_Idol#ModifiersCalc",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 征服者雕像 · MapRelicMapModEffectPerMapMod\n底材类别：征服者雕像 ｜ 词缀组：MapRelicMapModEffectPerMapMod ｜ 类型：前缀 ｜ 来源渠道：1 个\n\n本词缀组在该底材上共 1 条，来自 1 个来源：Base。\n互斥规则：与本组（MapRelicMapModEffectPerMapMod）有相同词缀组的其他词缀不能同时存在于一件装备上。\n\n## Base · 前缀 · 1 条\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/1 | 制图师的 | 每有一个地图外延词缀，你地图的词缀效果提高 2% | 68 | 1000（1.5267%） |\n\n置信度说明：\n- T 级按 POEDB 的算法推导——在同一来源类别与词缀组内，把物品等级去重后降序排名，物品等级最高者为 T1（算法已复刻并通过不变量校验）\n\n来源：POEDB → 征服者雕像 · MapRelicMapModEffectPerMapMod\nhttps://poedb.tw/cn/Conqueror_Idol#ModifiersCalc",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E4",
+      "chunk_id": "mod_ladder:Runic_Crown:ImmunityToBlind#868206ba6ea853b1",
+      "entity_id": "mod_ladder:Runic_Crown:ImmunityToBlind",
+      "title": "符文王冠 · ImmunityToBlind",
+      "url": "https://poedb.tw/cn/Runic_Crown#ModifiersCalc",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 符文王冠 · ImmunityToBlind\n底材类别：符文王冠 ｜ 词缀组：ImmunityToBlind ｜ 类型：其他/后缀 ｜ 来源渠道：2 个\n\n本词缀组在该底材上共 2 条，来自 2 个来源：已腐化、纠缠词缀。\n互斥规则：与本组（ImmunityToBlind）有相同词缀组的其他词缀不能同时存在于一件装备上。\n⚠ 同一条词缀文本在本卡的多个来源里都出现 → 仅凭装备上的数值**无法判断**它出自哪个来源，回答时必须并列各种可能。\n\n## 已腐化 · 其他 · 1 条\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/1 | V2BlindImmunityCorrupted | 免疫致盲 | 1 | 1000（3.6036%） |\n\n## 纠缠词缀 · 后缀 · 1 条\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/1 | 纠缠之 | 免疫致盲 | 38 | 250（7.4627%） |\n\n置信度说明：\n- T 级按 POEDB 的算法推导——在同一来源类别与词缀组内，把物品等级去重后降序排名，物品等级最高者为 T1（算法已复刻并通过不变量校验）\n\n来源：POEDB → 符文王冠 · ImmunityToBlind\nhttps://poedb.tw/cn/Runic_Crown#ModifiersCalc",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E5",
+      "chunk_id": "mod_ladder:Helmets_dex:ImmunityToBlind#5910450d249faa8d",
+      "entity_id": "mod_ladder:Helmets_dex:ImmunityToBlind",
+      "title": "头部（敏捷） · ImmunityToBlind",
+      "url": "https://poedb.tw/cn/Helmets_dex#ModifiersCalc",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 头部（敏捷） · ImmunityToBlind\n底材类别：头部（敏捷） ｜ 词缀组：ImmunityToBlind ｜ 类型：其他/后缀 ｜ 来源渠道：2 个\n\n本词缀组在该底材上共 2 条，来自 2 个来源：已腐化、纠缠词缀。\n互斥规则：与本组（ImmunityToBlind）有相同词缀组的其他词缀不能同时存在于一件装备上。\n⚠ 同一条词缀文本在本卡的多个来源里都出现 → 仅凭装备上的数值**无法判断**它出自哪个来源，回答时必须并列各种可能。\n\n## 已腐化 · 其他 · 1 条\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/1 | V2BlindImmunityCorrupted | 免疫致盲 | 1 | 1000（3.6036%） |\n\n## 纠缠词缀 · 后缀 · 1 条\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/1 | 纠缠之 | 免疫致盲 | 38 | 250（7.4627%） |\n\n置信度说明：\n- T 级按 POEDB 的算法推导——在同一来源类别与词缀组内，把物品等级去重后降序排名，物品等级最高者为 T1（算法已复刻并通过不变量校验）\n\n来源：POEDB → 头部（敏捷） · ImmunityToBlind\nhttps://poedb.tw/cn/Helmets_dex#ModifiersCalc",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E6",
+      "chunk_id": "unique_item:Stranglegasp#0#5e74f71e8ea7f131",
+      "entity_id": "unique_item:Stranglegasp",
+      "title": "绞杀之息（Stranglegasp）",
+      "url": "https://poedb.tw/cn/Stranglegasp",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 绞杀之息（Stranglegasp）\n类型：唯一装备 ｜ 底材：黑曜护身符 ｜ 分类：其他\n\n**需求**：需求 等级 52\n\n**隐式词缀**\n- [隐式词缀] +(10-16) 全属性\n\n**显式词缀**\n- [显式词缀] 可以有额外 3 个附魔词缀\n\n来源：POEDB → 绞杀之息（Stranglegasp）\nhttps://poedb.tw/cn/Stranglegasp",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E7",
+      "chunk_id": "mod_ladder:Helmets_int:ImmunityToBlind#c321c69c8353e3ec",
+      "entity_id": "mod_ladder:Helmets_int:ImmunityToBlind",
+      "title": "头部（智慧） · ImmunityToBlind",
+      "url": "https://poedb.tw/cn/Helmets_int#ModifiersCalc",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 头部（智慧） · ImmunityToBlind\n底材类别：头部（智慧） ｜ 词缀组：ImmunityToBlind ｜ 类型：其他/后缀 ｜ 来源渠道：2 个\n\n本词缀组在该底材上共 2 条，来自 2 个来源：已腐化、纠缠词缀。\n互斥规则：与本组（ImmunityToBlind）有相同词缀组的其他词缀不能同时存在于一件装备上。\n⚠ 同一条词缀文本在本卡的多个来源里都出现 → 仅凭装备上的数值**无法判断**它出自哪个来源，回答时必须并列各种可能。\n\n## 已腐化 · 其他 · 1 条\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/1 | V2BlindImmunityCorrupted | 免疫致盲 | 1 | 1000（3.6036%） |\n\n## 纠缠词缀 · 后缀 · 1 条\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/1 | 纠缠之 | 免疫致盲 | 38 | 250（7.4627%） |\n\n置信度说明：\n- T 级按 POEDB 的算法推导——在同一来源类别与词缀组内，把物品等级去重后降序排名，物品等级最高者为 T1（算法已复刻并通过不变量校验）\n\n来源：POEDB → 头部（智慧） · ImmunityToBlind\nhttps://poedb.tw/cn/Helmets_int#ModifiersCalc",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E8",
+      "chunk_id": "unique_item:Voideye#0#0ade13c4e7c31be2",
+      "entity_id": "unique_item:Voideye",
+      "title": "虚空慧眼（Voideye）",
+      "url": "https://poedb.tw/cn/Voideye",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 虚空慧眼（Voideye）\n类型：唯一装备 ｜ 底材：潜能之戒 ｜ 分类：其他\n\n**需求**：需求 等级 45\n\n**隐式词缀**\n- [隐式词缀] 有 1 个插槽\n\n**显式词缀**\n- [显式词缀] 此物品上装备的技能石等级 +5\n\n来源：POEDB → 虚空慧眼（Voideye）\nhttps://poedb.tw/cn/Voideye",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    }
+  ]
+}

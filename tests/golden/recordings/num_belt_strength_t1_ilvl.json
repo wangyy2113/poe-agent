@@ -1,0 +1,129 @@
+{
+  "format_version": 1,
+  "case_id": "num_belt_strength_t1_ilvl",
+  "query": "腰带 T1 力量词缀要求多少物品等级",
+  "recorded_at": "2026-08-17T18:05:45+08:00",
+  "model": "glm-5.2",
+  "tokens": {
+    "prompt": 7930,
+    "output": 197,
+    "reasoning": 152,
+    "total": 8127
+  },
+  "tool_calls": [
+    ""
+  ],
+  "evidence_gap": false,
+  "gap_answer": "",
+  "blocked_claims": 0,
+  "elapsed_ms": 7747,
+  "evidence_fingerprint": "sha256:afaa237e886da0a2301ff64099cd6308",
+  "_warning": "raw_answer 是未过出口闸门的模型原文，含可能无据的断言，不得当作事实引用",
+  "raw_answer": "腰带 Base 来源的 T1 力量词缀为「弑神之」，词缀文本为「+(56-60) 力量」，要求物品等级 **85**[[E8]]。",
+  "evidence": [
+    {
+      "label": "E1",
+      "chunk_id": "mod_ladder:Noble_Idol:UltimatumUltimatumExterminateReducedMonsterKillsRequired#a158b98117d93d9b",
+      "entity_id": "mod_ladder:Noble_Idol:UltimatumUltimatumExterminateReducedMonsterKillsRequired",
+      "title": "权贵雕像 · UltimatumUltimatumExterminateReducedMonsterKillsRequired",
+      "url": "https://poedb.tw/cn/Noble_Idol#ModifiersCalc",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 权贵雕像 · UltimatumUltimatumExterminateReducedMonsterKillsRequired\n底材类别：权贵雕像 ｜ 词缀组：UltimatumUltimatumExterminateReducedMonsterKillsRequired ｜ 类型：后缀 ｜ 来源渠道：1 个\n\n本词缀组在该底材上共 1 条，来自 1 个来源：Base。\n互斥规则：与本组（UltimatumUltimatumExterminateReducedMonsterKillsRequired）有相同词缀组的其他词缀不能同时存在于一件装备上。\n\n## Base · 后缀 · 1 条\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/1 | 通牒之 | 地图内要求击败多波敌人的致命贪婪遭遇战 / 要求击败的敌人数量降低 (3-5)% | 68 | 300（0.6853%） |\n\n置信度说明：\n- T 级按 POEDB 的算法推导——在同一来源类别与词缀组内，把物品等级去重后降序排名，物品等级最高者为 T1（算法已复刻并通过不变量校验）\n\n来源：POEDB → 权贵雕像 · UltimatumUltimatumExterminateReducedMonsterKillsRequired\nhttps://poedb.tw/cn/Noble_Idol#ModifiersCalc",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E2",
+      "chunk_id": "mod_ladder:Kamasan_Idol:UltimatumUltimatumExterminateReducedMonsterKillsRequired#edcf51495f5a5e51",
+      "entity_id": "mod_ladder:Kamasan_Idol:UltimatumUltimatumExterminateReducedMonsterKillsRequired",
+      "title": "卡马萨雕像 · UltimatumUltimatumExterminateReducedMonsterKillsRequired",
+      "url": "https://poedb.tw/cn/Kamasan_Idol#ModifiersCalc",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 卡马萨雕像 · UltimatumUltimatumExterminateReducedMonsterKillsRequired\n底材类别：卡马萨雕像 ｜ 词缀组：UltimatumUltimatumExterminateReducedMonsterKillsRequired ｜ 类型：后缀 ｜ 来源渠道：1 个\n\n本词缀组在该底材上共 1 条，来自 1 个来源：Base。\n互斥规则：与本组（UltimatumUltimatumExterminateReducedMonsterKillsRequired）有相同词缀组的其他词缀不能同时存在于一件装备上。\n\n## Base · 后缀 · 1 条\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/1 | 通牒之 | 地图内要求击败多波敌人的致命贪婪遭遇战 / 要求击败的敌人数量降低 (3-5)% | 68 | 300（0.6853%） |\n\n置信度说明：\n- T 级按 POEDB 的算法推导——在同一来源类别与词缀组内，把物品等级去重后降序排名，物品等级最高者为 T1（算法已复刻并通过不变量校验）\n\n来源：POEDB → 卡马萨雕像 · UltimatumUltimatumExterminateReducedMonsterKillsRequired\nhttps://poedb.tw/cn/Kamasan_Idol#ModifiersCalc",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E3",
+      "chunk_id": "mod_ladder:Belts:PercentageStrength#a09a6f2b4681ba6b",
+      "entity_id": "mod_ladder:Belts:PercentageStrength",
+      "title": "腰带 · PercentageStrength",
+      "url": "https://poedb.tw/cn/Belts#ModifiersCalc",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 腰带 · PercentageStrength\n底材类别：腰带 ｜ 词缀组：PercentageStrength ｜ 类型：其他 ｜ 来源渠道：1 个\n标签：属性\n\n本词缀组在该底材上共 3 条，来自 1 个来源：虚空忆境。\n互斥规则：与本组（PercentageStrength）有相同词缀组的其他词缀不能同时存在于一件装备上。\n\n## 虚空忆境 · 其他 · 3 档\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/3 | SynthesisImplicitPercentStrengthTrinket3 | 力量提高 (13-15)% | 24 | 无数据 |\n| T2/3 | SynthesisImplicitPercentStrengthTrinket2 | 力量提高 (10-12)% | 16 | 无数据 |\n| T3/3 | SynthesisImplicitPercentStrengthTrinket1 | 力量提高 (7-9)% | 1 | 无数据 |\n\n> 本来源无生成权重数据，**不能据此给出成功率或概率**。\n\n置信度说明：\n- T 级按 POEDB 的算法推导——在同一来源类别与词缀组内，把物品等级去重后降序排名，物品等级最高者为 T1（算法已复刻并通过不变量校验）\n- 本卡全部来源都没有生成权重数据，任何概率类问题都无法回答\n\n来源：POEDB → 腰带 · PercentageStrength\nhttps://poedb.tw/cn/Belts#ModifiersCalc",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E4",
+      "chunk_id": "mod_ladder:Belts:IncreasedAttributesCorrupted#28dd63520947235b",
+      "entity_id": "mod_ladder:Belts:IncreasedAttributesCorrupted",
+      "title": "腰带 · IncreasedAttributesCorrupted",
+      "url": "https://poedb.tw/cn/Belts#ModifiersCalc",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 腰带 · IncreasedAttributesCorrupted\n底材类别：腰带 ｜ 词缀组：IncreasedAttributesCorrupted ｜ 类型：其他 ｜ 来源渠道：1 个\n标签：属性\n\n本词缀组在该底材上共 3 条，来自 1 个来源：已腐化。\n互斥规则：与本组（IncreasedAttributesCorrupted）有相同词缀组的其他词缀不能同时存在于一件装备上。\n\n## 已腐化 · 其他 · 3 条\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/1 | V2IncreasedIntelligenceDexterityCorrupted | 敏捷提高 (4-6)% / 智慧提高 (4-6)% | 1 | 1000（5.4054%） |\n| T1/1 | V2IncreasedDexterityStrengthCorrupted | 力量提高 (4-6)% / 敏捷提高 (4-6)% | 1 | 1000（5.4054%） |\n| T1/1 | V2IncreasedStrengthIntelligenceCorrupted_ | 力量提高 (4-6)% / 智慧提高 (4-6)% | 1 | 1000（5.4054%） |\n\n置信度说明：\n- T 级按 POEDB 的算法推导——在同一来源类别与词缀组内，把物品等级去重后降序排名，物品等级最高者为 T1（算法已复刻并通过不变量校验）\n\n来源：POEDB → 腰带 · IncreasedAttributesCorrupted\nhttps://poedb.tw/cn/Belts#ModifiersCalc",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E5",
+      "chunk_id": "mod_ladder:Minor_Idol:MapRelicUltimatumConquerChance#af12087bbda9e834",
+      "entity_id": "mod_ladder:Minor_Idol:MapRelicUltimatumConquerChance",
+      "title": "小型雕像 · MapRelicUltimatumConquerChance",
+      "url": "https://poedb.tw/cn/Minor_Idol#ModifiersCalc",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 小型雕像 · MapRelicUltimatumConquerChance\n底材类别：小型雕像 ｜ 词缀组：MapRelicUltimatumConquerChance ｜ 类型：后缀 ｜ 来源渠道：1 个\n\n本词缀组在该底材上共 1 条，来自 1 个来源：Base。\n互斥规则：与本组（MapRelicUltimatumConquerChance）有相同词缀组的其他词缀不能同时存在于一件装备上。\n\n## Base · 后缀 · 1 条\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/1 | 通牒之 | 地图内的致命贪婪遭遇战要求站上符纹 / 的几率提高 (40-60)% | 68 | 200（0.5401%） |\n\n置信度说明：\n- T 级按 POEDB 的算法推导——在同一来源类别与词缀组内，把物品等级去重后降序排名，物品等级最高者为 T1（算法已复刻并通过不变量校验）\n\n来源：POEDB → 小型雕像 · MapRelicUltimatumConquerChance\nhttps://poedb.tw/cn/Minor_Idol#ModifiersCalc",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E6",
+      "chunk_id": "mod_ladder:Minor_Idol:MapRelicUltimatumDefenceEncounterChance#9648875b35036d5d",
+      "entity_id": "mod_ladder:Minor_Idol:MapRelicUltimatumDefenceEncounterChance",
+      "title": "小型雕像 · MapRelicUltimatumDefenceEncounterChance",
+      "url": "https://poedb.tw/cn/Minor_Idol#ModifiersCalc",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 小型雕像 · MapRelicUltimatumDefenceEncounterChance\n底材类别：小型雕像 ｜ 词缀组：MapRelicUltimatumDefenceEncounterChance ｜ 类型：后缀 ｜ 来源渠道：1 个\n\n本词缀组在该底材上共 1 条，来自 1 个来源：Base。\n互斥规则：与本组（MapRelicUltimatumDefenceEncounterChance）有相同词缀组的其他词缀不能同时存在于一件装备上。\n\n## Base · 后缀 · 1 条\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/1 | 通牒之 | 地图内的致命贪婪遭遇战要求保护祭坛 / 的几率提高 (40-60)% | 68 | 200（0.5401%） |\n\n置信度说明：\n- T 级按 POEDB 的算法推导——在同一来源类别与词缀组内，把物品等级去重后降序排名，物品等级最高者为 T1（算法已复刻并通过不变量校验）\n\n来源：POEDB → 小型雕像 · MapRelicUltimatumDefenceEncounterChance\nhttps://poedb.tw/cn/Minor_Idol#ModifiersCalc",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E7",
+      "chunk_id": "mod_ladder:Minor_Idol:MapRelicUltimatumExterminateChance#36d1b6a2c9f4168e",
+      "entity_id": "mod_ladder:Minor_Idol:MapRelicUltimatumExterminateChance",
+      "title": "小型雕像 · MapRelicUltimatumExterminateChance",
+      "url": "https://poedb.tw/cn/Minor_Idol#ModifiersCalc",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 小型雕像 · MapRelicUltimatumExterminateChance\n底材类别：小型雕像 ｜ 词缀组：MapRelicUltimatumExterminateChance ｜ 类型：后缀 ｜ 来源渠道：1 个\n\n本词缀组在该底材上共 1 条，来自 1 个来源：Base。\n互斥规则：与本组（MapRelicUltimatumExterminateChance）有相同词缀组的其他词缀不能同时存在于一件装备上。\n\n## Base · 后缀 · 1 条\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/1 | 通牒之 | 地图内的致命贪婪遭遇战要求击败多波敌人 / 的几率提高 (40-60)% | 68 | 200（0.5401%） |\n\n置信度说明：\n- T 级按 POEDB 的算法推导——在同一来源类别与词缀组内，把物品等级去重后降序排名，物品等级最高者为 T1（算法已复刻并通过不变量校验）\n\n来源：POEDB → 小型雕像 · MapRelicUltimatumExterminateChance\nhttps://poedb.tw/cn/Minor_Idol#ModifiersCalc",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E8",
+      "chunk_id": "mod_ladder:Belts:Strength#5a76605d9697c89b",
+      "entity_id": "mod_ladder:Belts:Strength",
+      "title": "腰带 · Strength",
+      "url": "https://poedb.tw/cn/Belts#ModifiersCalc",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 腰带 · Strength\n底材类别：腰带 ｜ 词缀组：Strength ｜ 类型：后缀/其他 ｜ 来源渠道：6 个\n标签：属性\n\n本词缀组在该底材上共 33 条，来自 6 个来源：Base、工艺工作台、精华、异度天灾 有利、虚空忆境、隐匿。\n互斥规则：与本组（Strength）有相同词缀组的其他词缀不能同时存在于一件装备上。\n⚠ 同一条词缀文本在本卡的多个来源里都出现 → 仅凭装备上的数值**无法判断**它出自哪个来源，回答时必须并列各种可能。\n\n## Base · 后缀 · 10 档\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/10 | 弑神之 | +(56-60) 力量 | 85 | 1000（1.4925%） |\n| T2/10 | 众神之 | +(51-55) 力量 | 82 | 1000（1.4925%） |\n| T3/10 | 泰坦之 | +(43-50) 力量 | 74 | 1000（1.4925%） |\n| T4/10 | 海兽之 | +(38-42) 力量 | 66 | 1000（1.4925%） |\n| T5/10 | 巨人之 | +(33-37) 力量 | 55 | 1000（1.4925%） |\n| T6/10 | 大猩猩之 | +(28-32) 力量 | 44 | 1000（1.4925%） |\n| T7/10 | 狮子之 | +(23-27) 力量 | 33 | 1000（1.4925%） |\n| T8/10 | 熊之 | +(18-22) 力量 | 22 | 1000（1.4925%） |\n| T9/10 | 摔角手之 | +(13-17) 力量 | 11 | 1000（1.4925%） |\n| T10/10 | 野蛮之 | +(8-12) 力量 | 1 | 1000（1.4925%） |\n\n## 工艺工作台 · 后缀 · 9 档\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/6 | 工艺之 | +(21-25) 力量和敏捷 | 81 | 无数据 |\n| T1/6 | 工艺之 | +(21-25) 力量和智慧 | 81 | 无数据 |\n| T2/6 | 工艺之 | +(16-20) 力量和敏捷 | 72 | 无数据 |\n| T2/6 | 工艺之 | +(16-20) 力量和智慧 | 72 | 无数据 |\n| T3/6 | 工艺之 | +(10-15) 力量和敏捷 | 60 | 无数据 |\n| T3/6 | 工艺之 | +(10-15) 力量和智慧 | 60 | 无数据 |\n| T4/6 | 工艺之 | +(26-30) 力量",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    }
+  ]
+}

@@ -1,0 +1,129 @@
+{
+  "format_version": 1,
+  "case_id": "desc_headhunter_effect",
+  "query": "击败稀有怪物获得其属性修正的腰带",
+  "recorded_at": "2026-08-17T18:03:36+08:00",
+  "model": "glm-5.2",
+  "tokens": {
+    "prompt": 7060,
+    "output": 1155,
+    "reasoning": 643,
+    "total": 8215
+  },
+  "tool_calls": [
+    ""
+  ],
+  "evidence_gap": false,
+  "gap_answer": "",
+  "blocked_claims": 6,
+  "elapsed_ms": 22251,
+  "evidence_fingerprint": "sha256:a6a358a67eebc10b47634a896571e71f",
+  "_warning": "raw_answer 是未过出口闸门的模型原文，含可能无据的断言，不得当作事实引用",
+  "raw_answer": "## 击败稀有怪物获得其属性修正的腰带\n\n根据检索到的证据，**猎首（Headhunter）** 是唯一符合条件的腰带：\n\n- **底材**：皮革腰带，需求等级 40[[E1]]\n- **核心词缀**：「当你击败稀有怪物时，会获得该怪物属性修正 60 秒」[[E1]]\n- **附加属性**：+(40-55) 力量、+(40-55) 敏捷、+(50-60) 最大生命、击中伤害对稀有怪物提高 (20-30)%[[E1]]\n- **隐式**：+(25-40) 最大生命（来自皮革腰带底材）[[E1]]\n- **附加说明**：当你进入迷踪状态时，你将不会被敌人所阻挡[[E1]]\n\n---\n\n### 检索到的其他相关装备对比\n\n| 装备 | 底材 | 是否\"获得稀有怪物属性修正\" | 持续时间 |\n|---|---|---|---|\n| **猎首** | 皮革腰带（腰带） | ✅ 是，100% 触发 | 60 秒[[E1]] |\n| 求知的热情 | 赤红珠宝（珠宝，非腰带） | ✅ 是，但需范围内配置 4 个关键天赋点 | 20 秒[[E2]] |\n| 爪词缀「征服者之/裂界之」 | 爪（武器，非腰带） | ⚠ 有概率触发，非 100% | 10 秒[[E3]] |\n| 比斯克的缰绳 | 重革腰带（腰带） | ❌ 否，效果为「暴走」而非获得怪物属性修正 | —[[E4]] |\n\n> **说明**：比斯克的缰绳虽然也是腰带，且与击败稀有怪物相关，但其机制是「暴走」（快速连续击败怪物获得额外奖励），并非「获得该怪物属性修正」，因此不符合要求[[E4]]。\n\n### 覆盖限制\n\n以上结论仅基于本次检索到的证据。知识库中可能存在其他具有类似效果的腰带或词缀（例如通过影响力词缀在普通腰带上获得该效果），但本次检索未覆盖到。如需确认是否存在其他来源，建议查阅 POEDB 腰带词缀页面：https://poedb.tw/cn/Belts",
+  "evidence": [
+    {
+      "label": "E1",
+      "chunk_id": "unique_item:Headhunter#0#456e5079b32c619a",
+      "entity_id": "unique_item:Headhunter",
+      "title": "猎首（Headhunter）",
+      "url": "https://poedb.tw/cn/Headhunter",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 猎首（Headhunter）\n类型：唯一装备 ｜ 底材：皮革腰带 ｜ 分类：其他\n\n**需求**：需求 等级 40\n\n**隐式词缀**\n- [隐式词缀] +(25-40) 最大生命\n\n**显式词缀**\n- [显式词缀] +(40-55) 力量\n- [显式词缀] +(40-55) 敏捷\n- [显式词缀] +(50-60) 最大生命\n- [显式词缀] 击中伤害对稀有怪物提高 (20-30)%\n- [显式词缀] 当你击败稀有怪物时，会获得该怪物属性修正 60 秒\n\n**附加说明**\n- [说明] ( 当你进入迷踪状态时, 你将不会被敌人所阻挡 )\n\n来源：POEDB → 猎首（Headhunter）\nhttps://poedb.tw/cn/Headhunter",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E2",
+      "chunk_id": "unique_item:Inspired_Learning#0#15aa7614c202ecf8",
+      "entity_id": "unique_item:Inspired_Learning",
+      "title": "求知的热情（Inspired Learning）",
+      "url": "https://poedb.tw/cn/Inspired_Learning",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 求知的热情（Inspired Learning）\n类型：唯一装备 ｜ 底材：赤红珠宝 ｜ 分类：其他\n\n**需求**：需求 等级 20\n\n**显式词缀**\n- [显式词缀] 若范围内配置了 4 个关键天赋点，当你击败稀有怪物时，你会获得该怪物的 1 属性修正 20 秒\n\n来源：POEDB → 求知的热情（Inspired Learning）\nhttps://poedb.tw/cn/Inspired_Learning",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E3",
+      "chunk_id": "mod_ladder:Claws:GainRareMonsterModsOnKill#435dd5ef57ff02cc",
+      "entity_id": "mod_ladder:Claws:GainRareMonsterModsOnKill",
+      "title": "爪 · GainRareMonsterModsOnKill",
+      "url": "https://poedb.tw/cn/Claws#ModifiersCalc",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 爪 · GainRareMonsterModsOnKill\n底材类别：爪 ｜ 词缀组：GainRareMonsterModsOnKill ｜ 类型：后缀 ｜ 来源渠道：2 个\n\n本词缀组在该底材上共 3 条，来自 2 个来源：督军、裂界者。\n互斥规则：与本组（GainRareMonsterModsOnKill）有相同词缀组的其他词缀不能同时存在于一件装备上。\n⚠ 同一条词缀文本在本卡的多个来源里都出现 → 仅凭装备上的数值**无法判断**它出自哪个来源，回答时必须并列各种可能。\n\n## 督军 · 后缀 · 2 档\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/2 | 征服者之 | 当你击败稀有怪物时，有 (31-40)% 的几率获得该怪物的一种属性修正 10 秒 | 73 | 500（10.0%） |\n| T2/2 | 征服者之 | 当你击败稀有怪物时，有 (21-30)% 的几率获得该怪物的一种属性修正 10 秒 | 68 | 500（10.0%） |\n\n## 裂界者 · 后缀 · 1 条\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/1 | 裂界之 | 当你击败稀有怪物时，有 (15-20)% 的几率获得该怪物的一种属性修正 10 秒 | 68 | 1000（4.0%） |\n\n置信度说明：\n- T 级按 POEDB 的算法推导——在同一来源类别与词缀组内，把物品等级去重后降序排名，物品等级最高者为 T1（算法已复刻并通过不变量校验）\n\n来源：POEDB → 爪 · GainRareMonsterModsOnKill\nhttps://poedb.tw/cn/Claws#ModifiersCalc",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E4",
+      "chunk_id": "unique_item:Biscos_Leash#0#afc27dfc4362738a",
+      "entity_id": "unique_item:Biscos_Leash",
+      "title": "比斯克的缰绳（Bisco's Leash）",
+      "url": "https://poedb.tw/cn/Biscos_Leash",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 比斯克的缰绳（Bisco's Leash）\n类型：唯一装备 ｜ 底材：重革腰带 ｜ 分类：其他\n\n**需求**：需求 等级 30\n\n**隐式词缀**\n- [隐式词缀] +(25-35) 力量\n\n**显式词缀**\n- [显式词缀] +(10-15) 全属性\n- [显式词缀] +(20-40)% 冰霜抗性\n- [显式词缀] 每 15 层暴走能量增加 1% 物品稀有度\n- [显式词缀] 暴走\n\n**附加说明**\n- [说明] (属性分为力量，敏捷和智慧三种)\n- [说明] (快速连续击败怪物会获得额外暴走奖励)\n\n来源：POEDB → 比斯克的缰绳（Bisco's Leash）\nhttps://poedb.tw/cn/Biscos_Leash",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E5",
+      "chunk_id": "mod_ladder:Belts:ItemGenerationCannotRollCasterAffixes#4db5379553914a2b",
+      "entity_id": "mod_ladder:Belts:ItemGenerationCannotRollCasterAffixes",
+      "title": "腰带 · ItemGenerationCannotRollCasterAffixes",
+      "url": "https://poedb.tw/cn/Belts#ModifiersCalc",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 腰带 · ItemGenerationCannotRollCasterAffixes\n底材类别：腰带 ｜ 词缀组：ItemGenerationCannotRollCasterAffixes ｜ 类型：后缀 ｜ 来源渠道：1 个\n\n本词缀组在该底材上共 1 条，来自 1 个来源：工艺工作台。\n互斥规则：与本组（ItemGenerationCannotRollCasterAffixes）有相同词缀组的其他词缀不能同时存在于一件装备上。\n\n## 工艺工作台 · 后缀 · 1 条\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/1 | 武器专精之 | 不能附加法术相关属性修正 | 1 | 无数据 |\n\n> 本来源无生成权重数据，**不能据此给出成功率或概率**。\n\n置信度说明：\n- T 级按 POEDB 的算法推导——在同一来源类别与词缀组内，把物品等级去重后降序排名，物品等级最高者为 T1（算法已复刻并通过不变量校验）\n- 本卡全部来源都没有生成权重数据，任何概率类问题都无法回答\n\n来源：POEDB → 腰带 · ItemGenerationCannotRollCasterAffixes\nhttps://poedb.tw/cn/Belts#ModifiersCalc",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E6",
+      "chunk_id": "mod_ladder:Belts:ItemGenerationCannotRollAttackAffixes#a6a31461d8a0cc2c",
+      "entity_id": "mod_ladder:Belts:ItemGenerationCannotRollAttackAffixes",
+      "title": "腰带 · ItemGenerationCannotRollAttackAffixes",
+      "url": "https://poedb.tw/cn/Belts#ModifiersCalc",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 腰带 · ItemGenerationCannotRollAttackAffixes\n底材类别：腰带 ｜ 词缀组：ItemGenerationCannotRollAttackAffixes ｜ 类型：后缀 ｜ 来源渠道：1 个\n\n本词缀组在该底材上共 1 条，来自 1 个来源：工艺工作台。\n互斥规则：与本组（ItemGenerationCannotRollAttackAffixes）有相同词缀组的其他词缀不能同时存在于一件装备上。\n\n## 工艺工作台 · 后缀 · 1 条\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/1 | 法术专精之 | 不能附加武器攻击相关属性修正 | 1 | 无数据 |\n\n> 本来源无生成权重数据，**不能据此给出成功率或概率**。\n\n置信度说明：\n- T 级按 POEDB 的算法推导——在同一来源类别与词缀组内，把物品等级去重后降序排名，物品等级最高者为 T1（算法已复刻并通过不变量校验）\n- 本卡全部来源都没有生成权重数据，任何概率类问题都无法回答\n\n来源：POEDB → 腰带 · ItemGenerationCannotRollAttackAffixes\nhttps://poedb.tw/cn/Belts#ModifiersCalc",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E7",
+      "chunk_id": "unique_item:Impresence#0#9b1b8ec5a7027068",
+      "entity_id": "unique_item:Impresence",
+      "title": "隐逝（Impresence）",
+      "url": "https://poedb.tw/cn/Impresence",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 隐逝（Impresence）\n类型：唯一装备 ｜ 底材：黑曜护身符 ｜ 分类：其他\n\n**需求**：需求 等级 64\n\n**隐式词缀**\n- [隐式词缀] +(10-16) 全属性\n\n**显式词缀**\n- [显式词缀] 该装备附加 (20-24) - (33-36) 基础冰霜伤害\n- [显式词缀] +(50-70) 最大生命\n- [显式词缀] 魔力再生速度提高 (45-50)%\n- [显式词缀] +(20-25)% 冰霜抗性\n- [显式词缀] 冻伤以光环形式施放时没有保留效果\n- [显式词缀] 击败稀有或者传奇敌人时，获得癫狂状态 10 秒\n\n**附加说明**\n- [说明] (附近的敌人受到恶魔之触影响，减速10%并减少10%伤害)\n\n来源：POEDB → 隐逝（Impresence）\nhttps://poedb.tw/cn/Impresence",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E8",
+      "chunk_id": "unique_item:Solstice_Vigil#0#4ac738ee06c333bf",
+      "entity_id": "unique_item:Solstice_Vigil",
+      "title": "至日不眠（Solstice Vigil）",
+      "url": "https://poedb.tw/cn/Solstice_Vigil",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 至日不眠（Solstice Vigil）\n类型：唯一装备 ｜ 底材：黑曜护身符 ｜ 分类：其他\n\n**需求**：需求 等级 64\n\n**隐式词缀**\n- [隐式词缀] +(10-16) 全属性\n\n**显式词缀**\n- [显式词缀] 伤害提高 (30-40)%\n- [显式词缀] +(50-70) 最大生命\n- [显式词缀] 每秒再生 (8-10) 魔力\n- [显式词缀] 击败稀有或者传奇敌人时，获得塑界者姿态，持续 10 秒\n- [显式词缀] 时空锁链以光环形式施放时没有保留效果\n\n**附加说明**\n- [说明] （塑界者姿态会使你和周围友军身上的效果消退速度减缓 20%）\n- [说明] （效果无法低于正常消退速率的 25%）\n\n来源：POEDB → 至日不眠（Solstice Vigil）\nhttps://poedb.tw/cn/Solstice_Vigil",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    }
+  ]
+}

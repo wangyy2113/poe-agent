@@ -1,0 +1,116 @@
+{
+  "format_version": 1,
+  "case_id": "name_seven_league_step",
+  "query": "神行靴",
+  "recorded_at": "2026-08-17T18:02:50+08:00",
+  "model": "glm-5.2",
+  "tokens": {
+    "prompt": 6407,
+    "output": 218,
+    "reasoning": 36,
+    "total": 6625
+  },
+  "tool_calls": [
+    ""
+  ],
+  "evidence_gap": false,
+  "gap_answer": "",
+  "blocked_claims": 6,
+  "elapsed_ms": 3947,
+  "evidence_fingerprint": "sha256:f14a7fc2af1c7fb15f4d1bfb1d603e35",
+  "_warning": "raw_answer 是未过出口闸门的模型原文，含可能无据的断言，不得当作事实引用",
+  "raw_answer": "# 神行靴（Seven-League Step）\n\n| 属性 | 内容 |\n|------|------|\n| **类型** | 唯一装备 |\n| **底材** | 生皮短靴 |\n| **分类** | 护甲 |\n| **需求** | 等级 1, 11 敏捷 |\n\n## 显式词缀\n\n- 移动速度加快 50%[[E1]]\n\n## 简述\n\n神行靴是一双以生皮短靴为底材的唯一靴子，需求等级极低（仅需等级 1、11 敏捷）[[E1]]。它的唯一显式词缀为**移动速度加快 50%**[[E1]]，这在靴类装备中属于极高的固定移速数值。该装备没有其他词缀，是一双纯粹的移速跑鞋。",
+  "evidence": [
+    {
+      "label": "E1",
+      "chunk_id": "unique_item:Seven-League_Step#0#88275ffcacae47d4",
+      "entity_id": "unique_item:Seven-League_Step",
+      "title": "神行靴（Seven-League Step）",
+      "url": "https://poedb.tw/cn/Seven-League_Step",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 神行靴（Seven-League Step）\n类型：唯一装备 ｜ 底材：生皮短靴 ｜ 分类：护甲\n\n**需求**：需求 等级 1, 11 敏捷\n\n**显式词缀**\n- [显式词缀] 移动速度加快 50%\n\n来源：POEDB → 神行靴（Seven-League Step）\nhttps://poedb.tw/cn/Seven-League_Step",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E2",
+      "chunk_id": "unique_item:Redblade_Tramplers#0#0e7af3d75d2be7c9",
+      "entity_id": "unique_item:Redblade_Tramplers",
+      "title": "红刃蹂躏靴（Redblade Tramplers）",
+      "url": "https://poedb.tw/cn/Redblade_Tramplers",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 红刃蹂躏靴（Redblade Tramplers）\n类型：唯一装备 ｜ 底材：远古胫甲 ｜ 分类：护甲\n\n**需求**：需求 等级 46, 82 力量\n\n**显式词缀**\n- [显式词缀] 攻击附加 (2-5) - (7-10) 基础物理伤害\n- [显式词缀] 敌人晕眩门槛降低 (5-10)%\n- [显式词缀] 该装备的护甲提高 (150-200)%\n- [显式词缀] +(50-70) 最大生命\n- [显式词缀] +(20-30)% 火焰抗性\n- [显式词缀] 移动速度加快 25%\n- [显式词缀] 不受燃烧地面影响\n\n**附加说明**\n- [说明] (眩晕门槛决定了多少伤害可以眩晕目标)\n- [说明] (你受到的未生效的减益效果依然会被显示，但是他们不会产生效果)\n\n来源：POEDB → 红刃蹂躏靴（Redblade Tramplers）\nhttps://poedb.tw/cn/Redblade_Tramplers",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E3",
+      "chunk_id": "unique_item:Corpsewalker#0#0def78b74846cafe",
+      "entity_id": "unique_item:Corpsewalker",
+      "title": "灵盒行者（Corpsewalker）",
+      "url": "https://poedb.tw/cn/Corpsewalker",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 灵盒行者（Corpsewalker）\n类型：唯一装备 ｜ 底材：禁礼之靴 ｜ 分类：护甲\n\n**需求**：需求 等级 55, 52 敏捷, 52 智慧\n\n**显式词缀**\n- [显式词缀] 装备时触发 20 级灵柩行走\n- [显式词缀] 该装备的闪避与能量护盾提高 (80-120)%\n- [显式词缀] 移动速度加快 25%\n- [显式词缀] 周围每个灵柩使你每秒再生 8 生命\n- [显式词缀] 周围每个灵柩能使移动速度加快 1%\n\n来源：POEDB → 灵盒行者（Corpsewalker）\nhttps://poedb.tw/cn/Corpsewalker",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E4",
+      "chunk_id": "unique_item:Omeyocan#0#3209f622440bee6d",
+      "entity_id": "unique_item:Omeyocan",
+      "title": "至高天堂（Omeyocan）",
+      "url": "https://poedb.tw/cn/Omeyocan",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 至高天堂（Omeyocan）\n类型：唯一装备 ｜ 底材：禁礼之靴 ｜ 分类：护甲\n\n**需求**：需求 等级 55, 52 敏捷, 52 智慧\n\n**显式词缀**\n- [显式词缀] 魔力上限提高 (15-20)%\n- [显式词缀] +(25-30)% 闪电抗性\n- [显式词缀] 移动速度加快 30%\n- [显式词缀] 每 500 魔力上限使闪避值提高 20%\n- [显式词缀] 非低魔时获得猛攻\n- [显式词缀] 每秒失去 7% 魔力\n\n**附加说明**\n- [说明] ( 猛攻赋予你额外你 20% 攻击速度, 施法速度, 和移动速度 )\n\n来源：POEDB → 至高天堂（Omeyocan）\nhttps://poedb.tw/cn/Omeyocan",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E5",
+      "chunk_id": "unique_item:March_of_the_Legion#0#722d198ce3faab19",
+      "entity_id": "unique_item:March_of_the_Legion",
+      "title": "军团的进击（March of the Legion）",
+      "url": "https://poedb.tw/cn/March_of_the_Legion",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 军团的进击（March of the Legion）\n类型：唯一装备 ｜ 底材：军团长靴 ｜ 分类：护甲\n\n**需求**：需求 等级 58, 54 力量, 54 智慧\n\n**显式词缀**\n- [显式词缀] 此物品上装备的光环技能石等级 +(3-5)\n- [显式词缀] 插入的技能石被 25 级的神圣祝福辅助\n- [显式词缀] 该装备的护甲与能量护盾提高 (250-300)%\n- [显式词缀] +(12-18)% 所有元素抗性\n- [显式词缀] 移动速度加快 (20-30)%\n\n来源：POEDB → 军团的进击（March of the Legion）\nhttps://poedb.tw/cn/March_of_the_Legion",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E6",
+      "chunk_id": "unique_item:Dance_of_the_Offered#0#382f8201fdc011de",
+      "entity_id": "unique_item:Dance_of_the_Offered",
+      "title": "献祭舞鞋（Dance of the Offered）",
+      "url": "https://poedb.tw/cn/Dance_of_the_Offered",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 献祭舞鞋（Dance of the Offered）\n类型：唯一装备 ｜ 底材：禁礼之靴 ｜ 分类：护甲\n\n**需求**：需求 等级 55, 52 敏捷, 52 智慧\n\n**显式词缀**\n- [显式词缀] +(50-60) 最大魔力\n- [显式词缀] +(25-30)% 闪电抗性\n- [显式词缀] 移动速度加快 25%\n- [显式词缀] 非低魔时获得猛攻\n- [显式词缀] 惘信者\n\n**附加说明**\n- [说明] ( 猛攻赋予你额外你 20% 攻击速度, 施法速度, 和移动速度 )\n- [说明] （能量护盾上限为 0。非满血状态时，每秒献祭 20% 魔力来回复同等数值的生命）\n\n来源：POEDB → 献祭舞鞋（Dance of the Offered）\nhttps://poedb.tw/cn/Dance_of_the_Offered",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E7",
+      "chunk_id": "unique_item:Gangs_Momentum#0#5ea697e220c39b9e",
+      "entity_id": "unique_item:Gangs_Momentum",
+      "title": "刚勇（Gang's Momentum）",
+      "url": "https://poedb.tw/cn/Gangs_Momentum",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 刚勇（Gang's Momentum）\n类型：唯一装备 ｜ 底材：军团长靴 ｜ 分类：护甲\n\n**需求**：需求 等级 58, 54 力量, 54 智慧\n\n**显式词缀**\n- [显式词缀] 该装备的护甲与能量护盾提高 (160-180)%\n- [显式词缀] +(50-60)% 火焰抗性\n- [显式词缀] 移动速度加快 25%\n- [显式词缀] 有 (10-15)% 的几率点燃\n- [显式词缀] 对点燃的敌人造成的击中和异常状态伤害提高 (25-40)%\n\n**附加说明**\n- [说明] (点燃会造成持续燃烧的火焰伤害, 取决于技能的基础火焰伤害, 持续4秒)\n\n来源：POEDB → 刚勇（Gang's Momentum）\nhttps://poedb.tw/cn/Gangs_Momentum",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    }
+  ]
+}
