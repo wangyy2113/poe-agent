@@ -5,6 +5,7 @@
       "Bash(.venv/bin/python -m unittest*)",
       "Bash(.venv/bin/python scripts/selfcheck.py*)",
       "Bash(.venv/bin/python scripts/check_spec_refs.py*)",
+      "Bash(.venv/bin/python scripts/check_doc_facts.py*)",
       "Bash(.venv/bin/python scripts/test_search.py*)",
       "Bash(.venv/bin/python scripts/eval_run.py)",
       "Bash(.venv/bin/python scripts/eval_run.py --gate*)",
