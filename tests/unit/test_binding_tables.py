@@ -177,5 +177,94 @@ class StreamingParityTest(unittest.TestCase):
         self.assertTrue(any(v.lstrip().startswith("|") for v in final))
 
 
+class TableInheritsPrecedingBindingTest(unittest.TestCase):
+    """表格块继承紧邻前一句的绑定（2026-08-18）。
+
+    模型的自然写法是「档位如下[[E1]]：」紧跟一张表。引导句绑定了证据、表格是它的续写，
+    但分句后表格成了独立单位、自己没有标记，于是整张表被判「未绑定引用」。
+    实测 104 句拦截里 17 句是这种形态，其中 13 句紧邻前一句有绑定可继承，
+    且继承后**全部通过**数值校验——说明拦它们是错误拒答。
+
+    关键是继承只提供**编号**：数值回填校验照旧跑，表里编造的数字仍然会被拦。
+    """
+
+    def test_table_inherits_lead_in_binding(self) -> None:
+        text = (
+            "腰带上的力量词缀档位如下[[E1]]：\n\n"
+            "| T 级 | 词缀文本 | 物品等级 |\n"
+            "|---|---|---|\n"
+            "| T1/10 | +(56-60) 力量 | 85 |\n"
+        )
+        res = verify(text, EVIDENCE)
+        self.assertEqual(0, res.blocked, [v.reason for v in res.verdicts if not v.ok])
+        table = next(v for v in res.verdicts if v.text.lstrip().startswith("|"))
+        self.assertEqual(("E1",), table.labels, "表格应继承引导句的编号")
+
+    def test_blank_line_does_not_break_adjacency(self) -> None:
+        """`如下[[E1]]：\n\n| 表 |` 中间那个空行是排版，不该让表格失去上文。"""
+        text = "档位如下[[E1]]：\n\n\n| T 级 | 物品等级 |\n|---|---|\n| T1/10 | 85 |\n"
+        self.assertEqual(0, verify(text, EVIDENCE).blocked)
+
+    def test_fabricated_number_in_inherited_table_still_blocked(self) -> None:
+        """**继承编号救不了编造的数字。** 这条是整个放宽的安全前提。"""
+        text = (
+            "档位如下[[E1]]：\n\n"
+            "| T 级 | 词缀文本 | 物品等级 |\n|---|---|---|\n"
+            "| T1/10 | +(56-60) 力量 | 999 |\n"
+        )
+        res = verify(text, EVIDENCE)
+        self.assertEqual(1, res.blocked)
+        self.assertIn("999", res.verdicts[-1].reason if not res.verdicts[-1].ok else
+                      next(v.reason for v in res.verdicts if not v.ok))
+
+    def test_unbound_lead_in_gives_nothing_to_inherit(self) -> None:
+        """引导句自己没绑定时，表格无处可继承，仍然要拦。"""
+        text = "档位如下：\n\n| T 级 | 物品等级 |\n|---|---|\n| T1/10 | 85 |\n"
+        res = verify(text, EVIDENCE)
+        self.assertEqual(1, res.blocked)
+
+    def test_blocked_lead_in_cannot_be_inherited_from(self) -> None:
+        """被拦的句子不能当依据来源——否则一句无据断言能把绑定「传染」给整张表。"""
+        text = (
+            "该词缀最高档是 T1[[E99]]。\n\n"          # 编号无效 → 被拦
+            "| T 级 | 物品等级 |\n|---|---|\n| T1/10 | 85 |\n"
+        )
+        res = verify(text, EVIDENCE)
+        self.assertEqual(2, res.blocked, "引导句与表格都该被拦")
+
+    def test_own_marker_wins_over_inheritance(self) -> None:
+        """表格自己写了标记时以它自己的为准，不被前一句覆盖。"""
+        text = (
+            "档位如下[[E1]]：\n\n"
+            "| T 级 | 物品等级 |[[E99]]\n|---|---|\n| T1/10 | 85 |\n"
+        )
+        res = verify(text, EVIDENCE)
+        self.assertEqual(1, res.blocked)
+        self.assertIn("E99", next(v.reason for v in res.verdicts if not v.ok))
+
+    def test_non_table_sentence_does_not_inherit(self) -> None:
+        """只给表格开这个口子：普通句子不是引导句的续写。"""
+        text = "档位如下[[E1]]：\n\n该词缀在弓上是 T5 档。\n"
+        res = verify(text, EVIDENCE)
+        self.assertEqual(1, res.blocked)
+
+    def test_streaming_matches_batch_on_inheritance(self) -> None:
+        """继承必须在流式侧同样成立，否则两条路径判定分叉。"""
+        text = (
+            "腰带上的力量词缀档位如下[[E1]]：\n\n"
+            "| T 级 | 词缀文本 | 物品等级 |\n|---|---|---|\n"
+            "| T1/10 | +(56-60) 力量 | 85 |\n\n以上为完整梯度[[E1]]。\n"
+        )
+        batch = verify(text, EVIDENCE)
+        for chunk in (1, 3, 11, 200):
+            with self.subTest(chunk=chunk):
+                streamed = stream(text, EVIDENCE, chunk)
+                self.assertEqual(batch.blocked, streamed.blocked)
+                self.assertEqual(
+                    [(v.kind, v.ok, v.labels) for v in batch.verdicts if v.text.strip()],
+                    [(v.kind, v.ok, v.labels) for v in streamed.verdicts if v.text.strip()],
+                )
+
+
 if __name__ == "__main__":
     unittest.main()
