@@ -157,5 +157,65 @@ class StructuralScaffoldingTest(unittest.TestCase):
         )
 
 
+class BindingMarkerVariantsTest(unittest.TestCase):
+    """绑定标记的写法变体（2026-08-18）。
+
+    模型的输出格式不会百分百听话，为格式差异拦掉一句有据的话就是错误拒答。
+    实测 `[[E1][E3]]` 与 `[[E1],[E13]]` 都认不出来——而模块注释一直声称支持前者，
+    也就是**代码没做到自己声明的事**。这些用例把各种写法钉住。
+    """
+
+    def test_all_separator_forms_recognised(self) -> None:
+        from orchestrator.binding import extract_labels
+
+        cases = {
+            "[[E1]]": ("E1",),
+            "[[E1,E3]]": ("E1", "E3"),
+            "[[E1，E3]]": ("E1", "E3"),
+            "[[E1;E2]]": ("E1", "E2"),
+            "[[E1；E2]]": ("E1", "E2"),
+            "[[E1][E3]]": ("E1", "E3"),
+            "[[E1],[E13]]": ("E1", "E13"),
+            "[[E1], [E13]]": ("E1", "E13"),
+            "[[E1],[E10],[E13]]": ("E1", "E10", "E13"),
+        }
+        for marker, expected in cases.items():
+            with self.subTest(marker=marker):
+                self.assertEqual(expected, extract_labels(f"该词缀提供 +40 力量{marker}。"))
+
+    def test_adjacent_markers_are_not_merged(self) -> None:
+        """相邻两个标记不能被吞成一个：范围闸门要按第一个标记的位置判断。"""
+        from orchestrator.binding import _BINDING_RE
+
+        for text in ("第一句[[E1]]。第二句[[E2]]。", "句子[[E1]] [[E2]]"):
+            with self.subTest(text=text):
+                spans = [m.group() for m in _BINDING_RE.finditer(text)]
+                self.assertEqual(["[[E1]]", "[[E2]]"], spans)
+
+    def test_malformed_markers_still_rejected(self) -> None:
+        """放宽的是分隔符写法，不是「什么都算绑定」。"""
+        from orchestrator.binding import extract_labels
+
+        for marker in ("[[]]", "[[X1]]", "[[E]]", "[E1]", "[[E1"):
+            with self.subTest(marker=marker):
+                self.assertEqual((), extract_labels(f"某句{marker}"))
+
+    def test_bracket_form_counts_as_bound(self) -> None:
+        """端到端：括号写法的事实句不该被判「未绑定引用」。"""
+        import orchestrator.binding as b
+
+        ev = [
+            b.Evidence(label="E1", chunk_id="c1", entity_id=None, title="t",
+                       url="u", source="POEDB", source_priority=1,
+                       text="+(56-60) 力量 物品等级 85", can_support_facts=True),
+            b.Evidence(label="E13", chunk_id="c2", entity_id=None, title="t2",
+                       url="u2", source="POEDB", source_priority=1,
+                       text="力量提高 (13-15)%", can_support_facts=True),
+        ]
+        res = b.verify("最高档是 +(56-60) 力量，需要物品等级 85[[E1],[E13]]。",
+                       ev, factual_terms=TERMS, domain_terms=DOMAIN)
+        self.assertEqual(0, res.blocked, [v.reason for v in res.verdicts if not v.ok])
+
+
 if __name__ == "__main__":
     unittest.main()
