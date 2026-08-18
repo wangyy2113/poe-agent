@@ -369,6 +369,11 @@ CREATE TABLE IF NOT EXISTS source_conflict (
     ref_b        TEXT,
     url_b        TEXT,
     note         TEXT,
+    -- 差异的**成因**（不是结论）。人工核对必须按成因分批看，逐行看不动：
+    -- ladder_partial   两源阶梯大部分重合、个别档位对不上 → 真正值得先看的一类
+    -- ladder_identical 阶梯逐档全等却仍有单行对不上 → 同一词缀内部的抽取问题
+    -- 见 scripts/verify_pob_mods.py 的配对说明。
+    cause        TEXT,
     resolved     INTEGER DEFAULT 0,    -- 人工确认后置 1
     first_seen   TEXT NOT NULL,
     last_seen    TEXT NOT NULL,
@@ -563,6 +568,7 @@ def _migrate(conn: sqlite3.Connection) -> None:
         )
         _migrate_gap_kind(conn)
         _migrate_base_item_all_categories(conn)
+        _migrate_conflict_cause(conn)
         conn.commit()
     except sqlite3.Error as exc:
         # 迁移失败不能让启动失败——但必须告警，否则台账会继续悄悄积累重复
@@ -575,6 +581,25 @@ def _migrate(conn: sqlite3.Connection) -> None:
 #:   binding_block  出口闸门拦下一句无据断言 → 该看是漏出还是错误拒答
 #: 只有前两类构成「采集优先级」，第三类是闸门行为的观测量。
 GAP_KINDS = ("retrieval_gap", "tool_gap", "binding_block", "binding_block_legacy")
+
+
+def _migrate_conflict_cause(conn: sqlite3.Connection) -> None:
+    """给 `source_conflict` 补 `cause` 列。
+
+    为什么需要：`kind='mod_review'` 一度有 2729 行，人工核对无从下手——而其中大部分
+    并不是数值分歧，是**配对配错了**（按组名配对，而两源组名系统性不同）。改成按阶梯
+    指纹配对后剩 1081 行，且成因单一。成因必须落列而不是塞进 `note`：
+    要能 `GROUP BY cause` 才谈得上「按成因分批核对」。
+
+    历史行的 cause 留空——它们是旧判据产出的，不能事后编一个成因给它们。
+    重跑 `scripts/verify_pob_mods.py --write-conflicts` 会按新判据重写。
+    """
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(source_conflict)")}
+    if "cause" in cols:
+        return
+    conn.execute("ALTER TABLE source_conflict ADD COLUMN cause TEXT")
+    conn.commit()
+    logger.info("source_conflict 补 cause 列完成（历史行留空）")
 
 
 def _migrate_gap_kind(conn: sqlite3.Connection) -> None:

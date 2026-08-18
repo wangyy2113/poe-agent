@@ -132,6 +132,11 @@ FACTS: tuple[Fact, ...] = (
     Fact("CLAUDE.md 元词缀矩阵条数", "CLAUDE.md",
          r"`craft_metamod_interaction` \*\*([\d,]+)\*\* 行",
          _count("craft_metamod_interaction")),
+    Fact("CLAUDE.md 跨来源差异条数", "CLAUDE.md",
+         r"`source_conflict` \*\*([\d,]+)\*\*", _count("source_conflict")),
+    Fact("CLAUDE.md 待核对条数", "CLAUDE.md",
+         r"`mod_review` \*\*([\d,]+)\*\* 条",
+         _count_where("source_conflict", "kind='mod_review'")),
     Fact("审计样本量", "tests/golden/BASELINE.md", r"审计样本 \| 24 条（判 18） \| \*\*(\d+) 条",
          lambda _c: 48),
 )
