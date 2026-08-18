@@ -8,6 +8,32 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 单进程、单 SQLite 文件、零外部服务。规格真源是 `.kiro/specs/poe1-agent/`
 （requirements / design / tasks），工程约定真源是 `.kiro/steering/project-conventions.md`。
 
+## 大前提：只覆盖《流放之路 1》
+
+**POE1，不是 POE2（流放之路：降临 / Path of Exile 2）。** 两款游戏大量概念同名
+（升华、词缀、通货、地图、暴击），拿 POE1 的数值回答 POE2 的问题，用户看不出来——
+而「一个错误的小前提会让整条结论反向」正是第一原则要防的。所以这条边界由代码执行，
+分四处：
+
+| 位置 | 做什么 |
+| --- | --- |
+| `orchestrator/loop.poe2_marker()` | 在**原始问题串**上匹配 POE2 标记，命中即由代码生成越界声明——不检索、不调模型 |
+| `kb/fetcher.reject_poe2_host()` | 抓取入口硬护栏：`poe2db.tw` / `poe2.ninja` / `poe2wiki.net` 一律拒绝 |
+| `agents/knowledge.py` 提示词 | 明确写「非 POE1 的问题（包括《流放之路 2》）直接说明不在服务范围」 |
+| 黄金问答集 | 4 条 POE2 拒答用例 + 1 条反例（POE1 的「先祖降临」不得被误拦） |
+
+两个必须记住的坑：
+
+- **靠覆盖率拦不住 POE2 问题**，只有专指标记能拦。分词会把数字标记吃掉：
+  `poe2 词缀怎么洗` → `['poe', '词缀']`、`流放之路2 的升华机制` → `['流放', '升华', '机制']`。
+  实测「poe2 词缀怎么洗」因此拿到 100% 覆盖率、被判**依据充分**。所以判据只能在原串上匹配。
+- **单独的「降临」不能当标记**：POE1 有天赋节点「先祖降临」「惊寒降临」。
+  这与 boss 领域曾把「怪物」、路由曾把「知识库」当意图词是同一种错——意图词必须专指。
+
+数据源也只认 POE1：`poedb.tw`（注意 `poe2db.tw` 才是 POE2，两个域名只差一个字符）、
+PoB Community 的 PoE1 版（库里 `game_version` 全是 `3.29`；POE2 用 0.x 且是独立的 app）。
+将来若要接 GGG `api/leagues` 动态解析赛季名，**那个端点会同时返回 POE2 赛季，必须过滤**。
+
 ## 第一原则：无据不答（改任何代码都受它约束）
 
 禁止输出经验推断。查不到就输出缺据声明，不给「听起来合理」的答案。这条原则**落在代码里，
@@ -66,7 +92,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 362 项，秒级
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 370 项，秒级
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选

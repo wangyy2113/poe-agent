@@ -142,6 +142,7 @@ class Fetcher:
         return age < self.cache_ttl
 
     def fetch(self, url: str, *, force: bool = False) -> FetchResult:
+        reject_poe2_host(url)
         cache_path = self._cache_path(url)
 
         if not force and self._cache_fresh(cache_path):
@@ -195,6 +196,30 @@ class Fetcher:
             status_code=resp.status_code,
             final_url=str(resp.url),
         )
+
+
+#: 《流放之路 2》的数据站与镜像。**本项目只覆盖 POE1**，这些域名的内容一旦进库，
+#: 两款游戏的数值就混在同一个可引用索引里，而输出时看不出来。
+#:
+#: 放在抓取入口而不是各个抽取器里：抽取器有十几个，漏一个就等于没有护栏；
+#: 而所有网络内容都经过 `Fetcher.fetch`。注意 `poedb.tw`（POE1）与 `poe2db.tw`（POE2）
+#: 只差一个字符，配置里写错一个字母就会静默换游戏。
+_POE2_HOSTS: tuple[str, ...] = ("poe2db.tw", "poe2wiki.net", "poe2.ninja")
+
+
+class Poe2SourceRejected(PermissionError):
+    """试图抓取 POE2 数据源。本项目只覆盖 POE1，这类内容不得进库。"""
+
+
+def reject_poe2_host(url: str) -> None:
+    """抓取入口的硬护栏：URL 指向 POE2 数据站时直接拒绝。"""
+    host = (urlparse(url).netloc or "").lower().split(":")[0]
+    for bad in _POE2_HOSTS:
+        if host == bad or host.endswith("." + bad):
+            raise Poe2SourceRejected(
+                f"拒绝抓取 POE2 数据源 {host}（{url}）——本项目只覆盖《流放之路 1》。"
+                "两款游戏概念大量同名但数值不通用，混进同一个可引用索引后无法在输出里区分。"
+            )
 
 
 def cache_path_for(cache_dir: Path, url: str) -> Path:

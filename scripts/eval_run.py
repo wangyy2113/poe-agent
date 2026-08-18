@@ -40,6 +40,7 @@ from core import db as dbmod  # noqa: E402
 from core.config import get_config  # noqa: E402
 from core.logging_setup import setup_logging  # noqa: E402
 from kb.coverage import dimension_gap  # noqa: E402
+from orchestrator.loop import poe2_marker  # noqa: E402
 from retrieval.hybrid import retrieve  # noqa: E402
 from tests.golden.loader import (  # noqa: E402
     KIND_ZH,
@@ -79,6 +80,8 @@ class CaseOutcome:
     total_hits: int = 0
     #: 是否由维度覆盖闸门改判为依据不足（`kb.coverage.dimension_gap`）
     dimension_gate: bool = False
+    #: 是否被 POE1/POE2 边界拦下（`orchestrator.loop.poe2_marker`）
+    out_of_scope: bool = False
 
     # ── 判定 ──
     @property
@@ -114,6 +117,16 @@ class CaseOutcome:
 
 
 def run_case(conn, case: Case, params: dict) -> CaseOutcome:
+    # POE1/POE2 边界在 `loop.py` 里位于强制检索**之前**，所以这里也要先判——
+    # 少了这一步，一个已经被线上拦住的 POE2 问题会在评测里显示为「漏出」。
+    # 与维度闸门同一个道理：评测必须量到线上真正生效的那条路径。
+    if poe2_marker(case.query):
+        return CaseOutcome(
+            case=case, sufficient=False,
+            reason="POE1/POE2 边界：问题指向《流放之路 2》，本库只覆盖 POE1",
+            out_of_scope=True,
+        )
+
     r = retrieve(conn, case.query, **params)
     top = r.hits[0] if r.hits else None
 

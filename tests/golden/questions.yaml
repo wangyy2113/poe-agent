@@ -270,6 +270,42 @@ cases:
       靠「升华」+「机制」能拿到 67% 覆盖率过线，未覆盖的「流放之路2」恰是
       「问的是另一款游戏」的标志。因此覆盖率达标后还要检查未覆盖词是否全库为零。
 
+  # ── POE1/POE2 边界：**靠覆盖率拦不住，必须靠专指标记** ───────────────────
+  # 2026-08-18 实测「poe2 词缀怎么洗」被判**依据充分**（覆盖率 100%）：分词把数字
+  # 标记吃掉了（`poe2` → `['poe','词缀']`、`流放之路2` → `['流放','升华','机制']`），
+  # 问题退化成一个纯 POE1 问题，于是拿到了 POE1 的词缀数据。
+  # 现在由 `orchestrator/loop.poe2_marker()` 在**原始问题串**上匹配标记，
+  # 命中即由代码生成越界声明，不检索、不调模型。
+
+  - id: gap_poe2_latin_marker
+    query: poe2 词缀怎么洗
+    kind: gap
+    expect_gap: true
+    expect_in_answer: ["流放之路 1"]
+    note: >-
+      曾经的真实漏出：分词把 poe2 的「2」吃掉后覆盖率 100%，被判依据充分。
+      这条钉住「拉丁写法的标记也必须拦」
+
+  - id: gap_poe2_chinese_alias
+    query: 流放之路：降临的通货有哪些
+    kind: gap
+    expect_gap: true
+    note: POE2 的中文正式名。**单独的「降临」不能当标记**——POE1 有天赋「先祖降临」「惊寒降临」
+
+  - id: gap_poe2_second_edition
+    query: 第二部的暴击机制怎么算
+    kind: gap
+    expect_gap: true
+    note: 越界·POE2 的口语说法
+
+  - id: name_ancestral_reach_not_poe2
+    query: 先祖降临这个天赋给什么
+    kind: name
+    expect_slug: "passive:Ancestral_Reach_*"
+    note: >-
+      反例：POE1 的天赋节点名里含「降临」。若把单独的「降临」当作 POE2 标记，
+      这条正常问题会被拒答——与 boss 领域曾把「怪物」当意图词是同一种错
+
   - id: gap_syndicate_network
     query: 辛迪加情报网怎么运作
     kind: gap
