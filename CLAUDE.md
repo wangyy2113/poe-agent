@@ -92,7 +92,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 389 项，秒级
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 396 项，秒级
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选
@@ -143,7 +143,7 @@ POST /chat[/stream]  api/chat.py（只做校验与编排调用）
 | --- | --- |
 | `core/` | `config.py` 双层配置（`.env` 密钥 + `config.yaml` 声明式行为，路径都相对 `REPO_ROOT`）、`db.py` 单文件 SQLite + 向量三级探测、`llm.py` 凭证池与推理模型适配 |
 | `api/` | 路由层，**只做校验与编排调用，不写业务逻辑**；`deps.py` 鉴权 |
-| `orchestrator/` | `loop.py` 主循环与轨迹、`binding.py` 出口闸门（1200+ 行，改动前先读它的模块 docstring）、`citation.py` 引用装配 |
+| `orchestrator/` | `loop.py` 主循环与轨迹（批量与流式**共用** `_prepare_turn` / `_handle_tool_call` / `_terminal_gap`，只在「怎么把文本交给用户」上不同——不要在任一侧重新写判据，`tests/unit/test_turn_parity.py` 会挡）、`binding.py` 出口闸门（1400+ 行，改动前先读它的模块 docstring）、`citation.py` 引用装配 |
 | `agents/` | `knowledge.py`：系统提示词 + `ALLOWED_TOOLS` + 缺据声明模板。提示词是第一道约束不是唯一约束 |
 | `tools/` | `registry.py` 注册与 schema 导出，`impl/` 各工具；返回值统一 `ToolResult`，`citations` 是结构化引用而非拼进正文的字符串（要参与出口校验） |
 | `retrieval/` | FTS5、别名、RRF 融合、jieba 分词、领域词表 |
@@ -248,7 +248,7 @@ POST /chat[/stream]  api/chat.py（只做校验与编排调用）
    越靠上越可预测。**能在上层解决的绝不放到下层。**
 3. **大胆重构、拒绝补丁**：同一概念多处各写一份判据、白名单加语义重叠的新项、
    按用例名特判的 `if`、排序层反复加权 —— 见到就停下来重构，不要再加分支。
-   安全网是 389 项秒级单测 + `--gate` 离线重放 + 流式批量一致性，重构前后必须持平或变好。
+   安全网是 396 项秒级单测 + `--gate` 离线重放 + 流式批量一致性，重构前后必须持平或变好。
 4. **该删就删**：不留「以后可能有用」的函数，不为自己刚写的旧行为留兼容分支；
    约束本身是错的就删约束（`UNIQUE(name_zh)`），别绕开它。删除要证明没丢能力。
 5. **防漏改**：成对点清单在规约第 5 条。最高频的是批量 vs 流式、提示词 vs 闸门。
