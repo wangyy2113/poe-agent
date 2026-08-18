@@ -429,13 +429,21 @@ def verify(
     result = BindingResult()
     used: list[str] = []
 
+    previous: SentenceVerdict | None = None
     for raw in split_sentences(answer):
         if not raw.strip():
             result.verdicts.append(
                 SentenceVerdict(raw, "narrative", (), True, "空白")
             )
             continue
-        verdict = _check_sentence(raw, by_label, terms, domain)
+        # 表格块可继承紧邻前一句的绑定（见 `inheritable_labels`）。
+        # 空白片段跳过不算「紧邻」被打断——`档位如下[[E1]]：\n\n| 表 |` 中间那个空行
+        # 是排版，不该让表格失去可继承的上文。
+        verdict = _check_sentence(
+            raw, by_label, terms, domain,
+            inherited=inheritable_labels(previous, raw),
+        )
+        previous = verdict
         result.verdicts.append(verdict)
         if verdict.ok:
             for lb in verdict.labels:
@@ -550,7 +558,14 @@ class StreamingGate:
             if piece is None:
                 break
             self._buffer = rest
-            verdict = _check_sentence(piece, self._by_label, self._terms, self._domain)
+            # 与批量同一套继承判据：上一条**非空**判定即「紧邻前一句」
+            previous = next(
+                (v for v in reversed(self.verdicts) if v.text.strip()), None
+            )
+            verdict = _check_sentence(
+                piece, self._by_label, self._terms, self._domain,
+                inherited=inheritable_labels(previous, piece),
+            )
             self.verdicts.append(verdict)
             if not verdict.ok:
                 self.blocked += 1
@@ -1042,13 +1057,43 @@ def _affix_pool_scope_error(
     return "条件权重工具未明确覆盖的事实语义"
 
 
+def inheritable_labels(
+    previous: SentenceVerdict | None, sentence: str
+) -> tuple[str, ...]:
+    """表格块可以继承**紧邻前一句**的绑定编号。返回空元组表示不继承。
+
+    为什么只给表格开这个口子：模型的自然写法是「腰带上的力量词缀档位如下[[E1]]：」
+    紧跟一张表。引导句绑定了证据、表格是它的续写，但分句之后表格成了独立单位、
+    自己没有标记，于是**整张表被判「事实句未绑定引用」**。实测 104 句拦截里有 17 句
+    是这种形态，其中 13 句紧邻前一句有绑定可继承。
+
+    为什么这样做仍然安全：继承只提供**编号**，数值回填校验照旧跑——表里出现的每个
+    数值仍必须能在继承来的证据原文里找到。实测那 13 句继承后**全部通过**数值校验
+    （0 句需要继续拦），说明它们的数字本来就在证据里，拦它们是错误拒答。
+    反过来，若模型在表里编造数字，继承编号也救不了它。
+
+    三条限制：
+      只有表格块能继承（表格是引导句的续写，普通句子不是）
+      只继承**紧邻**且**已通过校验**的那一句（被拦的句子不能当依据来源）
+      表格自己有标记时不继承（以它自己写的为准）
+    """
+    if previous is None or not previous.ok or not previous.labels:
+        return ()
+    if not _is_table_line(sentence):
+        return ()
+    if extract_labels(sentence):
+        return ()
+    return previous.labels
+
+
 def _check_sentence(
     sentence: str,
     by_label: dict[str, Evidence],
     terms: tuple[str, ...],
     domain: tuple[str, ...] = (),
+    inherited: tuple[str, ...] = (),
 ) -> SentenceVerdict:
-    labels = extract_labels(sentence)
+    labels = extract_labels(sentence) or inherited
     stripped = _BINDING_RE.sub("", sentence)
     kind = classify(stripped, labels, terms, domain)
     affix_pool_mode = any(

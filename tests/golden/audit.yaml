@@ -30,8 +30,8 @@ items:
 
 
       来源：POEDB https://poedb.tw/cn/Amulets#ModifiersCalc'
-  verdict: ''
-  note: ''
+  verdict: supported
+  note: E9 卡片首行就写着「共 3 档。」，逐字对得上
   pool: passed
 - id: desc_headhunter_effect#52c16648
   case: desc_headhunter_effect
@@ -98,8 +98,8 @@ items:
       | 手套 | Base | 后缀 | LifeRegenerationRate | 15 | 46 | 是 |
 
       | 符文战靴 | 灭界者 | 其他 | LifeRegenerationRat'
-  verdict: ''
-  note: ''
+  verdict: supported
+  note: E9 正是按 (底材类别 × 来源) 聚合的生命再生表，句子是它的引导语
   pool: passed
 - id: desc_mastery_elemental#fba04d4c
   case: desc_mastery_elemental
@@ -385,13 +385,14 @@ items:
   verdict: supported
   note: E1 有「底材：皮革腰带」与「需求 等级 40」
   pool: passed
-- id: cross_lifeleech_amulet#f5fa9968
+- id: cross_lifeleech_amulet#975e2d76
   case: cross_lifeleech_amulet
-  sentence: 基于查询结果，项链上与生命偷取相关的词缀组共检索到 **37 个梯度（ladders）**，但结果被截断，仅返回了 **6 个**。
+  sentence: 根据检索结果，项链上与生命偷取相关的词缀组**共有 38 个 ladder（词缀组 × 来源组合），本次返回了其中 6 个，结果被截断**，以下仅列出已返回的部分。
   labels: []
   evidence_excerpt: {}
-  verdict: ''
-  note: ''
+  verdict: wrong_block
+  note: '**截断声明被拦掉了。** 这句说「共 38 个 ladder，本次只返回 6 个，结果被截断」——而项目自己的规则写着「枚举类工具静默截断等同于漏答，超出上限必须写出还剩多少」。拦掉它的后果正是那条规则要防的：用户拿到一份残缺清单却没有截断提示。数字
+    38/6 来自工具的 meta 而非证据卡片，所以正解不是无条件豁免，而是让工具把截断信息作为可引用内容交出来'
   pool: blocked
   gate_reason: 事实句未绑定引用
 - id: desc_headhunter_effect#c8211ec0
@@ -408,33 +409,18 @@ items:
   sentence: 根据已检索证据，"生命再生"相关的属性可从以下渠道获得或受其影响。
   labels: []
   evidence_excerpt: {}
-  verdict: ''
-  note: ''
+  verdict: wrong_block
+  note: 「根据已检索证据，…可从以下渠道获得或受其影响。」纯引导句、无数值。句中有「以下」但以句号收尾，_COLON_LEAD_IN_RE 要求冒号收尾故不命中——与已知未修的长引导句同族
   pool: blocked
   gate_reason: 事实句未绑定引用
-- id: desc_spell_damage_staff#c89f5e04
+- id: desc_spell_damage_staff#7ac44702
   case: desc_spell_damage_staff
-  sentence: '| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |
-
-    | --- | --- | --- | --- | --- |
-
-    | T1/7 | 巫妖的 | 法术伤害提高 (44-49)% / +(42-45) 最大魔力 | 80 | 100（0.1258%） |
-
-    | T2/7 | 大法师的 | 法术伤害提高 (37-43)% / +(38-41) 最大魔力 | 58 | 200（0.2517%） |
-
-    | T3/7 | 魔导师的 | 法术伤害提高 (31-36)% / +(34-37) 最大魔力 | 46 | 400（0.5034%） |
-
-    | T4/7 | 术士的 | 法术伤害提高 (25-30)% / +(29-33) 最大魔力 | 35 | 800（1.0067%） |
-
-    | T5/7 | 巫师的 | 法术伤害提高 (19-24)% / +(25-28) 最大魔力 | 23 | 1000（1.2584%） |
-
-    | T6/7 | 咒术师的 | 法术伤害提高 (13-18)% / +(21-24) 最大魔力 | 11 | 1000（1.2584%） |
-
-    | T7/7 | 施放者的 | 法术伤害提高 (8-12)% / +(17-20) 最大魔力 | 2 | 1000（1.2584%） |'
+  sentence: '- 括号内百分比（如 0.1258%）为该档在该底材全部词缀池中的条件权重占比，**不等于**任何通货或工艺的一次使用成功率。'
   labels: []
   evidence_excerpt: {}
-  verdict: correct_block
-  note: 整张表都没有绑定标记，数据虽与 E1 一致，但规则要求绑定
+  verdict: wrong_block
+  note: '**提示词要求说的话被闸门拦了。** 这句是口径免责：「括号内百分比…不等于任何通货或工艺的一次使用成功率」，而 agents/knowledge.py 里 affix_pool_odds
+    的规则明确要求模型这么说。同一个系统一边要求、一边拦截，属自相矛盾——与「代码没做到自己声明的事」是同一species。句中的 0.1258% 出现在证据表格里，绑定后即可通过'
   pool: blocked
   gate_reason: 事实句未绑定引用
 - id: desc_steal_mods_belt#20ee7766
