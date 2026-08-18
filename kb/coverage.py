@@ -281,7 +281,21 @@ DOMAINS: tuple[DomainSpec, ...] = (
         category=Category.BASICS,
         authority_url=f"{POEDB_BASE}/Skill_Gems",
         count_sql="SELECT count(*) FROM entity WHERE entity_type='skill'",
-        hints=("技能石", "主动技能", "技能宝石", "宝石等级"),
+        # 「宝石等级」之外再加三个**专指技能石**的问法标记。加它们的理由是实测漏出：
+        # 「冰霜脉冲在 20 级时的基础伤害是多少」——技能石未采集，但这句里
+        # `冰霜`/`基础`/`伤害` 都是通用词，覆盖率 75% 达标；未覆盖的 `脉冲` 在库里有 12 条
+        # （全是能量护盾/防御词缀里的无关文本），所以「全库为零」那道护栏也不触发。
+        # 领域识别不到 → 维度闸门也不拦 → 整轮漏出。
+        #
+        # 判据必须**专指技能石**，这是踩过三次的坑（曾把「怪物」当 boss 意图、
+        # 「知识库」当路由意图、差点把「降临」当 POE2 标记）。所以：
+        #   「技能等级」「几级时」    装备说「物品等级」「需求等级」，角色说「角色等级」，
+        #                            **裸的「N 级」+ 数值问法是技能石特征**
+        #   「技能伤害数值」相关词    走 question_hints 那条，不放进 hints
+        hints=(
+            "技能石", "主动技能", "技能宝石", "宝石等级", "技能等级",
+            "级时的基础伤害", "级时的伤害", "级的基础伤害",
+        ),
         question_hints=("某技能的数值与标签", "某效果由哪些技能提供"),
         poedb_pages=("Skill_Gems", "Transfigured_Gems", "Gem"),
         pob_files=("Data/Gems.lua", "Data/Skills/"),
