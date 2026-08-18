@@ -225,6 +225,73 @@ def _apply_dimension_gate(question: str, data: dict[str, Any]) -> dict[str, Any]
     return out
 
 
+#: 工具 `data` 里那些**要求必须传达给用户**的声明字段，逐字取用。
+#: 它们不是游戏事实而是「这份答案的边界」，所以由代码原样附在答案末尾。
+_NOTE_FIELDS: tuple[str, ...] = ("coverage_note", "channels_no_match_note")
+
+#: 权重占比的写法：`1500（1.888%）`。出现即说明证据里带组内占比。
+_WEIGHT_PCT_RE = re.compile(r"\d+\s*（\s*\d+(?:\.\d+)?%\s*）")
+
+
+def _answer_notes(
+    tool_calls: list[dict[str, Any]], evidence: list[Evidence]
+) -> list[str]:
+    """由**代码**生成的答案附注：截断、覆盖不完整、零命中、权重口径。
+
+    ## 为什么必须由代码说
+
+    这几件事项目自己明文要求说出来：
+
+      「枚举类工具静默截断等同于漏答，超出上限必须写出还剩多少」
+      「上面的清单在这些维度上必然不完整——回答时必须如实说明」（stat_sources 的 coverage_note）
+      「这个数不是任何通货或具体工艺的一次使用成功率」（affix_pool / 权重占比）
+
+    但它们**都不在任何证据里**：截断计数只在工具 `data`（实测 `mod_tiers` 返回
+    `ladders_total=21 / ladders_returned=6`，卡片里一个字都没有），覆盖声明同理。
+    于是模型只能无绑定地说出来，然后被出口闸门当「事实句未绑定引用」拦掉——
+    **项目要求说的话被项目自己拦了**，用户拿到一份残缺清单却看不到截断提示。
+
+    所以走 `degraded_note` 同一条路：代码生成、附在闸门之后、完全可预测。
+    这也比「把这类句子加进白名单豁免」安全——豁免等于允许模型自己编这些数字。
+    """
+    notes: list[str] = []
+
+    def add(note: str) -> None:
+        text = note.strip()
+        if text and text not in notes:
+            notes.append(text)
+
+    for record in tool_calls:
+        data = record.get("data")
+        if not isinstance(data, dict):
+            continue
+        tool = str(record.get("tool") or "工具")
+        if data.get("truncated"):
+            total = data.get("ladders_total") or data.get("total")
+            returned = data.get("ladders_returned") or data.get("returned")
+            if isinstance(total, int) and isinstance(returned, int):
+                add(
+                    f"**本轮枚举被截断**：`{tool}` 命中 {total} 项，只返回了 {returned} 项。"
+                    f"上面的清单不完整，剩余 {total - returned} 项未列出——"
+                    "需要完整清单请缩小查询范围（指定底材类别或来源渠道）后再问。"
+                )
+            else:
+                add(
+                    f"**本轮枚举被截断**：`{tool}` 的结果超出返回上限，上面的清单不完整。"
+                )
+        for field in _NOTE_FIELDS:
+            value = data.get(field)
+            if isinstance(value, str) and value.strip():
+                add(value)
+
+    if any(_WEIGHT_PCT_RE.search(e.text) for e in evidence):
+        add(
+            "**括号内的百分比是该档在同组内的生成权重占比**，"
+            "不等于任何通货或具体工艺的一次使用成功率，也不等于期望消耗。"
+        )
+    return notes
+
+
 def _domain_terms() -> tuple[str, ...]:
     """事实句判定用的领域词。来自 `retrieval/vocab.py` 生成的词表。
 
@@ -1561,6 +1628,10 @@ def run_turn(
     result.binding = binding
     result.answer = binding.text
     result.citations = cit.collect(evidence, binding.used_labels)
+    # 代码生成的附注（截断 / 覆盖不完整 / 权重口径），见 `_answer_notes`。
+    # 放在闸门之后：它们不是模型说的，不需要也不该过绑定校验。
+    for note in _answer_notes(result.tool_calls, evidence):
+        result.answer += f"\n\n> {note}"
     if result.degraded_note:
         result.answer += f"\n\n> {result.degraded_note}"
 
@@ -1866,6 +1937,9 @@ def stream_turn(
                 for c in result.citations
             ],
         }
+    for note in _answer_notes(result.tool_calls, evidence):
+        result.answer += f"\n\n> {note}"
+        yield {"type": "note", "text": note}
     if result.degraded_note:
         yield {"type": "note", "text": result.degraded_note}
     if binding.blocked:

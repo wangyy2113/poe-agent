@@ -92,7 +92,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 378 项，秒级
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 389 项，秒级
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选
@@ -129,6 +129,7 @@ POST /chat[/stream]  api/chat.py（只做校验与编排调用）
        ├─ 充分            binding.number_evidence() 给证据编号 E1..En
        ├─ LLM 循环        core/llm.py（多 Key 故障转移）+ tools/registry.py 工具调用
        ├─ 出口校验        binding.verify() / StreamingGate（逐句拦截）
+       ├─ 答案附注        _answer_notes()：截断计数 / 覆盖声明 / 权重口径，代码生成不过闸门
        └─ 引用装配        orchestrator/citation.py，落轨迹进 trace 表
 ```
 
@@ -224,6 +225,14 @@ POST /chat[/stream]  api/chat.py（只做校验与编排调用）
   掉前缀，本机直连时路径对不上）。静态目录必须挂在 API 路由**之后**。
 - 出口闸门判不出句子类型时**默认按事实句处理**（安全侧）。Markdown 标题、加粗标签、分隔线、
   缺据声明句已豁免；带数字的标题仍走事实句校验。
+- **不在任何证据里的边界声明由代码附注，不靠模型说、也不靠白名单豁免**
+  （`orchestrator/loop._answer_notes()`）：枚举截断的计数只在工具 `data` 里、覆盖声明是工具
+  算好的、权重口径是提示词硬性要求的——模型说这些只能无绑定地说，然后被拦，用户就丢了信息。
+  豁免则等于允许模型自己编这些数字。
+- **改提示词是全局改动，必须先量再改。** 实测：加一段 9 行的说明（告诉模型某些声明不用自己
+  复述）让引用有效率 67%→55%、拦截 91→122，只换来元说明类少 3 句，已撤销
+  （`tests/golden/BASELINE.md` 第四轮有三向对比）。它不只影响被提到的那几句，会拖垮整体
+  绑定纪律。另外**两次数字的差不能当因果**——模型有轮次波动，判因要有同条件重复运行。
 - 装备分析不给市场价格：经济源未接入，三项价值判断一律输出「数据不足」+ 缺哪项数据。
   T 级查不到就标「未匹配」并写原因，不给推测值。
 - 引用 PoB 必须用钉住 commit 的 GitHub blob URL；缺 `url` 或 `source` 的文档不得进可引用索引。
