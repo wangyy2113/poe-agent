@@ -1,6 +1,6 @@
 meta:
-  auditor: claude-opus-5（**非独立人工**：由实现者逐条核对，结论待人工抽检复核）
-  audited_at: '2026-08-17'
+  auditor: claude-opus-5（实现者自核，非独立人工；结论待人工抽检复核）
+  audited_at: '2026-08-18'
   note: verdict 取值：passed 池 supported/unsupported；blocked 池 correct_block/wrong_block。留空表示待判。
 items:
 - id: cross_lifeleech_amulet#7001a78d
@@ -33,9 +33,9 @@ items:
   verdict: supported
   note: E9 卡片首行就写着「共 3 档。」，逐字对得上
   pool: passed
-- id: desc_headhunter_effect#52c16648
+- id: desc_headhunter_effect#cda0c8f6
   case: desc_headhunter_effect
-  sentence: '- **底材**：皮革腰带，需求等级 40[[E1]]'
+  sentence: '- 底材：皮革腰带，唯一装备，需求等级 40[[E1]]'
   labels:
   - E1
   evidence_excerpt:
@@ -74,7 +74,7 @@ items:
 
       https://poedb.tw/cn/Headhunter'
   verdict: supported
-  note: E1 有「底材：皮革腰带」「需求 等级 40」
+  note: 底材/类型/需求等级三项在 E1 卡片首段逐字可见。
   pool: passed
 - id: desc_life_regen_source#6ea3a475
   case: desc_life_regen_source
@@ -164,13 +164,13 @@ items:
   verdict: supported
   note: E1 明写法杖 / 前缀 / Base / 共 7 条 / 互斥规则，逐项对得上
   pool: passed
-- id: desc_steal_mods_belt#68c69c68
+- id: desc_steal_mods_belt#5a812ea3
   case: desc_steal_mods_belt
-  sentence: '- **其他底材**：偷取词缀确实存在于装备词缀池中，但出现在**手套、头部、符文手甲**等其他底材上，而非腰带[[E9]]。'
+  sentence: 这些偷取词缀主要分布在手套（灭界者来源的生命偷取、魔力偷取、各元素伤害生命偷取等）和头部（异度天灾来源的召唤生物生命偷取）等底材上[[E13]]。
   labels:
-  - E9
+  - E13
   evidence_excerpt:
-    E9: '### 装备词缀：含「偷取」的词缀出现在这些 (底材类别 × 来源) 组合上
+    E13: '### 装备词缀：含「偷取」的词缀出现在这些 (底材类别 × 来源) 组合上
 
 
       | 底材类别 | 来源 | 前后缀 | 词缀组 | 条数 | 最低物品等级 | 有生成权重 |
@@ -186,8 +186,9 @@ items:
       | 手套 | 灭界者 | 其他 | LightningDamageLifeLeech | 90 | 75 | 是 |
 
       | 手套 | 灭界者 | 其他 | PhysicalDamageLifeLeech | 90'
-  verdict: supported
-  note: E9 表格里偷取类词缀的底材类别是手套、头部等，确实不含腰带
+  verdict: unsupported
+  note: 来源归属错了：E13 表里 手套 的 生命偷取/魔力偷取 来自「异度天灾 有利」与「虚空忆境」，灭界者 给的是 Chaos/Cold/Fire/Lightning/Physical DamageLifeLeech。而且「主要分布在」是分布性断言，E13
+    自己写着「本渠道共 353 条，以上列出前 12 条」——12 行推不出分布。数值层校验查不出这种错：词都在证据里，只是搭配错了。
   pool: passed
 - id: name_abberaths_horn_apostrophe#9ebb11a6
   case: name_abberaths_horn_apostrophe
@@ -292,9 +293,9 @@ items:
   verdict: supported
   note: 与 E1 一致；括号里补的英文名也来自 E1 标题
   pool: passed
-- id: name_ascendancy_conjoined_spire#ff8e7d47
+- id: name_ascendancy_conjoined_spire#5c199862
   case: name_ascendancy_conjoined_spire
-  sentence: '**升华核心 ｜ 天赋树 3.29**[[E1]]'
+  sentence: '**类型**：升华核心（Keystone）｜ 天赋树 3.29 [[E1]]'
   labels:
   - E1
   evidence_excerpt:
@@ -315,8 +316,8 @@ items:
       来源：POEDB → 天赋树 · 结合尖塔（Conjoined Spire）
 
       https://poedb.tw/cn/passive-skill-tree/'
-  verdict: supported
-  note: E1 第二行就是「升华核心 ｜ 天赋树 3.29」
+  verdict: unsupported
+  note: 把「升华核心」译成「（Keystone）」是错的，且该英文不在 E1 里。库中 node_kind 分得很清：神威之盾=keystone（基石），结合尖塔=ascendancy_notable（升华核心）。同一来源里的两种节点类型被混成一种，属于术语层漏出。
   pool: passed
 - id: name_atlas_refiners_bargain#3dafaf94
   case: name_atlas_refiners_bargain
@@ -385,6 +386,579 @@ items:
   verdict: supported
   note: E1 有「底材：皮革腰带」与「需求 等级 40」
   pool: passed
+- id: name_headhunter_en#a800da2f
+  case: name_headhunter_en
+  sentence: '**类型**：唯一装备 ｜ 底材：皮革腰带 ｜ 分类：其他[[E1]]'
+  labels:
+  - E1
+  evidence_excerpt:
+    E1: '# 猎首（Headhunter）
+
+      类型：唯一装备 ｜ 底材：皮革腰带 ｜ 分类：其他
+
+
+      **需求**：需求 等级 40
+
+
+      **隐式词缀**
+
+      - [隐式词缀] +(25-40) 最大生命
+
+
+      **显式词缀**
+
+      - [显式词缀] +(40-55) 力量
+
+      - [显式词缀] +(40-55) 敏捷
+
+      - [显式词缀] +(50-60) 最大生命
+
+      - [显式词缀] 击中伤害对稀有怪物提高 (20-30)%
+
+      - [显式词缀] 当你击败稀有怪物时，会获得该怪物属性修正 60 秒
+
+
+      **附加说明**
+
+      - [说明] ( 当你进入迷踪状态时, 你将不会被敌人所阻挡 )
+
+
+      来源：POEDB → 猎首（Headhunter）
+
+      https://poedb.tw/cn/Headhunter'
+  verdict: supported
+  note: 与 E1 卡片首行逐字一致。
+  pool: passed
+- id: name_headhunter_zh#4700c3ee
+  case: name_headhunter_zh
+  sentence: '- 需求等级：40 [[E1]]'
+  labels:
+  - E1
+  evidence_excerpt:
+    E1: '# 猎首（Headhunter）
+
+      类型：唯一装备 ｜ 底材：皮革腰带 ｜ 分类：其他
+
+
+      **需求**：需求 等级 40
+
+
+      **隐式词缀**
+
+      - [隐式词缀] +(25-40) 最大生命
+
+
+      **显式词缀**
+
+      - [显式词缀] +(40-55) 力量
+
+      - [显式词缀] +(40-55) 敏捷
+
+      - [显式词缀] +(50-60) 最大生命
+
+      - [显式词缀] 击中伤害对稀有怪物提高 (20-30)%
+
+      - [显式词缀] 当你击败稀有怪物时，会获得该怪物属性修正 60 秒
+
+
+      **附加说明**
+
+      - [说明] ( 当你进入迷踪状态时, 你将不会被敌人所阻挡 )
+
+
+      来源：POEDB → 猎首（Headhunter）
+
+      https://poedb.tw/cn/Headhunter'
+  verdict: supported
+  note: E1「需求 等级 40」。
+  pool: passed
+- id: name_kaoms_heart_zh#5675d38c
+  case: name_kaoms_heart_zh
+  sentence: '| 属性 | 内容 |
+
+    |---|---|
+
+    | 类型 | 唯一装备 |
+
+    | 底材 | 荣耀战铠 |
+
+    | 分类 | 护甲 |
+
+    | 需求 | 等级 68，191 力量[[E1]] |'
+  labels:
+  - E1
+  evidence_excerpt:
+    E1: '# 冈姆的壮志（Kaom''s Heart）
+
+      类型：唯一装备 ｜ 底材：荣耀战铠 ｜ 分类：护甲
+
+
+      **需求**：需求 等级 68, 191 力量
+
+
+      **显式词缀**
+
+      - [显式词缀] 没有插槽
+
+      - [显式词缀] +1000 最大生命
+
+
+      来源：POEDB → 冈姆的壮志（Kaom''s Heart）
+
+      https://poedb.tw/cn/Kaoms_Heart'
+  verdict: supported
+  note: E1「需求 等级 68, 191 力量」，表格逐项对应。
+  pool: passed
+- id: name_passive_divine_shield#3b6222e5
+  case: name_passive_divine_shield
+  sentence: '**神威之盾**是一个**基石**（Keystone）天赋，来自天赋树版本 3.29[[E1]]。'
+  labels:
+  - E1
+  evidence_excerpt:
+    E1: "# 基石·神威之盾（Divine Shield）\n基石 ｜ 天赋树 3.29\n\n- 回复能量护盾不能超过护甲\n  每秒再生能量护盾，等同近期内阻挡的击中物理伤害的 3%\n\n\
+      > ( 近期内意指 4 秒内 )\n\n来源：POEDB → 天赋树 · 神威之盾（Divine Shield）\nhttps://poedb.tw/cn/passive-skill-tree/"
+  verdict: supported
+  note: E1 首行「基石 ｜ 天赋树 3.29」；这里 基石=Keystone 是对的（对比结合尖塔那条）。
+  pool: passed
+- id: name_seven_league_step#6ba24440
+  case: name_seven_league_step
+  sentence: '- 移动速度加快 50%[[E1]]'
+  labels:
+  - E1
+  evidence_excerpt:
+    E1: '# 神行靴（Seven-League Step）
+
+      类型：唯一装备 ｜ 底材：生皮短靴 ｜ 分类：护甲
+
+
+      **需求**：需求 等级 1, 11 敏捷
+
+
+      **显式词缀**
+
+      - [显式词缀] 移动速度加快 50%
+
+
+      来源：POEDB → 神行靴（Seven-League Step）
+
+      https://poedb.tw/cn/Seven-League_Step'
+  verdict: supported
+  note: E1 显式词缀「移动速度加快 50%」。
+  pool: passed
+- id: name_tabula_rasa_en#726a6100
+  case: name_tabula_rasa_en
+  sentence: '| 项目 | 内容 |
+
+    |------|------|
+
+    | **类型** | 唯一装备 |
+
+    | **底材** | 简易之袍 |
+
+    | **分类** | 胸甲 |
+
+    | **需求** | 等级 3, 17 智慧 [[E1]] |'
+  labels:
+  - E1
+  evidence_excerpt:
+    E1: '# 无尽之衣（Tabula Rasa）
+
+      类型：唯一装备 ｜ 底材：简易之袍 ｜ 分类：胸甲
+
+
+      **需求**：需求 等级 3, 17 智慧
+
+
+      **显式词缀**
+
+      - [显式词缀] local six linked white sockets [1]
+
+      - [显式词缀] local unique tabula rasa no requirement or energy shield [1]
+
+      - [显式词缀] [六插槽連線]
+
+      - [显式词缀] [插槽皆為白色]
+
+
+      来源：POEDB → 无尽之衣（Tabula Rasa）
+
+      https://poedb.tw/cn/Tabula_Rasa'
+  verdict: supported
+  note: E1「需求 等级 3, 17 智慧」。
+  pool: passed
+- id: name_tabula_rasa_zh#aba03132
+  case: name_tabula_rasa_zh
+  sentence: '- 六插槽连线[[E1]]'
+  labels:
+  - E1
+  evidence_excerpt:
+    E1: '# 无尽之衣（Tabula Rasa）
+
+      类型：唯一装备 ｜ 底材：简易之袍 ｜ 分类：胸甲
+
+
+      **需求**：需求 等级 3, 17 智慧
+
+
+      **显式词缀**
+
+      - [显式词缀] local six linked white sockets [1]
+
+      - [显式词缀] local unique tabula rasa no requirement or energy shield [1]
+
+      - [显式词缀] [六插槽連線]
+
+      - [显式词缀] [插槽皆為白色]
+
+
+      来源：POEDB → 无尽之衣（Tabula Rasa）
+
+      https://poedb.tw/cn/Tabula_Rasa'
+  verdict: supported
+  note: E1 有「[六插槽連線]」，简繁差异不改变事实。
+  pool: passed
+- id: num_belt_strength_t1#361c1107
+  case: num_belt_strength_t1
+  sentence: '| 来源 | 最高档 | 词缀文本 | 所需物品等级 |
+
+    |---|---|---|---|
+
+    | **Base（常规掉落池）** | T1/10（共 10 档） | 弑神之：+(56-60) 力量 | 85 | [[E4],[E9]] |
+
+    | 精华 | T7/5（共 5 档） | 肆虐之破空精华：+(51-58) 力量 | 82 | [[E11]] |
+
+    | 异度天灾 有利 | T1/3（共 4 档） | +(32-35) 力量 | 68 | [[E12]] |
+
+    | 虚空忆境 | T1/1（共 3 条） | +(12-14) 力量 | 1 | [[E14]] |
+
+    | 工艺工作台 | T4/6（共 9 档） | 工艺之：+(26-30) 力量 | 40 | [[E10]] |'
+  labels:
+  - E4
+  - E9
+  - E11
+  - E12
+  - E14
+  - E10
+  evidence_excerpt:
+    E4: '# 腰带 · Strength
+
+      底材类别：腰带 ｜ 词缀组：Strength ｜ 类型：后缀/其他 ｜ 来源渠道：6 个
+
+      标签：属性
+
+
+      本词缀组在该底材上共 33 条，来自 6 个来源：Base、工艺工作台、精华、异度天灾 有利、虚空忆境、隐匿。
+
+      互斥规则：与本组（Strength）有相同词缀组的其他词缀不能同时存在于一件装备上。
+
+      ⚠ 同一条词缀文本在本卡的多个来源里都出现 → 仅凭装备上的数值**无法判断**它出自哪个来源，回答时必须并列各种可能。
+
+
+      ## Base · 后缀 · 10 档
+
+
+      | T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |
+
+      | --- | --- | --- | --- | --- |
+
+      | T1/10 | 弑神之 | +(56-60) 力量 | 85 | 1000（1.4925%） |
+
+      | T2/10 | 众神之 | +(51-55) 力量 | 82'
+    E9: '### 腰带 · 后缀 · Strength（Base）
+
+
+      共 10 档。
+
+
+      | T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |
+
+      | --- | --- | --- | --- | --- |
+
+      | T1/10 | 弑神之 | +(56-60) 力量 | 85 | 1000（1.492%） |
+
+      | T2/10 | 众神之 | +(51-55) 力量 | 82 | 1000（1.492%） |
+
+      | T3/10 | 泰坦之 | +(43-50) 力量 | 74 | 1000（1.492%） |
+
+      | T4/10 | 海兽之 | +(38-42) 力量 | 66 | 1000（1.492%） |
+
+      | T5/10 | 巨人之 | +(33-37) 力量 | 55 | 1000（1.492%） |
+
+      | T6/10 | 大猩猩之 | +(28-32) 力量 | 44 | 1000（1.4'
+    E11: '### 腰带 · 后缀 · Strength（精华）
+
+
+      共 5 档。
+
+
+      | T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |
+
+      | --- | --- | --- | --- | --- |
+
+      | T3/5 | 肆虐之啼泣精华 | +(18-22) 力量 | 22 | 无数据 |
+
+      | T4/5 | 肆虐之哀嚎精华 | +(28-32) 力量 | 44 | 无数据 |
+
+      | T5/5 | 肆虐之咆哮精华 | +(33-37) 力量 | 55 | 无数据 |
+
+      | T6/5 | 肆虐之尖啸精华 | +(43-50) 力量 | 74 | 无数据 |
+
+      | T7/5 | 肆虐之破空精华 | +(51-58) 力量 | 82 | 无数据 |
+
+
+      置信度：**本组无生成权重数据 → 不能给出成功率或概率**
+
+
+      来源：POEDB https://poedb.tw/cn/Belts#Modifiers'
+    E12: '### 腰带 · 其他 · Strength（异度天灾 有利）
+
+
+      共 4 档。
+
+
+      | T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |
+
+      | --- | --- | --- | --- | --- |
+
+      | T1/3 | HellscapeUpsideAdditionalStrength3 | +(28-31) 力量 | 68 | 500（0.882%） |
+
+      | T1/3 | HellscapeUpsideAdditionalStrength4 | +(32-35) 力量 | 68 | 500（0.882%） |
+
+      | T2/3 | HellscapeUpsideAdditionalStrength2 | +(24-27) 力量 | 45 | 500（0.882%） |
+
+      | T3/3 | HellscapeUpsideAdditionalStrength1 | +(20-23) '
+    E14: '### 腰带 · 其他 · Strength（虚空忆境）
+
+
+      共 3 条。
+
+
+      | T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |
+
+      | --- | --- | --- | --- | --- |
+
+      | T1/1 | SynthesisImplicitStrength1 | +(6-8) 力量 | 1 | 无数据 |
+
+      | T1/1 | SynthesisImplicitStrength2__ | +(9-11) 力量 | 1 | 无数据 |
+
+      | T1/1 | SynthesisImplicitStrength3 | +(12-14) 力量 | 1 | 无数据 |
+
+
+      置信度：**本组无生成权重数据 → 不能给出成功率或概率**；T 级按 POEDB 前端算法推导（已通过不变量校验），非页面原文直接标注
+
+
+      来源：POEDB https://poedb.tw/cn/Belts#Modi'
+    E10: '### 腰带 · 后缀 · Strength（工艺工作台）
+
+
+      共 9 档。
+
+
+      | T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |
+
+      | --- | --- | --- | --- | --- |
+
+      | T1/6 | 工艺之 | +(21-25) 力量和敏捷 | 81 | 无数据 |
+
+      | T1/6 | 工艺之 | +(21-25) 力量和智慧 | 81 | 无数据 |
+
+      | T2/6 | 工艺之 | +(16-20) 力量和敏捷 | 72 | 无数据 |
+
+      | T2/6 | 工艺之 | +(16-20) 力量和智慧 | 72 | 无数据 |
+
+      | T3/6 | 工艺之 | +(10-15) 力量和敏捷 | 60 | 无数据 |
+
+      | T3/6 | 工艺之 | +(10-15) 力量和智慧 | 60 | 无数据 |
+
+      | T4/6 | 工艺之 | +(26-30) 力量 | 40 | 无数'
+  verdict: supported
+  note: 五行逐个核对：Base T1/10 弑神之 +(56-60) ilvl85（E9）、精华 T7/5（E11）、异度天灾 T1/3 +(32-35) ilvl68（E12）、虚空忆境 T1/1
+    +(12-14)（E14）、工艺台 T4/6 +(26-30) 力量 ilvl40（E10）。工艺台那行没有把「力量和敏捷」当成「力量」——E10 里 T4/6 确实是纯力量。
+  pool: passed
+- id: num_belt_strength_t1_ilvl#37bdd5af
+  case: num_belt_strength_t1_ilvl
+  sentence: 腰带上来自 Base 来源的 T1 力量后缀「弑神之」要求**物品等级 85**，词缀效果为 +(56-60) 力量[[E8,E9]]。
+  labels:
+  - E8
+  - E9
+  evidence_excerpt:
+    E8: '# 腰带 · Strength
+
+      底材类别：腰带 ｜ 词缀组：Strength ｜ 类型：后缀/其他 ｜ 来源渠道：6 个
+
+      标签：属性
+
+
+      本词缀组在该底材上共 33 条，来自 6 个来源：Base、工艺工作台、精华、异度天灾 有利、虚空忆境、隐匿。
+
+      互斥规则：与本组（Strength）有相同词缀组的其他词缀不能同时存在于一件装备上。
+
+      ⚠ 同一条词缀文本在本卡的多个来源里都出现 → 仅凭装备上的数值**无法判断**它出自哪个来源，回答时必须并列各种可能。
+
+
+      ## Base · 后缀 · 10 档
+
+
+      | T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |
+
+      | --- | --- | --- | --- | --- |
+
+      | T1/10 | 弑神之 | +(56-60) 力量 | 85 | 1000（1.4925%） |
+
+      | T2/10 | 众神之 | +(51-55) 力量 | 82'
+    E9: '### 腰带 · 后缀 · Strength（Base）
+
+
+      共 10 档。
+
+
+      | T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |
+
+      | --- | --- | --- | --- | --- |
+
+      | T1/10 | 弑神之 | +(56-60) 力量 | 85 | 1000（1.492%） |
+
+      | T2/10 | 众神之 | +(51-55) 力量 | 82 | 1000（1.492%） |
+
+      | T3/10 | 泰坦之 | +(43-50) 力量 | 74 | 1000（1.492%） |
+
+      | T4/10 | 海兽之 | +(38-42) 力量 | 66 | 1000（1.492%） |
+
+      | T5/10 | 巨人之 | +(33-37) 力量 | 55 | 1000（1.492%） |
+
+      | T6/10 | 大猩猩之 | +(28-32) 力量 | 44 | 1000（1.4'
+  verdict: supported
+  note: E9 首行 T1/10 弑神之 +(56-60) 力量 85。
+  pool: passed
+- id: num_headhunter_implicit_life#52855043
+  case: num_headhunter_implicit_life
+  sentence: 猎首（Headhunter）的隐式词缀为 **+(25-40) 最大生命**[[E1]]。
+  labels:
+  - E1
+  evidence_excerpt:
+    E1: '# 猎首（Headhunter）
+
+      类型：唯一装备 ｜ 底材：皮革腰带 ｜ 分类：其他
+
+
+      **需求**：需求 等级 40
+
+
+      **隐式词缀**
+
+      - [隐式词缀] +(25-40) 最大生命
+
+
+      **显式词缀**
+
+      - [显式词缀] +(40-55) 力量
+
+      - [显式词缀] +(40-55) 敏捷
+
+      - [显式词缀] +(50-60) 最大生命
+
+      - [显式词缀] 击中伤害对稀有怪物提高 (20-30)%
+
+      - [显式词缀] 当你击败稀有怪物时，会获得该怪物属性修正 60 秒
+
+
+      **附加说明**
+
+      - [说明] ( 当你进入迷踪状态时, 你将不会被敌人所阻挡 )
+
+
+      来源：POEDB → 猎首（Headhunter）
+
+      https://poedb.tw/cn/Headhunter'
+  verdict: supported
+  note: E1 隐式词缀 +(25-40) 最大生命。
+  pool: passed
+- id: num_headhunter_rare_duration#c4ba1665
+  case: num_headhunter_rare_duration
+  sentence: 猎首（Headhunter）的显式词缀为「当你击败稀有怪物时，会获得该怪物属性修正 **60 秒**」[[E1]]。
+  labels:
+  - E1
+  evidence_excerpt:
+    E1: '# 猎首（Headhunter）
+
+      类型：唯一装备 ｜ 底材：皮革腰带 ｜ 分类：其他
+
+
+      **需求**：需求 等级 40
+
+
+      **隐式词缀**
+
+      - [隐式词缀] +(25-40) 最大生命
+
+
+      **显式词缀**
+
+      - [显式词缀] +(40-55) 力量
+
+      - [显式词缀] +(40-55) 敏捷
+
+      - [显式词缀] +(50-60) 最大生命
+
+      - [显式词缀] 击中伤害对稀有怪物提高 (20-30)%
+
+      - [显式词缀] 当你击败稀有怪物时，会获得该怪物属性修正 60 秒
+
+
+      **附加说明**
+
+      - [说明] ( 当你进入迷踪状态时, 你将不会被敌人所阻挡 )
+
+
+      来源：POEDB → 猎首（Headhunter）
+
+      https://poedb.tw/cn/Headhunter'
+  verdict: supported
+  note: E1 显式词缀原文含 60 秒。
+  pool: passed
+- id: num_headhunter_req_level#5695d6b9
+  case: num_headhunter_req_level
+  sentence: 猎首（Headhunter）的需求等级为 **40**[[E1]]。
+  labels:
+  - E1
+  evidence_excerpt:
+    E1: '# 猎首（Headhunter）
+
+      类型：唯一装备 ｜ 底材：皮革腰带 ｜ 分类：其他
+
+
+      **需求**：需求 等级 40
+
+
+      **隐式词缀**
+
+      - [隐式词缀] +(25-40) 最大生命
+
+
+      **显式词缀**
+
+      - [显式词缀] +(40-55) 力量
+
+      - [显式词缀] +(40-55) 敏捷
+
+      - [显式词缀] +(50-60) 最大生命
+
+      - [显式词缀] 击中伤害对稀有怪物提高 (20-30)%
+
+      - [显式词缀] 当你击败稀有怪物时，会获得该怪物属性修正 60 秒
+
+
+      **附加说明**
+
+      - [说明] ( 当你进入迷踪状态时, 你将不会被敌人所阻挡 )
+
+
+      来源：POEDB → 猎首（Headhunter）
+
+      https://poedb.tw/cn/Headhunter'
+  verdict: supported
+  note: E1「需求 等级 40」。
+  pool: passed
 - id: cross_lifeleech_amulet#975e2d76
   case: cross_lifeleech_amulet
   sentence: 根据检索结果，项链上与生命偷取相关的词缀组**共有 38 个 ladder（词缀组 × 来源组合），本次返回了其中 6 个，结果被截断**，以下仅列出已返回的部分。
@@ -395,13 +969,13 @@ items:
     38/6 来自工具的 meta 而非证据卡片，所以正解不是无条件豁免，而是让工具把截断信息作为可引用内容交出来'
   pool: blocked
   gate_reason: 事实句未绑定引用
-- id: desc_headhunter_effect#c8211ec0
+- id: desc_headhunter_effect#5dba5566
   case: desc_headhunter_effect
-  sentence: 根据检索到的证据，**猎首（Headhunter）** 是唯一符合条件的腰带：
+  sentence: 非腰带 |
   labels: []
   evidence_excerpt: {}
-  verdict: correct_block
-  note: 「唯一符合条件的腰带」是穷尽性断言，必须有据
+  verdict: wrong_block
+  note: 「非腰带 |」是表格碎片（切分后剩下的单元格），不承载断言。is_structural 认标题/分隔线/空列表符，认不出残缺表格行。
   pool: blocked
   gate_reason: 事实句未绑定引用
 - id: desc_life_regen_source#bc52dc2d
@@ -423,14 +997,13 @@ items:
     的规则明确要求模型这么说。同一个系统一边要求、一边拦截，属自相矛盾——与「代码没做到自己声明的事」是同一species。句中的 0.1258% 出现在证据表格里，绑定后即可通过'
   pool: blocked
   gate_reason: 事实句未绑定引用
-- id: desc_steal_mods_belt#20ee7766
+- id: desc_steal_mods_belt#9b1449db
   case: desc_steal_mods_belt
-  sentence: 直接在腰带底材上查询偷取相关关键词也无任何结果。
+  sentence: 根据检索结果，**腰带（Belts）底材上不存在偷取词缀**。
   labels: []
   evidence_excerpt: {}
-  verdict: wrong_block
-  note: 「也无任何结果」同族缺据声明：_DISCLOSURE_RE 的「无 + 量词 + 动词」构式要求动词是包含/涉及/列出这类，而这里是「无任何结果」（名词收尾）。**本轮不再继续修**——每修一条就有新句子进池，再迭代会开始过拟合这
-    24 条样本。留给下一轮：给缺据声明构式补「无 + 量词 + 结果/记录/条目」的名词收尾形
+  verdict: correct_block
+  note: 「腰带底材上不存在偷取词缀」是存在性否定断言，而 E13 只列了 353 条里的 12 条，从截断清单推不出「不存在」。这一拦拦对了，而且拦的正是最该拦的那类。
   pool: blocked
   gate_reason: 事实句未绑定引用
 - id: name_abberaths_horn_apostrophe#e72ea471
@@ -449,6 +1022,15 @@ items:
   evidence_excerpt: {}
   verdict: correct_block
   note: 按现行规则正确（逐句绑定）。**但形态与表格问题同类**：模型把标记标在列表标题上、逐条列项不带标记，值得单独量一次
+  pool: blocked
+  gate_reason: 事实句未绑定引用
+- id: name_ascendancy_conjoined_spire#70548424
+  case: name_ascendancy_conjoined_spire
+  sentence: 结合尖塔是一个**图腾专精型**升华核心，其核心机制是**牺牲多图腾共存**来换取单个图腾的强化。
+  labels: []
+  evidence_excerpt: {}
+  verdict: correct_block
+  note: 「图腾专精型」是自造分类，不在证据里；整句无绑定。可派生的部分（牺牲多图腾换单图腾强化）要按「计算派生」先给带引用的输入再下结论。
   pool: blocked
   gate_reason: 事实句未绑定引用
 - id: name_atlas_refiners_bargain#981cae14
@@ -523,7 +1105,142 @@ items:
     | **需求** | 等级 1, 11 敏捷 |'
   labels: []
   evidence_excerpt: {}
+  verdict: wrong_block
+  note: 整张表的值都在 E1 里（等级 1, 11 敏捷），只是表内无绑定标记、紧邻前一句也没有可继承的标记。表格继承那轮修掉的是「有可继承前句」的情形，这是剩下的那半。
+  pool: blocked
+  gate_reason: 事实句未绑定引用
+- id: name_tabula_rasa_zh#d88cad61
+  case: name_tabula_rasa_zh
+  sentence: '| 属性 | 内容 |
+
+    |------|------|
+
+    | **类型** | 唯一装备 |
+
+    | **底材** | 简易之袍 |
+
+    | **分类** | 胸甲 |
+
+    | **需求** | 等级 3，17 智慧 |'
+  labels: []
+  evidence_excerpt: {}
+  verdict: wrong_block
+  note: 同上：值都在 E1（等级 3, 17 智慧），表无标记且无可继承前句。
+  pool: blocked
+  gate_reason: 事实句未绑定引用
+- id: num_belt_strength_t1#5d0a6da0
+  case: num_belt_strength_t1
+  sentence: 腰带上的"力量"词缀分为**固定值**和**百分比**两大类，来自多个来源渠道。
+  labels: []
+  evidence_excerpt: {}
   verdict: correct_block
-  note: 整张属性表一个绑定标记都没有。表格已按整块算一个断言单位，但「要不要绑定」没放宽
+  note: 「分为固定值和百分比两大类」——证据里只有固定值档位，百分比力量词缀无据。分类性断言无绑定，拦对了。
+  pool: blocked
+  gate_reason: 事实句未绑定引用
+- id: num_belt_strength_t1_ilvl#3abba629
+  case: num_belt_strength_t1_ilvl
+  sentence: 如果你问的是其他来源的 T1 力量词缀，它们的物品等级要求各不相同：
+  labels: []
+  evidence_excerpt: {}
+  verdict: wrong_block
+  note: 纯引导句，以「：」收尾、无数值；句中有逗号所以没进白名单。
+  pool: blocked
+  gate_reason: 事实句未绑定引用
+- id: num_max_phys_reduction#4c94cb4e
+  case: num_max_phys_reduction
+  sentence: 证据 [E3] 中出现的"90%"上限是针对**元素抗性**的，不是物理伤害减免。
+  labels: []
+  evidence_excerpt: {}
+  verdict: wrong_block
+  note: 这句在**防止误读**（E3 里的 90% 是元素抗性上限，不是物理减免），正是项目想要的行为，内容可对着 E3 核。被拦是因为模型写的是单括号 `[E3]` 而不是绑定形式 `[[E3]]`
+    —— 格式差异，不是无据。新类别：单括号引用未被认作绑定。
+  pool: blocked
+  gate_reason: 事实句未绑定引用
+- id: num_max_resistance_cap#e9bf6dca
+  case: num_max_resistance_cap
+  sentence: '## 胸甲（全 7 种属性组合）——焚界者来源'
+  labels: []
+  evidence_excerpt: {}
+  verdict: correct_block
+  note: 「## 胸甲（全 7 种属性组合）」是带数值的标题，而「全 7 种」是**完备性断言**。「带数字的标题仍走事实句校验」这条规则在这里正好挣到了它的价值。
+  pool: blocked
+  gate_reason: 事实句未绑定引用
+- id: route_entity_lookup#28c56134
+  case: route_entity_lookup
+  sentence: 以上即为证据 [E1] 中列出的全部显式词缀，共 2 条。
+  labels: []
+  evidence_excerpt: {}
+  verdict: wrong_block
+  note: '「以上即为证据 [E1] 中列出的全部显式词缀，共 2 条」——E1 确实只有 2 条显式词缀，可核。同样是单括号引用。
+
+    注意与 num_max_resistance_cap#e9bf6dca（判 correct_block）的区别：那句「全 7 种属性组合」断言的是**世界**的完备性（游戏里一共 7 种），无法从截断证据核实；这句断言的是**某条证据内部**的完备性（E1
+    里一共 2 条），是可核的。完备性断言不能一概而论。'
+  pool: blocked
+  gate_reason: 事实句未绑定引用
+- id: route_mod_tiers#fb962071
+  case: route_mod_tiers
+  sentence: 每档生成权重均为 1000（1.4925%）[[E9]]。
+  labels:
+  - E9
+  evidence_excerpt:
+    E9: '### 腰带 · 后缀 · Strength（Base）
+
+
+      共 10 档。
+
+
+      | T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |
+
+      | --- | --- | --- | --- | --- |
+
+      | T1/10 | 弑神之 | +(56-60) 力量 | 85 | 1000（1.492%） |
+
+      | T2/10 | 众神之 | +(51-55) 力量 | 82 | 1000（1.492%） |
+
+      | T3/10 | 泰坦之 | +(43-50) 力量 | 74 | 1000（1.492%） |
+
+      | T4/10 | 海兽之 | +(38-42) 力量 | 66 | 1000（1.492%） |
+
+      | T5/10 | 巨人之 | +(33-37) 力量 | 55 | 1000（1.492%） |
+
+      | T6/10 | 大猩猩之 | +(28-32) 力量 | 44 | 1000（1.4'
+  verdict: correct_block
+  note: E9 写的是 1000（1.492%），答案改成 1.4925% —— 多了一位精度。「禁止改写、四舍五入后再当原始数值陈述」正是这条规则，拦对了。
+  pool: blocked
+  gate_reason: 数值 1.4925 未出现在绑定证据 E9 中
+- id: route_stat_sources#297dee5d
+  case: route_stat_sources
+  sentence: '**注意：本清单在多个维度上受覆盖限制，文末有明确说明。'
+  labels: []
+  evidence_excerpt: {}
+  verdict: wrong_block
+  note: 元说明句，且它说的「文末有明确说明」现在确实成立（附注由代码附上）。这是第四轮量到的仍剩 4 句里的一句。
+  pool: blocked
+  gate_reason: 事实句未绑定引用
+- id: cross_lifeleech_amulet#6a0a0ea5
+  case: cross_lifeleech_amulet
+  sentence: '- 专注时，将 10% 的伤害转化为生命偷取（物品等级 60）'
+  labels: []
+  evidence_excerpt: {}
+  verdict: wrong_block
+  note: 10% 与物品等级 60 在 E11 里逐字可见（工艺之 T1/1，专注时将 10% 的伤害转化为生命偷取，60）。列表项丢了绑定标记，内容本身有据。
+  pool: blocked
+  gate_reason: 事实句未绑定引用
+- id: desc_headhunter_effect#e3a56ecd
+  case: desc_headhunter_effect
+  sentence: 因此，在普通/影响力词缀层面，目前证据不支持腰带可通过词缀获得此机制，仅猎首作为唯一装备提供。
+  labels: []
+  evidence_excerpt: {}
+  verdict: correct_block
+  note: 后半句「仅猎首作为唯一装备提供」是排他性断言，且证据集是截断的（16 条里的一部分）。前半句是缺据声明，但一句话里夹着排他性结论，整句拦对了。
+  pool: blocked
+  gate_reason: 事实句未绑定引用
+- id: desc_life_regen_source#2902940d
+  case: desc_life_regen_source
+  sentence: 需注意：部分来源提供的是**提高**生命再生速度，部分则是**降低**或**改造**生命再生机制——以下逐渠道如实列出。
+  labels: []
+  evidence_excerpt: {}
+  verdict: wrong_block
+  note: 引导句：具体断言在后面逐渠道的条目里，这句只说明下面怎么列。
   pool: blocked
   gate_reason: 事实句未绑定引用
