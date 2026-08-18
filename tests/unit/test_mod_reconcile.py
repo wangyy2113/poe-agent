@@ -212,15 +212,13 @@ if __name__ == "__main__":
 
 
 class LadderAmbiguityTest(unittest.TestCase):
-    """多个 PoB 组共享同一条阶梯 → **不敢判一致**，如实登记歧义。
+    """并列身份下**数值都一致**时可判一致；**身份仍然是未知的**。
 
-    阶梯形状并不唯一：`+(15-20) to Strength` 与 `+(15-20) to Dexterity` 的
-    (ilvl, 区间) 阶梯完全一样。实测就撞上了——POEDB 的 `Dexterity` 组被配到了
-    PoB 的 `Strength` 组。若在并列里任取一个再判「一致」，就是拿 Strength 的数值
-    去「验证」Dexterity：**假一致比假冲突糟得多，它把真分歧悄悄盖掉了。**
-
-    `parsers/mod_bridge.py` 早写下同一条结论：撞车时不选，返回歧义。
-    这条护栏实测把 311 行从「一致」拉回「待核对」。
+    这一族用例原先断言「并列即不判一致」。后来实测发现那太严：POEDB 弓上的火焰/冰霜
+    附加伤害阶梯完全相同（GGG 给三元素同一组数值），词缀名也同为「升级的/Upgraded」，
+    三个 PoB 组里那一档的区间是同一个——无论正确对手是哪个，取值都一样。
+    于是判据细化为「**在每一个候选身份下都一致**才判一致」，见
+    `AmbiguousButAgreeingTest`。这里保留的是它的另一半：判一致**不等于**认定了身份。
     """
 
     def _conn(self) -> sqlite3.Connection:
@@ -229,23 +227,28 @@ class LadderAmbiguityTest(unittest.TestCase):
         _poedb(conn, "Dexterity", "Amulets", ladder)
         # 同名组存在但装的是别的东西（历史条目）——所以第一关不会命中
         _pob(conn, "Dexterity", [(9, [[1.0, 2.0]])])
-        # 两个组共享与 POEDB 完全相同的阶梯 → 对手不唯一
+        # 两个组共享与 POEDB 完全相同的阶梯 → 身份不唯一，但取值处处相同
         _pob(conn, "DexterityImplicit", ladder)
         _pob(conn, "StrengthSuffix", ladder)
         return conn
 
-    def test_并列时不判一致(self) -> None:
+    def test_取值处处相同则判一致(self) -> None:
         rep = reconcile(self._conn(), None)
-        self.assertEqual(0, rep.agree, "对手不唯一时不能判一致")
-        self.assertGreaterEqual(rep.ladder_ambiguous, 1)
+        self.assertEqual(2, rep.agree)
+        self.assertEqual(2, rep.ladder_ambiguous_agreed)
+        self.assertEqual(0, rep.needs_review)
 
-    def test_歧义行带ladder_ambiguous成因(self) -> None:
+    def test_判一致不代表认定了身份(self) -> None:
+        """计数分开记：`ladder_ambiguous_agreed` 明确标出「这批的身份没定」。
+
+        混进普通的 agree 里，就等于对外声称两源在这条词缀上互相验证过了——
+        而实际上只验证了**数值**，没验证**是哪条词缀**。
+        """
         rep = reconcile(self._conn(), None)
-        causes = {c["cause"] for c in rep.reviews}
-        self.assertIn("ladder_ambiguous", causes)
+        self.assertEqual(rep.ladder_ambiguous_agreed, 2)
+        self.assertEqual(rep.ladder_identical, 0, "这批不该被记成阶梯全等的那类")
 
-    def test_唯一对手时仍然判一致(self) -> None:
-        """护栏只在并列时生效，别把正常的跨组配对也挡掉。"""
+    def test_唯一对手时走的是另一条路(self) -> None:
         conn = _db()
         ladder = [(50, [[0.2, 0.4]]), (60, [[0.6, 0.8]])]
         _poedb(conn, "LifeLeech", "Amulets", ladder)
@@ -253,4 +256,70 @@ class LadderAmbiguityTest(unittest.TestCase):
         _pob(conn, "LifeLeechPermyriad", ladder)
         rep = reconcile(conn, None)
         self.assertEqual(2, rep.agree)
-        self.assertEqual(0, rep.ladder_ambiguous)
+        self.assertEqual(0, rep.ladder_ambiguous_agreed, "对手唯一，不该记进歧义那批")
+
+
+class DisplayCandidateTest(unittest.TestCase):
+    """review 行展示的 PoB 侧必须来自**最佳重合组** × **同 ilvl**。
+
+    这张清单的用处全在这一点上，而这里踩过两次：
+      第一版 `near[0]`（同名组任取一条）→ 人看到的「冲突」多半是拿 T3 比 T1；
+      第二版按 ilvl 对齐，但候选池仍限在同名组 → 实测 POEDB 弓·命中值 与 PoB 同名组
+      `IncreasedAccuracy` 的阶梯重合度是 **0.000**，展示出来的仍是不相干的那条。
+    """
+
+    def test_展示的对手来自最佳重合组而不是同名组(self) -> None:
+        conn = _db()
+        # POEDB：三档，与同名组毫无共同档位，与另一个组三档里重合两档
+        _poedb(conn, "IncreasedAccuracy", "Bows",
+               [(1, [[80.0, 130.0]]), (20, [[131.0, 215.0]]), (40, [[216.0, 325.0]])])
+        _pob(conn, "IncreasedAccuracy", [(1, [[5.0, 15.0]]), (12, [[16.0, 60.0]])])
+        _pob(conn, "LocalAccuracyRating",
+             [(1, [[80.0, 130.0]]), (20, [[131.0, 215.0]]), (40, [[216.0, 250.0]])])
+        rep = reconcile(conn, None)
+        item = next(c for c in rep.reviews if "ilvl=40" in c["subject"])
+        self.assertEqual("LocalAccuracyRating", item["pob_ladder_group"])
+        self.assertEqual(((216.0, 250.0),), item["pob_ranges"],
+                         "必须展示最佳重合组里同 ilvl 的那条")
+
+
+class AmbiguousButAgreeingTest(unittest.TestCase):
+    """身份不唯一 ≠ 数值不可判（2026-08-18）。
+
+    实测：POEDB 弓上的火焰 / 冰霜附加伤害阶梯**完全相同**（GGG 给三元素同一组数值），
+    词缀名也同为「升级的 / Upgraded」，连词缀名锚点都分不开。但三个 PoB 组里该档的区间
+    是同一个——所以无论正确对手是哪一个，两源取值都一致，与身份无关地成立。
+
+    反之只要有**一个**候选身份下数值对不上，就仍要人看：那时「判一致」等于挑了一个
+    看着顺眼的身份，正是 `parsers/mod_bridge.py` 明令禁止的做法。
+    """
+
+    def test_每个候选身份下都一致就判一致(self) -> None:
+        conn = _db()
+        ladder = [(20, [[19.0, 21.0], [32.0, 41.0]]), (40, [[38.0, 46.0], [73.0, 85.0]])]
+        _poedb(conn, "FireDamage", "Bows", ladder)
+        _pob(conn, "FireDamage", [(9, [[1.0, 2.0]])])          # 同名组装着别的东西
+        _pob(conn, "ColdDamageBow", ladder)                     # 并列身份 1
+        _pob(conn, "LightningDamageBow", ladder)                # 并列身份 2
+        rep = reconcile(conn, None)
+        self.assertEqual(2, rep.agree)
+        self.assertEqual(2, rep.ladder_ambiguous_agreed)
+        self.assertEqual(0, rep.needs_review)
+
+    def test_某档在任一身份下都对不上就仍需人看(self) -> None:
+        """两个并列身份的重合度相等（各 0.5），而 ilvl=40 那档的区间两边都没有。
+
+        这时判一致就等于挑一个看着顺眼的身份，正是 mod_bridge 明令禁止的做法。
+        """
+        conn = _db()
+        _poedb(conn, "FireDamage", "Bows",
+               [(1, [[10.0, 19.0]]), (20, [[20.0, 29.0]]), (40, [[30.0, 39.0]])])
+        _pob(conn, "FireDamage", [(9, [[1.0, 2.0]])])
+        _pob(conn, "ColdDamageBow",
+             [(1, [[10.0, 19.0]]), (20, [[20.0, 29.0]]), (40, [[30.0, 40.0]])])
+        _pob(conn, "LightningDamageBow",
+             [(1, [[10.0, 19.0]]), (20, [[20.0, 29.0]]), (40, [[30.0, 41.0]])])
+        rep = reconcile(conn, None)
+        causes = [c["cause"] for c in rep.reviews]
+        self.assertIn("ladder_ambiguous", causes, "有身份下数值对不上时不能判一致")
+        self.assertEqual(2, rep.agree, "前两档在两个身份下都一致，可判一致")
