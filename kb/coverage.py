@@ -379,8 +379,10 @@ DOMAINS: tuple[DomainSpec, ...] = (
         poedb_pages=("Crafting_Bench",),
         partial_note=(
             "目录、原始费用、适用 ItemClasses 与解锁信息已入库；"
-            "**装备状态转移、crafted-mod 上限、替换/移除语义和元词缀交互未采集**，"
-            "因此目录项不代表在给定装备状态下可执行，也不能作为制作步骤"
+            "**装备状态转移、crafted-mod 上限、替换/移除语义未采集**，"
+            "因此目录项不代表在给定装备状态下可执行，也不能作为制作步骤。"
+            "元词缀**页面矩阵**已单独采集（见 metamod_interaction_matrix），"
+            "但它只复述单元格，不给出元词缀对本目录项的约束规则"
         ),
         missing_dimension_hints=(
             "状态转移", "替换", "移除", "可执行", "制作步骤", "步骤", "成功率", "怎么做",
@@ -445,8 +447,9 @@ DOMAINS: tuple[DomainSpec, ...] = (
         ),
         partial_note=(
             "已支持候选解析、完整 family_list 互斥与占位见证；"
-            "**前后缀容量、来源适用条件、影响力与元词缀规则未采集**，"
-            "因此无 family 冲突的组合只返回 unknown"
+            "**前后缀容量、来源适用条件、影响力与元词缀约束规则未采集**，"
+            "因此无 family 冲突的组合只返回 unknown。"
+            "元词缀**页面矩阵**已采集，但矩阵值不能把 unknown 变成 possible"
         ),
         missing_dimension_hints=(
             "容量", "名额", "几条前缀", "几条后缀", "最多几条", "成功率", "成本", "步骤",

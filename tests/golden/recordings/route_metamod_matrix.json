@@ -1,0 +1,49 @@
+{
+  "format_version": 1,
+  "case_id": "route_metamod_matrix",
+  "query": "元词缀矩阵里神圣石对前缀无法被变更是什么结果",
+  "recorded_at": "2026-08-18T17:07:44+08:00",
+  "model": "glm-5.2",
+  "tokens": {
+    "prompt": 10458,
+    "output": 293,
+    "reasoning": 161,
+    "total": 10751
+  },
+  "tool_calls": [
+    "kb_search",
+    "metamod_interaction_matrix"
+  ],
+  "evidence_gap": false,
+  "gap_answer": "",
+  "blocked_claims": 5,
+  "elapsed_ms": 13342,
+  "evidence_fingerprint": "sha256:73ff4d4893e9abccb43dcaa78f6f86f4",
+  "_warning": "raw_answer 是未过出口闸门的模型原文，含可能无据的断言，不得当作事实引用",
+  "raw_answer": "根据元词缀交互矩阵（Craft of Exile，POEDB 镜像）的页面记录：\n\n- **操作**：神圣石\n- **Guard**：前缀无法被变更\n- **原始结果**：**YES** [[E1]]\n\n页面未给出可验证的版本范围。该矩阵单元格仅复述原始结果，**不证明**给定装备可执行，也**不提供**完整状态转移、步骤、概率、成本或路线 [[E1]]。",
+  "evidence": [
+    {
+      "label": "E1",
+      "chunk_id": "metamod_interaction:metamod:467960890440bc8cb6826fb24abfe29937aa863f245f21b5fb2ff65a64c30fe6",
+      "entity_id": null,
+      "title": "Metamod Matrix：神圣石 × 前缀无法被变更（POEDB 镜像）",
+      "url": "https://poedb.tw/cn/metamods",
+      "source": "Craft of Exile",
+      "source_priority": 4,
+      "text": "### Metamod Interaction Matrix 页面记录\n\n- 分区：工艺方式\n- 操作：神圣石\n- Guard：前缀无法被变更\n- 原始结果：YES\n- 版本范围：unknown\n\n> 边界：仅复述来源矩阵单元格；页面未给出可验证的版本范围。\n> 不证明给定装备可执行，不提供完整状态转移、步骤、概率、成本或路线。",
+      "can_support_facts": true,
+      "claim_scope": "metamod_matrix",
+      "claim_data": {
+        "section": "工艺方式",
+        "operation_text": "神圣石",
+        "guard_text": "前缀无法被变更",
+        "outcome": "yes",
+        "raw_value": "YES",
+        "note_text": null,
+        "version_scope": "unknown",
+        "source_url": "https://www.craftofexile.com/metamods",
+        "mirror_url": "https://poedb.tw/cn/metamods"
+      }
+    }
+  ]
+}

@@ -141,3 +141,34 @@ class DedupAndShapeTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BoundaryNoteTest(unittest.TestCase):
+    """`boundary` 是第四次撞上「项目要求模型说的话被项目自己拦了」（2026-08-18）。
+
+    元词缀矩阵刚入库后的第一次真实调用：模型照提示词写了边界声明并绑定 [[E1]]，
+    闸门判「Metamod 矩阵证据仅支撑页面单元格原字段，不能支撑给定装备状态下的可执行性」。
+    **拦得没错**——E1 支撑不了那些语义；错的是让模型来说这句话。原文就在工具的
+    `data.boundary` 里，所以走代码附注。
+    """
+
+    def test_矩阵边界被原样附上(self) -> None:
+        boundary = "仅复述来源矩阵单元格；不证明可执行，不提供状态转移、步骤、概率、成本或路线"
+        notes = _answer_notes(
+            [rec("metamod_interaction_matrix", {"found": True, "boundary": boundary})], []
+        )
+        self.assertEqual([boundary], notes)
+
+    def test_工艺台边界也附上(self) -> None:
+        boundary = "目录记录不证明给定装备状态下可执行"
+        notes = _answer_notes([rec("bench_recipe_catalog", {"boundary": boundary})], [])
+        self.assertEqual([boundary], notes)
+
+    def test_同一边界只出现一次(self) -> None:
+        boundary = "仅复述来源矩阵单元格"
+        notes = _answer_notes(
+            [rec("metamod_interaction_matrix", {"boundary": boundary}),
+             rec("bench_recipe_catalog", {"boundary": boundary})],
+            [],
+        )
+        self.assertEqual([boundary], notes)

@@ -227,7 +227,18 @@ def _apply_dimension_gate(question: str, data: dict[str, Any]) -> dict[str, Any]
 
 #: 工具 `data` 里那些**要求必须传达给用户**的声明字段，逐字取用。
 #: 它们不是游戏事实而是「这份答案的边界」，所以由代码原样附在答案末尾。
-_NOTE_FIELDS: tuple[str, ...] = ("coverage_note", "channels_no_match_note")
+#: `boundary` 是第四次撞上同一个模式：**项目要求模型说的话，被项目自己的闸门拦了。**
+#:
+#: 实测（元词缀矩阵刚入库后的第一次真实调用）：模型照提示词写了
+#: 「该矩阵单元格仅复述原始结果，不证明给定装备可执行，也不提供完整状态转移…[[E1]]」，
+#: 而闸门判「Metamod 矩阵证据仅支撑页面单元格原字段，不能支撑给定装备状态下的可执行性」
+#: —— 拦得**没错**：E1 确实支撑不了那些语义。错的是让模型来说这句话。
+#:
+#: 这句话的原文就在工具返回的 `data.boundary` 里（`metamods` / `bench` / `craft_pool`
+#: 三个工具都给），所以走与截断计数、覆盖声明同一条路：代码取值、附在闸门之后。
+_NOTE_FIELDS: tuple[str, ...] = (
+    "coverage_note", "channels_no_match_note", "boundary",
+)
 
 #: 权重占比的写法：`1500（1.888%）`。出现即说明证据里带组内占比。
 _WEIGHT_PCT_RE = re.compile(r"\d+\s*（\s*\d+(?:\.\d+)?%\s*）")
