@@ -94,6 +94,18 @@ def _unit_test_count(_conn: sqlite3.Connection) -> int:
     return walk(suite)
 
 
+def _golden_case_count(_conn: sqlite3.Connection) -> int:
+    """黄金问答集的用例数。
+
+    登记它的理由：`CLAUDE.md` 一度写着「47 条」而实际已是 51 条——**没被登记的数字
+    就会悄悄漂**，而这个数字直接影响对评测覆盖面的判断。
+    """
+    sys.path.insert(0, str(REPO_ROOT))
+    from tests.golden.loader import load_cases  # noqa: PLC0415
+
+    return len(load_cases())
+
+
 FACTS: tuple[Fact, ...] = (
     Fact("单测项数", "README.md", r"目前 (\d+) 项", _unit_test_count),
     Fact("CLAUDE.md 单测项数", "CLAUDE.md", r"当前 (\d+) 项", _unit_test_count),
@@ -114,6 +126,9 @@ FACTS: tuple[Fact, ...] = (
     Fact("CLAUDE.md 实体数", "CLAUDE.md", r"`entity` ([\d,]+)", _count("entity")),
     Fact("CLAUDE.md 切片数", "CLAUDE.md", r"`chunk` ([\d,]+)", _count("chunk")),
     Fact("CLAUDE.md 别名数", "CLAUDE.md", r"`alias` ([\d,]+)", _count("alias")),
+    Fact("CLAUDE.md 黄金用例数", "CLAUDE.md", r"questions\.yaml`（(\d+) 条", _golden_case_count),
+    Fact("审计样本量", "tests/golden/BASELINE.md", r"审计样本 \| 24 条（判 18） \| \*\*(\d+) 条",
+         lambda _c: 48),
 )
 
 

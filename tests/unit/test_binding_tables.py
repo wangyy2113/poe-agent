@@ -268,3 +268,55 @@ class TableInheritsPrecedingBindingTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class IndexColumnHeaderTest(unittest.TestCase):
+    """序号列识别此前**从未生效过**（2026-08-18，48 句审计时发现）。
+
+    `_table_rows` 返回的第一行是表头，而原实现把表头一起拿去判「整列都是纯整数」。
+    表头那格（`#`、`序号`、`T 级`）永远让判定失败，于是整列被跳过——函数写了、
+    注释写了、测试也写了（测试构造的是无表头的表），线上一次都没生效。
+
+    实测后果：`| # | 词缀文本 |` 那张表被判「数值 1, 2 未出现在绑定证据 E1 中」，
+    而 1/2 就是行号。这属于错误拒答。
+    """
+
+    def test_表头为井号时序号列被识别(self) -> None:
+        ignored = binding._index_column_numbers(
+            "| # | 词缀文本 |\n|---|---------|\n| 1 | 没有插槽 |\n| 2 | +1000 最大生命 |"
+        )
+        self.assertEqual({"1", "2"}, ignored)
+
+    def test_表头为序号时也被识别(self) -> None:
+        ignored = binding._index_column_numbers(
+            "| 序号 | 词缀 |\n| --- | --- |\n| 1 | 甲 |\n| 2 | 乙 |\n| 3 | 丙 |"
+        )
+        self.assertEqual({"1", "2", "3"}, ignored)
+
+    def test_真实数值列不被当成序号列(self) -> None:
+        """物品等级 85/82 不构成 1..n，必须继续参与回填校验。"""
+        self.assertEqual(
+            set(),
+            binding._index_column_numbers(
+                "| 档 | 物品等级 |\n| --- | --- |\n| T1 | 85 |\n| T2 | 82 |"
+            ),
+        )
+
+    def test_恰好是1和2的真实数值列会被放过(self) -> None:
+        """已知代价，明确写下来：任何 1..n 列都被当序号列。
+
+        这是保守方向选错的一侧——放过两个数字的校验，换回整张表不被误拦。
+        真要收紧得靠表头语义，而表头是模型自由文本，不可靠。
+        """
+        self.assertEqual(
+            {"1", "2"},
+            binding._index_column_numbers(
+                "| 插槽数 | 说明 |\n| --- | --- |\n| 1 | 单插 |\n| 2 | 双插 |"
+            ),
+        )
+
+    def test_只有一个数据行时不判序号列(self) -> None:
+        self.assertEqual(
+            set(),
+            binding._index_column_numbers("| # | 词缀 |\n| --- | --- |\n| 1 | 甲 |"),
+        )

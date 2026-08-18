@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import unittest
 
-from orchestrator.binding import classify, is_structural
+from orchestrator.binding import classify, is_structural, verify
 
 TERMS = ("词缀", "抗性", "物品等级", "权重")
 DOMAIN = ("猎首", "皮革腰带")
@@ -219,3 +219,89 @@ class BindingMarkerVariantsTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FramedLeadInTest(unittest.TestCase):
+    """带证据框架前缀的长引导句（2026-08-18，48 句审计后）。
+
+    48 句人工审计判出 14 条错误拒答，其中 7 条是这一类——剩余错误拒答的最大单一来源。
+    它们过不了 `_COLON_LEAD_IN_RE` 的「无逗号 + 引导词后 ≤8 字」，而那两条是代理判据，
+    不是判据本身。下面「该放行」与「该拦住」成对写：只放宽不验证收紧，就是把漏出换成
+    好看的错误拒答数字。
+    """
+
+    #: 审计里逐条判为 wrong_block 的真实句子（原文，不是构造的）
+    SHOULD_PASS = (
+        "根据所提供的证据，符合「击败稀有怪物时获得其属性修正」机制的腰带为：",
+        "根据证据，不同胸甲底材类别上的 MaximumResistances（抗性上限）词缀如下：",
+        "根据检索到的证据，冈姆的壮志的完整信息如下：",
+        "以下证据中出现的物品与该机制相关，但**不符合**「腰带」这一限定：",
+        "** 以下是与物理伤害减免相关的可用信息：",
+    )
+
+    #: 必须继续拦的：句式相近但**夹带了断言**或带数值
+    SHOULD_BLOCK = (
+        # 模块注释里那个反例：句首是实体名而不是框架词
+        "猎首会偷取词缀，说明如下：",
+        # 有框架前缀，但落点是谓语宾语而不是前指词 —— 这句本身就是断言
+        "根据证据，猎首会偷取稀有怪物的词缀：",
+        # 带数值：数值是编造的主要载体，一律回事实句
+        "根据证据，腰带上的力量最高为 60：",
+        # 不以冒号收尾：内容不在后面，这句自己就是断言
+        "根据证据，该机制对稀有怪物生效。",
+    )
+
+    def test_审计判定该放行的引导句现在归为叙述(self) -> None:
+        for s in self.SHOULD_PASS:
+            with self.subTest(s=s[:24]):
+                self.assertEqual("narrative", kind(s))
+
+    def test_夹带断言或带数值的仍按事实句校验(self) -> None:
+        for s in self.SHOULD_BLOCK:
+            with self.subTest(s=s[:24]):
+                self.assertEqual("factual", kind(s))
+
+    def test_放行引导句不给后续内容任何绑定(self) -> None:
+        """引导句被判 narrative、不带标记，所以表格继承继承不到东西。
+
+        这是这次放宽的安全前提：放行一句引导句，不等于放行它引出的清单。
+        """
+        text = (
+            "根据证据，不同底材上的力量词缀如下：\n"
+            "| 底材 | 力量 |\n| --- | --- |\n| 腰带 | +60 |\n"
+        )
+        result = verify(text, [], factual_terms=TERMS, domain_terms=DOMAIN)
+        table = [v for v in result.verdicts if "|" in v.text]
+        self.assertTrue(table, "表格应被单独判定")
+        self.assertFalse(table[0].ok, "无绑定的表格必须仍被拦")
+
+
+class DisclosureWithEmphasisTest(unittest.TestCase):
+    """缺据声明构式被 Markdown 强调标记切断（2026-08-18，48 句审计实测）。
+
+    「所提供的 16 条证据中，**没有任何一条**直接陈述…」被拦。三处原因叠加：
+    `陈述` 不在动词表里、量词写成单格 alternation（「任何」吃掉后「一条」挡住动词）、
+    `**` 落在构式中间。
+    """
+
+    def test_带加粗标记的缺据声明被识别(self) -> None:
+        s = '所提供的 16 条证据中，**没有任何一条**直接陈述"物理伤害减免上限为 X%"。'
+        self.assertEqual("narrative", kind(s))
+
+    def test_量词两格都要能吃掉(self) -> None:
+        for s in ("证据里没有任何一条提及该上限。",
+                  "证据中没有一项记载该数值。",
+                  "本轮证据未明确写明该上限。"):
+            with self.subTest(s=s):
+                self.assertEqual("narrative", kind(s))
+
+    def test_领域否定断言不是缺据声明(self) -> None:
+        """「猎首没有任何一条词缀提供 60 力量」断言的是游戏事实，不是信息缺失。
+
+        这条是上面放宽的安全对照：否定 + 量词 + 动词之间夹着**领域名词**时，
+        构式不成立，仍按事实句要求绑定引用。
+        """
+        self.assertEqual("factual", kind("猎首没有任何一条词缀提供 60 力量。"))
+
+    def test_缺据声明夹模糊限定语仍按事实句(self) -> None:
+        self.assertEqual("factual", kind("证据里没有记载，一般来说是 90%。"))

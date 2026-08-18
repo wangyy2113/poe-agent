@@ -549,7 +549,10 @@ def print_gate_report(outs: list[GateOutcome], s: dict, *, verbose: bool) -> Non
 # ── 人工审计：两项无法自动判定的指标 ──────────────────────────
 
 #: 每个池抽多少条。初版建基线够用；人工核对是瓶颈，加大之前先想清楚谁来判。
-AUDIT_SAMPLE_PER_POOL = 12
+#: 每池抽样上限。12 → 24 的理由：前三轮每修好一类错误拒答，blocked 池就换一批更难的
+#: 进来，12 条的分母让「错误拒答率」在 9%↔33% 之间大幅摆动，读不出趋势。
+#: 抽样是确定性轮转（不随机），扩大上限只会**追加**句子，已填结论按内容哈希保留。
+AUDIT_SAMPLE_PER_POOL = 24
 
 AUDIT_PATH = Path(__file__).resolve().parent.parent / "tests" / "golden" / "audit.yaml"
 

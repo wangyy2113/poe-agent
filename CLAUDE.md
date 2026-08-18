@@ -92,7 +92,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 396 项，秒级
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 408 项，秒级
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选
@@ -109,7 +109,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 .venv/bin/python scripts/eval_run.py --record        # 重录真实响应（**要凭证、烧 token**）
 ```
 
-黄金问答集是 `tests/golden/questions.yaml`（47 条，六类），基线与全部结论在
+黄金问答集是 `tests/golden/questions.yaml`（51 条，六类），基线与全部结论在
 `tests/golden/BASELINE.md`——**动闸门前先读它**，里面记了四个已修缺陷、两个已知未修边界，
 以及两次「测量本身写错」的教训。
 
@@ -248,7 +248,7 @@ POST /chat[/stream]  api/chat.py（只做校验与编排调用）
    越靠上越可预测。**能在上层解决的绝不放到下层。**
 3. **大胆重构、拒绝补丁**：同一概念多处各写一份判据、白名单加语义重叠的新项、
    按用例名特判的 `if`、排序层反复加权 —— 见到就停下来重构，不要再加分支。
-   安全网是 396 项秒级单测 + `--gate` 离线重放 + 流式批量一致性，重构前后必须持平或变好。
+   安全网是 408 项秒级单测 + `--gate` 离线重放 + 流式批量一致性，重构前后必须持平或变好。
 4. **该删就删**：不留「以后可能有用」的函数，不为自己刚写的旧行为留兼容分支；
    约束本身是错的就删约束（`UNIQUE(name_zh)`），别绕开它。删除要证明没丢能力。
 5. **防漏改**：成对点清单在规约第 5 条。最高频的是批量 vs 流式、提示词 vs 闸门。
