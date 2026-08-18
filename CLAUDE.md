@@ -92,7 +92,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 408 项，秒级
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 411 项，秒级
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选
@@ -109,7 +109,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 .venv/bin/python scripts/eval_run.py --record        # 重录真实响应（**要凭证、烧 token**）
 ```
 
-黄金问答集是 `tests/golden/questions.yaml`（51 条，六类），基线与全部结论在
+黄金问答集是 `tests/golden/questions.yaml`（53 条，六类），基线与全部结论在
 `tests/golden/BASELINE.md`——**动闸门前先读它**，里面记了四个已修缺陷、两个已知未修边界，
 以及两次「测量本身写错」的教训。
 
@@ -186,10 +186,13 @@ POST /chat[/stream]  api/chat.py（只做校验与编排调用）
 `craft_bench_recipe` 783、`pob_base_item` **1022**（18 个装备类别，PoB × POEDB 逐条桥接，
 覆盖 PoB 侧 96.1%；未桥接的 41 条已按类别登记在台账）、`source_conflict` 2954。
 
-两处数据缺口会直接影响判断：
+`craft_metamod_interaction` **134** 行（5 个小节 × 34 行操作，2 个空白格只进审计不成为
+证据）。这张表长期是 0 行，而文档一直写着「需联网跑」——**那句是错的**：pipeline 只抓
+POEDB 镜像，而镜像页一直在 `data/http_cache` 里、抽取器对它跑得通，这条采集只是从来
+没被跑过。教训：「需要联网」这种判断要去看代码抓哪个 URL、缓存里有没有，别照抄注释。
 
-- **`craft_metamod_interaction` 仍是 0 行**（需联网跑 `python -m kb.pipeline --category metamods`），
-  所以 `metamod_interaction_matrix` 只会返回缺据。
+一处数据缺口会直接影响判断：
+
 - **`source_conflict` 里 `kind='mod'`（已确认冲突）是 0 条**，只有 2729 条待人工核对的
   `mod_review`。按需求 15.5，`mod_review` **不得当作冲突呈现**，所以「跨来源冲突并列展示」
   这条能力目前无法验收——缺的是人工核对，不是代码。
@@ -248,7 +251,7 @@ POST /chat[/stream]  api/chat.py（只做校验与编排调用）
    越靠上越可预测。**能在上层解决的绝不放到下层。**
 3. **大胆重构、拒绝补丁**：同一概念多处各写一份判据、白名单加语义重叠的新项、
    按用例名特判的 `if`、排序层反复加权 —— 见到就停下来重构，不要再加分支。
-   安全网是 408 项秒级单测 + `--gate` 离线重放 + 流式批量一致性，重构前后必须持平或变好。
+   安全网是 411 项秒级单测 + `--gate` 离线重放 + 流式批量一致性，重构前后必须持平或变好。
 4. **该删就删**：不留「以后可能有用」的函数，不为自己刚写的旧行为留兼容分支；
    约束本身是错的就删约束（`UNIQUE(name_zh)`），别绕开它。删除要证明没丢能力。
 5. **防漏改**：成对点清单在规约第 5 条。最高频的是批量 vs 流式、提示词 vs 闸门。

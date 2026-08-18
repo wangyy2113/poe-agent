@@ -127,6 +127,11 @@ FACTS: tuple[Fact, ...] = (
     Fact("CLAUDE.md 切片数", "CLAUDE.md", r"`chunk` ([\d,]+)", _count("chunk")),
     Fact("CLAUDE.md 别名数", "CLAUDE.md", r"`alias` ([\d,]+)", _count("alias")),
     Fact("CLAUDE.md 黄金用例数", "CLAUDE.md", r"questions\.yaml`（(\d+) 条", _golden_case_count),
+    Fact("元词缀矩阵条数", "README.md", r"页面矩阵 ([\d,]+) 条（operation",
+         _count("craft_metamod_interaction")),
+    Fact("CLAUDE.md 元词缀矩阵条数", "CLAUDE.md",
+         r"`craft_metamod_interaction` \*\*([\d,]+)\*\* 行",
+         _count("craft_metamod_interaction")),
     Fact("审计样本量", "tests/golden/BASELINE.md", r"审计样本 \| 24 条（判 18） \| \*\*(\d+) 条",
          lambda _c: 48),
 )

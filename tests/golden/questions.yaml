@@ -418,3 +418,34 @@ cases:
     kind: tool_route
     expect_tool: bench_recipe_catalog
     note: 工艺台目录/原始费用 → bench_recipe_catalog，不得改写成制作步骤
+
+  - id: route_metamod_matrix
+    query: 元词缀矩阵里神圣石对前缀无法被变更是什么结果
+    kind: tool_route
+    expect_tool: metamod_interaction_matrix
+    note: 逐字 operation × guard + **显式提到来源** → metamod_interaction_matrix
+    lesson: >-
+      这个能力此前**完全没有用例**：craft_metamod_interaction 长期 0 行，工具永远返回缺据，
+      连闸门里为它写的 scope 规则都是不可达代码，于是评测也就没人想起来覆盖它。
+      2026-08-18 发现 0 行的原因不是「需联网」——POEDB 镜像页一直在 http_cache 里、
+      抽取器对它跑得通（134 条），只是这条采集从来没跑过。补上用例，
+      免得下次某个能力又在「代码写了、数据没进、评测不覆盖」三不管里躺着。
+
+      措辞里**必须出现「元词缀矩阵」**：`_metamod_source_policy` 只在问题显式提到来源时
+      才返回 positive，否则不路由（`tests/unit/test_metamods.py` 的
+      `test_不含矩阵限定同义词改参和多余参数均拒绝` 把这条钉死了）。这是刻意的——矩阵是
+      社区页（P4）的转述、没有可验证的版本范围，它的单元格不能被当成通用游戏规则读。
+      代价是用户不提来源就拿不到答案；要改这个契约得是一次**明确的产品决定**加新证据，
+      不是把判据悄悄放宽。第一版用例写成「神圣石在「前缀无法被变更」下的结果是什么」，
+      录制出来是 0 token 的缺据——被路由挡住了，正好把这条契约量了出来。
+
+  - id: gap_metamod_blank_cell
+    query: 元词缀矩阵里异能混沌石对无法骰出攻击词缀是什么结果
+    kind: gap
+    expect_gap: true
+    note: 来源页面该格为空白 → 必须拒答，不能推断为 N/A
+    lesson: >-
+      空白格是这套矩阵最危险的地方：页面留空**不等于** N/A，也不等于 unknown。
+      入库时空白格只进抽取审计、不成为 Citation（实测该页有 2 个空白格，
+      都在异能混沌石那一行），编排层再由 _metamod_source_blank_answer 生成确定性拒答。
+      这条用例钉的是「代码路径」而不是「模型自觉」。

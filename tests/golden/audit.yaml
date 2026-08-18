@@ -1177,6 +1177,15 @@ items:
     里一共 2 条），是可核的。完备性断言不能一概而论。'
   pool: blocked
   gate_reason: 事实句未绑定引用
+- id: route_metamod_matrix#bca7b88f
+  case: route_metamod_matrix
+  sentence: 根据元词缀交互矩阵（Craft of Exile，POEDB 镜像）的页面记录：
+  labels: []
+  evidence_excerpt: {}
+  verdict: wrong_block
+  note: 引导句，以「：」收尾、无数值，内容在后面的清单里。过不了 _FRAMED_LEAD_IN_RE是因为冒号前落在「页面记录」上，而封闭前指词集里没有「记录」。同一族的第 8 条——前指词集需要按实测继续补，但每补一个词都要有一条实测句子作依据，不要凭想象扩表。
+  pool: blocked
+  gate_reason: 事实句未绑定引用
 - id: route_mod_tiers#fb962071
   case: route_mod_tiers
   sentence: 每档生成权重均为 1000（1.4925%）[[E9]]。
@@ -1233,14 +1242,5 @@ items:
   evidence_excerpt: {}
   verdict: correct_block
   note: 后半句「仅猎首作为唯一装备提供」是排他性断言，且证据集是截断的（16 条里的一部分）。前半句是缺据声明，但一句话里夹着排他性结论，整句拦对了。
-  pool: blocked
-  gate_reason: 事实句未绑定引用
-- id: desc_life_regen_source#2902940d
-  case: desc_life_regen_source
-  sentence: 需注意：部分来源提供的是**提高**生命再生速度，部分则是**降低**或**改造**生命再生机制——以下逐渠道如实列出。
-  labels: []
-  evidence_excerpt: {}
-  verdict: wrong_block
-  note: 引导句：具体断言在后面逐渠道的条目里，这句只说明下面怎么列。
   pool: blocked
   gate_reason: 事实句未绑定引用
