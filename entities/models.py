@@ -184,18 +184,3 @@ class Citation(BaseModel):
     @property
     def can_support_facts(self) -> bool:
         return self.priority <= MAX_FACTUAL_PRIORITY
-
-
-def entity_to_citation(entity: Entity) -> Citation:
-    """实体 → 引用。英文名存在时并列展示，便于对照社区资料。"""
-    title = entity.name_zh
-    if entity.name_en:
-        title = f"{entity.name_zh}（{entity.name_en}）"
-    return Citation(
-        source=entity.ref.source,
-        title=title,
-        url=entity.ref.url,
-        entity_id=entity.entity_id,
-        priority=entity.ref.priority,
-        fetched_at=entity.ref.fetched_at,
-    )

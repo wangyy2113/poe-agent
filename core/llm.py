@@ -763,7 +763,3 @@ def get_llm_client() -> LLMClient:
         return _client
 
 
-def reset_llm_client() -> None:
-    global _client
-    with _client_lock:
-        _client = None
