@@ -315,12 +315,6 @@ def parse_poedb_base_names(
     return out, ambiguous
 
 
-def parse_poedb_body_names(html: str) -> dict[str, str]:
-    """胸甲页的兼容入口（既有测试仍在用）。只返回名称映射。"""
-    names, _ = parse_poedb_base_names(html, ("BodyArmour",), page="Body_Armours")
-    return names
-
-
 def _jsonable(value: Any, *, path: str) -> Any:
     if isinstance(value, LuaOpaque):
         raise BaseStructureError(f"{path} 含未求值 Lua 表达式")

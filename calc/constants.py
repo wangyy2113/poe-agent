@@ -216,5 +216,3 @@ def missing(keys: tuple[str, ...] = REQUIRED) -> list[str]:
     return [k for k in keys if k not in rows]
 
 
-def all_keys() -> list[str]:
-    return sorted(load())

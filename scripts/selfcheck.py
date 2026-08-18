@@ -110,6 +110,24 @@ def main() -> int:
         print(f"  !! FTS5 探测失败: {type(exc).__name__}: {exc}")
         ok = False
 
+    # ── 游戏常量（`calc/` 缺失即抛异常，所以这里要提前暴露）──
+    print("\n[游戏常量]")
+    try:
+        from calc import constants
+
+        constants.reset_cache()
+        absent = constants.missing()
+        total = len(constants.load(conn))
+        print(f"  已入库 {total} 条，REQUIRED {len(constants.REQUIRED)} 个关键常量"
+              f"{'全部就位' if not absent else ''}")
+        if absent:
+            print(f"  !! 缺 {len(absent)} 个：{', '.join(absent)}")
+            print("     → 跑 scripts/import_pob_constants.py；calc/ 取不到常量时会抛异常而不是给默认值")
+            ok = False
+    except Exception as exc:
+        print(f"  !! 常量检查失败: {type(exc).__name__}: {exc}")
+        ok = False
+
     vs = dbmod.vector_status()
     print(f"  向量扩展     : {vs}")
     if not vs.available:

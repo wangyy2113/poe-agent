@@ -225,6 +225,73 @@ def _apply_dimension_gate(question: str, data: dict[str, Any]) -> dict[str, Any]
     return out
 
 
+#: 工具 `data` 里那些**要求必须传达给用户**的声明字段，逐字取用。
+#: 它们不是游戏事实而是「这份答案的边界」，所以由代码原样附在答案末尾。
+_NOTE_FIELDS: tuple[str, ...] = ("coverage_note", "channels_no_match_note")
+
+#: 权重占比的写法：`1500（1.888%）`。出现即说明证据里带组内占比。
+_WEIGHT_PCT_RE = re.compile(r"\d+\s*（\s*\d+(?:\.\d+)?%\s*）")
+
+
+def _answer_notes(
+    tool_calls: list[dict[str, Any]], evidence: list[Evidence]
+) -> list[str]:
+    """由**代码**生成的答案附注：截断、覆盖不完整、零命中、权重口径。
+
+    ## 为什么必须由代码说
+
+    这几件事项目自己明文要求说出来：
+
+      「枚举类工具静默截断等同于漏答，超出上限必须写出还剩多少」
+      「上面的清单在这些维度上必然不完整——回答时必须如实说明」（stat_sources 的 coverage_note）
+      「这个数不是任何通货或具体工艺的一次使用成功率」（affix_pool / 权重占比）
+
+    但它们**都不在任何证据里**：截断计数只在工具 `data`（实测 `mod_tiers` 返回
+    `ladders_total=21 / ladders_returned=6`，卡片里一个字都没有），覆盖声明同理。
+    于是模型只能无绑定地说出来，然后被出口闸门当「事实句未绑定引用」拦掉——
+    **项目要求说的话被项目自己拦了**，用户拿到一份残缺清单却看不到截断提示。
+
+    所以走 `degraded_note` 同一条路：代码生成、附在闸门之后、完全可预测。
+    这也比「把这类句子加进白名单豁免」安全——豁免等于允许模型自己编这些数字。
+    """
+    notes: list[str] = []
+
+    def add(note: str) -> None:
+        text = note.strip()
+        if text and text not in notes:
+            notes.append(text)
+
+    for record in tool_calls:
+        data = record.get("data")
+        if not isinstance(data, dict):
+            continue
+        tool = str(record.get("tool") or "工具")
+        if data.get("truncated"):
+            total = data.get("ladders_total") or data.get("total")
+            returned = data.get("ladders_returned") or data.get("returned")
+            if isinstance(total, int) and isinstance(returned, int):
+                add(
+                    f"**本轮枚举被截断**：`{tool}` 命中 {total} 项，只返回了 {returned} 项。"
+                    f"上面的清单不完整，剩余 {total - returned} 项未列出——"
+                    "需要完整清单请缩小查询范围（指定底材类别或来源渠道）后再问。"
+                )
+            else:
+                add(
+                    f"**本轮枚举被截断**：`{tool}` 的结果超出返回上限，上面的清单不完整。"
+                )
+        for field in _NOTE_FIELDS:
+            value = data.get(field)
+            if isinstance(value, str) and value.strip():
+                add(value)
+
+    if any(_WEIGHT_PCT_RE.search(e.text) for e in evidence):
+        add(
+            "**括号内的百分比是该档在同组内的生成权重占比**，"
+            "不等于任何通货或具体工艺的一次使用成功率，也不等于期望消耗。"
+        )
+    return notes
+
+
 def _domain_terms() -> tuple[str, ...]:
     """事实句判定用的领域词。来自 `retrieval/vocab.py` 生成的词表。
 
@@ -1279,47 +1346,67 @@ def _precision_failure_answer(tool_name: str) -> str:
     )
 
 
-def run_turn(
-    question: str,
-    *,
-    conversation_id: str | None = None,
-    client: LLMClient | None = None,
-) -> TurnResult:
-    started = time.monotonic()
-    cfg = get_config()
-    client = client or get_llm_client()
-    trace_id = uuid.uuid4().hex
-    result = TurnResult(trace_id=trace_id, question=question, answer="")
+# ── 两条路径共享的流水线 ──────────────────────────────────
+#
+# `run_turn` 与 `stream_turn` 曾各写一遍这条流水线（各约 300 行）。代价是实测出来的：
+# 表格继承那次改动让流式与批量判定从 32/32 掉到 18/32；更糟的是**结构性漏改**——
+# 「偏好工具零证据兜底」只写在批量路径里，流式下同样的问题会带着零条证据进闸门、
+# 每个事实句被拦，而批量那段注释本身就写着这种结果「比一句查不到更糟」。
+#
+# 所以准备阶段、单次工具调用、确定性收尾三段都提到这里，**两条路径只允许在
+# 「怎么把文本交给用户」上不同**：批量一次性 `verify()`，流式逐句 `StreamingGate`。
 
-    # ── 第零步：POE1/POE2 边界。放在检索**之前**——越界问题不该消耗检索，
-    # 更不该产生任何可能被当作依据的证据（见 `_POE2_MARKERS`）。
+
+@dataclass
+class _TurnSetup:
+    """准备阶段的产物。`gap` 或 `final` 非空表示这一轮在进生成前就定了。
+
+    两者的区别不是措辞而是**语义**：`gap` 是「无据不答」，`final` 是已经答完了
+    （覆盖声明这类代码生成的确定性答案）。流式路径要据此决定发 `gap` 事件还是
+    `sentence` 事件，所以不能合成一个字段。
+    """
+
+    evidence: list[Evidence] = field(default_factory=list)
+    precision_tool: str = ""
+    preferred_tool: str = ""
+    messages: list[dict[str, Any]] = field(default_factory=list)
+    tools: list[dict[str, Any]] = field(default_factory=list)
+    needs_model_call: bool = False
+    #: 检索侧的 `missing_terms`，偏好工具兜底时要原样带进缺据声明
+    missing_terms: list[str] = field(default_factory=list)
+    gap: str = ""
+    final: str = ""
+
+    @property
+    def done(self) -> bool:
+        return bool(self.gap or self.final)
+
+
+def _prepare_turn(question: str, result: TurnResult) -> _TurnSetup:
+    """POE2 边界 → 强制检索 → 路由 → 维度闸门 → 编号证据 → 代码调偏好工具。
+
+    只写 `result`，不落库、不发事件——收尾动作由调用方按自己的形态做。
+    """
     marker = poe2_marker(question)
     if marker:
+        # 放在检索**之前**：越界问题不该消耗检索，更不该产生任何可能被当作依据的证据
         result.evidence_gap = True
-        result.answer = _out_of_scope_answer(question, marker)
         result.retrieval_meta["out_of_scope"] = marker
         _record_gaps(
             question, [f"越界：《流放之路 2》问题（标记「{marker}」），本库只覆盖 POE1"],
             category="out_of_scope/poe2", kind="retrieval_gap",
         )
-        result.elapsed_ms = int((time.monotonic() - started) * 1000)
-        _persist(result, conversation_id)
-        return result
+        return _TurnSetup(gap=_out_of_scope_answer(question, marker))
 
-    # ── 第一步：强制检索。不让模型决定「要不要查」 ──
+    # 强制检索。不让模型决定「要不要查」
     first = REGISTRY.call("kb_search", json.dumps({"query": question}, ensure_ascii=False))
     result.tool_calls.append(_tool_record("kb_search", {"query": question}, first))
     result.retrieval_meta = dict(first.meta)
-
     if not first.ok:
-        result.answer = (
-            f"检索不可用（{first.error}），因此无法确认依据。"
-            "本助手在无依据时不作答。"
-        )
         result.evidence_gap = True
-        result.elapsed_ms = int((time.monotonic() - started) * 1000)
-        _persist(result, conversation_id)
-        return result
+        return _TurnSetup(
+            gap=f"检索不可用（{first.error}），无法确认依据，本轮不作答。"
+        )
 
     data = first.data or {}
     precision_tool = _precision_tool_route(question)
@@ -1327,7 +1414,7 @@ def run_turn(
     # 检索不足**：这几类问题的证据本来就不在 chunk 里——「你的库覆盖哪些领域」
     # 由 kb_coverage 回答、「某属性从哪来」由 stat_sources 逐渠道枚举，
     # BM25 命不中是正常的。不豁免的话整轮在进生成前就被判缺据，工具根本没机会调。
-    # 兜底在后面：这一轮跑完若一条证据都没拿到，仍然走缺据声明而不是让闸门把答案撕碎。
+    # 兜底在 `_terminal_gap`：跑完若一条证据都没拿到，仍然走缺据声明。
     preferred_tool = "" if precision_tool else _preferred_tool_route(question)
     if preferred_tool:
         result.retrieval_meta["preferred_tool"] = preferred_tool
@@ -1338,18 +1425,16 @@ def run_turn(
         data = _apply_dimension_gate(question, data)
         if data.get("dimension_gate"):
             result.retrieval_meta["dimension_gate"] = True
+
     if not data.get("sufficient") and not precision_tool and not preferred_tool:
         # 依据不足且没有确定性精确工具路由 → 由代码生成缺据声明，模型完全不参与
         result.evidence_gap = True
-        result.answer, gap_category = _gap_answer(question, data)
-        result.elapsed_ms = int((time.monotonic() - started) * 1000)
+        answer, gap_category = _gap_answer(question, data)
         _record_gaps(
             question, [str(data.get("reason") or "依据不足")], category=gap_category
         )
-        _persist(result, conversation_id)
-        return result
+        return _TurnSetup(gap=answer)
 
-    # ── 第二步：编号证据并生成 ──
     # BM25 不充分时不能把「最不差」的命中当证据；精确路由只给模型调用工具的机会。
     evidence = number_evidence(
         [] if precision_tool else (first.citations if data.get("sufficient") else [])
@@ -1368,43 +1453,239 @@ def run_turn(
             f"{first.meta.get('note') or '向量与重排未启用'}"
         )
 
-    messages: list[dict[str, Any]] = [
+    setup = _TurnSetup(
+        evidence=evidence,
+        precision_tool=precision_tool,
+        preferred_tool=preferred_tool,
+        tools=_tools_for_question(question),
+        needs_model_call=bool(preferred_tool) and preferred_result is None,
+        missing_terms=list(data.get("missing_terms") or []),
+    )
+    # 覆盖声明走代码生成路径，直接答完（理由见 `_coverage_answer`）
+    if (
+        preferred_tool == "kb_coverage"
+        and preferred_result is not None
+        and preferred_result.ok
+    ):
+        setup.final = _coverage_answer(preferred_result)
+        return setup
+
+    # 偏好工具已由代码调过、却一条证据都没给出，且检索侧也没有 → **不进生成**。
+    # 这一步以前在生成之后（`_terminal_gap` 里那段兜底），等于明知无据还先烧一次
+    # 模型调用、再把整篇答案拦掉。判据在进生成前就成立，就该在这里判：
+    # 缺据声明由代码生成、完全可预测，也不花 token。
+    #
+    # 只在**代码已调过**（`preferred_result is not None`）时才提前判。模型自己去调
+    # 那个工具的情形（`needs_model_call`）必须给它机会，兜底仍留在 `_terminal_gap`。
+    if (
+        preferred_tool
+        and preferred_result is not None
+        and not evidence
+        and preferred_tool not in _TOOLS_WITHOUT_CITATIONS
+    ):
+        result.evidence_gap = True
+        setup.gap = _preferred_tool_gap(question, preferred_tool, setup.missing_terms)
+        return setup
+
+    setup.messages = [
         {"role": "system", "content": build_system_prompt()},
         {
             "role": "user",
             "content": _initial_user_content(question, evidence, precision_tool),
         },
     ]
+    return setup
+
+
+@dataclass
+class _ToolLoopState:
+    """工具循环里跨轮累积的状态。
+
+    单独成类是因为这些字段的更新规则（尤其精确工具的三种失败形态）必须两条路径
+    完全一致——它们决定的是「要不要拒答」，分叉会直接变成漏出。
+    """
+
+    question: str
+    precision_tool: str
+    evidence: list[Evidence]
+    succeeded: bool
+    invalidated: bool = False
+    source_blank: ToolResult | None = None
+    affix_unknown: ToolResult | None = None
+    final_results: dict[str, ToolResult] = field(default_factory=dict)
+
+    @classmethod
+    def start(cls, setup: _TurnSetup, question: str) -> _ToolLoopState:
+        return cls(
+            question=question,
+            precision_tool=setup.precision_tool,
+            evidence=setup.evidence,
+            succeeded=not bool(setup.precision_tool),
+        )
+
+
+def _handle_tool_call(state: _ToolLoopState, result: TurnResult, tc: Any) -> dict[str, Any]:
+    """执行一次模型请求的工具调用，更新状态与证据，返回要回灌给模型的 tool 消息。
+
+    返回值里带 `evidence_changed`，让流式路径知道要不要 `gate.add_evidence()`；
+    批量路径忽略它即可。
+    """
+    precision = state.precision_tool
+    if precision and tc.name == precision and state.succeeded:
+        state.invalidated = True
+        tr = ToolResult(
+            ok=False, error="精确工具已成功完成；本轮再次改参会使证据归属不唯一"
+        )
+        precision_match = False
+    else:
+        tr, precision_match = _call_tool(state.question, precision, tc.name, tc.arguments)
+
+    data = tr.data or {}
+    if precision == "metamod_interaction_matrix" and tc.name == precision and tr.ok \
+            and bool(data.get("source_blank")):
+        state.source_blank = tr
+    if precision == "affix_pool_odds" and tc.name == precision and tr.ok \
+            and data.get("status") == "unknown":
+        state.affix_unknown = tr
+
+    result.tool_calls.append(_tool_record(tc.name, _safe_json(tc.arguments), tr))
+    state.final_results[tc.name] = tr
+
+    evidence_changed = False
+    if precision_match:
+        state.affix_unknown = None
+        state.succeeded = True
+        # 精确回答只允许使用本次、参数归属正确且类型匹配的证据。
+        state.evidence = number_evidence(_precision_citations(precision, tr))
+        result.evidence = state.evidence
+        evidence_changed = True
+    elif not precision and tr.citations:
+        state.evidence = _merge_evidence(state.evidence, tr.citations)
+        result.evidence = state.evidence
+        evidence_changed = True
+
+    return {
+        "message": {"role": "tool", "tool_call_id": tc.id, "content": tr.for_model()},
+        "evidence_changed": evidence_changed,
+    }
+
+
+def _assistant_tool_message(tool_calls: list[Any], content: str | None = None) -> dict[str, Any]:
+    return {
+        "role": "assistant",
+        "content": content or None,
+        "tool_calls": [
+            {"id": tc.id, "type": "function",
+             "function": {"name": tc.name, "arguments": tc.arguments}}
+            for tc in tool_calls
+        ],
+    }
+
+
+def _evidence_refresh_message(evidence: list[Evidence]) -> dict[str, Any]:
+    """证据集变了就把最新编号重新给模型，否则它会引用旧编号。"""
+    return {
+        "role": "user",
+        "content": "当前可用证据（编号已更新，请据此标注）：\n\n"
+                   + render_evidence_block(evidence),
+    }
+
+
+def _terminal_gap(state: _ToolLoopState, setup: _TurnSetup) -> str:
+    """生成之后、闸门之前的四种确定性拒答。返回空串表示可以正常出答案。
+
+    顺序有意义：空白源格与 unknown 是**有明确来源依据**的拒答，必须优先于
+    「没调成功」这条泛化判据，否则用户拿到的理由不是真实原因。
+    """
+    question = state.question
+    if state.source_blank is not None:
+        _record_gaps(
+            question,
+            [str((state.source_blank.data or {}).get("missing_reason") or "来源矩阵单元格为空")],
+            category="制作系统 / metamod_matrix",
+        )
+        return _metamod_source_blank_answer(state.source_blank)
+
+    if state.affix_unknown is not None and not state.succeeded and not state.invalidated:
+        _record_final_tool_result_gaps(question, state.final_results)
+        return _affix_pool_unknown_answer(state.affix_unknown)
+
+    if not state.succeeded or state.invalidated:
+        return _precision_failure_answer(state.precision_tool)
+
+    # 偏好工具豁免了「检索不足」，模型自己去调那个工具却什么也没拿到时兜在这里。
+    # 代码已调过工具的情形在 `_prepare_turn` 里就判掉了，不会走到这。
+    # 不兜的话答案会带着零条证据进闸门，每个事实句都被拦，用户看到一篇拦截说明——
+    # 那比一句「查不到」更糟，而且掩盖了「本轮其实无据」这个事实。
+    preferred = setup.preferred_tool
+    if preferred and not state.evidence and preferred not in _TOOLS_WITHOUT_CITATIONS:
+        return _preferred_tool_gap(question, preferred, setup.missing_terms)
+
+    return ""
+
+
+def _preferred_tool_gap(question: str, preferred: str, missing_terms: list[str]) -> str:
+    """偏好工具零证据的缺据声明。进生成前后各有一个判点，措辞必须同一处产生。"""
+    answer, gap_category = _gap_answer(question, {
+        "reason": (
+            f"已按问题类型改由精确工具 `{preferred}` 回答，"
+            "但该工具本轮未返回任何可引用证据"
+        ),
+        "missing_terms": list(missing_terms),
+    })
+    _record_gaps(
+        question, [f"[{preferred}] 精确工具未返回可引用证据"],
+        category=gap_category, kind="tool_gap",
+    )
+    return answer
+
+
+def _apply_notes(result: TurnResult, evidence: list[Evidence]) -> list[str]:
+    """把代码生成的附注追加到答案，并返回它们（流式还要逐条发事件）。
+
+    附注放在闸门**之后**：它们不是模型说的，不需要也不该过绑定校验（见 `_answer_notes`）。
+    """
+    notes = _answer_notes(result.tool_calls, evidence)
+    for note in notes:
+        result.answer += f"\n\n> {note}"
+    return notes
+
+
+def _end(result: TurnResult, conversation_id: str | None, started: float) -> TurnResult:
+    result.elapsed_ms = int((time.monotonic() - started) * 1000)
+    _persist(result, conversation_id)
+    return result
+
+
+def run_turn(
+    question: str,
+    *,
+    conversation_id: str | None = None,
+    client: LLMClient | None = None,
+) -> TurnResult:
+    started = time.monotonic()
+    cfg = get_config()
+    client = client or get_llm_client()
+    trace_id = uuid.uuid4().hex
+    result = TurnResult(trace_id=trace_id, question=question, answer="")
+
+    setup = _prepare_turn(question, result)
+    if setup.done:
+        result.answer = setup.gap or setup.final
+        return _end(result, conversation_id, started)
 
     budget = TurnBudget(limit=int(cfg.get("llm.max_tokens_per_turn", 60000)))
     max_calls = int(cfg.get("llm.max_tool_calls", 12))
-    tools = _tools_for_question(question)
+    messages = setup.messages
+    state = _ToolLoopState.start(setup, question)
     answer_text = ""
-    final_tool_results: dict[str, ToolResult] = {}
-    precision_tool_succeeded = not bool(precision_tool)
-    precision_call_invalidated = False
-    precision_source_blank: ToolResult | None = None
-    precision_affix_unknown: ToolResult | None = None
 
-    # 代码已经调过的工具不必再让模型调一次
-    # 覆盖声明走代码生成路径，直接返回（理由见 `_coverage_answer`）
-    if (
-        preferred_tool == "kb_coverage"
-        and preferred_result is not None
-        and preferred_result.ok
-    ):
-        result.answer = _coverage_answer(preferred_result)
-        result.elapsed_ms = int((time.monotonic() - started) * 1000)
-        _persist(result, conversation_id)
-        return result
-
-    needs_model_call = preferred_tool and preferred_result is None
     try:
         for round_no in range(max_calls + 1):
             # 第一轮裁剪 schema 代替 tool_choice（网关忽略后者，实测见 _first_round_tools）
             round_tools = (
-                _first_round_tools(preferred_tool, tools)
-                if round_no == 0 and needs_model_call else tools
+                _first_round_tools(setup.preferred_tool, setup.tools)
+                if round_no == 0 and setup.needs_model_call else setup.tools
             )
             resp = client.chat(
                 messages,
@@ -1417,68 +1698,10 @@ def run_turn(
                 answer_text = resp.content
                 break
 
-            messages.append({
-                "role": "assistant",
-                "content": resp.content or None,
-                "tool_calls": [
-                    {
-                        "id": tc.id,
-                        "type": "function",
-                        "function": {"name": tc.name, "arguments": tc.arguments},
-                    }
-                    for tc in resp.tool_calls
-                ],
-            })
+            messages.append(_assistant_tool_message(resp.tool_calls, resp.content))
             for tc in resp.tool_calls:
-                if precision_tool and tc.name == precision_tool and precision_tool_succeeded:
-                    precision_call_invalidated = True
-                    tr = ToolResult(
-                        ok=False,
-                        error="精确工具已成功完成；本轮再次改参会使证据归属不唯一",
-                    )
-                    precision_match = False
-                else:
-                    tr, precision_match = _call_tool(
-                        question, precision_tool, tc.name, tc.arguments
-                    )
-                if (
-                    precision_tool == "metamod_interaction_matrix"
-                    and tc.name == precision_tool
-                    and tr.ok
-                    and bool((tr.data or {}).get("source_blank"))
-                ):
-                    precision_source_blank = tr
-                if (
-                    precision_tool == "affix_pool_odds"
-                    and tc.name == precision_tool
-                    and tr.ok
-                    and (tr.data or {}).get("status") == "unknown"
-                ):
-                    precision_affix_unknown = tr
-                result.tool_calls.append(
-                    _tool_record(tc.name, _safe_json(tc.arguments), tr)
-                )
-                final_tool_results[tc.name] = tr
-                if precision_match:
-                    precision_affix_unknown = None
-                    precision_tool_succeeded = True
-                    # 精确回答只允许使用本次、参数归属正确且类型匹配的证据。
-                    evidence = number_evidence(_precision_citations(precision_tool, tr))
-                    result.evidence = evidence
-                elif not precision_tool and tr.citations:
-                    evidence = _merge_evidence(evidence, tr.citations)
-                    result.evidence = evidence
-                messages.append({
-                    "role": "tool",
-                    "tool_call_id": tc.id,
-                    "content": tr.for_model(),
-                })
-            # 证据集变了，把最新编号重新给模型，否则它会引用旧编号
-            messages.append({
-                "role": "user",
-                "content": "当前可用证据（编号已更新，请据此标注）：\n\n"
-                           + render_evidence_block(evidence),
-            })
+                messages.append(_handle_tool_call(state, result, tc)["message"])
+            messages.append(_evidence_refresh_message(state.evidence))
         else:
             logger.warning("工具调用达到上限 %d，用现有内容作答", max_calls)
     except LLMError as exc:
@@ -1486,63 +1709,16 @@ def run_turn(
         # 消息已由 core/llm.py 脱敏，可安全写日志。
         logger.error("生成失败（trace=%s）：%s", trace_id, exc)
         result.answer = f"生成失败（{type(exc).__name__}），本轮不作答以免输出无据内容。"
-        result.elapsed_ms = int((time.monotonic() - started) * 1000)
-        _persist(result, conversation_id)
-        return result
+        return _end(result, conversation_id, started)
 
-    if precision_source_blank is not None:
+    gap = _terminal_gap(state, setup)
+    if gap:
         result.evidence_gap = True
-        result.answer = _metamod_source_blank_answer(precision_source_blank)
-        _record_gaps(
-            question,
-            [str((precision_source_blank.data or {}).get("missing_reason") or "来源矩阵单元格为空")],
-            category="制作系统 / metamod_matrix",
-        )
-        result.elapsed_ms = int((time.monotonic() - started) * 1000)
-        _persist(result, conversation_id)
-        return result
+        result.answer = gap
+        return _end(result, conversation_id, started)
 
-    if (
-        precision_affix_unknown is not None
-        and not precision_tool_succeeded
-        and not precision_call_invalidated
-    ):
-        result.evidence_gap = True
-        result.answer = _affix_pool_unknown_answer(precision_affix_unknown)
-        _record_final_tool_result_gaps(question, final_tool_results)
-        result.elapsed_ms = int((time.monotonic() - started) * 1000)
-        _persist(result, conversation_id)
-        return result
-
-    if not precision_tool_succeeded or precision_call_invalidated:
-        result.evidence_gap = True
-        result.answer = _precision_failure_answer(precision_tool)
-        result.elapsed_ms = int((time.monotonic() - started) * 1000)
-        _persist(result, conversation_id)
-        return result
-
-    # 偏好工具豁免了「检索不足」，兜底就在这里：这一轮跑完连一条证据都没拿到，
-    # 说明那个工具也没给出可引用的东西 → 仍然走缺据声明。
-    # 不兜的话答案会带着零条证据进闸门，每个事实句都被拦，用户看到一篇拦截说明——
-    # 那比一句「查不到」更糟，而且掩盖了「本轮其实无据」这个事实。
-    if preferred_tool and not evidence and preferred_tool not in _TOOLS_WITHOUT_CITATIONS:
-        result.evidence_gap = True
-        result.answer, gap_category = _gap_answer(question, {
-            "reason": (
-                f"已按问题类型改由精确工具 `{preferred_tool}` 回答，"
-                "但该工具本轮未返回任何可引用证据"
-            ),
-            "missing_terms": list(data.get("missing_terms") or []),
-        })
-        _record_gaps(
-            question, [f"[{preferred_tool}] 精确工具未返回可引用证据"],
-            category=gap_category, kind="tool_gap",
-        )
-        result.elapsed_ms = int((time.monotonic() - started) * 1000)
-        _persist(result, conversation_id)
-        return result
-
-    _record_final_tool_result_gaps(question, final_tool_results)
+    evidence = state.evidence
+    _record_final_tool_result_gaps(question, state.final_results)
     result.tokens = {
         "prompt": budget.used.prompt_tokens,
         "output": budget.used.completion_tokens,
@@ -1550,7 +1726,7 @@ def run_turn(
         "total": budget.used.total_tokens,
     }
 
-    # ── 第三步：出口闸门 ──
+    # ── 出口闸门 ──
     result.raw_answer = answer_text
     binding = verify(
         answer_text,
@@ -1561,6 +1737,7 @@ def run_turn(
     result.binding = binding
     result.answer = binding.text
     result.citations = cit.collect(evidence, binding.used_labels)
+    _apply_notes(result, evidence)
     if result.degraded_note:
         result.answer += f"\n\n> {result.degraded_note}"
 
@@ -1572,9 +1749,7 @@ def run_turn(
         )
         _record_binding_gaps(question, binding)
 
-    result.elapsed_ms = int((time.monotonic() - started) * 1000)
-    _persist(result, conversation_id)
-    return result
+    return _end(result, conversation_id, started)
 
 
 # ── 辅助 ───────────────────────────────────────────────────
@@ -1602,117 +1777,40 @@ def stream_turn(
     result = TurnResult(trace_id=trace_id, question=question, answer="")
     yield {"type": "meta", "trace_id": trace_id, "conversation_id": conversation_id}
 
-    # ── POE1/POE2 边界（与非流式同一套判据，见 `_POE2_MARKERS`）──
-    marker = poe2_marker(question)
-    if marker:
-        result.evidence_gap = True
-        result.answer = _out_of_scope_answer(question, marker)
-        result.retrieval_meta["out_of_scope"] = marker
-        _record_gaps(
-            question, [f"越界：《流放之路 2》问题（标记「{marker}」），本库只覆盖 POE1"],
-            category="out_of_scope/poe2", kind="retrieval_gap",
-        )
+    # 准备阶段与非流式**同一个函数**（`_prepare_turn`）：POE2 边界、强制检索、路由、
+    # 维度闸门、代码调偏好工具。这里只负责把它的结论翻译成事件。
+    setup = _prepare_turn(question, result)
+    if setup.gap:
+        result.answer = setup.gap
         yield {"type": "gap", "text": result.answer}
         yield from _finish(result, conversation_id, started)
         return
-
-    # ── 强制检索 ──
-    first = REGISTRY.call("kb_search", json.dumps({"query": question}, ensure_ascii=False))
-    result.tool_calls.append(_tool_record("kb_search", {"query": question}, first))
-    result.retrieval_meta = dict(first.meta)
-
-    if not first.ok:
-        result.evidence_gap = True
-        result.answer = f"检索不可用（{first.error}），无法确认依据，本轮不作答。"
-        yield {"type": "gap", "text": result.answer}
-        yield from _finish(result, conversation_id, started)
-        return
-
-    data = first.data or {}
-    precision_tool = _precision_tool_route(question)
-    # 代码决定的偏好工具（见 `_preferred_tool_route`）。它和精确路由一样要**豁免
-    # 检索不足**：这几类问题的证据本来就不在 chunk 里——「你的库覆盖哪些领域」
-    # 由 kb_coverage 回答、「某属性从哪来」由 stat_sources 逐渠道枚举，
-    # BM25 命不中是正常的。不豁免的话整轮在进生成前就被判缺据，工具根本没机会调。
-    # 兜底在后面：这一轮跑完若一条证据都没拿到，仍然走缺据声明而不是让闸门把答案撕碎。
-    preferred_tool = "" if precision_tool else _preferred_tool_route(question)
-    if preferred_tool:
-        result.retrieval_meta["preferred_tool"] = preferred_tool
-    if precision_tool:
-        result.retrieval_meta["precision_route"] = precision_tool
-    elif data.get("sufficient"):
-        # 精确路由不过这道闸：那类问题的维度由工具自己的缺据字段负责声明
-        data = _apply_dimension_gate(question, data)
-        if data.get("dimension_gate"):
-            result.retrieval_meta["dimension_gate"] = True
-    if not data.get("sufficient") and not precision_tool and not preferred_tool:
-        # 依据不足且没有确定性精确工具路由 → 缺据声明由代码生成
-        result.evidence_gap = True
-        result.answer, gap_category = _gap_answer(question, data)
-        _record_gaps(
-            question, [str(data.get("reason") or "依据不足")], category=gap_category
-        )
-        yield {"type": "gap", "text": result.answer}
-        yield from _finish(result, conversation_id, started)
-        return
-
-    evidence = number_evidence(
-        [] if precision_tool else (first.citations if data.get("sufficient") else [])
-    )
-    result.evidence = evidence
-
-    # 与非流式同一条路由：参数可推导的偏好工具由代码调用（网关忽略 tool_choice）
-    preferred_result = _invoke_preferred_tool(question, preferred_tool, result)
-    if preferred_result is not None and preferred_result.ok and preferred_result.citations:
-        evidence = _merge_evidence(evidence, preferred_result.citations)
-        result.evidence = evidence
-    needs_model_call = preferred_tool and preferred_result is None
-    if (
-        preferred_tool == "kb_coverage"
-        and preferred_result is not None
-        and preferred_result.ok
-    ):
-        result.answer = _coverage_answer(preferred_result)
+    if setup.final:
+        result.answer = setup.final
         yield {"type": "sentence", "text": result.answer,
                "kind": "narrative", "labels": []}
         yield from _finish(result, conversation_id, started)
         return
-    if first.meta.get("degraded"):
-        result.degraded_note = (
-            f"检索以降级通道完成（{', '.join(first.meta.get('channels') or [])}）："
-            f"{first.meta.get('note') or '向量与重排未启用'}"
-        )
 
-    messages: list[dict[str, Any]] = [
-        {"role": "system", "content": build_system_prompt()},
-        {
-            "role": "user",
-            "content": _initial_user_content(question, evidence, precision_tool),
-        },
-    ]
     budget = TurnBudget(limit=int(cfg.get("llm.max_tokens_per_turn", 60000)))
     max_calls = int(cfg.get("llm.max_tool_calls", 12))
-    tools = _tools_for_question(question)
+    messages = setup.messages
+    state = _ToolLoopState.start(setup, question)
 
     gate = StreamingGate(
-        evidence,
+        setup.evidence,
         factual_terms=list(cfg.get("retrieval.factual_terms", []) or []),
         domain_terms=_domain_terms(),
     )
     announced_thinking = False
-    final_tool_results: dict[str, ToolResult] = {}
-    precision_tool_succeeded = not bool(precision_tool)
-    precision_call_invalidated = False
-    precision_source_blank: ToolResult | None = None
-    precision_affix_unknown: ToolResult | None = None
 
     try:
         for _round in range(max_calls + 1):
             pending: list[Any] = []
             round_content: list[str] = []
             round_tools = (
-                _first_round_tools(preferred_tool, tools)
-                if _round == 0 and needs_model_call else tools
+                _first_round_tools(setup.preferred_tool, setup.tools)
+                if _round == 0 and setup.needs_model_call else setup.tools
             )
             for event in client.stream(messages, tools=round_tools, budget=budget):
                 if event.kind == "thinking":
@@ -1720,7 +1818,7 @@ def stream_turn(
                         announced_thinking = True
                         yield {"type": "thinking"}
                 elif event.kind == "content":
-                    if precision_tool:
+                    if setup.precision_tool:
                         # 精确路径整轮缓冲：直到确认该轮没有后续工具调用，正文才进闸门。
                         round_content.append(event.text)
                     else:
@@ -1745,110 +1843,39 @@ def stream_turn(
                     break
 
             if not pending:
-                if precision_tool_succeeded and not precision_call_invalidated:
+                if state.succeeded and not state.invalidated:
                     for piece in round_content:
                         for verdict in gate.feed(piece):
                             yield _sentence_event(verdict)
                 break
 
             # 模型要调工具：执行后开新的一轮流
-            messages.append({
-                "role": "assistant",
-                "content": None,
-                "tool_calls": [
-                    {"id": tc.id, "type": "function",
-                     "function": {"name": tc.name, "arguments": tc.arguments}}
-                    for tc in pending
-                ],
-            })
+            messages.append(_assistant_tool_message(pending))
             for tc in pending:
                 yield {"type": "tool", "name": tc.name}
-                if precision_tool and tc.name == precision_tool and precision_tool_succeeded:
-                    precision_call_invalidated = True
-                    tr = ToolResult(
-                        ok=False,
-                        error="精确工具已成功完成；本轮再次改参会使证据归属不唯一",
-                    )
-                    precision_match = False
-                else:
-                    tr, precision_match = _call_tool(
-                        question, precision_tool, tc.name, tc.arguments
-                    )
-                if (
-                    precision_tool == "metamod_interaction_matrix"
-                    and tc.name == precision_tool
-                    and tr.ok
-                    and bool((tr.data or {}).get("source_blank"))
-                ):
-                    precision_source_blank = tr
-                if (
-                    precision_tool == "affix_pool_odds"
-                    and tc.name == precision_tool
-                    and tr.ok
-                    and (tr.data or {}).get("status") == "unknown"
-                ):
-                    precision_affix_unknown = tr
-                result.tool_calls.append(
-                    _tool_record(tc.name, _safe_json(tc.arguments), tr)
-                )
-                final_tool_results[tc.name] = tr
-                if precision_match:
-                    precision_affix_unknown = None
-                    precision_tool_succeeded = True
-                    evidence = number_evidence(_precision_citations(precision_tool, tr))
-                    result.evidence = evidence
-                    gate.add_evidence(evidence)
-                elif not precision_tool and tr.citations:
-                    evidence = _merge_evidence(evidence, tr.citations)
-                    result.evidence = evidence
+                handled = _handle_tool_call(state, result, tc)
+                if handled["evidence_changed"]:
                     # 编号是追加式的，旧编号不变，所以只需把新证据补进闸门的映射
-                    gate.add_evidence(evidence)
-                messages.append({
-                    "role": "tool", "tool_call_id": tc.id, "content": tr.for_model(),
-                })
-            messages.append({
-                "role": "user",
-                "content": "当前可用证据（编号已更新，请据此标注）：\n\n"
-                           + render_evidence_block(evidence),
-            })
+                    gate.add_evidence(state.evidence)
+                messages.append(handled["message"])
+            messages.append(_evidence_refresh_message(state.evidence))
         else:
             logger.warning("流式工具调用达到上限 %d", max_calls)
     except LLMError as exc:
         logger.error("流式生成失败（trace=%s）：%s", trace_id, exc)
         yield {"type": "error", "message": f"生成失败（{type(exc).__name__}）"}
 
-    if precision_source_blank is not None:
+    # 四种确定性拒答与非流式**同一个函数**（`_terminal_gap`），含偏好工具零证据兜底
+    gap = _terminal_gap(state, setup)
+    if gap:
         result.evidence_gap = True
-        result.answer = _metamod_source_blank_answer(precision_source_blank)
-        _record_gaps(
-            question,
-            [str((precision_source_blank.data or {}).get("missing_reason") or "来源矩阵单元格为空")],
-            category="制作系统 / metamod_matrix",
-        )
+        result.answer = gap
         yield {"type": "gap", "text": result.answer}
         yield from _finish(result, conversation_id, started)
         return
 
-    if (
-        precision_affix_unknown is not None
-        and not precision_tool_succeeded
-        and not precision_call_invalidated
-    ):
-        result.evidence_gap = True
-        result.answer = _affix_pool_unknown_answer(precision_affix_unknown)
-        _record_final_tool_result_gaps(question, final_tool_results)
-        yield {"type": "gap", "text": result.answer}
-        yield from _finish(result, conversation_id, started)
-        return
-
-    if not precision_tool_succeeded or precision_call_invalidated:
-        result.evidence_gap = True
-        result.answer = _precision_failure_answer(precision_tool)
-        yield {"type": "gap", "text": result.answer}
-        yield from _finish(result, conversation_id, started)
-        return
-
-    _record_final_tool_result_gaps(question, final_tool_results)
+    evidence = state.evidence
+    _record_final_tool_result_gaps(question, state.final_results)
     for verdict in gate.flush():
         yield _sentence_event(verdict)
 
@@ -1866,6 +1893,8 @@ def stream_turn(
                 for c in result.citations
             ],
         }
+    for note in _apply_notes(result, evidence):
+        yield {"type": "note", "text": note}
     if result.degraded_note:
         yield {"type": "note", "text": result.degraded_note}
     if binding.blocked:

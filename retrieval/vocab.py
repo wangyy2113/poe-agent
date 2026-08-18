@@ -145,11 +145,6 @@ def load_vocab(path: Path | None = None) -> list[str]:
     return _load(path)[0]
 
 
-def kind_of(term: str) -> str:
-    """词条的 kind；未收录返回空串。"""
-    return _load()[1].get(term, "")
-
-
 def terms_of_kind(kind: str) -> set[str]:
     """某一 kind 的全部词条。"""
     return {t for t, k in _load()[1].items() if k == kind}

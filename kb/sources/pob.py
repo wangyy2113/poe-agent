@@ -30,7 +30,6 @@ logger = logging.getLogger(__name__)
 
 #: PoB 相对仓库根的数据目录
 DATA_DIR = Path("src") / "Data"
-TREE_DIR = Path("src") / "TreeData"
 
 #: 常量文件的引用路径（相对 `src/`）。集中在此，免得各处各写一遍。
 MISC_URL_FILE = "Data/Misc.lua"
@@ -254,5 +253,3 @@ def read_latest_tree_version(root: Path) -> str:
     return items[-1] if items else ""
 
 
-def tree_file(repo: PoBRepo) -> Path:
-    return repo.root / TREE_DIR / repo.tree_version / "tree.lua"

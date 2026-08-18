@@ -92,7 +92,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 378 项，秒级
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 396 项，秒级
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选
@@ -129,6 +129,7 @@ POST /chat[/stream]  api/chat.py（只做校验与编排调用）
        ├─ 充分            binding.number_evidence() 给证据编号 E1..En
        ├─ LLM 循环        core/llm.py（多 Key 故障转移）+ tools/registry.py 工具调用
        ├─ 出口校验        binding.verify() / StreamingGate（逐句拦截）
+       ├─ 答案附注        _answer_notes()：截断计数 / 覆盖声明 / 权重口径，代码生成不过闸门
        └─ 引用装配        orchestrator/citation.py，落轨迹进 trace 表
 ```
 
@@ -142,7 +143,7 @@ POST /chat[/stream]  api/chat.py（只做校验与编排调用）
 | --- | --- |
 | `core/` | `config.py` 双层配置（`.env` 密钥 + `config.yaml` 声明式行为，路径都相对 `REPO_ROOT`）、`db.py` 单文件 SQLite + 向量三级探测、`llm.py` 凭证池与推理模型适配 |
 | `api/` | 路由层，**只做校验与编排调用，不写业务逻辑**；`deps.py` 鉴权 |
-| `orchestrator/` | `loop.py` 主循环与轨迹、`binding.py` 出口闸门（1200+ 行，改动前先读它的模块 docstring）、`citation.py` 引用装配 |
+| `orchestrator/` | `loop.py` 主循环与轨迹（批量与流式**共用** `_prepare_turn` / `_handle_tool_call` / `_terminal_gap`，只在「怎么把文本交给用户」上不同——不要在任一侧重新写判据，`tests/unit/test_turn_parity.py` 会挡）、`binding.py` 出口闸门（1400+ 行，改动前先读它的模块 docstring）、`citation.py` 引用装配 |
 | `agents/` | `knowledge.py`：系统提示词 + `ALLOWED_TOOLS` + 缺据声明模板。提示词是第一道约束不是唯一约束 |
 | `tools/` | `registry.py` 注册与 schema 导出，`impl/` 各工具；返回值统一 `ToolResult`，`citations` 是结构化引用而非拼进正文的字符串（要参与出口校验） |
 | `retrieval/` | FTS5、别名、RRF 融合、jieba 分词、领域词表 |
@@ -224,9 +225,37 @@ POST /chat[/stream]  api/chat.py（只做校验与编排调用）
   掉前缀，本机直连时路径对不上）。静态目录必须挂在 API 路由**之后**。
 - 出口闸门判不出句子类型时**默认按事实句处理**（安全侧）。Markdown 标题、加粗标签、分隔线、
   缺据声明句已豁免；带数字的标题仍走事实句校验。
+- **不在任何证据里的边界声明由代码附注，不靠模型说、也不靠白名单豁免**
+  （`orchestrator/loop._answer_notes()`）：枚举截断的计数只在工具 `data` 里、覆盖声明是工具
+  算好的、权重口径是提示词硬性要求的——模型说这些只能无绑定地说，然后被拦，用户就丢了信息。
+  豁免则等于允许模型自己编这些数字。
+- **改提示词是全局改动，必须先量再改。** 实测：加一段 9 行的说明（告诉模型某些声明不用自己
+  复述）让引用有效率 67%→55%、拦截 91→122，只换来元说明类少 3 句，已撤销
+  （`tests/golden/BASELINE.md` 第四轮有三向对比）。它不只影响被提到的那几句，会拖垮整体
+  绑定纪律。另外**两次数字的差不能当因果**——模型有轮次波动，判因要有同条件重复运行。
 - 装备分析不给市场价格：经济源未接入，三项价值判断一律输出「数据不足」+ 缺哪项数据。
   T 级查不到就标「未匹配」并写原因，不给推测值。
 - 引用 PoB 必须用钉住 commit 的 GitHub blob URL；缺 `url` 或 `source` 的文档不得进可引用索引。
+
+## 研发规约（迭代本项目的硬性工作方式）
+
+完整版在 **`.claude/ENGINEERING.md`**（只有本文件会自动进上下文，那个不会——动手前读它）。
+七条摘要：
+
+1. **先全局 review 再动手**：读目标模块的 docstring、`BASELINE.md`、同一规则的其它实现处、
+   相关 spec 条目。「全局」的意思是**先判断改动该落在哪一层**。
+2. **顶层视野**：层次有优先序——代码生成 > 代码闸门 > 结构化工具 > 提示词，
+   越靠上越可预测。**能在上层解决的绝不放到下层。**
+3. **大胆重构、拒绝补丁**：同一概念多处各写一份判据、白名单加语义重叠的新项、
+   按用例名特判的 `if`、排序层反复加权 —— 见到就停下来重构，不要再加分支。
+   安全网是 396 项秒级单测 + `--gate` 离线重放 + 流式批量一致性，重构前后必须持平或变好。
+4. **该删就删**：不留「以后可能有用」的函数，不为自己刚写的旧行为留兼容分支；
+   约束本身是错的就删约束（`UNIQUE(name_zh)`），别绕开它。删除要证明没丢能力。
+5. **防漏改**：成对点清单在规约第 5 条。最高频的是批量 vs 流式、提示词 vs 闸门。
+6. **防埋坑**：先量后改，且**两次数字的差不能当因果**（模型有轮次波动，判因要重复运行）；
+   先确认测量本身是对的。
+7. **改完就提 PR**：单测 + `--gate` + `check_doc_facts.py` 三步收口，
+   `BASELINE.md` 记一轮（**包括被否掉的改动**），PR 写清指标前后对比。
 
 ## `.claude/` 里已经准备好的东西
 
@@ -238,8 +267,10 @@ POST /chat[/stream]  api/chat.py（只做校验与编排调用）
 - **一条 PostToolUse hook**：改到 `orchestrator/binding.py`、`orchestrator/loop.py`、
   `retrieval/hybrid.py`、`kb/coverage.py` 时提醒跑成对评测。它守的是本项目最容易忘的规矩——
   收紧规则会带来错误拒答，放宽会带来漏出，只压一头不算完成。
-- **三个 slash command**：`/check`（单测 + 自检 + spec 引用）、`/eval`（跑评测并与基线对比，
-  含「什么时候需要重录」的判据）、`/gap`（缺口台账与覆盖现状，含判读陷阱）。
+- **`.claude/ENGINEERING.md`**：研发规约完整版（上一节是摘要）。
+- **四个 slash command**：`/check`（单测 + 自检 + spec 引用）、`/eval`（跑评测并与基线对比，
+  含「什么时候需要重录」的判据）、`/gap`（缺口台账与覆盖现状，含判读陷阱）、
+  `/review`（全局 review：补丁症状、成对点漏改、死代码扫描）。
   它们的价值主要在**判读要点**那几段，不只是命令本身。
 
 ## 文档与仓库约定

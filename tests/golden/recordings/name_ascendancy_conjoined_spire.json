@@ -2,24 +2,24 @@
   "format_version": 1,
   "case_id": "name_ascendancy_conjoined_spire",
   "query": "结合尖塔",
-  "recorded_at": "2026-08-17T18:03:09+08:00",
+  "recorded_at": "2026-08-18T15:31:01+08:00",
   "model": "glm-5.2",
   "tokens": {
-    "prompt": 5905,
-    "output": 168,
-    "reasoning": 50,
-    "total": 6073
+    "prompt": 6012,
+    "output": 300,
+    "reasoning": 41,
+    "total": 6312
   },
   "tool_calls": [
-    ""
+    "kb_search"
   ],
   "evidence_gap": false,
   "gap_answer": "",
-  "blocked_claims": 1,
-  "elapsed_ms": 4215,
+  "blocked_claims": 3,
+  "elapsed_ms": 5096,
   "evidence_fingerprint": "sha256:63fcf46115484527cb41722f36fee6d8",
   "_warning": "raw_answer 是未过出口闸门的模型原文，含可能无据的断言，不得当作事实引用",
-  "raw_answer": "## 结合尖塔（Conjoined Spire）\n\n**升华核心 ｜ 天赋树 3.29**[[E1]]\n\n该核心节点具有以下效果：\n\n- 当你召唤图腾时，其他所有已召唤图腾死亡[[E1]]\n- 图腾使用的技能的效果区域按召唤图腾数量上限总增 5%[[E1]]\n- 图腾使用的技能造成的伤害按召唤图腾数量上限总增 10%[[E1]]\n- 图腾的生命按召唤图腾数量上限总增 5%[[E1]]",
+  "raw_answer": "## 结合尖塔（Conjoined Spire）\n\n**类型**：升华核心（Keystone）｜ 天赋树 3.29 [[E1]]\n\n### 效果\n\n- 当你召唤图腾时，其他所有已召唤图腾死亡 [[E1]]\n- 图腾使用的技能的效果区域按召唤图腾数量上限总增 5% [[E1]]\n- 图腾使用的技能造成的伤害按召唤图腾数量上限总增 10% [[E1]]\n- 图腾的生命按召唤图腾数量上限总增 5% [[E1]]\n\n### 简要说明\n\n结合尖塔是一个**图腾专精型**升华核心，其核心机制是**牺牲多图腾共存**来换取单个图腾的强化。每次召唤新图腾时，此前所有已存在的图腾都会死亡，因此场上始终只有一个图腾。作为补偿，图腾的伤害、效果区域和生命都会根据你的\"召唤图腾数量上限\"获得总增（more）加成——即你的图腾上限越高，单图腾的收益越大 [[E1]]。\n\n> 注意：词缀中的\"总增\"对应英文 more multiplier，是乘法加成，而非加法加成。",
   "evidence": [
     {
       "label": "E1",

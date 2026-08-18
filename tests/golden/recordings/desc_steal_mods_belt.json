@@ -2,31 +2,27 @@
   "format_version": 1,
   "case_id": "desc_steal_mods_belt",
   "query": "偷取词缀的腰带",
-  "recorded_at": "2026-08-17T18:04:27+08:00",
+  "recorded_at": "2026-08-18T15:30:56+08:00",
   "model": "glm-5.2",
   "tokens": {
-    "prompt": 37609,
-    "output": 3238,
-    "reasoning": 2433,
-    "total": 40847
+    "prompt": 41700,
+    "output": 2012,
+    "reasoning": 1375,
+    "total": 43712
   },
   "tool_calls": [
-    "",
-    "",
-    "",
-    "",
-    "",
-    "",
-    "",
-    ""
+    "kb_search",
+    "kb_search",
+    "stat_sources",
+    "mod_tiers"
   ],
   "evidence_gap": false,
   "gap_answer": "",
-  "blocked_claims": 10,
-  "elapsed_ms": 51008,
-  "evidence_fingerprint": "sha256:a3308f54aefcd4b3106d40ffef74eb08",
+  "blocked_claims": 6,
+  "elapsed_ms": 41724,
+  "evidence_fingerprint": "sha256:47dfffe03c9e917551e32ece4e0634bb",
   "_warning": "raw_answer 是未过出口闸门的模型原文，含可能无据的断言，不得当作事实引用",
-  "raw_answer": "## 结论：腰带（Belts）上未发现偷取类词缀\n\n根据结构化词缀库的直接查询，在腰带底材类别上分别搜索\"生命偷取\"\"魔力偷取\"\"LifeLeech\"\"ManaLeech\"四个关键词，**均返回无匹配结果**——即腰带上不存在偷取类词缀。\n\n以下是各渠道的完整情况：\n\n### 1. 装备词缀\n\n- **腰带本身**：[E1]–[E8] 列出的腰带词缀组中没有一条涉及偷取。直接在腰带底材上查询偷取相关关键词也无任何结果。\n- **其他底材**：偷取词缀确实存在于装备词缀池中，但出现在**手套、头部、符文手甲**等其他底材上，而非腰带[[E9]]。其中 170/353 个组合没有生成权重数据，无法计算出现概率或制作成功率[[E9]]。\n\n### 2. 唯一装备\n\n82 件含\"偷取\"词缀的唯一装备中，前 12 条均为武器类（短匕、刺刃、战爪、之斧等）[[E10]]。这些证据中**未出现腰带类唯一装备**，但 [E10] 只列出了前 12 条，共 82 条中是否含有腰带类唯一装备无法从当前证据中确认。\n\n### 3. 天赋树与升华\n\n偷取效果可通过天赋树节点（62 个）[[E11]]和升华节点（14 个）[[E12]]获得，但这些不属于腰带词缀。\n\n> **覆盖限制说明**：[E9] 的 coverage_note 指出，以下渠道也能提供偷取属性但**本知识库尚未采集**：星团珠宝天赋（https://poedb.tw/cn/Cobalt_Jewel）、技能石（https://poedb.tw/cn/Skill_Gems）、辅助宝石（https://poedb.tw/cn/Support_Gems）、万神殿（https://poedb.tw/cn/Pantheon）。以上枚举在这些维度上不完整。\n\n### 小结\n\n**腰带底材上没有偷取类词缀。** 如果你的目标是获得偷取效果，可以考虑：\n- 在**手套**上通过灭界者或异度天灾来源获取偷取词缀[[E9]]\n- 通过**天赋树**（如偷取专精、汲血者等）[[E11]]或**升华节点**（如暴徒、处刑者等）[[E12]]获取偷取\n- 使用自带偷取词缀的**唯一武器**[[E10]]\n\n如需查询手套或其他底材上偷取词缀的完整 T 级梯度，可以用具体底材类别进一步查询。",
+  "raw_answer": "## 腰带上的偷取词缀\n\n根据检索结果，**腰带（Belts）底材上不存在偷取词缀**。\n\n对腰带底材查询「偷取」的 `mod_tiers` 结果明确返回：类别「腰带」上没有匹配「偷取」的词缀。\n\n这与 [E13] 的数据一致——在含「偷取」的装备词缀渠道（共 353 个底材×来源组合）中，列出的前 12 条覆盖了手套、头部、符文手甲等底材，但没有出现腰带。这些偷取词缀主要分布在手套（灭界者来源的生命偷取、魔力偷取、各元素伤害生命偷取等）和头部（异度天灾来源的召唤生物生命偷取）等底材上[[E13]]。\n\n## 其他渠道\n\n如果你需要从其他渠道获得偷取效果，以下渠道已采集到相关数据（但**不限于腰带**）：\n\n| 渠道 | 数量 | 说明 |\n|---|---|---|\n| **唯一装备** | 82 件含偷取[[E14]] | 已列前 12 件均为武器（短匕、战爪、斧等），**未列出全部 82 件**，因此无法确认其中是否有唯一腰带提供偷取 |\n| **天赋树节点** | 62 个节点含偷取[[E15]] | 包括核心天赋「汲血者」（物理攻击伤害的 1.5% 转化为生命偷取）、偷取专精等多个大师天赋 |\n| **升华节点** | 14 个节点含偷取[[E16]] | 包括暴徒、处刑者、圣宗、卫士、召唤师、暗影大师等升华 |\n| **Atlas 天赋** | 零命中 | Atlas 天赋渠道未匹配到偷取相关属性[[E13]] |\n\n> ⚠ **覆盖说明**：E14 唯一装备渠道只列出了前 12 件，尚有 70 件未展示。如果你想确认是否存在带偷取效果的**唯一腰带**，建议告诉我具体名称，我可以用 `entity_lookup` 精确查询；或者直接到 [POEDB 腰带页面](https://poedb.tw/cn/Belts) 查看全部唯一腰带。\n\n## 结论\n\n- **腰带的普通词缀池中不包含偷取词缀**，因此无法通过常规词缀在腰带上获得生命偷取、魔力偷取或能量护盾偷取。\n- 想在腰带位置获得偷取，需依赖唯一装备（如有）、天赋树或升华节点——这些是独立的渠道，与腰带词缀池无关。",
   "evidence": [
     {
       "label": "E1",
@@ -134,6 +130,58 @@
     },
     {
       "label": "E9",
+      "chunk_id": "mod_ladder:Belts:IncreasedCriticalStrikeUnderFlaskEffect#eb454dc03e76f495",
+      "entity_id": "mod_ladder:Belts:IncreasedCriticalStrikeUnderFlaskEffect",
+      "title": "腰带 · IncreasedCriticalStrikeUnderFlaskEffect",
+      "url": "https://poedb.tw/cn/Belts#ModifiersCalc",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 腰带 · IncreasedCriticalStrikeUnderFlaskEffect\n底材类别：腰带 ｜ 词缀组：IncreasedCriticalStrikeUnderFlaskEffect ｜ 类型：其他 ｜ 来源渠道：1 个\n标签：暴击\n\n本词缀组在该底材上共 1 条，来自 1 个来源：已腐化。\n互斥规则：与本组（IncreasedCriticalStrikeUnderFlaskEffect）有相同词缀组的其他词缀不能同时存在于一件装备上。\n\n## 已腐化 · 其他 · 1 条\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/1 | V2IncreasedCriticalStrikeUnderFlaskEffectCorrupted | 药剂持续期间，暴击几率提高 (35-40)% | 1 | 1000（5.4054%） |\n\n置信度说明：\n- T 级按 POEDB 的算法推导——在同一来源类别与词缀组内，把物品等级去重后降序排名，物品等级最高者为 T1（算法已复刻并通过不变量校验）\n\n来源：POEDB → 腰带 · IncreasedCriticalStrikeUnderFlaskEffect\nhttps://poedb.tw/cn/Belts#ModifiersCalc",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E10",
+      "chunk_id": "mod_ladder:Belts:AdditionalCriticalStrikeMultiplierUnderFlaskEffect#d34c48894aa015b4",
+      "entity_id": "mod_ladder:Belts:AdditionalCriticalStrikeMultiplierUnderFlaskEffect",
+      "title": "腰带 · AdditionalCriticalStrikeMultiplierUnderFlaskEffect",
+      "url": "https://poedb.tw/cn/Belts#ModifiersCalc",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 腰带 · AdditionalCriticalStrikeMultiplierUnderFlaskEffect\n底材类别：腰带 ｜ 词缀组：AdditionalCriticalStrikeMultiplierUnderFlaskEffect ｜ 类型：其他 ｜ 来源渠道：1 个\n标签：伤害、暴击\n\n本词缀组在该底材上共 1 条，来自 1 个来源：已腐化。\n互斥规则：与本组（AdditionalCriticalStrikeMultiplierUnderFlaskEffect）有相同词缀组的其他词缀不能同时存在于一件装备上。\n\n## 已腐化 · 其他 · 1 条\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/1 | V2AdditionalCriticalStrikeMultiplierUnderFlaskEffectCorrupted | 药剂持续期间，+(20-25)% 暴击伤害加成 | 60 | 1000（5.4054%） |\n\n置信度说明：\n- T 级按 POEDB 的算法推导——在同一来源类别与词缀组内，把物品等级去重后降序排名，物品等级最高者为 T1（算法已复刻并通过不变量校验）\n\n来源：POEDB → 腰带 · AdditionalCriticalStrikeMultiplierUnderFlaskEffect\nhttps://poedb.tw/cn/Belts#ModifiersCalc",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E11",
+      "chunk_id": "mod_ladder:Belts:IncreasedAttributesCorrupted#28dd63520947235b",
+      "entity_id": "mod_ladder:Belts:IncreasedAttributesCorrupted",
+      "title": "腰带 · IncreasedAttributesCorrupted",
+      "url": "https://poedb.tw/cn/Belts#ModifiersCalc",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 腰带 · IncreasedAttributesCorrupted\n底材类别：腰带 ｜ 词缀组：IncreasedAttributesCorrupted ｜ 类型：其他 ｜ 来源渠道：1 个\n标签：属性\n\n本词缀组在该底材上共 3 条，来自 1 个来源：已腐化。\n互斥规则：与本组（IncreasedAttributesCorrupted）有相同词缀组的其他词缀不能同时存在于一件装备上。\n\n## 已腐化 · 其他 · 3 条\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/1 | V2IncreasedIntelligenceDexterityCorrupted | 敏捷提高 (4-6)% / 智慧提高 (4-6)% | 1 | 1000（5.4054%） |\n| T1/1 | V2IncreasedDexterityStrengthCorrupted | 力量提高 (4-6)% / 敏捷提高 (4-6)% | 1 | 1000（5.4054%） |\n| T1/1 | V2IncreasedStrengthIntelligenceCorrupted_ | 力量提高 (4-6)% / 智慧提高 (4-6)% | 1 | 1000（5.4054%） |\n\n置信度说明：\n- T 级按 POEDB 的算法推导——在同一来源类别与词缀组内，把物品等级去重后降序排名，物品等级最高者为 T1（算法已复刻并通过不变量校验）\n\n来源：POEDB → 腰带 · IncreasedAttributesCorrupted\nhttps://poedb.tw/cn/Belts#ModifiersCalc",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E12",
+      "chunk_id": "mod_ladder:Belts:CannotBeIgnited#f533987a9ced2f7f",
+      "entity_id": "mod_ladder:Belts:CannotBeIgnited",
+      "title": "腰带 · CannotBeIgnited",
+      "url": "https://poedb.tw/cn/Belts#ModifiersCalc",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 腰带 · CannotBeIgnited\n底材类别：腰带 ｜ 词缀组：CannotBeIgnited ｜ 类型：其他 ｜ 来源渠道：2 个\n\n本词缀组在该底材上共 2 条，来自 2 个来源：已腐化、虚空忆境。\n互斥规则：与本组（CannotBeIgnited）有相同词缀组的其他词缀不能同时存在于一件装备上。\n⚠ 同一条词缀文本在本卡的多个来源里都出现 → 仅凭装备上的数值**无法判断**它出自哪个来源，回答时必须并列各种可能。\n\n## 已腐化 · 其他 · 1 条\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/1 | V2AvoidIgniteCorrupted | 无法被点燃 | 40 | 1000（5.4054%） |\n\n## 虚空忆境 · 其他 · 1 条\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/1 | SynthesisImplicitImmuneToIgnite1 | 无法被点燃 | 56 | 无数据 |\n\n> 本来源无生成权重数据，**不能据此给出成功率或概率**。\n\n置信度说明：\n- T 级按 POEDB 的算法推导——在同一来源类别与词缀组内，把物品等级去重后降序排名，物品等级最高者为 T1（算法已复刻并通过不变量校验）\n- 部分来源没有生成权重数据，那些来源算不出概率\n\n来源：POEDB → 腰带 · CannotBeIgnited\nhttps://poedb.tw/cn/Belts#ModifiersCalc",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E13",
       "chunk_id": "stat_sources:equipment_mod:偷取",
       "entity_id": null,
       "title": "「偷取」的装备词缀渠道（353 个组合）",
@@ -146,7 +194,7 @@
       "claim_data": {}
     },
     {
-      "label": "E10",
+      "label": "E14",
       "chunk_id": "stat_sources:unique_item:偷取",
       "entity_id": null,
       "title": "「偷取」的唯一装备渠道（82 件）",
@@ -159,7 +207,7 @@
       "claim_data": {}
     },
     {
-      "label": "E11",
+      "label": "E15",
       "chunk_id": "stat_sources:passive:偷取",
       "entity_id": null,
       "title": "「偷取」的天赋树节点渠道（62 个节点）",
@@ -172,7 +220,7 @@
       "claim_data": {}
     },
     {
-      "label": "E12",
+      "label": "E16",
       "chunk_id": "stat_sources:ascendancy:偷取",
       "entity_id": null,
       "title": "「偷取」的升华节点渠道（14 个节点）",
