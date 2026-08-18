@@ -92,7 +92,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 430 项，秒级
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 439 项，秒级
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选
@@ -184,7 +184,7 @@ POST /chat[/stream]  api/chat.py（只做校验与编排调用）
 本机 `data/poe.db` 现状（`GET /healthz` 与 `/admin/stats` 可查）：`entity` 3812、
 `mod_affix` 93897、`pob_mod` 25487、`chunk` 17062、`alias` 5407、`game_constant` 499、
 `craft_bench_recipe` 783、`pob_base_item` **1022**（18 个装备类别，PoB × POEDB 逐条桥接，
-覆盖 PoB 侧 96.1%；未桥接的 41 条已按类别登记在台账）、`source_conflict` **479**（`mod_review` 254 + `unique_review` 222 + `tree_review` 3）。
+覆盖 PoB 侧 96.1%；未桥接的 41 条已按类别登记在台账）、`source_conflict` **464**（`mod_review` 254 + `unique_review` 207 + `tree_review` 3）。
 
 `craft_metamod_interaction` **134** 行（5 个小节 × 34 行操作，2 个空白格只进审计不成为
 证据）。这张表长期是 0 行，而文档一直写着「需联网跑」——**那句是错的**：pipeline 只抓
@@ -261,7 +261,7 @@ POEDB 镜像，而镜像页一直在 `data/http_cache` 里、抽取器对它跑�
    越靠上越可预测。**能在上层解决的绝不放到下层。**
 3. **大胆重构、拒绝补丁**：同一概念多处各写一份判据、白名单加语义重叠的新项、
    按用例名特判的 `if`、排序层反复加权 —— 见到就停下来重构，不要再加分支。
-   安全网是 430 项秒级单测 + `--gate` 离线重放 + 流式批量一致性，重构前后必须持平或变好。
+   安全网是 439 项秒级单测 + `--gate` 离线重放 + 流式批量一致性，重构前后必须持平或变好。
 4. **该删就删**：不留「以后可能有用」的函数，不为自己刚写的旧行为留兼容分支；
    约束本身是错的就删约束（`UNIQUE(name_zh)`），别绕开它。删除要证明没丢能力。
 5. **防漏改**：成对点清单在规约第 5 条。最高频的是批量 vs 流式、提示词 vs 闸门。

@@ -42,6 +42,7 @@ from kb.sources.poedb_mods import LINE_SEP  # noqa: E402
 from parsers.mod_bridge import (  # noqa: E402
     ladder_overlap,
     ladder_slots,
+    norm_ranges,
     parse_ranges_json,
 )
 
@@ -111,17 +112,6 @@ def load_pob(conn, group_filter: str | None) -> dict[tuple[str, str], list[dict]
         d["ranges"] = json.loads(d["ranges"] or "[]")
         out[(d["mod_kind"], d["mod_group"])].append(d)
     return out
-
-
-def norm_ranges(raw) -> tuple[tuple[float, float], ...]:
-    """区间归一为可比的元组。整数与浮点混写（40 vs 40.0）不该算冲突。"""
-    if isinstance(raw, str):
-        raw = json.loads(raw or "[]")
-    return tuple(
-        (round(float(a), 4), round(float(b), 4))
-        for a, b in (raw or [])
-        if isinstance(a, (int, float)) and isinstance(b, (int, float))
-    )
 
 
 def pob_ladder_index(pob: dict[tuple[str, str], list[dict]]) -> dict[str, dict[str, set[str]]]:

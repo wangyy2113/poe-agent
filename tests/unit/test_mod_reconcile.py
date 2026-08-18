@@ -31,7 +31,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from parsers.mod_bridge import ladder_overlap, ladder_slots, slot_key  # noqa: E402
+from parsers.mod_bridge import (  # noqa: E402
+    ladder_overlap,
+    ladder_slots,
+    norm_ranges,
+    same_magnitude,
+    slot_key,
+)
 from scripts.verify_pob_mods import (  # noqa: E402
     LADDER_MIN_OVERLAP,
     load_pob,
@@ -323,3 +329,53 @@ class AmbiguousButAgreeingTest(unittest.TestCase):
         causes = [c["cause"] for c in rep.reviews]
         self.assertIn("ladder_ambiguous", causes, "有身份下数值对不上时不能判一致")
         self.assertEqual(2, rep.agree, "前两档在两个身份下都一致，可判一致")
+
+
+class NormRangesTest(unittest.TestCase):
+    """区间归一。两处对账脚本此前**各写了一份逐字相同的实现**，现在共用一份。"""
+
+    def test_整数与浮点写法等价(self) -> None:
+        self.assertEqual(norm_ranges([[40, 50]]), norm_ranges("[[40.0, 50.0]]"))
+
+    def test_端点顺序被归一(self) -> None:
+        """区间是一组取值，端点顺序是**呈现**而不是事实。
+
+        PoB 对减益类词缀按降序存（`(50-40)% reduced ...`），POEDB 写 (40-50)。
+        不归一就会把 `Song of the Sirens` 的 [40,50] 与 [50,40] 报成数值分歧。
+        """
+        self.assertEqual(((40.0, 50.0),), norm_ranges([[50, 40]]))
+        self.assertEqual(norm_ranges([[20, 30]]), norm_ranges([[30, 20]]))
+
+    def test_非法项被丢掉而不是抛异常(self) -> None:
+        self.assertEqual(((1.0, 2.0),), norm_ranges([[1, 2], ["a", "b"], [3]]))
+
+    def test_符号不被抹掉(self) -> None:
+        """抹掉符号能让更多行「对上」，但也会把真的符号错误一起吞掉。"""
+        self.assertEqual(((-15.0, -10.0),), norm_ranges([[-10, -15]]))
+        self.assertNotEqual(norm_ranges([[-15, -10]]), norm_ranges([[10, 15]]))
+
+
+class SameMagnitudeTest(unittest.TestCase):
+    """符号约定差异的识别：量值一致、符号相反。
+
+    POEDB 把「移动速度减少 (15-10)%」记成 -15..-10，PoB 存 15..10 并靠文本里的
+    `reduced` 表达方向。实测样例：Bramblejack、Greed's Embrace、Ashrend。
+    """
+
+    def test_符号相反但量值一致(self) -> None:
+        self.assertTrue(same_magnitude(norm_ranges([[-15, -10]]), norm_ranges([[15, 10]])))
+
+    def test_多段区间逐段比(self) -> None:
+        self.assertTrue(same_magnitude(
+            norm_ranges([[-60, -30], [1, 2]]), norm_ranges([[30, 60], [2, 1]])
+        ))
+
+    def test_量值不同不算约定差异(self) -> None:
+        self.assertFalse(same_magnitude(norm_ranges([[-15, -10]]), norm_ranges([[20, 30]])))
+
+    def test_段数不同不算约定差异(self) -> None:
+        self.assertFalse(same_magnitude(norm_ranges([[-15, -10]]), norm_ranges([[15, 10], [1, 2]])))
+
+    def test_空区间不算约定差异(self) -> None:
+        """两边都没有区间时不能说「量值一致」——那是无从比对，不是比对通过。"""
+        self.assertFalse(same_magnitude((), ()))

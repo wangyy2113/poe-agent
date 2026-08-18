@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from typing import Any
 from dataclasses import dataclass, field
 
 from kb.sources.poedb_mods import loose_templatize, strict_template_regex
@@ -103,6 +104,56 @@ def ladder_overlap(a: set[str], b: set[str]) -> float:
     if not a or not b:
         return 0.0
     return len(a & b) / len(a | b)
+
+
+def norm_ranges(raw: Any) -> tuple[tuple[float, float], ...]:
+    """区间归一为可比的元组。**两处对账脚本共用这一份**。
+
+    做两件归一，各有实测依据：
+
+    **整数与浮点混写**（40 vs 40.0）不该算冲突——两源一个来自 HTML 文本、一个来自 Lua，
+    数字字面写法必然不同。
+
+    **端点排序**（(50, 40) → (40, 50)）：区间是一组取值，端点顺序是**呈现**而不是事实。
+    PoB 对「减益」类词缀按降序存（`(50-40)% reduced ...`），POEDB 写成 (40-50)。
+    不排序就会把 `Song of the Sirens` 的 [40,50] 与 [50,40]、`Plume of Pursuit` 的
+    [20,30] 与 [30,20] 报成数值分歧——那是我们自己的归一化缺口，不是两源打架。
+
+    **符号不动。** POEDB 把「减少 15%」写成 -15 而 PoB 存 +15 的量值，这是**约定差异**，
+    但把符号也抹掉就等于放弃了「一侧把加号看成减号」这类真错误的检测能力。
+    约定差异由调用方单独识别并如实归类（见 `scripts/verify_pob_uniques.py`）。
+    """
+    if isinstance(raw, str):
+        raw = json.loads(raw or "[]")
+    out: list[tuple[float, float]] = []
+    for pair in raw or []:
+        if not isinstance(pair, (list, tuple)) or len(pair) != 2:
+            continue
+        a, b = pair
+        if not isinstance(a, (int, float)) or not isinstance(b, (int, float)):
+            continue
+        lo, hi = round(float(a), 4), round(float(b), 4)
+        out.append((lo, hi) if lo <= hi else (hi, lo))
+    return tuple(out)
+
+
+def same_magnitude(
+    a: tuple[tuple[float, float], ...], b: tuple[tuple[float, float], ...]
+) -> bool:
+    """两组区间的**量值**是否逐项相同（忽略符号）。
+
+    用于识别符号约定差异：POEDB「移动速度减少 (15-10)%」记 -15..-10，
+    PoB 存 15..10 并靠文本里的 `reduced` 表达方向。量值一致即约定差异，
+    不是数值分歧——但必须**单独归类**而不是并入「一致」，否则真的符号错误也会被吞掉。
+    """
+    if len(a) != len(b) or not a:
+        return False
+    # 量值也要**排序后**比：`norm_ranges` 已把端点升序，于是 (-15, -10) 的绝对值序是
+    # (15, 10) 而 (10, 15) 的是 (10, 15)——不排序就永远判不相等（第一版就是这个 bug）。
+    return all(
+        tuple(sorted((abs(x[0]), abs(x[1])))) == tuple(sorted((abs(y[0]), abs(y[1]))))
+        for x, y in zip(a, b, strict=True)
+    )
 
 
 def parse_ranges_json(raw: str | None) -> list[tuple[float, float]]:

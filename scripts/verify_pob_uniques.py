@@ -31,6 +31,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from core import db as dbmod  # noqa: E402
 from core.config import get_config  # noqa: E402
 from core.logging_setup import setup_logging  # noqa: E402
+from parsers.mod_bridge import norm_ranges, same_magnitude  # noqa: E402
 from kb.sources.poedb_mods import LINE_SEP  # noqa: E402
 
 #: POEDB 侧不参与事实比对的词缀类型：括号说明文本不是真实词条
@@ -61,17 +62,12 @@ class Report:
     field_ok: Counter = field(default_factory=Counter)
     field_diff: Counter = field(default_factory=Counter)
     field_skipped: Counter = field(default_factory=Counter)
+    #: 符号约定差异（量值一致、符号相反）。既不是一致也不是分歧，单独一栏。
+    sign_convention: int = 0
+    #: 每个字段的跳过**方向**：`{字段: {"POEDB 缺": n, "PoB 缺": n, "两侧都缺": n}}`。
+    #: 只记总数会让人把「PoB 缺」误读成本项目的采集缺口（实测踩过）。
+    skipped_side_counts: dict[str, Counter] = field(default_factory=dict)
     diffs: list[dict] = field(default_factory=list)
-
-
-def norm_ranges(raw) -> tuple[tuple[float, float], ...]:
-    if isinstance(raw, str):
-        raw = json.loads(raw or "[]")
-    return tuple(
-        (round(float(a), 4), round(float(b), 4))
-        for a, b in (raw or [])
-        if isinstance(a, (int, float)) and isinstance(b, (int, float))
-    )
 
 
 def variable_only(fp: tuple[tuple[float, float], ...]) -> tuple[tuple[float, float], ...]:
@@ -114,6 +110,22 @@ def load_pob(conn, name_filter: str | None):  # noqa: ANN001
     return by_name
 
 
+def _note_skip(rep: Report, field_name: str, a_missing: bool, b_missing: bool) -> None:
+    """记跳过，并记**是哪一侧缺**。
+
+    只记总数就会误导：`level_req` 跳过 926 条曾被这个脚本自己解读成
+    「POEDB 侧没抓到，PoB 可回填」，而实测方向正相反（POEDB 全有、PoB 缺 926）。
+    方向决定「该不该去补」，所以必须一起记。
+    """
+    rep.field_skipped[field_name] += 1
+    side = (
+        "两侧都缺" if a_missing and b_missing
+        else "POEDB 缺" if a_missing
+        else "PoB 缺"
+    )
+    rep.skipped_side_counts.setdefault(field_name, Counter())[side] += 1
+
+
 def compare(rep: Report, poedb: dict, pob: dict) -> dict | None:
     """比对一对装备。返回差异明细，全部一致则返回 None。"""
     attrs = poedb["attrs"]
@@ -123,8 +135,8 @@ def compare(rep: Report, poedb: dict, pob: dict) -> dict | None:
     # 底材
     poedb_base = (attrs.get("base_type_en") or "").strip()
     pob_base = (pob["base_type_en"] or "").strip()
-    if not poedb_base:
-        rep.field_skipped["base_type"] += 1
+    if not poedb_base or not pob_base:
+        _note_skip(rep, "base_type", not poedb_base, not pob_base)
     elif poedb_base == pob_base:
         rep.field_ok["base_type"] += 1
     else:
@@ -136,7 +148,7 @@ def compare(rep: Report, poedb: dict, pob: dict) -> dict | None:
     poedb_lvl = req.get("level")
     pob_lvl = pob["level_req"]
     if poedb_lvl is None or pob_lvl is None:
-        rep.field_skipped["level_req"] += 1
+        _note_skip(rep, "level_req", poedb_lvl is None, pob_lvl is None)
     elif int(poedb_lvl) == int(pob_lvl):
         rep.field_ok["level_req"] += 1
     else:
@@ -171,9 +183,20 @@ def compare(rep: Report, poedb: dict, pob: dict) -> dict | None:
     pob_nonempty = [f for f in pob_fp if f]
     if not poedb_nonempty and not pob_nonempty:
         # 两边都没有带区间的词缀（如固定值装备），无从比对
-        rep.field_skipped["ranges"] += 1
+        _note_skip(rep, "ranges", not poedb_nonempty, not pob_nonempty)
     elif poedb_nonempty == pob_nonempty:
         rep.field_ok["ranges"] += 1
+    elif len(poedb_nonempty) == len(pob_nonempty) and all(
+        same_magnitude(x, y)
+        for x, y in zip(poedb_nonempty, pob_nonempty, strict=True)
+    ):
+        # **符号约定差异**，不是数值分歧：POEDB 把「移动速度减少 (15-10)%」记成 -15..-10，
+        # PoB 存 15..10 并靠文本里的 `reduced` 表达方向。量值逐项一致。
+        # 实测样例：Bramblejack [-15,-10] vs [15,10]、Ashrend [-60,-30] vs [30,60]。
+        #
+        # **单独计数、不并入 field_ok**：并进去就等于对外声称两源在这条上互相验证过，
+        # 而我们其实抹掉了符号——真的「一侧把加号看成减号」也会被一起吞掉。
+        rep.sign_convention += 1
     else:
         rep.field_diff["ranges"] += 1
         diff["ranges"] = (poedb_nonempty, pob_nonempty)
@@ -329,14 +352,27 @@ def main() -> int:
     _table(SUBSTANTIVE_FIELDS)
     print("\n  结构指标（两源建模方式不同，差异不代表数值分歧，不计入一致率）：")
     _table(INFORMATIONAL_FIELDS)
+    if rep.sign_convention:
+        print(f"\n  符号约定差异        : {rep.sign_convention}"
+              f"（量值逐项一致、符号相反，如 POEDB -15..-10 对 PoB 15..10）"
+              f"\n    ← 既不算一致也不算分歧：抹掉符号才能对上，"
+              f"而抹掉符号就会连真的符号错误一起吞掉")
 
-    # 跳过率本身就是发现：某个字段大量跳过说明有一侧根本没抓到，
-    # 那是采集缺口，比数值不一致更该先补。
-    skipped_lvl = rep.field_skipped["level_req"]
-    if rep.matched and skipped_lvl > rep.matched * 0.2:
-        print(f"\n  【采集缺口】level_req 跳过 {skipped_lvl:,}/{rep.matched:,}"
-              f"（{skipped_lvl / rep.matched:.0%}）：POEDB 侧多数唯一装备没抓到需求等级，"
-              f"\n    PoB 侧有值可回填。装备分析需要这个字段。")
+    # 跳过率本身就是发现：某个字段大量跳过说明有一侧根本没抓到。
+    # **但必须说清是哪一侧缺**，否则这行提示会把人指向错误的方向。
+    #
+    # 这里原先写的是「POEDB 侧多数唯一装备没抓到需求等级，PoB 侧有值可回填」——
+    # **方向是反的**。实测已配对 1215 件里：PoB 缺、POEDB 有 = 926（76.2%），
+    # 两侧都有 = 289，POEDB 缺 = 0。也就是说需求等级**不是采集缺口**，
+    # POEDB 侧一直是全的，装备分析要的字段本来就在库里。缺的是 PoB
+    # （它的唯一装备数据多数不带等级需求），而 P2 缺字段不影响下游。
+    if rep.skipped_side_counts:
+        print("\n  跳过是哪一侧缺（跳过 = 至少一侧无数据，方向决定该不该去补）：")
+        for fld, sides in sorted(rep.skipped_side_counts.items()):
+            parts = "，".join(f"{side} {n:,}" for side, n in sorted(sides.items()))
+            print(f"    {fld:<18} {parts}")
+        print("    ← 只有「POEDB 缺」才是本项目的采集缺口；"
+              "「PoB 缺」不影响下游，因为答案以 P1 为准")
 
     diffs = [d for d in rep.diffs if d["substantive"]]
     if args.field:
