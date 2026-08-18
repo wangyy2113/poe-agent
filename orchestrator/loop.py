@@ -598,6 +598,9 @@ _PREFERRED_TOOL_INTENTS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("mod_tiers", (
         "几档", "多少档", "有几级", "档位", "阶级", "梯度", "T级", "t级",
         "最高档", "最高级", "各档", "逐档", "生成权重", "词缀权重",
+        # 工具描述里明确列为触发问法的写法，词表漏了就等于自相矛盾
+        # （「T1 需要多少物品等级」实测不路由）。T10 含 T1 子串也仍是档位问题
+        "T1", "T2", "T3", "数值区间",
     )),
     # 「某属性能从哪来」是枚举问题：不完整的枚举被当成完整的呈现就是错误答案
     ("stat_sources", (
@@ -651,11 +654,49 @@ def _preferred_tool_route(question: str) -> str:
 #: `auto` / `required` / 指定函数名三种写法都不产生工具调用（`tools=[get_weather]` +
 #: 「随便聊两句」时 `tool_calls` 恒为 0）。所以「强制调用」在这个网关上只能靠
 #: 代码自己调，或者靠裁剪 schema 把别的选项拿掉。
-_CODE_INVOKED_TOOLS: dict[str, dict[str, Any]] = {
+def _mod_tiers_args(question: str) -> dict[str, str] | None:
+    """从问题里抽 `mod_tiers` 的参数。抽不出**唯一解**就返回 None，交回模型。
+
+    两个参数都从 `retrieval/vocab.py` 生成的领域词表里逐字取，不做同义词猜测：
+
+        底材类别   `item_class` kind 的 74 个词（含单字「弓」「爪」，
+                   正因为 jieba 会把「弓上」粘成一个词才需要这份词表）
+        词缀查询   其余领域词，剔掉前后缀标签与来源标签这类**不是词缀内容**的词
+
+    任一侧不唯一就放弃：`mod_tiers` 的返回是精确的 T 级梯度，参数猜错了得到的是
+    另一个底材类别的档位，而那种错误在答案里看不出来——宁可退回让模型自己选工具。
+    """
+    try:
+        from retrieval.vocab import scan_terms, terms_of_kind  # noqa: PLC0415
+
+        terms = scan_terms(question)
+        classes = terms_of_kind("item_class")
+        gen_labels = terms_of_kind("gen")
+        sources = terms_of_kind("mod_source")
+    except Exception as exc:  # noqa: BLE001  词表不可用就交回模型
+        logger.debug("词表不可用，mod_tiers 不走代码路由：%s", exc)
+        return None
+
+    hit_classes = [t for t in terms if t in classes]
+    if len(hit_classes) != 1:
+        return None
+    candidates = [
+        t for t in terms
+        if t not in classes and t not in gen_labels and t not in sources
+    ]
+    if len(candidates) != 1:
+        return None
+    return {"item_class": hit_classes[0], "mod_query": candidates[0]}
+
+
+#: 参数解析器。返回 None 表示抽不出唯一解 → 不代码调用，退回 schema 裁剪。
+_CODE_INVOKED_TOOLS: dict[str, Any] = {
     # 路由时已确认该名字在别名表里命中，参数就是问题本身
-    "entity_lookup": {"name": "__question__"},
+    "entity_lookup": lambda question: {"name": question},
     # 无参数
-    "kb_coverage": {},
+    "kb_coverage": lambda question: {},
+    # 参数需要从领域词表里抽，可能抽不出来
+    "mod_tiers": _mod_tiers_args,
 }
 
 #: 这些工具按设计**不产出引用**（覆盖声明是元信息不是游戏事实）。
@@ -684,10 +725,14 @@ def _invoke_preferred_tool(
     question: str, tool: str, result: TurnResult
 ) -> ToolResult | None:
     """由代码直接调用偏好工具。不可代码调用的返回 None，交回模型（schema 已裁剪）。"""
-    spec = _CODE_INVOKED_TOOLS.get(tool)
-    if spec is None:
+    resolver = _CODE_INVOKED_TOOLS.get(tool)
+    if resolver is None:
         return None
-    args = {k: (question if v == "__question__" else v) for k, v in spec.items()}
+    args = resolver(question)
+    if args is None:
+        # 参数抽不出唯一解。宁可交回模型，也不拿猜出来的参数去查精确工具
+        logger.info("偏好工具 %s 的参数无法从问题唯一确定，交回模型自选", tool)
+        return None
     tr = REGISTRY.call(tool, json.dumps(args, ensure_ascii=False))
     result.tool_calls.append(_tool_record(tool, args, tr))
     if not tr.ok:
