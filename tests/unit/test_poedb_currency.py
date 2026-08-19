@@ -20,7 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from core.db import SCHEMA  # noqa: E402
 from entities.models import Entity, SourceRef  # noqa: E402
 from entities.taxonomy import EntityType, Source  # noqa: E402
-from kb import render_currency  # noqa: E402
+from kb import render_stackable  # noqa: E402
 from kb.sources.poedb_currency import (  # noqa: E402
     CurrencyStructureError,
     count_other_class,
@@ -140,26 +140,26 @@ def _entity(**attrs) -> Entity:
 
 class CardTest(unittest.TestCase):
     def test_卡片给名字堆叠与效果(self) -> None:
-        text = render_currency.render_card(_entity())
+        text = render_stackable.render_card(_entity())
         self.assertIn("# 混沌石（Chaos Orb）", text)
         self.assertIn("堆叠上限 20", text)
         self.assertIn("效果：用新的随机属性来重铸一个稀有物品", text)
-        self.assertLessEqual(len(text), render_currency.MAX_CHUNK_CHARS)
+        self.assertLessEqual(len(text), render_stackable.MAX_CHUNK_CHARS)
 
     def test_没有效果时明写页面上没有(self) -> None:
         """留一片空白会让人以为渲染坏了。"""
-        text = render_currency.render_card(_entity(effect_zh=None))
+        text = render_stackable.render_card(_entity(effect_zh=None))
         self.assertIn("没有给这条通货的效果说明", text)
 
     def test_卡片不写价格类边界(self) -> None:
         """把「价格」写进 113 张卡片，等于给每个含「价格」的问题送覆盖率——
         技能石那轮踩过这个坑。边界属于覆盖层。"""
-        text = render_currency.render_card(_entity())
+        text = render_stackable.render_card(_entity())
         for word in ("价格", "多少钱", "未采集"):
             self.assertNotIn(word, text)
 
     def test_出卡片且分类是经济系统(self) -> None:
-        chunks = render_currency.to_chunks(_entity())
+        chunks = render_stackable.to_chunks(_entity())
         self.assertEqual(1, len(chunks))
         self.assertEqual("通货", chunks[0].metadata.subcategory)
 

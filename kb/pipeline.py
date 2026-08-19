@@ -29,7 +29,7 @@ from entities.models import Entity, ModLine, Requirement, SourceRef, ValueRange
 from entities.taxonomy import EntityType, ModKind, Source, make_entity_id
 from kb import coverage as coverage_mod
 from kb.fetcher import Fetcher
-from kb import render_currency
+from kb import render_stackable
 from kb import render_monsters
 from kb import render_tree
 from kb.render import to_chunks
@@ -38,6 +38,7 @@ from kb.sources import (
     craftofexile_metamods,
     poedb_crafting,
     poedb_currency,
+    poedb_scarab,
     poedb_index,
     poedb_mods,
     poedb_monsters,
@@ -1576,6 +1577,27 @@ def run_passive_tree(*, force: bool = False, targets: list[str] | None = None) -
     return 0
 
 
+def _reindex_entity_type(conn, entity_type: EntityType, entities: list[Entity], to_chunks) -> tuple[int, int]:  # noqa: ANN001
+    """按 entity_type 前缀清干净再重建实体、卡片与别名。返回 (卡片数, 别名数)。
+
+    通货、圣甲虫、怪物词缀、宝石四处都要做这同一串动作。抽出来一处的理由不只是省行数：
+    **顺序有讲究**——清 FTS 与别名要在删 entity 之前（按前缀清），
+    `build_vocab` 要在渲染卡片之前（索引与查询用同一份词表）。
+    各处各写一遍，迟早有一处顺序写反，而那种错不会报错、只会让检索悄悄变差。
+    """
+    prefix = f"{entity_type.value}:"
+    fts_mod.clear_index(conn, entity_prefix=prefix)
+    alias_mod.clear_aliases(conn, entity_prefix=prefix)
+    conn.execute("DELETE FROM entity WHERE entity_type=?", (entity_type.value,))
+    for entity in entities:
+        _upsert_entity(conn, entity)
+    vocab_mod.build_vocab(conn)
+    chunks = 0
+    for entity in entities:
+        chunks += fts_mod.index_chunks(conn, to_chunks(entity))
+    return chunks, alias_mod.index_aliases(conn, entities)
+
+
 #: 通货条数下限。2026-08-19 实测 113 条。
 MIN_CURRENCIES = 90
 
@@ -1673,17 +1695,9 @@ def run_poedb_currency(*, force: bool = False, allow_shrink: bool = False) -> in
                 for i in items
             ],
         )
-        prefix = f"{EntityType.CURRENCY.value}:"
-        fts_mod.clear_index(conn, entity_prefix=prefix)
-        alias_mod.clear_aliases(conn, entity_prefix=prefix)
-        conn.execute("DELETE FROM entity WHERE entity_type=?", (EntityType.CURRENCY.value,))
-        for entity in entities:
-            _upsert_entity(conn, entity)
-        vocab_mod.build_vocab(conn)
-        chunks = 0
-        for entity in entities:
-            chunks += fts_mod.index_chunks(conn, render_currency.to_chunks(entity))
-        aliases = alias_mod.index_aliases(conn, entities)
+        chunks, aliases = _reindex_entity_type(
+            conn, EntityType.CURRENCY, entities, render_stackable.to_chunks
+        )
         conn.execute("RELEASE currency_snapshot")
     except Exception:
         conn.execute("ROLLBACK TO currency_snapshot")
@@ -1716,6 +1730,156 @@ def run_poedb_currency(*, force: bool = False, allow_shrink: bool = False) -> in
                 sum(1 for i in items if not i.effect_zh),
                 sum(1 for i in items if not i.name_en), elapsed_ms)
     return 0
+
+
+#: 圣甲虫条数下限。2026-08-19 实测 118 条（MapFragment）。
+MIN_SCARABS = 90
+
+
+def _scarab_entity(item: poedb_scarab.Scarab, priority: int, fetched_at: str) -> Entity:
+    return Entity(
+        entity_id=make_entity_id(EntityType.SCARAB, item.poedb_slug),
+        entity_type=EntityType.SCARAB,
+        name_zh=item.name_zh,
+        name_en=item.name_en,
+        slug=item.poedb_slug,
+        item_class=poedb_scarab.SCARAB_ITEM_CLASS,
+        attributes={
+            "metadata_id": item.metadata_id,
+            "stack_max": item.stack_max,
+            "device_limit": item.device_limit,
+            "effect_zh": item.effect_zh,
+        },
+        ref=SourceRef(
+            source=Source.POEDB.value,
+            url=item.poedb_url,
+            priority=priority,
+            fetched_at=fetched_at,
+        ),
+        content_hash=item.content_hash,
+    )
+
+
+def run_poedb_scarab(*, force: bool = False, allow_shrink: bool = False) -> int:
+    """采集圣甲虫（POEDB `/cn/Scarab`，英文名取 `/us/` 版本）。
+
+    这一页有三个物品类，**只收 `MapFragment`**（实测 118 条）；4 条亡者之城包与
+    1 条孵化器按物品类登记进台账。页面上另有 7 张「提到圣甲虫的词缀表」，
+    粒度与来源都不同，本轮不取（判据见 `kb/sources/poedb_scarab.py`）。
+    """
+    cfg = get_config()
+    conn = dbmod.init_db(cfg.db_path, vector_dim=int(cfg.get("retrieval.vector.dim", 0) or 0))
+    fetcher = _make_fetcher(cfg)
+    started = time.time()
+    cur = conn.execute(
+        "INSERT INTO ingest_run(source, category, started_at) VALUES (?,?,datetime('now'))",
+        (Source.POEDB.value, "scarab"),
+    )
+    run_id = cur.lastrowid
+    conn.commit()
+
+    res = fetcher.fetch(poedb_scarab.POEDB_SCARAB_URL_ZH, force=force)
+    if not res.ok:
+        conn.execute(
+            "UPDATE ingest_run SET finished_at=datetime('now'), failed=1, note=? WHERE run_id=?",
+            (f"抓取失败 status={res.status_code}", run_id),
+        )
+        conn.commit()
+        return 2
+    html_en: str | None = None
+    try:
+        res_en = fetcher.fetch(poedb_scarab.POEDB_SCARAB_URL_EN, force=force)
+        html_en = res_en.text if res_en.ok else None
+    except Exception as exc:  # noqa: BLE001  英文名缺失不阻塞采集
+        logger.warning("圣甲虫英文页取不到（%s），本轮 name_en 将为空", exc)
+
+    items, skipped = poedb_scarab.extract_scarabs(res.text, html_en)
+    existing = int(conn.execute("SELECT count(*) FROM poedb_scarab").fetchone()[0])
+    if len(items) < MIN_SCARABS or (existing and len(items) < existing * 0.8):
+        if not allow_shrink:
+            conn.execute(
+                "UPDATE ingest_run SET finished_at=datetime('now'), failed=1, note=? "
+                "WHERE run_id=?",
+                (f"拒绝替换快照：{existing} -> {len(items)}（下限 {MIN_SCARABS}）", run_id),
+            )
+            conn.commit()
+            logger.error("圣甲虫数量护栏触发，已拒绝写入：%d -> %d", existing, len(items))
+            return 2
+
+    priority = int(cfg.priority_of(Source.POEDB.value))
+    entities = [_scarab_entity(i, priority, res.fetched_at) for i in items]
+    conn.execute("SAVEPOINT scarab_snapshot")
+    try:
+        conn.execute("DELETE FROM poedb_scarab")
+        conn.executemany(
+            """
+            INSERT INTO poedb_scarab(
+                metadata_id,name_zh,name_en,poedb_slug,stack_max,device_limit,effect_zh,
+                source,source_priority,url,content_hash,fetched_at,updated_at
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'))
+            """,
+            [
+                (i.metadata_id, i.name_zh, i.name_en, i.poedb_slug, i.stack_max,
+                 i.device_limit, i.effect_zh, Source.POEDB.value, priority, i.poedb_url,
+                 i.content_hash, res.fetched_at)
+                for i in items
+            ],
+        )
+        chunks, aliases = _reindex_entity_type(
+            conn, EntityType.SCARAB, entities, render_stackable.to_chunks
+        )
+        gap_rows = _record_scarab_gaps(conn, skipped)
+        conn.execute("RELEASE scarab_snapshot")
+    except Exception:
+        conn.execute("ROLLBACK TO scarab_snapshot")
+        conn.execute("RELEASE scarab_snapshot")
+        raise
+
+    elapsed_ms = int((time.time() - started) * 1000)
+    note = json.dumps(
+        {
+            "scarabs": len(items),
+            "with_effect": sum(1 for i in items if i.effect_zh),
+            "with_device_limit": sum(1 for i in items if i.device_limit is not None),
+            "missing_en": sum(1 for i in items if not i.name_en),
+            "chunks": chunks,
+            "aliases": aliases,
+            "skipped_by_item_class": dict(Counter(s.item_class for s in skipped)),
+            "gap_rows": gap_rows,
+            "note": "页面上 7 张「提到圣甲虫的词缀表」本轮不取",
+        },
+        ensure_ascii=False,
+    )
+    conn.execute(
+        "UPDATE ingest_run SET finished_at=datetime('now'), total=?, succeeded=?, failed=0, "
+        "elapsed_ms=?, note=? WHERE run_id=?",
+        (len(items), len(items), elapsed_ms, note, run_id),
+    )
+    conn.commit()
+    logger.info("圣甲虫采集完成：%d 条（卡片 %d、别名 %d），按物品类跳过 %d 条，耗时 %dms",
+                len(items), chunks, aliases, len(skipped), elapsed_ms)
+    return 0
+
+
+def _record_scarab_gaps(conn, skipped: list) -> int:  # noqa: ANN001
+    """页面上不属于圣甲虫的卡片按物品类登记。"""
+    groups: dict[str, list[str]] = {}
+    for item in skipped:
+        groups.setdefault(item.item_class, []).append(item.name)
+    for item_class, names in sorted(groups.items()):
+        point = (f"[other_item_class] 圣甲虫页上有 {len(names)} 条 {item_class} 类物品未入库："
+                 f"{'、'.join(names[:3])}{' 等' if len(names) > 3 else ''}")
+        conn.execute(
+            """
+            INSERT INTO knowledge_gap(question, missing_point, guessed_category,
+                                      kind, hit_count, first_seen, last_seen)
+            VALUES (?,?,?,?,1,datetime('now'),datetime('now'))
+            ON CONFLICT(question, missing_point) DO UPDATE SET
+                hit_count = hit_count + 1, last_seen = datetime('now')
+            """,
+            ("圣甲虫页上的其它物品类", point[:500], "not_collected/scarab", "ingest_gap"),
+        )
+    return len(groups)
 
 
 #: 怪物词缀的绝对下限。2026-08-19 实测 183 条有中文文本，留出上游删项余量。
@@ -1855,17 +2019,9 @@ def run_poedb_monsters(*, force: bool = False, allow_shrink: bool = False) -> in
         mods_written, spectres_written = _replace_monster_snapshot(
             conn, extracted, priority, fetched_at
         )
-        prefix = f"{EntityType.MONSTER_MOD.value}:"
-        fts_mod.clear_index(conn, entity_prefix=prefix)
-        alias_mod.clear_aliases(conn, entity_prefix=prefix)
-        conn.execute("DELETE FROM entity WHERE entity_type=?", (EntityType.MONSTER_MOD.value,))
-        for entity in entities:
-            _upsert_entity(conn, entity)
-        vocab_mod.build_vocab(conn)
-        chunks = 0
-        for entity in entities:
-            chunks += fts_mod.index_chunks(conn, render_monsters.to_chunks(entity))
-        aliases = alias_mod.index_aliases(conn, entities)
+        chunks, aliases = _reindex_entity_type(
+            conn, EntityType.MONSTER_MOD, entities, render_monsters.to_chunks
+        )
         gap_rows = _record_monster_gaps(conn, extracted)
         conn.execute("RELEASE monster_snapshot")
     except Exception:
@@ -2014,12 +2170,12 @@ def main(argv: list[str] | None = None) -> int:
         "--category", default="unique_item",
         choices=[
             "unique_item", "unique_l2", "mods", "bench", "metamods", "tree",
-            "monsters", "currency", "coverage", "all",
+            "monsters", "currency", "scarab", "coverage", "all",
         ],
         help="unique_item=唯一装备索引页, unique_l2=类别页补集+权威英文名+详情页兜底, "
              "mods=词缀, bench=工艺工作台目录与原始费用, "
              "metamods=Craft of Exile 元词缀交互矩阵（POEDB 镜像）, "
-             "tree=天赋树与 Atlas 天赋树, monsters=怪物词缀与幽魂倍率, currency=通货, "
+             "tree=天赋树与 Atlas 天赋树, monsters=怪物词缀与幽魂倍率, currency=通货, scarab=圣甲虫, "
              "coverage=只刷新覆盖声明, all=全部",
     )
     ap.add_argument("--harvest", action="store_true",
@@ -2080,6 +2236,8 @@ def main(argv: list[str] | None = None) -> int:
             rc |= run_poedb_currency(
                 force=args.force, allow_shrink=args.allow_currency_shrink
             )
+        if args.category in ("scarab", "all"):
+            rc |= run_poedb_scarab(force=args.force, allow_shrink=args.allow_currency_shrink)
         if args.category in ("monsters", "all"):
             rc |= run_poedb_monsters(
                 force=args.force, allow_shrink=args.allow_monster_shrink
@@ -2101,7 +2259,8 @@ def main(argv: list[str] | None = None) -> int:
         logger.error("Metamod 矩阵结构断言失败，已拒绝写入：%s", exc)
         return 2
     except poedb_currency.CurrencyStructureError as exc:
-        logger.error("通货页结构断言失败，已拒绝写入：%s", exc)
+        # 通货与圣甲虫共用 `poedb_cards.CardStructureError`，一处捕获即可
+        logger.error("卡片页结构断言失败，已拒绝写入：%s", exc)
         return 2
     except poedb_monsters.MonsterStructureError as exc:
         logger.error("怪物页结构断言失败，已拒绝写入：%s", exc)
