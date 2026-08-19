@@ -1,0 +1,132 @@
+{
+  "format_version": 1,
+  "case_id": "desc_chaos_orb_effect",
+  "query": "混沌石有什么用",
+  "recorded_at": "2026-08-19T15:28:09+08:00",
+  "model": "glm-5.2",
+  "tokens": {
+    "prompt": 8375,
+    "output": 312,
+    "reasoning": 66,
+    "total": 8687
+  },
+  "tool_calls": [
+    "kb_search"
+  ],
+  "evidence_gap": false,
+  "out_of_scope": false,
+  "precision_route": "",
+  "gap_answer": "",
+  "final_answer": "## 混沌石（Chaos Orb）\n\n混沌石的效果是：**用新的随机属性来重铸一个稀有物品**[[E1]]。\n\n〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕**补充说明：**\n\n〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕- **污秽混沌石（Tainted Chaos Orb）**：用新随机属性重铸一个**腐化**稀有物品，或者移除它的所有词缀，结果不可预料[[E2]]。\n〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕如果首要为灭界者，则重置后缀[[E8]]。\n- **混沌石碎片（Chaos Shard）**：POEDB 页面上没有给出效果说明，属于碎片类通货[[E7]]。\n\n〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕\n\n> **括号内的百分比是该档在同组内的生成权重占比**，不等于任何通货或具体工艺的一次使用成功率，也不等于期望消耗。\n\n> 检索以降级通道完成（alias, fts）：向量检索与重排未启用（网关无 embedding 模型），当前走 BM25 + 实体精确匹配",
+  "blocked_claims": 5,
+  "elapsed_ms": 8670,
+  "evidence_fingerprint": "sha256:70657f5a5b93ffab843bc7456c0e22f6",
+  "_warning": "raw_answer 是未过出口闸门的模型原文，含可能无据的断言，不得当作事实引用",
+  "raw_answer": "## 混沌石（Chaos Orb）\n\n混沌石的效果是：**用新的随机属性来重铸一个稀有物品**[[E1]]。\n\n具体来说，使用混沌石会对一个稀有（Rare）物品重新随机生成其词缀，相当于一次性重置该物品的全部前缀与后缀。\n\n**补充说明：**\n\n知识库中还收录了几种名称含「混沌石」的通货，它们的效果各有不同：\n\n- **污秽混沌石（Tainted Chaos Orb）**：用新随机属性重铸一个**腐化**稀有物品，或者移除它的所有词缀，结果不可预料[[E2]]。\n- **古灵混沌石（Eldritch Chaos Orb）**：如果首要为焚界者，则重置前缀；如果首要为灭界者，则重置后缀[[E8]]。\n- **混沌石碎片（Chaos Shard）**：POEDB 页面上没有给出效果说明，属于碎片类通货[[E7]]。\n\n> 注意：以上仅基于已检索到的证据回答。混沌石的获取途径、掉落来源与市场价格等未在本知识库中采集，无法提供。",
+  "evidence": [
+    {
+      "label": "E1",
+      "chunk_id": "currency:Chaos_Orb#0#b6670d391a2641dc",
+      "entity_id": "currency:Chaos_Orb",
+      "title": "混沌石（Chaos Orb）",
+      "url": "https://poedb.tw/cn/Chaos_Orb",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 混沌石（Chaos Orb）\n类型：通货 ｜ 堆叠上限 20\n\n- 效果：用新的随机属性来重铸一个稀有物品\n\n来源：POEDB → 通货\nhttps://poedb.tw/cn/Chaos_Orb",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E2",
+      "chunk_id": "currency:Tainted_Chaos_Orb#0#f5e522a151abfd8c",
+      "entity_id": "currency:Tainted_Chaos_Orb",
+      "title": "污秽混沌石（Tainted Chaos Orb）",
+      "url": "https://poedb.tw/cn/Tainted_Chaos_Orb",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 污秽混沌石（Tainted Chaos Orb）\n类型：通货 ｜ 堆叠上限 20\n\n- 效果：用新随机属性重铸一个腐化稀有物品，或者移除它的所有词缀，不可预料结果\n\n来源：POEDB → 通货\nhttps://poedb.tw/cn/Tainted_Chaos_Orb",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E3",
+      "chunk_id": "mod_ladder:Trinkets:HeistTrinketCurrencyTransmutationDropsAsChaos#adb427fcb77d6f80",
+      "entity_id": "mod_ladder:Trinkets:HeistTrinketCurrencyTransmutationDropsAsChaos",
+      "title": "饰品 · HeistTrinketCurrencyTransmutationDropsAsChaos",
+      "url": "https://poedb.tw/cn/Trinkets#ModifiersCalc",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 饰品 · HeistTrinketCurrencyTransmutationDropsAsChaos\n底材类别：饰品 ｜ 词缀组：HeistTrinketCurrencyTransmutationDropsAsChaos ｜ 类型：前缀 ｜ 来源渠道：1 个\n标签：掉落\n\n本词缀组在该底材上共 3 条，来自 1 个来源：Base。\n互斥规则：与本组（HeistTrinketCurrencyTransmutationDropsAsChaos）有相同词缀组的其他词缀不能同时存在于一件装备上。\n\n## Base · 前缀 · 3 档\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/3 | 幸运的 | 夺宝冒险中有 4% 的几率将掉落的蜕变石变为混沌石 | 70 | 50（1.0661%） |\n| T2/3 | 幸运的 | 夺宝冒险中有 3% 的几率将掉落的蜕变石变为混沌石 | 50 | 75（1.5991%） |\n| T3/3 | 幸运的 | 夺宝冒险中有 2% 的几率将掉落的蜕变石变为混沌石 | 1 | 100（2.1322%） |\n\n置信度说明：\n- T 级按 POEDB 的算法推导——在同一来源类别与词缀组内，把物品等级去重后降序排名，物品等级最高者为 T1（算法已复刻并通过不变量校验）\n\n来源：POEDB → 饰品 · HeistTrinketCurrencyTransmutationDropsAsChaos\nhttps://poedb.tw/cn/Trinkets#ModifiersCalc",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E4",
+      "chunk_id": "mod_ladder:Trinkets:HeistTrinketCurrencyAugmentationDropsAsChaos#025e2e7a8f2d3c98",
+      "entity_id": "mod_ladder:Trinkets:HeistTrinketCurrencyAugmentationDropsAsChaos",
+      "title": "饰品 · HeistTrinketCurrencyAugmentationDropsAsChaos",
+      "url": "https://poedb.tw/cn/Trinkets#ModifiersCalc",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 饰品 · HeistTrinketCurrencyAugmentationDropsAsChaos\n底材类别：饰品 ｜ 词缀组：HeistTrinketCurrencyAugmentationDropsAsChaos ｜ 类型：前缀 ｜ 来源渠道：1 个\n标签：掉落\n\n本词缀组在该底材上共 3 条，来自 1 个来源：Base。\n互斥规则：与本组（HeistTrinketCurrencyAugmentationDropsAsChaos）有相同词缀组的其他词缀不能同时存在于一件装备上。\n\n## Base · 前缀 · 3 档\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/3 | 幸运的 | 夺宝冒险中有 (7-8)% 的几率将掉落的增幅石变为混沌石 | 70 | 50（1.0661%） |\n| T2/3 | 幸运的 | 夺宝冒险中有 6% 的几率将掉落的增幅石变为混沌石 | 50 | 75（1.5991%） |\n| T3/3 | 幸运的 | 夺宝冒险中有 5% 的几率将掉落的增幅石变为混沌石 | 1 | 100（2.1322%） |\n\n置信度说明：\n- T 级按 POEDB 的算法推导——在同一来源类别与词缀组内，把物品等级去重后降序排名，物品等级最高者为 T1（算法已复刻并通过不变量校验）\n\n来源：POEDB → 饰品 · HeistTrinketCurrencyAugmentationDropsAsChaos\nhttps://poedb.tw/cn/Trinkets#ModifiersCalc",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E5",
+      "chunk_id": "mod_ladder:Trinkets:HeistTrinketCurrencyAlterationDropsAsChaos#71db116e62c17af9",
+      "entity_id": "mod_ladder:Trinkets:HeistTrinketCurrencyAlterationDropsAsChaos",
+      "title": "饰品 · HeistTrinketCurrencyAlterationDropsAsChaos",
+      "url": "https://poedb.tw/cn/Trinkets#ModifiersCalc",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 饰品 · HeistTrinketCurrencyAlterationDropsAsChaos\n底材类别：饰品 ｜ 词缀组：HeistTrinketCurrencyAlterationDropsAsChaos ｜ 类型：前缀 ｜ 来源渠道：1 个\n标签：掉落\n\n本词缀组在该底材上共 3 条，来自 1 个来源：Base。\n互斥规则：与本组（HeistTrinketCurrencyAlterationDropsAsChaos）有相同词缀组的其他词缀不能同时存在于一件装备上。\n\n## Base · 前缀 · 3 档\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/3 | 幸运的 | 夺宝冒险中有 (13-15)% 的几率将掉落的改造石变为混沌石 | 70 | 50（1.0661%） |\n| T2/3 | 幸运的 | 夺宝冒险中有 (9-12)% 的几率将掉落的改造石变为混沌石 | 50 | 75（1.5991%） |\n| T3/3 | 幸运的 | 夺宝冒险中有 (6-8)% 的几率将掉落的改造石变为混沌石 | 1 | 100（2.1322%） |\n\n置信度说明：\n- T 级按 POEDB 的算法推导——在同一来源类别与词缀组内，把物品等级去重后降序排名，物品等级最高者为 T1（算法已复刻并通过不变量校验）\n\n来源：POEDB → 饰品 · HeistTrinketCurrencyAlterationDropsAsChaos\nhttps://poedb.tw/cn/Trinkets#ModifiersCalc",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E6",
+      "chunk_id": "mod_ladder:Trinkets:HeistTrinketCurrencyJewellersDropAsChromatic#c07640e2a6b9fe4b",
+      "entity_id": "mod_ladder:Trinkets:HeistTrinketCurrencyJewellersDropAsChromatic",
+      "title": "饰品 · HeistTrinketCurrencyJewellersDropAsChromatic",
+      "url": "https://poedb.tw/cn/Trinkets#ModifiersCalc",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 饰品 · HeistTrinketCurrencyJewellersDropAsChromatic\n底材类别：饰品 ｜ 词缀组：HeistTrinketCurrencyJewellersDropAsChromatic ｜ 类型：前缀 ｜ 来源渠道：1 个\n标签：掉落\n\n本词缀组在该底材上共 3 条，来自 1 个来源：Base。\n互斥规则：与本组（HeistTrinketCurrencyJewellersDropAsChromatic）有相同词缀组的其他词缀不能同时存在于一件装备上。\n\n## Base · 前缀 · 3 档\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/3 | 幸运的 | 在夺宝奇兵中，工匠石有 (7-8)% 的几率改为掉落为幻色石 | 70 | 50（1.0661%） |\n| T2/3 | 幸运的 | 在夺宝奇兵中，工匠石有 6% 的几率改为掉落为幻色石 | 50 | 75（1.5991%） |\n| T3/3 | 幸运的 | 在夺宝奇兵中，工匠石有 5% 的几率改为掉落为幻色石 | 1 | 100（2.1322%） |\n\n置信度说明：\n- T 级按 POEDB 的算法推导——在同一来源类别与词缀组内，把物品等级去重后降序排名，物品等级最高者为 T1（算法已复刻并通过不变量校验）\n\n来源：POEDB → 饰品 · HeistTrinketCurrencyJewellersDropAsChromatic\nhttps://poedb.tw/cn/Trinkets#ModifiersCalc",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E7",
+      "chunk_id": "currency:Chaos_Shard#0#24939089909616a2",
+      "entity_id": "currency:Chaos_Shard",
+      "title": "混沌石碎片（Chaos Shard）",
+      "url": "https://poedb.tw/cn/Chaos_Shard",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 混沌石碎片（Chaos Shard）\n类型：通货 ｜ 堆叠上限 20\n\n- POEDB 页面上没有给这条通货的效果说明（碎片与命能类多为此形态）\n\n来源：POEDB → 通货\nhttps://poedb.tw/cn/Chaos_Shard",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E8",
+      "chunk_id": "currency:Eldritch_Chaos_Orb#0#284be4dd38220e2c",
+      "entity_id": "currency:Eldritch_Chaos_Orb",
+      "title": "古灵混沌石（Eldritch Chaos Orb）",
+      "url": "https://poedb.tw/cn/Eldritch_Chaos_Orb",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 古灵混沌石（Eldritch Chaos Orb）\n类型：通货 ｜ 堆叠上限 20\n\n- 效果：如果首要为焚界者，则重置前缀 如果首要为灭界者，则重置后缀\n\n来源：POEDB → 通货\nhttps://poedb.tw/cn/Eldritch_Chaos_Orb",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    }
+  ]
+}

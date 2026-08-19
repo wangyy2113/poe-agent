@@ -113,8 +113,18 @@ class CaseOutcome:
 
     @property
     def is_leakage(self) -> bool:
-        """负类被判为依据充分 —— 无据漏出的上游。"""
-        return self.case.expect_gap and self.sufficient
+        """负类被判为依据充分 —— 无据漏出的上游。
+
+        路由豁免的不计入，但**单独报一行**（见 `print_report`）：这类问题线上不看
+        `sufficient`，对错由工具自己的缺据声明决定（「来源该格为空」），
+        由 `--gate` 的录制回放验收。既不能算进头条指标（那会让 0% 这个目标失去意义），
+        也不能不说——藏起来就是给自己开一条免检通道。
+        """
+        return self.case.expect_gap and self.sufficient and not self.route_exempt
+
+    @property
+    def is_leakage_route_exempt(self) -> bool:
+        return self.case.expect_gap and self.sufficient and self.route_exempt
 
     @property
     def recall_ok(self) -> bool | None:
@@ -170,8 +180,15 @@ def run_case(conn, case: Case, params: dict) -> CaseOutcome:
         if verdict.is_gap:
             sufficient, reason, gated = False, verdict.reason(), True
 
-    # 与线上同序：精确路由优先，其次偏好工具（见 `loop._prepare_turn`）
-    preferred = "" if _precision_tool_route(case.query) else _preferred_tool_route(case.query)
+    # 与线上同序：精确路由优先，其次偏好工具（见 `loop._prepare_turn`）。
+    # **两者都算路由豁免**：线上这两类问题都不看 `sufficient`——精确路由的对错由工具
+    # 自己的缺据字段决定（「来源该格为空」），偏好工具的证据本来就不在 chunk 里。
+    #
+    # 实测撞到：`gap_metamod_blank_cell` 先前在评测里靠「检索不足」偶然通过，
+    # 通货入库后 113 条卡片让它命中了别名（「异能混沌石」含「混沌石」），
+    # 于是显示成漏出——而线上一直是工具在拦。判据错在评测这一侧。
+    precision = _precision_tool_route(case.query)
+    preferred = precision or _preferred_tool_route(case.query)
 
     rank: int | None = None
     if case.expect_slug:
@@ -218,6 +235,7 @@ def summarize(outcomes: list[CaseOutcome]) -> dict:
 
     wrong_refusals = [o for o in positives if o.is_wrong_refusal]
     leakages = [o for o in negatives if o.is_leakage]
+    leak_exempt = [o for o in negatives if o.is_leakage_route_exempt]
     ev_ok = sum(1 for o in with_evidence if o.evidence_recalled)
 
     return {
@@ -244,6 +262,10 @@ def summarize(outcomes: list[CaseOutcome]) -> dict:
                 "leakage": len(leakages),
                 "leakage_rate": (len(leakages) / len(negatives) if negatives else None),
                 "failed_ids": [o.case.id for o in leakages],
+                # 路由豁免的负类：不计入上面的比率，由 --gate 验收
+                "route_exempt": [
+                    {"id": o.case.id, "tool": o.preferred_tool} for o in leak_exempt
+                ],
             },
         },
         "evidence_recall": {
@@ -316,6 +338,9 @@ def print_report(outcomes: list[CaseOutcome], summary: dict, *, verbose: bool) -
           f"({pos['wrong_refusal']}/{pos['total']} 正类被判依据不足)")
     print(f"  无据漏出率（上游）   {_pct(neg['leakage_rate'])}  "
           f"({neg['leakage']}/{neg['total']} 负类被判依据充分)  目标 0")
+    for item in neg.get("route_exempt", []):
+        print(f"    ├ 路由豁免不计入：{item['id']}（由 {item['tool']} 自报缺据，"
+              f"对错看 --gate 的录制回放）")
     ev = s["evidence_recall"]
     print(f"  证据召回率           {_pct(ev['rate'])}  ({ev['hit']}/{ev['total']})")
     c = s["cases"]

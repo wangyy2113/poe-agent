@@ -301,6 +301,40 @@ cases:
       这条同时钉两件事：能力可达（没路由就是一个死了的能力），
       以及评测必须模拟线上的豁免规则——否则线上答得出来的问题会显示成错误拒答。
 
+  # ── 通货（2026-08-19 第十六轮入库）──────────────────────────────
+  - id: desc_chaos_orb_effect
+    query: 混沌石有什么用
+    kind: description
+    expect_slug: Chaos_Orb
+    expect_evidence_text: "用新的随机属性来重铸一个稀有物品"
+    note: >-
+      通货效果原文。那一页 `<table>` 计数为 0，先前读起来像抽不出内容——实测是卡片布局
+    lesson: >-
+      「0 张表」不等于「抽不出来」。结构判断要去看 DOM，不要看表格计数——
+      这是同一类错误的第六次（「需联网」「缺人工核对」「已排除整列」「方向正相反」
+      「技能石有阻塞」都属于这一类）。
+
+  - id: num_chaos_orb_stack
+    query: 混沌石的堆叠上限是多少
+    kind: numeric
+    expect_slug: Chaos_Orb
+    expect_values: ["20"]
+    note: 页面写「堆叠数量 1 / 20」，只取上限——前一个数是展示用的当前数量
+
+  - id: gap_currency_drop_source
+    query: 混沌石怎么获得
+    kind: gap
+    expect_gap: true
+    note: 获取途径与掉落来源未采集（那一页只有名称、堆叠与效果）
+
+  - id: gap_currency_shard_recipe
+    query: 几个混沌石碎片能合成一个混沌石
+    kind: gap
+    expect_gap: true
+    note: >-
+      碎片合成数量未采集。碎片类那 15 条在页面上连效果文本都没有——
+      留空而不是自己补一句「用于合成」
+
   - id: num_max_resistance_cap
     query: 抗性上限是多少
     kind: numeric

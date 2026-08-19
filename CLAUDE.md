@@ -81,7 +81,8 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 
 # 采集（POEDB）
 .venv/bin/python -m kb.pipeline --category all
-#   category: unique_item | unique_l2 | mods | bench | metamods | tree | monsters | coverage | all
+#   category: unique_item | unique_l2 | mods | bench | metamods | tree | monsters
+#             | currency | coverage | all
 #   --harvest 只抓缓存不抽取 / --force 忽略缓存 / --rebuild 清空重建
 #   --allow-bench-shrink、--allow-metamod-shrink、--allow-monster-shrink
 #   只在人工核对上游确实删项后使用
@@ -100,7 +101,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 587 项，秒级
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 606 项，秒级
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选
@@ -117,7 +118,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 .venv/bin/python scripts/eval_run.py --record        # 重录真实响应（**要凭证、烧 token**）
 ```
 
-黄金问答集是 `tests/golden/questions.yaml`（71 条，六类），基线与全部结论在
+黄金问答集是 `tests/golden/questions.yaml`（75 条，六类），基线与全部结论在
 `tests/golden/BASELINE.md`——**动闸门前先读它**，里面记了四个已修缺陷、两个已知未修边界，
 以及两次「测量本身写错」的教训。
 
@@ -195,8 +196,8 @@ POST /chat[/stream]  api/chat.py（只做校验与编排调用）
   游戏里的显示值，算错就是「带着引用的错数字」——比查不到更糟。也**不留空列**：留了下一个人
   会以为它待填，然后把乘数当伤害写进去。这两维明确划进 `partial_note` 的未采集部分。
 
-本机 `data/poe.db` 现状（`GET /healthz` 与 `/admin/stats` 可查）：`entity` 4807、
-`mod_affix` 93897、`pob_mod` 25487、`chunk` 18057、`alias` 7485、`game_constant` 499、
+本机 `data/poe.db` 现状（`GET /healthz` 与 `/admin/stats` 可查）：`entity` 4920、
+`mod_affix` 93897、`pob_mod` 25487、`chunk` 18170、`alias` 7711、`game_constant` 499、
 `craft_bench_recipe` 783、`pob_base_item` **1022**（18 个装备类别，PoB × POEDB 逐条桥接，
 覆盖 PoB 侧 96.1%；未桥接的 41 条已按类别登记在台账）、`source_conflict` **515**（`mod_review` 254 + `unique_review` 207 + `spectre_review` 43
 + `spectre` **8** + `tree_review` 3）。
@@ -207,6 +208,13 @@ POST /chat[/stream]  api/chat.py（只做校验与编排调用）
 （`pob_missing` 51 = POEDB 保留的历史/未上线条目，`no_zh_name` 11 = 取不到中文名）。
 **这两张表刻意没有伤害列，也没有属性需求列**——理由见 `core/db.py` 的表注释，
 那是本轮最重要的一条边界。
+
+`poedb_currency` **113** 条通货（中英文名、堆叠上限、效果原文；其中 **15** 条在 POEDB 上
+没有效果文本——碎片与命能类，留空而不是自己补一句）。那一页 `<table>` 计数为 **0**，
+先前「已抓取未入库」读起来像是抽不出内容——**实测它是卡片布局**，内容在
+`a.item_currency` / `div.property` / `div.explicitMod` 三个 class 里。
+**结构判断要去看 DOM，不要看表格计数**（这是同一类错误的第六次）。
+工艺台费用引用的 18 个通货按中文名与 slug **都 100% 命中**这张表。
 
 `passive_graph_node` **3390** 个天赋树节点（其中可经过 **2478**）+ `passive_graph_edge`
 **3382** 条无向连线 + `passive_tree_meta`（`totalPoints` 123、`ascendancyPoints` 8）。
