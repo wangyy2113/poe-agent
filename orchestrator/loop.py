@@ -259,6 +259,12 @@ def _apply_dimension_gate(
 #: 三个工具都给），所以走与截断计数、覆盖声明同一条路：代码取值、附在闸门之后。
 _NOTE_FIELDS: tuple[str, ...] = (
     "coverage_note", "channels_no_match_note", "boundary",
+    # 跨来源确认冲突的并列对照（需求 15.5）。由 `citation.conflict_block` 渲染好放进
+    # 工具的 `data`，代码逐字附上——**不能让模型转述**：那几个数字来自两个来源，
+    # 模型说出来只能无绑定地说，然后被出口闸门拦掉。
+    # 在 2026-08-19 之前这条路是不可达的：`kind='mod'` 的已确认冲突一直是 0 条，
+    # 直到幽魂对账给出 8 条（`kind='spectre'`）。
+    "conflict_block",
 )
 
 #: 权重占比的写法：`1500（1.888%）`。出现即说明证据里带组内占比。

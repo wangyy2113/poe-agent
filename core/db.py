@@ -484,6 +484,55 @@ CREATE TABLE IF NOT EXISTS poedb_spectre (
 CREATE INDEX IF NOT EXISTS idx_spectre_name ON poedb_spectre(name_zh);
 CREATE INDEX IF NOT EXISTS idx_spectre_life ON poedb_spectre(life_pct DESC);
 
+-- ── PoB 幽魂建模数据（P2）──
+-- `poedb_spectre`（P1）给的是**清单与倍率**：1948 个可作幽魂的怪物、伤害% / 生命%。
+-- PoB `Data/Spectres.lua` 只建模了 **268** 个（玩家实际会用的那些），但多给了
+-- 四抗性、护甲/闪避/能量护盾系数、攻击间隔与技能 id ——那几维 POEDB 那页没有。
+--
+-- 两侧**各自独立保存**（与 mod_affix / pob_mod 同一个理由）：粒度不同，
+-- 且交叉校验要求两份原值都在。实测两侧的生命/伤害是同一个量的不同单位
+-- （POEDB 120 ↔ PoB 1.2，逐条相等的占 91% / 94.8%），差异分两类落 source_conflict：
+--   kind='spectre'         两侧都只有一条却对不上 → **真分歧**（实测 8 条）
+--   kind='spectre_review'  POEDB 有多个同名种类而 PoB 只建模一个 → 粒度差异（43 条）
+-- 混成一类就会把「谁记错了」和「谁记得更细」当成同一件事——词缀对账上踩过。
+CREATE TABLE IF NOT EXISTS pob_spectre (
+    metadata_id     TEXT PRIMARY KEY,  -- Metadata/Monsters/Axis/AxisCaster
+    name_en         TEXT NOT NULL CHECK(name_en <> ''),
+    -- 系数，1.0 = 该等级的基础值。PoB 用小数、POEDB 用百分数
+    life_mult       REAL NOT NULL,
+    damage_mult     REAL NOT NULL,
+    -- 129 / 127 / 95 条才有护甲 / 闪避 / 能量护盾。NULL 是「PoB 没给」，
+    -- **不要补 0**：那会把「没建模」说成「这个怪物没有护甲」
+    armour_mult     REAL,
+    evasion_mult    REAL,
+    es_mult         REAL,
+    -- 四抗性，百分数原值（0 / 75 ...）。这一维只有 PoB 有
+    fire_resist     INTEGER NOT NULL,
+    cold_resist     INTEGER NOT NULL,
+    lightning_resist INTEGER NOT NULL,
+    chaos_resist    INTEGER NOT NULL,
+    attack_time     REAL,
+    attack_range    REAL,
+    accuracy        REAL,
+    damage_spread   REAL,
+    -- 怪物技能 id（`MonsterLightningThorns` 这类）。**只存不呈现**：
+    -- 实测 1235 个 id 与本库 810 颗宝石的 grantedEffectId **零命中**——
+    -- 它们是怪物内部技能，不是玩家宝石，没有中文名可给。
+    skill_ids       TEXT NOT NULL CHECK(json_valid(skill_ids)),
+    monster_tags    TEXT NOT NULL CHECK(json_valid(monster_tags)),
+    source_file     TEXT NOT NULL CHECK(source_file LIKE 'Data/%'),
+    source          TEXT NOT NULL,
+    source_priority INTEGER NOT NULL,
+    pob_url         TEXT NOT NULL CHECK(pob_url <> ''),
+    source_commit   TEXT NOT NULL CHECK(length(source_commit) = 40),
+    pob_version     TEXT,
+    game_version    TEXT,
+    content_hash    TEXT NOT NULL CHECK(content_hash <> ''),
+    updated_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_pobspectre_name ON pob_spectre(name_en);
+CREATE INDEX IF NOT EXISTS idx_pobspectre_life ON pob_spectre(life_mult DESC);
+
 -- ── 跨来源冲突台账 ──
 -- 需求 15.5/15.6：冲突时并列展示双方并推荐 POEDB，不得自行判定谁对而隐藏一方。
 -- 因此冲突必须**落库**，不能只在导入日志里一闪而过。

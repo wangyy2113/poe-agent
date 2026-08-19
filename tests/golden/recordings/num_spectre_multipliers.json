@@ -2,35 +2,38 @@
   "format_version": 1,
   "case_id": "num_spectre_multipliers",
   "query": "不朽精锐的幽魂倍率是多少",
-  "recorded_at": "2026-08-19T11:44:04+08:00",
+  "recorded_at": "2026-08-19T14:27:14+08:00",
   "model": "glm-5.2",
   "tokens": {
-    "prompt": 9934,
-    "output": 354,
-    "reasoning": 149,
-    "total": 10288
+    "prompt": 10245,
+    "output": 333,
+    "reasoning": 87,
+    "total": 10578
   },
   "tool_calls": [
     "kb_search",
     "spectre_stats"
   ],
   "evidence_gap": false,
+  "out_of_scope": false,
+  "precision_route": "",
   "gap_answer": "",
+  "final_answer": "「不朽精锐」（英文标识 Abhorred_Elitist）在本库中命中 2 条记录，其幽魂倍率如下[[E1]]：\n\n| 中文名 | 英文标识 | 伤害%（POEDB） | 生命%（POEDB） | PoB 建模 |\n| --- | --- | --- | --- | --- |\n| 不朽精锐 | Abhorred_Elitist | 150% | 120% | 无 |\n| 不朽精锐 | Abhorred_Elitist | 125% | 110% | 无 |\n\n- 第一条：伤害倍率 150%、生命倍率 120%[[E1]]。\n- 第二条：伤害倍率 125%、生命倍率 110%[[E1]]。\n\n两条均无 PoB 建模（四抗性、护甲/闪避/能量护盾系数与攻击间隔不可查）[[E1]]。〔此处原有一条无据断言，已被拦截：含模糊限定语「可能是」。需求 1.5/15.1 禁止用它把推断包装成模糊表述〕\n\n> 倍率与抗性按来源原值给出；不提供掉落、怪物技能的中文说明\n\n> 检索以降级通道完成（fts）：向量检索与重排未启用（网关无 embedding 模型），当前走 BM25 + 实体精确匹配",
   "blocked_claims": 1,
-  "elapsed_ms": 7902,
-  "evidence_fingerprint": "sha256:489db90bc1c3a509749e60b79049b58e",
+  "elapsed_ms": 9878,
+  "evidence_fingerprint": "sha256:e3021e8ca0a26085d1d0dd3f7c8f73a5",
   "_warning": "raw_answer 是未过出口闸门的模型原文，含可能无据的断言，不得当作事实引用",
-  "raw_answer": "「不朽精锐」（英文标识 Abhorred_Elitist）在本库中命中 2 条记录，幽魂倍率如下[[E1]]：\n\n| 中文名 | 英文标识 | 伤害% | 生命% |\n| --- | --- | --- | --- |\n| 不朽精锐 | Abhorred_Elitist | 150% | 120% |\n| 不朽精锐 | Abhorred_Elitist | 125% | 110% |\n\n倍率以 100% 为基础值[[E1]]。存在两条记录的原因可能是不同版本或不同数据条目，本库无法判断哪条对应当前版本。\n\n**覆盖说明：** 本库只提供页面上的伤害% 与生命%，不提供抗性、技能、掉落信息，也不支持倍率排名（本库尚未区分开发用怪物与实际可用幽魂）[[E1]]。",
+  "raw_answer": "「不朽精锐」（英文标识 Abhorred_Elitist）在本库中命中 2 条记录，其幽魂倍率如下[[E1]]：\n\n| 中文名 | 英文标识 | 伤害%（POEDB） | 生命%（POEDB） | PoB 建模 |\n| --- | --- | --- | --- | --- |\n| 不朽精锐 | Abhorred_Elitist | 150% | 120% | 无 |\n| 不朽精锐 | Abhorred_Elitist | 125% | 110% | 无 |\n\n- 第一条：伤害倍率 150%、生命倍率 120%[[E1]]。\n- 第二条：伤害倍率 125%、生命倍率 110%[[E1]]。\n\n两条均无 PoB 建模（四抗性、护甲/闪避/能量护盾系数与攻击间隔不可查）[[E1]]。存在两条不同倍率的原因可能是该怪物有不同变体，本库未采集区分逻辑，无法进一步判断哪一条适用于哪种场景。",
   "evidence": [
     {
       "label": "E1",
       "chunk_id": "spectre_stats:v:53074",
       "entity_id": null,
-      "title": "不朽精锐（幽魂倍率）",
+      "title": "不朽精锐（幽魂数据）",
       "url": "https://poedb.tw/cn/Abhorred_Elitist",
       "source": "POEDB",
       "source_priority": 1,
-      "text": "### 不朽精锐（可作幽魂的怪物）\n\n本库共收录 1948 个可作幽魂的怪物；「不朽精锐」命中 2 条。\n\n| 中文名 | 英文标识 | 伤害% | 生命% |\n| --- | --- | --- | --- |\n| 不朽精锐 | Abhorred_Elitist | 150% | 120% |\n| 不朽精锐 | Abhorred_Elitist | 125% | 110% |\n\n倍率以 100% 为基础值。只给页面上的伤害% / 生命%；不提供抗性、技能、掉落，也不做倍率排名（本库尚未区分开发用怪物与实际可用幽魂）。\n\n来源：POEDB https://poedb.tw/cn/Abhorred_Elitist",
+      "text": "### 不朽精锐（可作幽魂的怪物）\n\n本库共收录 1948 个可作幽魂的怪物（其中 268 个有 PoB 的抗性与建模系数）；「不朽精锐」命中 2 条。\n\n| 中文名 | 英文标识 | 伤害%（POEDB） | 生命%（POEDB） | PoB 系数 | 四抗性（PoB） |\n| --- | --- | --- | --- | --- | --- |\n| 不朽精锐 | Abhorred_Elitist | 150% | 120% | — | PoB 未建模 |\n| 不朽精锐 | Abhorred_Elitist | 125% | 110% | — | PoB 未建模 |\n\n倍率以 100%（PoB 侧写作 1.0×）为基础值。倍率与抗性按来源原值给出；不提供掉落、怪物技能的中文说明。\n\n来源：POEDB https://poedb.tw/cn/Abhorred_Elitist",
       "can_support_facts": true,
       "claim_scope": "general",
       "claim_data": {}

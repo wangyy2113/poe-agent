@@ -370,8 +370,17 @@ class GateOutcome:
 
     @property
     def answer_text(self) -> str:
+        """答案内容类契约（`expect_in_answer` / `expect_values`）判的文本。
+
+        取**用户实际看到的那一版**：过闸门之后再由代码附上边界声明与冲突并列。
+        `binding.text` 不含那些附注，按它判会让「附注有没有到达用户」永远测不到
+        （实测 `cross_spectre_conflict` 的两个来源名就在冲突块里）。
+        旧录制没有这个字段时退回 `binding.text`，不让缺字段变成静默失败。
+        """
         if self.rec.evidence_gap:
             return self.rec.gap_answer
+        if self.rec.final_answer:
+            return self.rec.final_answer
         return self.binding.text if self.binding else ""
 
     @property
@@ -399,6 +408,7 @@ def record_case(case: Case) -> Recording:
         out_of_scope=bool(r.retrieval_meta.get("out_of_scope")),
         precision_route=str(r.retrieval_meta.get("precision_route") or ""),
         gap_answer=r.answer if r.evidence_gap else "",
+        final_answer=r.answer,
         model=r.model,
         tokens=dict(r.tokens),
         # 键是 `tool` 不是 `name`（见 `orchestrator.loop._tool_record`）。

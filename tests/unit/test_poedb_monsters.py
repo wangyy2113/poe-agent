@@ -232,6 +232,36 @@ def _tool_conn(rows: int = 3) -> sqlite3.Connection:
         [(f"v:{i}", "恶魔" if i else "不朽精锐", "Daemon" if i else "Abhorred_Elitist",
           100 + i, 100 + i, f"h{i}") for i in range(rows)],
     )
+    # PoB 侧只建模一部分（这里只给「不朽精锐」），用来验证「PoB 未建模」的措辞
+    conn.execute(
+        "INSERT INTO pob_spectre(metadata_id,name_en,life_mult,damage_mult,armour_mult,"
+        "evasion_mult,es_mult,fire_resist,cold_resist,lightning_resist,chaos_resist,"
+        "attack_time,attack_range,accuracy,damage_spread,skill_ids,monster_tags,source_file,"
+        "source,source_priority,pob_url,source_commit,pob_version,game_version,content_hash,"
+        "updated_at) VALUES ('Metadata/Monsters/A','Abhorred Elitist',1.2,1.5,0.25,NULL,0.2,"
+        "0,0,40,0,1.5,10,1,0.2,'[\"MonsterSpark\"]','[\"caster\"]','Data/Spectres.lua',"
+        "'Path of Building',2,'https://github.com/x/blob/abc/src/Data/Spectres.lua',?,"
+        "'PoB 2.66.2','3.29','hash',datetime('now'))",
+        ("a" * 40,),
+    )
+    conn.commit()
+    return conn
+
+
+def _with_conflict(conn: sqlite3.Connection) -> sqlite3.Connection:
+    conn.execute(
+        "INSERT INTO source_conflict(subject,field,kind,source_a,value_a,source_b,value_b,"
+        "cause,first_seen,last_seen) VALUES "
+        "('spectre=Abhorred Elitist','life_damage_mult','spectre','POEDB','生命 100%',"
+        "'Path of Building','生命 1.2×','value_mismatch',datetime('now'),datetime('now'))"
+    )
+    # 粒度差异不得当作冲突呈现（与 mod_review 同一个约定）
+    conn.execute(
+        "INSERT INTO source_conflict(subject,field,kind,source_a,value_a,source_b,value_b,"
+        "cause,first_seen,last_seen) VALUES "
+        "('spectre=Daemon','life_damage_mult','spectre_review','POEDB','生命 200%',"
+        "'Path of Building','生命 1.0×','granularity',datetime('now'),datetime('now'))"
+    )
     conn.commit()
     return conn
 
@@ -265,9 +295,13 @@ class SpectreToolTest(unittest.TestCase):
         self.assertIn("也可能是名字写法", result.data["hint"])
         self.assertEqual([], result.citations)
 
-    def test_返回里带边界声明且不承诺排名(self) -> None:
+    def test_返回里带边界声明(self) -> None:
+        """边界随数据移动：上一轮这里断言的是「不做倍率排名」，
+        第十四轮接入 PoB 的 268 条确认清单后排名可做了，剩下的两维是掉落与技能说明。
+        断言跟着数据改，而不是留着一句已经不成立的边界。
+        """
         for result in (spectre_stats("不朽精锐"), spectre_stats("不存在的怪物")):
-            self.assertIn("不做倍率排名", result.data["boundary"])
+            self.assertIn("不提供掉落", result.data["boundary"])
 
     def test_边界声明走既有的附注机制(self) -> None:
         from orchestrator.loop import _NOTE_FIELDS
@@ -312,3 +346,54 @@ class ExtractTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SpectrePoBTest(unittest.TestCase):
+    """PoB 侧接进来之后的三件事：抗性、排名、冲突并列（2026-08-19 第十四轮）。"""
+
+    def setUp(self) -> None:
+        self.conn = _with_conflict(_tool_conn(rows=4))
+        self.patch = patch("tools.impl.monsters.dbmod.get_conn", return_value=self.conn)
+        self.patch.start()
+
+    def tearDown(self) -> None:
+        self.patch.stop()
+        self.conn.close()
+
+    def test_抗性来自PoB且未建模的说清楚(self) -> None:
+        """PoB 只建模 268 个。未建模的写「PoB 未建模」，**不能补 0**——
+        那会把「没建模」说成「这个怪物没有抗性」。"""
+        text = spectre_stats("不朽精锐").citations[0]["text"]
+        self.assertIn("火 0% / 冰 0% / 电 40% / 混 0%", text)
+        self.assertIn("PoB 未建模", spectre_stats("恶魔").citations[0]["text"])
+
+    def test_排名限定在PoB建模的范围内并写明依据(self) -> None:
+        result = spectre_stats(rank_by="life", top=3)
+        self.assertTrue(result.data["found"])
+        self.assertEqual(1, result.data["ranked_within"])
+        text = result.citations[0]["text"]
+        self.assertIn("排名依据是 PoB 建模的", text)
+        self.assertIn("测试之灵", text)  # 说清为什么不拿 POEDB 全量排
+
+    def test_真分歧并列展示而粒度差异不展示(self) -> None:
+        """需求 15.5：确认冲突并列双方、不自行判定谁对；
+        `spectre_review`（POEDB 记得更细）不得当作冲突呈现。"""
+        with_conflict = spectre_stats("不朽精锐")
+        self.assertIn("conflict_block", with_conflict.data)
+        block = with_conflict.data["conflict_block"]
+        self.assertIn("POEDB", block)
+        self.assertIn("Path of Building", block)
+        self.assertIn("未自行判定", block)
+        self.assertNotIn("conflict_block", spectre_stats("恶魔").data)
+
+    def test_冲突块走既有的附注机制(self) -> None:
+        """让模型转述这几个数字只能无绑定地说，然后被出口闸门拦掉。"""
+        from orchestrator.loop import _NOTE_FIELDS
+
+        self.assertIn("conflict_block", _NOTE_FIELDS)
+
+    def test_排名参数非法直接失败(self) -> None:
+        self.assertFalse(spectre_stats(rank_by="strength").ok)
+
+    def test_两个参数都不给直接失败(self) -> None:
+        self.assertFalse(spectre_stats().ok)
