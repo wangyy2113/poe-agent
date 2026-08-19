@@ -286,21 +286,29 @@ class ModuleMiscExtractTest(unittest.TestCase):
         target.write_text(body, encoding="utf-8")
         return root
 
+    def _full_table(self, extra: str = "") -> Path:
+        """把**当前白名单的每一项**都写进 Lua，行号从第 3 行开始。
+
+        用白名单生成而不是写死两项：白名单会长（第二十一轮加了 4 个受击上限），
+        写死的用例会在下一次扩容时假失败。
+        """
+        lines = [f"\t{key} = {i},"for i, key in enumerate(MODULE_MISC_WHITELIST, start=1)]
+        body = "data = { }\ndata.misc = {\n" + "\n".join(lines) + f"\n{extra}}}\n"
+        return self._root(body)
+
     def test_取白名单里的数值并给出行号(self) -> None:
-        root = self._root(
-            "data = { }\ndata.misc = {\n\tResistFloor = -200,\n\tMaxResistCap = 90,\n}\n"
-        )
-        values, problems = extract_module_misc(root)
+        values, problems = extract_module_misc(self._full_table())
         self.assertEqual([], problems)
-        self.assertEqual({"ResistFloor": (-200.0, 3), "MaxResistCap": (90.0, 4)}, values)
+        self.assertEqual(set(MODULE_MISC_WHITELIST), set(values))
+        # 第 i 项写的值是 i、行号是 i+2（前两行是 `data = { }` 与 `data.misc = {`）
+        for i, key in enumerate(MODULE_MISC_WHITELIST, start=1):
+            self.assertEqual((float(i), i + 2), values[key], key)
 
     def test_不在白名单里的一律不取(self) -> None:
         """那张表混着 PoB 建模取值、表达式与重复键，整表入库会抹掉 provenance 的差别。"""
-        root = self._root(
-            "data = { }\ndata.misc = {\n\tResistFloor = -200,\n\tMaxResistCap = 90,\n"
-            "\tServerTickTime = 0.033,\n\tEnergyShieldRechargeBase = 0.33,\n}\n"
+        values, _ = extract_module_misc(
+            self._full_table("\tServerTickTime = 0.033,\n\tEnergyShieldRechargeBase = 0.33,\n")
         )
-        values, _ = extract_module_misc(root)
         self.assertEqual(set(MODULE_MISC_WHITELIST), set(values))
 
     def test_白名单项变成非数值时报问题而不是静默跳过(self) -> None:

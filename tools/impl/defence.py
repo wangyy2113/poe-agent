@@ -1,4 +1,4 @@
-"""防御计算：抗性与最大抗性（计算器的第一块）。
+"""防御计算：抗性与最大抗性、以及受击结算（闪避 / 格挡 / 压制 / 护甲）。
 
 ## 为什么抗性要有工具，而不是靠卡片
 
@@ -16,10 +16,19 @@
 用户一眼能看出工具是拿什么算的。剧情抗性惩罚（−60%）**默认不加**：角色面板上的
 抗性已经含它，替用户再减一次是把一个对的数字算错。
 
+## 两个工具，一条链
+
+`resistance_calc` 管抗性那一段，`mitigation_calc` 管它**之前**的几段：
+能不能命中（闪避）、能不能挡下来（格挡 / 法术压制）、打中了减多少（护甲）。
+分成两个工具而不是一个大工具，是因为参数完全不同——一个吃抗性词缀，
+一个吃闪避/护甲/几率。但两者的证据都写明**顺序**，因为顺序错了结论会反向。
+
 ## 不做的事
 
-图腾抗性与持续伤害抗性不算（PoB 有独立分支）；不读 build（PoB 导入还没做）；
-不给装备推荐与价格。`calc/resistance.py` 的模块 docstring 里有完整的差异清单。
+图腾抗性与持续伤害抗性不算（PoB 有独立分支）；头目的护甲/闪避倍率不算
+（PoB 那是按一份头目清单现算的均值，本库没有那份清单）；不读 build（PoB 导入还没做）；
+不给装备推荐与价格。完整差异清单在 `calc/resistance.py` 与 `calc/mitigation.py`
+的模块 docstring 里。
 """
 
 from __future__ import annotations
@@ -27,11 +36,16 @@ from __future__ import annotations
 from typing import Any
 
 from calc import constants
+from calc import mitigation as mit
 from calc import resistance as res
+from calc.derive import Step, pob_url, render_steps
 from entities.taxonomy import MAX_FACTUAL_PRIORITY
 from tools.registry import REGISTRY, ToolResult
 
-MAX_EVIDENCE_CHARS = 2600
+#: 证据上限。实测最长的一版（受击七段全给）2354 字、抗性最长 2021 字，
+#: 留出余量到 3200——推导表的**末尾是来源清单**，截掉它等于让引用消失。
+#: 真截断了要看得见（见 `_citation`）：静默截断等同于漏答。
+MAX_EVIDENCE_CHARS = 3200
 
 _BOUNDARY = (
     "只按 PoB 的抗性公式复算：输入逐字取自问题，没给的项按 0 算；"
@@ -63,7 +77,7 @@ def _sources() -> tuple[str, list[str]]:
     cap = constants.provenance(constants.MAX_RESIST_CAP)
     base_max = constants.provenance(constants.MAX_ALL_RESISTANCES)
     floor = constants.provenance(constants.RESIST_FLOOR)
-    formula = res.pob_url(cap.url, res.FORMULA_FILE, lines=res.FORMULA_LINES)
+    formula = pob_url(cap.url, res.FORMULA_FILE, lines=res.FORMULA_LINES)
     lines = [
         f"- 基础最大抗性 {constants.get(constants.MAX_ALL_RESISTANCES):g}%："
         f"{base_max.key}（GGG 原始表 {base_max.dat_source or '未标注'}）{base_max.url}",
@@ -72,9 +86,9 @@ def _sources() -> tuple[str, list[str]]:
         f"- 抗性下限 {constants.get(constants.RESIST_FLOOR):g}%：{floor.key} {floor.url}",
         f"- 抗性结算公式：`calcs.resistances` {formula}",
         f"- 抗性 → 承受倍率：`resMult = 1 - (resist - enemyPen) / 100` "
-        f"{res.pob_url(cap.url, res.FORMULA_FILE, line=res.TAKEN_LINE)}",
+        f"{pob_url(cap.url, res.FORMULA_FILE, line=res.TAKEN_LINE)}",
         f"- 剧情抗性惩罚三档（0 / −30 / −60，PoB 默认 −60）："
-        f"{res.pob_url(cap.url, res.CONFIG_FILE, line=res.CONFIG_PENALTY_LINE)}",
+        f"{pob_url(cap.url, res.CONFIG_FILE, line=res.CONFIG_PENALTY_LINE)}",
     ]
     return formula, lines
 
@@ -131,9 +145,7 @@ def _render_result(result: res.ResistanceResult, inputs: dict[str, float]) -> st
     if not shown:
         out.append("- （问题未给任何数值，下表按全 0 演示公式）")
     out.append("")
-    out.append("| 步骤 | 算式 | 结果 |")
-    out.append("| --- | --- | --- |")
-    out.extend(step.render() for step in result.steps)
+    out.extend(render_steps(result.steps))
     out.append("")
 
     conclusion = (
@@ -180,6 +192,17 @@ def _render_result(result: res.ResistanceResult, inputs: dict[str, float]) -> st
     return "\n".join(out)
 
 
+def _clip(text: str) -> str:
+    """超长时截断，并**写明截断了**——推导表的末尾是来源清单，悄悄截掉它等于引用消失。"""
+    if len(text) <= MAX_EVIDENCE_CHARS:
+        return text
+    kept = text[:MAX_EVIDENCE_CHARS]
+    return (
+        f"{kept}\n\n（证据超过 {MAX_EVIDENCE_CHARS} 字已截断，"
+        f"剩余 {len(text) - MAX_EVIDENCE_CHARS} 字未包含在内）"
+    )
+
+
 def _citation(title: str, text: str, url: str) -> dict[str, Any]:
     provenance = constants.provenance(constants.MAX_RESIST_CAP)
     priority = int(provenance.source_priority)
@@ -191,7 +214,7 @@ def _citation(title: str, text: str, url: str) -> dict[str, Any]:
         "source": provenance.source,
         "source_priority": priority,
         "can_support_facts": priority <= MAX_FACTUAL_PRIORITY,
-        "text": text[:MAX_EVIDENCE_CHARS],
+        "text": _clip(text),
         "channel": "derived",
     }
 
@@ -350,5 +373,342 @@ def resistance_calc(
             "boundary": _BOUNDARY,
         },
         citations=[_citation(title, _render_result(result, given), formula_url)],
+        meta={"channel": "derived", "table": "game_constant"},
+    )
+
+
+# ── 受击结算：闪避 / 格挡 / 法术压制 / 护甲 ────────────────────────
+
+#: 受击顺序。它本身就是答案的一部分：顺序错了结论会反向
+#: （最典型的是「护甲能不能减元素伤害」——护甲作用在减伤那一段，
+#: 默认只对物理，除非有「护甲也作用于某类伤害」的词缀）。
+_CHAIN = (
+    "一次攻击落到身上的结算顺序：**能不能命中（闪避）→ 能不能挡下（格挡）"
+    "／法术能不能被压制 → 打中了减多少（护甲与物理减伤）→ 抗性**。"
+    "抗性那一段用 `resistance_calc`。"
+)
+
+_MITIGATION_BOUNDARY = (
+    "只按 PoB 的受击公式复算：输入逐字取自问题，没给的项不算；"
+    "**护甲减伤依赖这一击有多大**，不给伤害数值就没有百分比可言；"
+    "**不含头目的护甲/闪避倍率**（PoB 那是按一份头目清单现算的均值，本库没有那份清单）、"
+    "不含「不能被闪避」这类旗标，也不读取角色档案、不给装备推荐与价格"
+)
+
+
+def _mitigation_sources() -> list[str]:
+    """四段公式各自的同 commit 行号引用 + 用到的常量出处。"""
+    cap = constants.provenance(constants.MAX_RESIST_CAP)
+    url = cap.url
+
+    def anchor(lines: tuple[int, int]) -> str:
+        return pob_url(url, mit.DEFENCE_FILE, lines=lines)
+
+    accuracy = constants.provenance(constants.MONSTER_ACCURACY_TABLE)
+    return [
+        f"- 命中率公式 `calcs.hitChance`：{anchor(mit.HIT_CHANCE_LINES)}",
+        f"- 闪避率与 {constants.get(constants.EVADE_CHANCE_CAP):g}% 上限："
+        f"{anchor(mit.EVADE_LINES)}",
+        f"- 护甲减伤 `calcs.armourReduction`：{anchor(mit.ARMOUR_LINES)}",
+        f"- 物理减伤上限 {constants.get(constants.MAX_PHYS_DAMAGE_REDUCTION):g}%："
+        f"{constants.provenance(constants.MAX_PHYS_DAMAGE_REDUCTION).key}"
+        f"（GGG 原始表 {constants.provenance(constants.MAX_PHYS_DAMAGE_REDUCTION).dat_source or '未标注'}）",
+        f"- 格挡上限：基础最大 {constants.get(constants.MAX_BLOCK):g}%、"
+        f"硬上限 {constants.get(constants.BLOCK_CHANCE_CAP):g}%（`pobMisc.BlockChanceCap`）"
+        f" {anchor(mit.BLOCK_LINES)}",
+        f"- 法术压制：几率上限 {constants.get(constants.SUPPRESSION_CHANCE_CAP):g}%、"
+        f"效果 {constants.get(constants.SUPPRESSION_EFFECT):g}%（`pobMisc.SuppressionEffect`）",
+        f"- 怪物命中值等级表：{accuracy.key}"
+        f"（GGG 原始表 {accuracy.dat_source or '未标注'}"
+        f"{'，出处为推断' if accuracy.inherited else ''}）{accuracy.url}",
+    ]
+
+
+def _render_mitigation_rules() -> str:
+    """没给数值时：讲规则与顺序，一个数都不替用户编。"""
+    return "\n".join([
+        "### 受击结算的四段与它们的上限",
+        "",
+        _CHAIN,
+        "",
+        "| 环节 | 怎么算 | 上限 |",
+        "| --- | --- | --- |",
+        f"| 闪避 | 命中率 = 取整(命中值 /(命中值 +(闪避 / 5) ^ 0.9) × 125)，"
+        f"命中率**最低 {mit.HIT_CHANCE_FLOOR}%** | 闪避率最高 "
+        f"{constants.get(constants.EVADE_CHANCE_CAP):g}% |",
+        f"| 格挡 | 几率取到最大格挡为止，超出部分不生效 | 基础最大 "
+        f"{constants.get(constants.MAX_BLOCK):g}%，加成后不超过 "
+        f"{constants.get(constants.BLOCK_CHANCE_CAP):g}% |",
+        f"| 法术压制 | 触发时减 **{constants.get(constants.SUPPRESSION_EFFECT):g}%** 法术伤害 |"
+        f" 几率最高 {constants.get(constants.SUPPRESSION_CHANCE_CAP):g}% |",
+        f"| 护甲 | 减伤 = 护甲 /(护甲 + 5 × 这一击的伤害) | 与物理减伤合计不超过 "
+        f"{constants.get(constants.MAX_PHYS_DAMAGE_REDUCTION):g}% |",
+        "",
+        "两条最容易记错的：",
+        "",
+        f"1. **护甲不是固定百分比减伤**——同样的护甲，面对小击减得多、面对大击减得少。"
+        f"所以「多少护甲够用」必须先说清这一击有多大。",
+        f"2. **法术压制减的是 "
+        f"{constants.get(constants.SUPPRESSION_EFFECT):g}%**，不是 50%。",
+        "",
+        _MITIGATION_BOUNDARY + "。",
+        "",
+        "来源：",
+        *_mitigation_sources(),
+    ])
+
+
+def _render_mitigation(sections: list[tuple[str, list[str]]]) -> str:
+    out: list[str] = []
+    for title, body in sections:
+        out.append(f"### {title}")
+        out.append("")
+        out.extend(body)
+        out.append("")
+    out.append(_CHAIN)
+    out.append("")
+    out.append(_MITIGATION_BOUNDARY + "。")
+    out.append("")
+    out.append("来源：")
+    out.extend(_mitigation_sources())
+    return "\n".join(out)
+
+
+def _evade_section(result: mit.HitChanceResult) -> list[str]:
+    body = render_steps(result.steps)
+    body.append("")
+    level = f"（{result.monster_level} 级怪物）" if result.monster_level else ""
+    body.append(
+        f"闪避 {result.evasion:g} 对命中值 {result.accuracy:g}{level}："
+        f"**命中率 {result.hit_chance}%、闪避率 {result.evade_chance:g}%**。"
+    )
+    if result.hit_chance <= mit.HIT_CHANCE_FLOOR:
+        body.append(
+            f"命中率已经到下限 {mit.HIT_CHANCE_FLOOR}%：再堆闪避也降不下去"
+            f"（闪避率上限 {result.evade_cap:g}%）。"
+        )
+    return body
+
+
+def _armour_section(result: mit.ArmourResult) -> list[str]:
+    body = render_steps(result.steps)
+    body.append("")
+    body.append(
+        f"{result.armour:g} 护甲面对一次 {result.hit_damage:g} 的物理打击："
+        f"**减伤 {result.reduction}%**，这一击剩 {result.damage_after:g}。"
+    )
+    body.append(
+        "换一个大小的打击，这个百分比就变了——护甲不是固定百分比减伤。"
+    )
+    if result.capped:
+        body.append(f"已经顶到物理减伤上限 {result.reduction_cap:g}%。")
+    return body
+
+
+def _block_section(result: mit.BlockResult, *, spell: bool) -> list[str]:
+    kind = "法术格挡" if spell else "攻击格挡"
+    body = render_steps(result.steps)
+    body.append("")
+    body.append(
+        f"**{kind}几率 {result.chance:g}%**（最大 {result.max_block}%）。"
+    )
+    if result.over_cap:
+        body.append(
+            f"超出上限的 {result.over_cap:g}% 不生效：要让它生效得先提高**最大**格挡"
+            f"（基础 {result.base_max:g}%，加成后不超过硬上限 {result.hard_cap:g}%）。"
+        )
+    return body
+
+
+def _suppression_section(result: mit.SuppressionResult) -> list[str]:
+    body = render_steps(result.steps)
+    body.append("")
+    body.append(
+        f"压制几率 {result.chance:g}%、每次触发减 {result.effect:g}% 法术伤害，"
+        f"**平均减伤 {result.average_reduction:g}%**。"
+    )
+    return body
+
+
+@REGISTRY.register(
+    name="mitigation_calc",
+    description=(
+        "按 Path of Building 的原式复算**受击**的前几段：闪避（含怪物等级的命中值）、"
+        "格挡几率与上限、法术压制、护甲对某一击的减伤。给出逐步推导与各自的上限。\n"
+        "**护甲减伤依赖这一击有多大**：问「多少护甲够用」时必须同时给出伤害数值，"
+        "没有就只讲规则。\n"
+        "抗性那一段用 `resistance_calc`。所有数值参数必须逐字取自用户问题，"
+        "问题没提到的项不要填，也不要替它做加减。"
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "evasion": {"type": "number", "description": "闪避值"},
+            "enemy_accuracy": {
+                "type": "number",
+                "description": "敌方命中值。不知道就填 `monster_level`，由怪物等级表查",
+            },
+            "monster_level": {
+                "type": "integer",
+                "description": "怪物等级（1–100）。用来查它的命中值；地图满级怪物常按 83–85 算",
+            },
+            "flat_evade_chance": {
+                "type": "number",
+                "description": "「+X% 闪避几率」这类固定几率（罕见）",
+            },
+            "increased_evade_pct": {
+                "type": "number", "description": "「增加的闪避几率」百分比（罕见）",
+            },
+            "armour": {"type": "number", "description": "护甲值"},
+            "hit_damage": {
+                "type": "number",
+                "description": "这一击的物理伤害。**算护甲减伤必须有它**",
+            },
+            "flat_physical_reduction": {
+                "type": "number",
+                "description": "另有的「物理伤害减免」百分比（耐力球、坚定等）",
+            },
+            "block_chance": {"type": "number", "description": "攻击格挡几率合计"},
+            "spell_block_chance": {"type": "number", "description": "法术格挡几率合计"},
+            "extra_max_block": {
+                "type": "number", "description": "「+X% 最大格挡」之和",
+            },
+            "suppression_chance": {
+                "type": "number", "description": "法术压制几率",
+            },
+        },
+        "required": [],
+    },
+)
+def mitigation_calc(
+    evasion: float = 0.0,
+    enemy_accuracy: float | None = None,
+    monster_level: int | None = None,
+    flat_evade_chance: float = 0.0,
+    increased_evade_pct: float = 0.0,
+    armour: float = 0.0,
+    hit_damage: float = 0.0,
+    flat_physical_reduction: float = 0.0,
+    block_chance: float | None = None,
+    spell_block_chance: float | None = None,
+    extra_max_block: float = 0.0,
+    suppression_chance: float | None = None,
+) -> ToolResult:
+    try:
+        _mitigation_sources()
+    except constants.MissingConstant as exc:
+        return ToolResult(ok=False, error=f"受击结算常量未入库：{exc}")
+
+    sections: list[tuple[str, list[str]]] = []
+    data: dict[str, Any] = {"found": True, "kind": "result"}
+    notes: list[str] = []
+
+    if evasion:
+        if enemy_accuracy is None and monster_level is None:
+            # 不替用户假定一个怪物等级：85 级看着「合理」，但那是编造的前提
+            notes.append(
+                "给了闪避值但没给敌方命中值或怪物等级，**闪避率算不出来**："
+                "闪避率取决于打你的那个怪物的命中值。"
+            )
+        else:
+            try:
+                result = mit.evade(
+                    evasion,
+                    accuracy=enemy_accuracy,
+                    monster_level=monster_level,
+                    flat_evade_chance=flat_evade_chance,
+                    increased_evade_pct=increased_evade_pct,
+                )
+            except mit.OutOfTableRange as exc:
+                return ToolResult(ok=False, error=str(exc))
+            sections.append(("闪避与命中率", _evade_section(result)))
+            data["evade"] = {
+                "hit_chance": result.hit_chance,
+                "evade_chance": result.evade_chance,
+                "accuracy": result.accuracy,
+                "monster_level": result.monster_level,
+            }
+
+    if armour or hit_damage:
+        if not hit_damage:
+            notes.append(
+                "给了护甲值但没给这一击的伤害，**减伤百分比算不出来**："
+                "护甲减伤 = 护甲 /(护甲 + 5 × 这一击的伤害)，同样的护甲对小击减得多、"
+                "对大击减得少。"
+            )
+        else:
+            result = mit.armour(armour, hit_damage, flat_reduction=flat_physical_reduction)
+            sections.append(("护甲减伤", _armour_section(result)))
+            data["armour"] = {
+                "reduction": result.reduction,
+                "damage_after": round(result.damage_after, 2),
+                "capped": result.capped,
+            }
+
+    for chance, spell in ((block_chance, False), (spell_block_chance, True)):
+        if chance is None:
+            continue
+        result = mit.block(chance, extra_max_block=extra_max_block, spell=spell)
+        title = "法术格挡" if spell else "攻击格挡"
+        sections.append((title, _block_section(result, spell=spell)))
+        data["spell_block" if spell else "block"] = {
+            "chance": result.chance,
+            "max_block": result.max_block,
+            "over_cap": result.over_cap,
+        }
+
+    if suppression_chance is not None:
+        result = mit.suppression(suppression_chance)
+        sections.append(("法术压制", _suppression_section(result)))
+        data["suppression"] = {
+            "chance": result.chance,
+            "effect": result.effect,
+            "average_reduction": round(result.average_reduction, 2),
+        }
+
+    if extra_max_block and block_chance is None and spell_block_chance is None:
+        # 只给了「+X% 最大格挡」——按 0 几率算没有意义，讲上限本身
+        result = mit.block(0.0, extra_max_block=extra_max_block)
+        sections.append(("最大格挡", _block_section(result, spell=False)))
+        data["block"] = {"max_block": result.max_block, "chance": 0.0, "over_cap": 0.0}
+
+    data["boundary"] = _MITIGATION_BOUNDARY
+    if not sections:
+        rules = _render_mitigation_rules()
+        if notes:
+            rules = "\n".join([*notes, "", rules])
+        return ToolResult(
+            ok=True,
+            data={
+                "found": True,
+                "kind": "rules",
+                "evade_chance_cap": constants.get(constants.EVADE_CHANCE_CAP),
+                "block_chance_cap": constants.get(constants.BLOCK_CHANCE_CAP),
+                "suppression_effect": constants.get(constants.SUPPRESSION_EFFECT),
+                "damage_reduction_cap": constants.get(constants.MAX_PHYS_DAMAGE_REDUCTION),
+                "boundary": _MITIGATION_BOUNDARY,
+                "missing_inputs": notes,
+            },
+            citations=[_citation(
+                "受击结算的四段与上限", rules,
+                pob_url(constants.provenance(constants.MAX_RESIST_CAP).url,
+                        mit.DEFENCE_FILE, lines=mit.HIT_CHANCE_LINES),
+            )],
+            meta={"channel": "derived", "table": "game_constant"},
+        )
+
+    text = _render_mitigation(sections)
+    if notes:
+        text = "\n".join([*notes, "", text])
+        data["missing_inputs"] = notes
+    title = "受击结算（" + "、".join(name for name, _ in sections) + "）"
+    return ToolResult(
+        ok=True,
+        data=data,
+        citations=[_citation(
+            title, text,
+            pob_url(constants.provenance(constants.MAX_RESIST_CAP).url,
+                    mit.DEFENCE_FILE, lines=mit.ARMOUR_LINES),
+        )],
         meta={"channel": "derived", "table": "game_constant"},
     )

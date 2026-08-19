@@ -444,6 +444,63 @@ cases:
     expect_values: ["90"]
     note: 游戏常量 maximum_physical_damage_reduction_% = 90
 
+  # ── 受击结算（2026-08-19 第二十一轮）───────────────────────────
+  - id: num_armour_reduction
+    query: 10000 护甲面对一次 1000 的物理打击能减多少伤害
+    kind: numeric
+    expect_values: ["67"]
+    expect_in_answer: ["头目"]
+    note: >-
+      10000 /（10000 + 5 × 1000）= 66.67% → 取整 67%。伤害数值由问题给出，
+      工具不替用户假定
+    lesson: >-
+      `expect_in_answer` 只断言**代码附注**的内容（边界声明里写着不含头目的护甲倍率），
+      不断言模型措辞。
+
+  - id: gap_armour_without_damage
+    query: 我有 10000 护甲，能减多少伤害
+    kind: gap
+    expect_gap: true
+    note: >-
+      **这条问题没有答案**：护甲减伤 = 护甲 /（护甲 + 5 × 这一击的伤害），
+      不给伤害数值就没有百分比。工具必须说缺什么，而不是替用户假定一个伤害值
+    lesson: >-
+      与 `num_armour_reduction` 成对：同样的护甲值，给了伤害就必须算得出来，
+      没给就必须说缺据。只压一头会退化成「问什么都先要一堆参数」
+      或者「随便假定一个 1000 伤害算给你看」。
+      注意它走的是**工具自报缺据**那条路（`mitigation_calc` 返回 rules + 缺什么），
+      检索侧因此是路由豁免，对错看 `--gate` 的录制回放。
+
+  - id: num_evade_chance_at_85
+    query: 我有 10000 闪避，85 级怪物打我能躲开多少
+    kind: numeric
+    expect_values: ["53", "559"]
+    note: >-
+      monsterAccuracyTable 第 85 项 = 559 命中值；
+      命中率 = 取整(559 /(559 +(10000 / 5) ^ 0.9) × 125) = 47% → 闪避率 53%
+    lesson: >-
+      怪物命中值来自库里的等级表，所以「85 级」这个前提是**查出来的**而不是假定的，
+      而且用了哪一级要写在推导里。
+
+  - id: num_spell_suppression_effect
+    query: 法术压制触发时减多少伤害
+    kind: numeric
+    expect_values: ["40"]
+    note: pobMisc.SuppressionEffect = 40，不是社区常说的 50%
+    lesson: >-
+      这条是「常量摆在库里答不了问题」的反例之一：40 这个数只有和「触发时减伤」
+      这个口径绑在一起才有意义。
+
+  - id: route_mitigation_calc
+    query: 格挡上限是多少
+    kind: tool_route
+    expect_tool: mitigation_calc
+    note: 「格挡上限」是结算问法 → mitigation_calc
+    lesson: >-
+      判据必须专指**结算**而不是**属性名**：先写了裸的「法术压制」，
+      于是「法术压制能从哪些渠道获得」被从 stat_sources 抢走（现有单测当场拦下）。
+      现在两个计算器遇到枚举意图词一律让路——枚举问句永远不是计算题。
+
   # ══ 跨来源：本轮只能测负向 ═════════════════════════════════════════════
   # 库里 kind='mod' 的**已确认冲突是 0 条**，只有 mod_review 2729 条
   # （两源对不上、待人工核对）。按需求 15.5 与 /admin/conflicts 的约定，

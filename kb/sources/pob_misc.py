@@ -42,9 +42,18 @@ MODULE_DATA_FILE = "Modules/Data.lua"
 #:   3. 表里有**重复键**（`EnergyShieldRechargeBase` 出现两次，后一个覆盖前一个）——
 #:      整表入库会静默取到其中一个。
 #: 所以只取计算器当前真正需要的，缺了就在 `calc/` 里炸掉（那是刻意的设计）。
+#: 白名单里**故意不收** `DamageReductionCap`：那一项在上游写成
+#: `data.characterConstants["maximum_physical_damage_reduction_%"]`（一个引用，不是字面量），
+#: 而被引用的那条常量早就在库里、还带着 GGG 原始表出处。收它只会多出一份出处更差的副本。
+#: 抽取器对这种项会报「不是数值」——那正是白名单该有的反应。
 MODULE_MISC_WHITELIST: tuple[str, ...] = (
     "ResistFloor",
     "MaxResistCap",
+    # 受击结算的三个上限与一个效果值（第二十一轮）
+    "EvadeChanceCap",
+    "BlockChanceCap",
+    "SuppressionChanceCap",
+    "SuppressionEffect",
 )
 
 #: 出处注释：`-- From GameConstants.dat`

@@ -114,7 +114,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 699 项，秒级
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 752 项，秒级
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选
@@ -131,7 +131,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 .venv/bin/python scripts/eval_run.py --record        # 重录真实响应（**要凭证、烧 token**）
 ```
 
-黄金问答集是 `tests/golden/questions.yaml`（87 条，六类），基线与全部结论在
+黄金问答集是 `tests/golden/questions.yaml`（92 条，六类），基线与全部结论在
 `tests/golden/BASELINE.md`——**动闸门前先读它**，里面记了四个已修缺陷、两个已知未修边界，
 以及两次「测量本身写错」的教训。
 
@@ -172,7 +172,7 @@ POST /chat[/stream]  api/chat.py（只做校验与编排调用）
 | `kb/` | `pipeline.py` 采集管线、`sources/` 各来源抽取器、`coverage.py` 知识库自描述层、`stat_channels.py` 属性来源渠道注册表、`render*.py` 卡片切片 |
 | `parsers/` | `item_text.py`（纯文本，不连库）→ `item_mods.py` T 级匹配 → `mod_bridge.py` 英文桥接 → `item_report.py` 报告 |
 | `craft/` | `feasibility.py` 词缀组合三态可行性、`pool.py` 胸甲普通词缀有效池与条件概率 |
-| `calc/` | `constants.py` 常量访问层，**缺失即抛异常，绝不给默认值**；`resistance.py` 抗性结算（复算 PoB 原式，输出逐步推导）。其余防御 / 攻击维度未实现 |
+| `calc/` | `constants.py` 常量访问层，**缺失即抛异常，绝不给默认值**；`derive.py` 两个计算器共用的推导件（`Step` / 引用推导）；`resistance.py` 抗性结算；`mitigation.py` 受击结算（闪避/命中、格挡、法术压制、护甲）。能量护盾 / 吸血 / 暴击 / 保留 / Max Hit 未实现 |
 | `static/` | 单页前端三个文件，无构建步骤、无 Node、无第三方 JS（Markdown 渲染器自写，为了强制先转义再解析） |
 | `tests/golden/` | 评测资产：`questions.yaml` 黄金问答集、`loader.py` 严格校验、`recording.py` 录制回放、`recordings/` 真实响应、`audit.yaml` 人工结论、`BASELINE.md` 指标基线 |
 
@@ -186,7 +186,9 @@ POST /chat[/stream]  api/chat.py（只做校验与编排调用）
 `mod_tiers`（T 级梯度）→ `skill_gem_levels`（宝石逐级字面值）→
 `spectre_stats`（幽魂倍率 / 抗性 / 排名）→ `passive_path`（点到某天赋要几点 + 逐节点路径）→
 `cluster_jewel_info`（星团珠宝尺寸 / 基石 / 是否在主树外）→
-`resistance_calc`（按 PoB 原式复算抗性，给逐步推导）→ `stat_sources`（某属性能从哪来）→
+`resistance_calc`（按 PoB 原式复算抗性，给逐步推导）→
+`mitigation_calc`（受击前几段：闪避/命中、格挡上限、法术压制、护甲减伤）→
+`stat_sources`（某属性能从哪来）→
 `entity_lookup` → `kb_coverage` → `kb_search`（兜底）
 
 新增工具时守住两条：**能力边界由 `ALLOWED_TOOLS` 限定而不是靠提示词描述**；工具描述里不要
@@ -212,7 +214,7 @@ POST /chat[/stream]  api/chat.py（只做校验与编排调用）
   会以为它待填，然后把乘数当伤害写进去。这两维明确划进 `partial_note` 的未采集部分。
 
 本机 `data/poe.db` 现状（`GET /healthz` 与 `/admin/stats` 可查）：`entity` 5197、
-`mod_affix` 93897、`pob_mod` 25487、`chunk` 18447、`alias` 8106、`game_constant` 501、
+`mod_affix` 93897、`pob_mod` 25487、`chunk` 18447、`alias` 8106、`game_constant` 505、
 `craft_bench_recipe` 783、`pob_base_item` **1022**（18 个装备类别，PoB × POEDB 逐条桥接，
 覆盖 PoB 侧 96.1%；未桥接的 41 条已按类别登记在台账）、`source_conflict` **515**（`mod_review` 254 + `unique_review` 207 + `spectre_review` 43
 + `spectre` **8** + `tree_review` 3）。
@@ -296,6 +298,28 @@ POEDB 镜像，而镜像页一直在 `data/http_cache` 里、抽取器对它跑�
 且引用的行号锚点确实指向它们**。数据漂移有 `check_doc_facts.py` 拦，
 **公式漂移此前没有任何东西拦**——第一次跑就抓到 `TAKEN_LINE` 差了一行。
 
+`pobMisc` 组现有 **6** 条（第二十一轮加了 `EvadeChanceCap` 95、`BlockChanceCap` 90、
+`SuppressionChanceCap` 100、`SuppressionEffect` 40）。**`DamageReductionCap` 故意不收**：
+上游那一项写成 `data.characterConstants["maximum_physical_damage_reduction_%"]`——
+是个引用而不是字面量，而被引用的那条早就在库里、还带着 GGG 原始表出处。
+收它只会多一份出处更差的副本。抽取器对这种项会报「不是数值」，那正是白名单该有的反应。
+
+受击结算（`calc/mitigation.py` + `mitigation_calc`）复算 PoB 的四段，**顺序本身就是答案的一部分**：
+**能不能命中（闪避）→ 能不能挡下（格挡 / 法术压制）→ 打中了减多少（护甲与物理减伤）→ 抗性**。
+四条容易记错的：
+
+- **护甲不是固定百分比减伤**：`护甲 /(护甲 + 5 × 这一击的伤害)`。所以
+  「10000 护甲能减多少伤害」**在不给伤害数值时没有答案**，工具说缺什么而不是替用户
+  假定一个伤害值（黄金集里 `num_armour_reduction` 与 `gap_armour_without_damage` 成对）。
+- **命中率下限 5%、闪避率上限 95%**：闪避堆到无穷也躲不掉全部攻击。
+- **法术压制减 40%，不是 50%**（`pobMisc.SuppressionEffect`）。
+- **格挡几率超出最大格挡的部分不生效**，要先抬高最大格挡（基础 75%、硬上限 90%）。
+  这条与 PoB 自己的用例对账（`TestDefence_spec.lua:573`：100% 法术格挡 → 生效 75、超出 25）。
+
+怪物命中值不用用户提供：`monsterAccuracyTable` 就在库里（100 级），而 PoB 给敌人加命中
+就是 `monsterAccuracyTable[enemyLevel]`。**但用了哪一级要写进推导**——「85 级」这个前提
+是查出来的，不是假定的。等级越界抛异常不外推。
+
 一处数据缺口会直接影响判断：
 
 - **需求 15.5「跨来源冲突并列展示」在 2026-08-19 第一次真正接上。** 在那之前
@@ -359,6 +383,23 @@ POEDB 镜像，而镜像页一直在 `data/http_cache` 里、抽取器对它跑�
   复述）让引用有效率 67%→55%、拦截 91→122，只换来元说明类少 3 句，已撤销
   （`tests/golden/BASELINE.md` 第四轮有三向对比）。它不只影响被提到的那几句，会拖垮整体
   绑定纪律。另外**两次数字的差不能当因果**——模型有轮次波动，判因要有同条件重复运行。
+- **「裁剪 schema 让模型只有一个工具可调」拦不住它一个都不调。** 实测（第二十一轮）：
+  受击计算器刚接上时 5 条新录制里 3 条没调工具——一条直接拿检索到的 chunk 答了
+  （路由观测 0/1），一条零证据进了兜底缺据，还有一条**碰巧**拒答对了、
+  但理由是「工具没返回证据」而不是工具想说的「你没给这一击的伤害」：
+  **契约过了，机制是坏的**。修法是把计算器放进 `_CODE_INVOKED_TOOLS` 由代码调用：
+  没有数字就是讲规则（无参数），有数字则只认「数字 + 单位词紧邻」的写法、
+  同一槽位抽到两个值就整体交回模型。这与 `mod_tiers` 是同一条纪律。
+- **绑定标记的写法要放宽到模型真实的写法。** `[E1]`（单层方括号）也算绑定：
+  92 条录制离线重放，143 句拦截里有 7 句只因为模型少写了一层括号，
+  而被拦的是有据的话。放宽的是**写法**不是**判据**——数值回填照旧跑。
+  这条改了一个此前刻意的决定（`test_malformed_markers_still_rejected` 曾把 `[E1]`
+  列进残缺写法），依据是新测出来的数字：**放宽依据要有新证据，这次有。**
+- **偏好工具的判据不能是「属性名」，只能是「问法」。** 实测（第二十一轮）：
+  `mitigation_calc` 的意图词里放了裸的「法术压制」，于是「法术压制能从哪些渠道获得」
+  被从 `stat_sources` 抢走——那是一道枚举题。修法不是逐个绕开裸属性名（想漏一个就
+  又被抢一次），而是让**枚举问句永远不是计算题**：`_YIELDS_TO_ENUMERATION` 里的工具
+  遇到 `_ENUMERATION_INTENTS` 一律让路。判据描述的是**问句形式**时比描述**话题**时更可信。
 - **数值回填校验前必须把排版正负号归一成 ASCII**（`binding.normalize_signs`）。
   模型写「−200%」（U+2212）而证据原文写 `-200%`，提取器读出的是 `200`、在证据里找不到，
   于是把一句完全正确的话判成编造。**只映射真正的正负号**：连接号 `–`/`—`/`~` 在这个领域
