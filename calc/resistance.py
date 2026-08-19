@@ -43,6 +43,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 from calc import constants
+from calc.derive import Step, join_terms, pob_url  # noqa: F401  两个计算器共用
 
 #: 四种抗性。PoB 的 `resistTypeList`，其中只有前三种算元素抗性（`isElemental`）。
 ELEMENTS_ZH: dict[str, str] = {
@@ -83,19 +84,6 @@ class UnknownElement(ValueError):
 
 
 @dataclass(frozen=True)
-class Step:
-    """推导的一步。`expr` 是可照着核对的算式，不是说明文字。"""
-
-    label: str
-    expr: str
-    value: float
-
-    def render(self) -> str:
-        shown = f"{self.value:g}"
-        return f"| {self.label} | {self.expr} | {shown} |"
-
-
-@dataclass(frozen=True)
 class ResistanceResult:
     """一种抗性的完整结算。所有字段都是 PoB 同名 output 的对应物。"""
 
@@ -128,19 +116,6 @@ class ResistanceResult:
     def taken_pct(self) -> float:
         """承受伤害占原始伤害的百分比。"""
         return self.taken_mult * 100
-
-
-def _join_terms(values: list[float]) -> str:
-    """把一串加项写成算式。负数写成 ``- 60%`` 而不是 ``+ -60%``。
-
-    减号一律用 ASCII：出口闸门要把答案里的数字回填到证据原文里比对，
-    证据写全角「−60」而模型写「-60」就会对不上，用户看到的是一句被拦掉的正确话。
-    """
-    out = f"{values[0]:g}%"
-    for value in values[1:]:
-        sign = "-" if value < 0 else "+"
-        out += f" {sign} {abs(value):g}%"
-    return out
 
 
 def _resolve(element: str) -> tuple[str, str]:
@@ -298,7 +273,7 @@ def resistance(
             terms.append(resist_penalty)
         if campaign_penalty:
             terms.append(campaign_penalty)
-        steps.append(Step("加总", _join_terms(terms), base_sum))
+        steps.append(Step("加总", join_terms(terms), base_sum))
     if increased_pct or more_mult != 1.0:
         steps.append(
             Step(
@@ -355,29 +330,6 @@ def resistance(
         enemy_penetration=enemy_penetration,
         steps=tuple(steps),
     )
-
-
-def pob_url(
-    constant_url: str, path: str, *, line: int | None = None, lines: tuple[int, int] | None = None
-) -> str:
-    """从常量的引用 URL 推出同一 commit 下另一个文件的引用。
-
-    为什么要推而不是写死：引用必须与**入库那一刻的 commit** 一致。写死一个 commit
-    的话，重新导入常量后引用就指向另一份代码，而读者看不出来——那正是钉 commit
-    要防的事。常量与公式来自同一份检出，所以同一个 commit 是可证的。
-
-    推不出来（URL 形状变了）就返回原 URL，不编一个看起来对的。
-    """
-    marker = "/src/"
-    if marker not in constant_url:
-        return constant_url
-    base = constant_url.split(marker, 1)[0]
-    anchor = ""
-    if lines is not None:
-        anchor = f"#L{lines[0]}-L{lines[1]}"
-    elif line is not None:
-        anchor = f"#L{line}"
-    return f"{base}/{path}{anchor}"
 
 
 ElementName = Literal["火焰", "冰霜", "闪电", "混沌"]

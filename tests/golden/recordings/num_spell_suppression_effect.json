@@ -1,0 +1,42 @@
+{
+  "format_version": 1,
+  "case_id": "num_spell_suppression_effect",
+  "query": "法术压制触发时减多少伤害",
+  "recorded_at": "2026-08-19T19:27:47+08:00",
+  "model": "glm-5.2",
+  "tokens": {
+    "prompt": 8795,
+    "output": 45,
+    "reasoning": 25,
+    "total": 8840
+  },
+  "tool_calls": [
+    "kb_search",
+    "mitigation_calc"
+  ],
+  "evidence_gap": false,
+  "out_of_scope": false,
+  "precision_route": "",
+  "gap_answer": "",
+  "final_answer": "法术压制触发时减少 **40%** 法术伤害[[E1]]。\n\n> 只按 PoB 的受击公式复算：输入逐字取自问题，没给的项不算；**护甲减伤依赖这一击有多大**，不给伤害数值就没有百分比可言；**不含头目的护甲/闪避倍率**（PoB 那是按一份头目清单现算的均值，本库没有那份清单）、不含「不能被闪避」这类旗标，也不读取角色档案、不给装备推荐与价格\n\n> 检索以降级通道完成（fts）：向量检索与重排未启用（网关无 embedding 模型），当前走 BM25 + 实体精确匹配",
+  "blocked_claims": 0,
+  "elapsed_ms": 7468,
+  "evidence_fingerprint": "sha256:b9f4556928585511ba0047b16a2a3cc3",
+  "_warning": "raw_answer 是未过出口闸门的模型原文，含可能无据的断言，不得当作事实引用",
+  "raw_answer": "法术压制触发时减少 **40%** 法术伤害[[E1]]。",
+  "evidence": [
+    {
+      "label": "E1",
+      "chunk_id": "resistance_calc:受击结算的四段与上限",
+      "entity_id": null,
+      "title": "受击结算的四段与上限",
+      "url": "https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Modules/CalcDefence.lua#L57-L63",
+      "source": "Path of Building",
+      "source_priority": 2,
+      "text": "### 受击结算的四段与它们的上限\n\n一次攻击落到身上的结算顺序：**能不能命中（闪避）→ 能不能挡下（格挡）／法术能不能被压制 → 打中了减多少（护甲与物理减伤）→ 抗性**。抗性那一段用 `resistance_calc`。\n\n| 环节 | 怎么算 | 上限 |\n| --- | --- | --- |\n| 闪避 | 命中率 = 取整(命中值 /(命中值 +(闪避 / 5) ^ 0.9) × 125)，命中率**最低 5%** | 闪避率最高 95% |\n| 格挡 | 几率取到最大格挡为止，超出部分不生效 | 基础最大 75%，加成后不超过 90% |\n| 法术压制 | 触发时减 **40%** 法术伤害 | 几率最高 100% |\n| 护甲 | 减伤 = 护甲 /(护甲 + 5 × 这一击的伤害) | 与物理减伤合计不超过 90% |\n\n两条最容易记错的：\n\n1. **护甲不是固定百分比减伤**——同样的护甲，面对小击减得多、面对大击减得少。所以「多少护甲够用」必须先说清这一击有多大。\n2. **法术压制减的是 40%**，不是 50%。\n\n只按 PoB 的受击公式复算：输入逐字取自问题，没给的项不算；**护甲减伤依赖这一击有多大**，不给伤害数值就没有百分比可言；**不含头目的护甲/闪避倍率**（PoB 那是按一份头目清单现算的均值，本库没有那份清单）、不含「不能被闪避」这类旗标，也不读取角色档案、不给装备推荐与价格。\n\n来源：\n- 命中率公式 `calcs.hitChance`：https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Modules/CalcDefence.lua#L57-L63\n- 闪避率与 95% 上限：https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Modules/CalcDefence.lua#L1071-L1085\n- 护甲减伤 `calcs.armourReduction`：https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Modules/CalcDefence.lua#L65-L76\n- 物理减伤上限 90%：characterConstants.maximum_physical_damage_reduction_%（GGG 原始表 Metadata/Characters/Character.ot）\n- 格挡上限：基础最大 75%、硬上限 90%（`pobMisc.BlockChanceCap`） https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Modules/CalcDefence.lua#L660-L694\n- 法术压制：几率上限 100%、效果 40%（`pobMisc.SuppressionEffect`）\n- 怪物命中值等级表：monsterAccuracyTable（GGG 原始表 DefaultMonsterStats.dat，出处为推断）https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Misc.lua#L6",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    }
+  ]
+}

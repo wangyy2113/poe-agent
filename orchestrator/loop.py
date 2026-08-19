@@ -762,6 +762,22 @@ def _affix_pool_precision_query(
 #: 而 2026-08-17 的评测实测 6 条路由用例只命中 3 条——`mod_tiers`、`entity_lookup`、
 #: `kb_coverage` 三类问题模型仍退回 `kb_search`。提示词约束不住，就落到代码。
 #: 强制手段是协议层的 `tool_choice`，不是再写一句「请务必调用」。
+#: 枚举类问句：问的是「这东西能从哪来」。它描述的是**问句形式**而不是话题，
+#: 所以在与「话题类」判据冲突时它更可信（见 `_YIELDS_TO_ENUMERATION`）。
+_ENUMERATION_INTENTS = (
+    "从哪些渠道", "从哪来", "哪些渠道", "哪里获得", "怎么获得", "从哪获得",
+    "有哪些来源", "哪些来源",
+)
+
+#: 这两个计算器的话题（抗性 / 护甲 / 闪避 / 格挡 / 压制）**同时也是属性名**，
+#: 于是「法术压制能从哪些渠道获得」这种枚举题会被它们的意图词抢走——实测过一次，
+#: 被 `test_enumeration_questions_route_to_stat_sources` 当场拦下。
+#: 判据：**枚举问句永远不是计算题**，所以这两个工具遇到枚举意图词就让路。
+#: 写成集合而不是在词表里逐个绕开裸属性名：后者要为每个新词想一遍「它是不是属性名」，
+#: 想漏一个就是一条被抢走的枚举题。
+_YIELDS_TO_ENUMERATION = frozenset({"resistance_calc", "mitigation_calc"})
+
+
 _PREFERRED_TOOL_INTENTS: tuple[tuple[str, tuple[str, ...]], ...] = (
     # 词缀档位 / 物品等级 / 权重：kb_search 只能命中一张卡再读表格，容易读错行
     ("mod_tiers", (
@@ -792,11 +808,25 @@ _PREFERRED_TOOL_INTENTS: tuple[tuple[str, tuple[str, ...]], ...] = (
         "抗性如何计算", "减抗", "降低抗性", "抗性穿透", "元素穿透", "抗性够不够",
         "抗性满了", "抗性浪费",
     )),
-    # 「某属性能从哪来」是枚举问题：不完整的枚举被当成完整的呈现就是错误答案
-    ("stat_sources", (
-        "从哪些渠道", "从哪来", "哪些渠道", "哪里获得", "怎么获得", "从哪获得",
-        "有哪些来源", "哪些来源",
+    # 受击结算（闪避/格挡/压制/护甲）同样是「按顺序算」，证据不在 chunk 里。
+    #
+    # 判据必须专指**结算**，不能是**属性名**。实测（第二十一轮）：先写了「法术压制」，
+    # 于是「法术压制能从哪些渠道获得」被从 `stat_sources` 抢走——而那是一道枚举题。
+    # 现有单测 `test_enumeration_questions_route_to_stat_sources` 当场拦下了它。
+    # 所以这一串里没有裸的「护甲」「闪避」「格挡」「压制」「物理减伤」：
+    # 带数字的那类问法由 `_resistance_numeric_route` 兜（它判在整张表之后，优先级最低）。
+    ("mitigation_calc", (
+        "护甲减伤", "护甲能减", "护甲有什么用", "护甲怎么算", "物理减伤上限",
+        "闪避率", "闪避几率", "命中率", "躲开", "被命中",
+        "格挡上限", "最大格挡", "压制上限", "压制减", "压制效果",
+        # 「法术压制」可以是裸机制名：它只有结算这一种问法，而**枚举问句已由
+        # `_YIELDS_TO_ENUMERATION` 让路**。「护甲」「闪避」「格挡」则不行——
+        # 它们同时是底材属性与词缀名（「哪些底材护甲最高」有卡片可答）。
+        "法术压制",
+        "减伤上限", "受击结算",
     )),
+    # 「某属性能从哪来」是枚举问题：不完整的枚举被当成完整的呈现就是错误答案
+    ("stat_sources", _ENUMERATION_INTENTS),
     # 关于知识库**覆盖范围**自身的元问题，答案不在 chunk 里。
     # 意图词必须专指「覆盖」这件事：单独的「知识库」「你的库」太宽——
     # 「知识库里有哪些已确认的跨来源数据冲突」问的是冲突不是覆盖，
@@ -829,10 +859,20 @@ _RESIST_WORDS = (
 _RESIST_NUMBER_RE = re.compile(r"[-+]?\d")
 
 
+#: 与抗性同理：「带着具体数字问护甲 / 闪避」= 要算。同样判在意图词表之后，
+#: 所以「护甲词缀有几档」仍归 `mod_tiers`、「护甲能从哪来」仍归 `stat_sources`。
+_MITIGATION_WORDS = ("护甲", "闪避", "格挡", "法术压制")
+
+
 def _resistance_numeric_route(question: str) -> str:
-    if not any(word in question for word in _RESIST_WORDS):
+    """带数字的抗性 / 受击问法 → 对应的计算器。抗性优先（它是链条最后一段，问得最多）。"""
+    if not _RESIST_NUMBER_RE.search(question):
         return ""
-    return "resistance_calc" if _RESIST_NUMBER_RE.search(question) else ""
+    if any(intent in question for intent in _ENUMERATION_INTENTS):
+        return ""
+    if any(word in question for word in _RESIST_WORDS):
+        return "resistance_calc"
+    return "mitigation_calc" if any(w in question for w in _MITIGATION_WORDS) else ""
 
 
 def _preferred_tool_route(question: str) -> str:
@@ -841,9 +881,13 @@ def _preferred_tool_route(question: str) -> str:
     只在**第一次**调用时强制（`tool_choice`），后续轮次放开——工具结果可能说明
     需要换工具，锁死会让它无路可走。
     """
+    enumeration = any(intent in question for intent in _ENUMERATION_INTENTS)
     for tool, intents in _PREFERRED_TOOL_INTENTS:
-        if any(intent in question for intent in intents):
-            return tool
+        if not any(intent in question for intent in intents):
+            continue
+        if enumeration and tool in _YIELDS_TO_ENUMERATION:
+            continue
+        return tool
     if any(intent in question for intent in _ENTITY_LOOKUP_INTENTS):
         # 实体名必须真的在别名表里才走精确查询，否则这条路由只会让工具空手而归
         try:
@@ -898,7 +942,80 @@ def _mod_tiers_args(question: str) -> dict[str, str] | None:
     return {"item_class": hit_classes[0], "mod_query": candidates[0]}
 
 
+#: 计算器的参数槽：`槽位 -> 单位词`。抽参数只认**数字与单位词紧邻**的写法，
+#: 抽不出唯一解就整体放弃（与 `_mod_tiers_args` 同一条纪律）。
+#:
+#: 护甲那一格刻意只认**物理**打击：护甲默认只减物理伤害，把「5000 火焰伤害」
+#: 当成入射伤害算出一个物理减伤百分比，是一个带着引用的错数字。
+_CALC_NUMBER = r"(\d+(?:\.\d+)?)"
+_ELEMENT_WORDS = ("火焰", "冰霜", "闪电", "混沌", "元素")
+_MITIGATION_SLOTS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("armour", ("护甲",)),
+    ("evasion", ("闪避",)),
+    ("monster_level", ("级怪物", "级的怪物", "级怪", "级敌人", "级 boss", "级 Boss")),
+    ("hit_damage", ("物理伤害", "物理打击", "物理攻击", "一击", "点伤害", "的伤害")),
+    ("block_chance", ("格挡",)),
+    ("suppression_chance", ("法术压制", "压制")),
+)
+def _slot_values(question: str, keywords: tuple[str, ...]) -> set[float]:
+    """问题里与这些单位词紧邻的数字。两种语序都认：`10000 护甲` 与 `护甲 10000`。"""
+    found: set[float] = set()
+    for keyword in keywords:
+        kw = re.escape(keyword)
+        for pattern in (
+            rf"{_CALC_NUMBER}\s*[%％点]?\s*(?:的)?\s*{kw}",
+            rf"{kw}\s*(?:是|有|为|到)?\s*{_CALC_NUMBER}\s*[%％点]?",
+        ):
+            found.update(float(m.group(1)) for m in re.finditer(pattern, question))
+    return found
+
+
+def _mitigation_args(question: str) -> dict[str, Any] | None:
+    """从问题里抽 `mitigation_calc` 的参数。
+
+    没有数字 → 返回 `{}`：那就是「讲规则」，工具本来就不需要参数
+    （「格挡上限是多少」「护甲有什么用」「法术压制减多少伤害」都属于这一类）。
+
+    有数字 → 只取单位词紧邻的那些；同一个槽位抽到两个不同的数就整体放弃，
+    交回模型。拿猜出来的参数去算，得到的是一个**带着推导表的错数字**，
+    比查不到糟得多。
+    """
+    if not _RESIST_NUMBER_RE.search(question):
+        return {}
+    args: dict[str, Any] = {}
+    for slot, keywords in _MITIGATION_SLOTS:
+        if slot == "hit_damage" and any(w in question for w in _ELEMENT_WORDS):
+            # 「5000 火焰伤害」不是护甲的入射伤害口径，宁可让工具说缺参数
+            continue
+        values = _slot_values(question, keywords)
+        if len(values) > 1:
+            logger.info("mitigation_calc 的 %s 抽到多个值 %s，交回模型自选", slot, values)
+            return None
+        if values:
+            value = values.pop()
+            args[slot] = int(value) if slot == "monster_level" else value
+    return args or None
+
+
+def _resistance_args(question: str) -> dict[str, Any] | None:
+    """`resistance_calc` 的参数。
+
+    只处理**没有数字**的那一类（「抗性上限是多少」「超抗有什么用」）：那是讲规则，
+    不需要参数。带数字的问法留给模型——抗性的输入项有九个
+    （该抗性 / 全元素 / 减抗 / 剧情惩罚 / 最大抗性加成 / 穿透…），
+    从中文里判断某个数属于哪一项，代码做不可靠，而错配的代价是一个错数字。
+    """
+    return {} if not _RESIST_NUMBER_RE.search(question) else None
+
+
 #: 参数解析器。返回 None 表示抽不出唯一解 → 不代码调用，退回 schema 裁剪。
+#:
+#: **为什么计算器也要进这张表**（第二十一轮实测）：schema 裁剪只能让模型「只有这一个
+#: 工具可调」，拦不住它**一个都不调**。实测 5 条新录制里 3 条如此——
+#: 「格挡上限是多少」直接拿检索到的 chunk 答了（路由观测 0/1），
+#: 「法术压制触发时减多少伤害」零证据进了兜底缺据，而
+#: 「我有 10000 护甲能减多少伤害」**碰巧**也拒答了，但拒答理由是「工具没返回证据」
+#: 而不是工具想说的「你没给这一击的伤害」——契约过了、机制却是坏的。
 _CODE_INVOKED_TOOLS: dict[str, Any] = {
     # 路由时已确认该名字在别名表里命中，参数就是问题本身
     "entity_lookup": lambda question: {"name": question},
@@ -906,6 +1023,9 @@ _CODE_INVOKED_TOOLS: dict[str, Any] = {
     "kb_coverage": lambda question: {},
     # 参数需要从领域词表里抽，可能抽不出来
     "mod_tiers": _mod_tiers_args,
+    # 计算器：没有数字就是讲规则（无参数），有数字则只认单位词紧邻的那些
+    "mitigation_calc": _mitigation_args,
+    "resistance_calc": _resistance_args,
 }
 
 #: 这些工具按设计**不产出引用**（覆盖声明是元信息不是游戏事实）。

@@ -193,12 +193,42 @@ class BindingMarkerVariantsTest(unittest.TestCase):
                 self.assertEqual(["[[E1]]", "[[E2]]"], spans)
 
     def test_malformed_markers_still_rejected(self) -> None:
-        """放宽的是分隔符写法，不是「什么都算绑定」。"""
+        """放宽的是**写法**，不是「什么都算绑定」。
+
+        `[E1]` 从这份清单里移出去了（见 `test_single_bracket_counts_as_bound`）：
+        它是一个完整、无歧义的引用，而 `[[]]`/`[[X1]]`/`[[E]]`/`[[E1` 是残缺的。
+        """
         from orchestrator.binding import extract_labels
 
-        for marker in ("[[]]", "[[X1]]", "[[E]]", "[E1]", "[[E1"):
+        for marker in ("[[]]", "[[X1]]", "[[E]]", "[[E1", "[E]", "[EE1]"):
             with self.subTest(marker=marker):
                 self.assertEqual((), extract_labels(f"某句{marker}"))
+
+    def test_single_bracket_counts_as_bound(self) -> None:
+        """单层 `[E1]` 也算绑定。
+
+        这条**改了一个此前刻意的决定**，依据是新测出来的数字（第二十一轮）：
+        92 条录制离线重放，143 句拦截里有 **7 句**只因为模型写了 `[E1]`——
+        提示词里写了双层写法也拦不住，而被拦下的是有据的话，属错误拒答。
+        判据不变的地方是数值回填：写法放宽了，句中每个数字仍必须能在证据里找到
+        （下一条用例钉住）。
+        """
+        from orchestrator.binding import extract_labels
+
+        self.assertEqual(("E1",), extract_labels("根据 [E1] 的护甲减伤公式"))
+        self.assertEqual(("E1", "E2"), extract_labels("见 [E1] 与 [E2]"))
+
+    def test_single_bracket_still_checks_numbers(self) -> None:
+        """写法放宽 ≠ 数值可以编：单括号绑定的句子照旧走数值回填校验。"""
+        import orchestrator.binding as b
+
+        ev = [b.Evidence(label="E1", chunk_id="c", entity_id=None, title="t", url="u",
+                         source="POEDB", source_priority=1, text="减伤 67%",
+                         can_support_facts=True)]
+        ok = b.verify("减伤是 67%[E1]。", ev, factual_terms=(), domain_terms=())
+        self.assertEqual(0, ok.blocked, [v.reason for v in ok.verdicts])
+        bad = b.verify("减伤是 88%[E1]。", ev, factual_terms=(), domain_terms=())
+        self.assertEqual(1, bad.blocked)
 
     def test_bracket_form_counts_as_bound(self) -> None:
         """端到端：括号写法的事实句不该被判「未绑定引用」。"""

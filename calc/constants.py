@@ -60,6 +60,13 @@ ATTACK_SPEED_PER_FRENZY_CHARGE = "characterConstants.base_attack_speed_+%_per_fr
 MAX_RESIST_CAP = "pobMisc.MaxResistCap"
 RESIST_FLOOR = "pobMisc.ResistFloor"
 
+#: 受击结算的上限。同样来自那张 magic numbers 表，同样没有 dat 出处。
+#: 注意 **`SUPPRESSION_EFFECT` 是 40 而不是 50**——「法术压制减 50% 伤害」是常见的记错。
+EVADE_CHANCE_CAP = "pobMisc.EvadeChanceCap"
+BLOCK_CHANCE_CAP = "pobMisc.BlockChanceCap"
+SUPPRESSION_CHANCE_CAP = "pobMisc.SuppressionChanceCap"
+SUPPRESSION_EFFECT = "pobMisc.SuppressionEffect"
+
 ES_RATIO_OF_LIFE = "gameConstants.EnergyShieldRatioOfLife"
 MONSTER_DR_IMPROVEMENT = "gameConstants.MonsterDamageReductionImprovement"
 MONSTER_ACCURACY_IMPROVEMENT = "gameConstants.MonsterAccuracyImprovement"
@@ -79,6 +86,7 @@ REQUIRED = (
     PHYS_DR_PER_ENDURANCE_CHARGE, CRIT_CHANCE_PER_POWER_CHARGE,
     ATTACK_SPEED_PER_FRENZY_CHARGE,
     MAX_RESIST_CAP, RESIST_FLOOR,
+    EVADE_CHANCE_CAP, BLOCK_CHANCE_CAP, SUPPRESSION_CHANCE_CAP, SUPPRESSION_EFFECT,
     ES_RATIO_OF_LIFE, MONSTER_DR_IMPROVEMENT,
     MONSTER_LIFE_TABLE, MONSTER_ARMOUR_TABLE, MONSTER_EVASION_TABLE,
     MONSTER_ACCURACY_TABLE, MONSTER_DAMAGE_TABLE,

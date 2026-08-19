@@ -1,0 +1,42 @@
+{
+  "format_version": 1,
+  "case_id": "num_armour_reduction",
+  "query": "10000 护甲面对一次 1000 的物理打击能减多少伤害",
+  "recorded_at": "2026-08-19T19:27:18+08:00",
+  "model": "glm-5.2",
+  "tokens": {
+    "prompt": 8713,
+    "output": 260,
+    "reasoning": 37,
+    "total": 8973
+  },
+  "tool_calls": [
+    "kb_search",
+    "mitigation_calc"
+  ],
+  "evidence_gap": false,
+  "out_of_scope": false,
+  "precision_route": "",
+  "gap_answer": "",
+  "final_answer": "〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕**代入计算**：\n\n〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕因此，10000 护甲面对一次 1000 的物理打击：**减伤 67%，剩余 330 伤害**[[E1]]。\n\n需要注意的是，护甲减伤的百分比取决于这一击的大小——换一个不同的伤害数值，减伤百分比就会不同，护甲不是固定百分比减伤[[E1]]。\n\n> 只按 PoB 的受击公式复算：输入逐字取自问题，没给的项不算；**护甲减伤依赖这一击有多大**，不给伤害数值就没有百分比可言；**不含头目的护甲/闪避倍率**（PoB 那是按一份头目清单现算的均值，本库没有那份清单）、不含「不能被闪避」这类旗标，也不读取角色档案、不给装备推荐与价格\n\n> 检索以降级通道完成（fts）：向量检索与重排未启用（网关无 embedding 模型），当前走 BM25 + 实体精确匹配",
+  "blocked_claims": 3,
+  "elapsed_ms": 5510,
+  "evidence_fingerprint": "sha256:40b2bdf14363563b378c4c2a349fbcec",
+  "_warning": "raw_answer 是未过出口闸门的模型原文，含可能无据的断言，不得当作事实引用",
+  "raw_answer": "根据 [E1] 中 Path of Building 的护甲减伤公式：\n\n**公式**：`护甲 / (护甲 + 5 × 伤害) × 100`\n\n**代入计算**：\n\n| 步骤 | 算式 | 结果 |\n| --- | --- | --- |\n| 护甲减伤（未取整） | 10000 / (10000 + 5 × 1000) × 100 | 66.67% |\n| 实际减伤 | min(取整(66.67%), 上限 90%) | **67%** |\n| 这一击剩余伤害 | 1000 × (1 − 67% / 100) | **330** |\n\n因此，10000 护甲面对一次 1000 的物理打击：**减伤 67%，剩余 330 伤害**[[E1]]。\n\n需要注意的是，护甲减伤的百分比取决于这一击的大小——换一个不同的伤害数值，减伤百分比就会不同，护甲不是固定百分比减伤[[E1]]。",
+  "evidence": [
+    {
+      "label": "E1",
+      "chunk_id": "resistance_calc:受击结算（护甲减伤）",
+      "entity_id": null,
+      "title": "受击结算（护甲减伤）",
+      "url": "https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Modules/CalcDefence.lua#L65-L76",
+      "source": "Path of Building",
+      "source_priority": 2,
+      "text": "### 护甲减伤\n\n| 步骤 | 算式 | 结果 |\n| --- | --- | --- |\n| 护甲减伤（未取整） | 10000 / (10000 + 5 × 1000) × 100 | 66.67 |\n| 实际减伤 | min(取整(66.67%), 上限 90%) | 67 |\n| 这一击剩余伤害 | 1000 × (1 - 67% / 100) | 330 |\n\n10000 护甲面对一次 1000 的物理打击：**减伤 67%**，这一击剩 330。\n换一个大小的打击，这个百分比就变了——护甲不是固定百分比减伤。\n\n一次攻击落到身上的结算顺序：**能不能命中（闪避）→ 能不能挡下（格挡）／法术能不能被压制 → 打中了减多少（护甲与物理减伤）→ 抗性**。抗性那一段用 `resistance_calc`。\n\n只按 PoB 的受击公式复算：输入逐字取自问题，没给的项不算；**护甲减伤依赖这一击有多大**，不给伤害数值就没有百分比可言；**不含头目的护甲/闪避倍率**（PoB 那是按一份头目清单现算的均值，本库没有那份清单）、不含「不能被闪避」这类旗标，也不读取角色档案、不给装备推荐与价格。\n\n来源：\n- 命中率公式 `calcs.hitChance`：https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Modules/CalcDefence.lua#L57-L63\n- 闪避率与 95% 上限：https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Modules/CalcDefence.lua#L1071-L1085\n- 护甲减伤 `calcs.armourReduction`：https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Modules/CalcDefence.lua#L65-L76\n- 物理减伤上限 90%：characterConstants.maximum_physical_damage_reduction_%（GGG 原始表 Metadata/Characters/Character.ot）\n- 格挡上限：基础最大 75%、硬上限 90%（`pobMisc.BlockChanceCap`） https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Modules/CalcDefence.lua#L660-L694\n- 法术压制：几率上限 100%、效果 40%（`pobMisc.SuppressionEffect`）\n- 怪物命中值等级表：monsterAccuracyTable（GGG 原始表 DefaultMonsterStats.dat，出处为推断）https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Misc.lua#L6",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    }
+  ]
+}
