@@ -88,7 +88,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 # 采集（POEDB）
 .venv/bin/python -m kb.pipeline --category all
 #   category: unique_item | unique_l2 | mods | bench | metamods | tree | monsters
-#             | currency | scarab | coverage | all
+#             | currency | scarab | maps | coverage | all
 #   --harvest 只抓缓存不抽取 / --force 忽略缓存 / --rebuild 清空重建
 #   --allow-bench-shrink、--allow-metamod-shrink、--allow-monster-shrink
 #   只在人工核对上游确实删项后使用
@@ -107,7 +107,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 637 项，秒级
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 650 项，秒级
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选
@@ -124,7 +124,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 .venv/bin/python scripts/eval_run.py --record        # 重录真实响应（**要凭证、烧 token**）
 ```
 
-黄金问答集是 `tests/golden/questions.yaml`（80 条，六类），基线与全部结论在
+黄金问答集是 `tests/golden/questions.yaml`（84 条，六类），基线与全部结论在
 `tests/golden/BASELINE.md`——**动闸门前先读它**，里面记了四个已修缺陷、两个已知未修边界，
 以及两次「测量本身写错」的教训。
 
@@ -203,8 +203,8 @@ POST /chat[/stream]  api/chat.py（只做校验与编排调用）
   游戏里的显示值，算错就是「带着引用的错数字」——比查不到更糟。也**不留空列**：留了下一个人
   会以为它待填，然后把乘数当伤害写进去。这两维明确划进 `partial_note` 的未采集部分。
 
-本机 `data/poe.db` 现状（`GET /healthz` 与 `/admin/stats` 可查）：`entity` 5038、
-`mod_affix` 93897、`pob_mod` 25487、`chunk` 18288、`alias` 7947、`game_constant` 499、
+本机 `data/poe.db` 现状（`GET /healthz` 与 `/admin/stats` 可查）：`entity` 5197、
+`mod_affix` 93897、`pob_mod` 25487、`chunk` 18447、`alias` 8106、`game_constant` 499、
 `craft_bench_recipe` 783、`pob_base_item` **1022**（18 个装备类别，PoB × POEDB 逐条桥接，
 覆盖 PoB 侧 96.1%；未桥接的 41 条已按类别登记在台账）、`source_conflict` **515**（`mod_review` 254 + `unique_review` 207 + `spectre_review` 43
 + `spectre` **8** + `tree_review` 3）。
@@ -227,6 +227,11 @@ POST /chat[/stream]  api/chat.py（只做校验与编排调用）
 与堆叠上限是两回事，混一起会把「最多放几个」答成 20）。那一页有三个物品类，
 只收 `MapFragment`；4 条亡者之城包与 1 条孵化器按物品类登记进台账。
 卡片解析与通货共用 `kb/sources/poedb_cards.py`（两页结构逐字相同），分开的只是表与域。
+
+`poedb_map` **159** 张地图（等阶——只有 110 张有，梦魇/传奇等特殊地图页面未给；头目、
+额外目标、掉落的命运卡、打完头目解锁的工艺台配方，以及**异界图鉴上相邻的地图**，159 张全有）。
+这个域挂了三页而**只有 `Atlas_of_Worlds` 有实质内容**：`Maps` 页主表是「地图碎片 → 区域」
+且区域名是未翻译的英文 id，`Atlas` 页只有 1 张中文卡片。**同一个域下的页面要一页一页看。**
 
 `pob_cluster_notable` **308** 条星团珠宝核心天赋与基石（中文名由已入库的天赋卡按英文名桥接，
 100% 命中）+ `pob_cluster_jewel` 3 个尺寸（小 2–3 / 中 4–6 / 大 8–12 个小天赋）

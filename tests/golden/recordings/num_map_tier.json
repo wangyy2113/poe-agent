@@ -1,0 +1,132 @@
+{
+  "format_version": 1,
+  "case_id": "num_map_tier",
+  "query": "王陵是几阶地图",
+  "recorded_at": "2026-08-19T16:31:18+08:00",
+  "model": "glm-5.2",
+  "tokens": {
+    "prompt": 8135,
+    "output": 63,
+    "reasoning": 47,
+    "total": 8198
+  },
+  "tool_calls": [
+    "kb_search"
+  ],
+  "evidence_gap": false,
+  "out_of_scope": false,
+  "precision_route": "",
+  "gap_answer": "",
+  "final_answer": "王陵是 13 阶地图[[E1]]。\n\n> 检索以降级通道完成（alias, fts）：向量检索与重排未启用（网关无 embedding 模型），当前走 BM25 + 实体精确匹配",
+  "blocked_claims": 0,
+  "elapsed_ms": 3215,
+  "evidence_fingerprint": "sha256:4c5cb6169dd1df8a76a2f78fe6f37bed",
+  "_warning": "raw_answer 是未过出口闸门的模型原文，含可能无据的断言，不得当作事实引用",
+  "raw_answer": "王陵是 13 阶地图[[E1]]。",
+  "evidence": [
+    {
+      "label": "E1",
+      "chunk_id": "map:王陵#0#064700be2497e375",
+      "entity_id": "map:王陵",
+      "title": "王陵（地图）",
+      "url": "https://poedb.tw/cn/Atlas_of_Worlds",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 王陵（地图）\n等阶：13\n\n- 头目：觉醒者托尔曼\n- 掉落的命运卡：天堂执法官、巫妖、遗弃之物、无迹可寻\n- 异界图鉴上相邻的地图：废弃矿山、无边原野、贫瘠之地、亡者之财\n- 额外目标：在 腐化 稀有 版本的该地图内击败头目\n- 打完头目解锁的工艺台配方：近战 - 等级 1\n\n来源：POEDB → 异界图鉴\nhttps://poedb.tw/cn/Atlas_of_Worlds",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E2",
+      "chunk_id": "map:废弃矿山#0#406a5dc8469c4f6d",
+      "entity_id": "map:废弃矿山",
+      "title": "废弃矿山（地图）",
+      "url": "https://poedb.tw/cn/Atlas_of_Worlds",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 废弃矿山（地图）\n等阶：12\n\n- 头目：恐惧之雷\n- 掉落的命运卡：宝箱、赌徒、浑沌性情、莉莎之息\n- 异界图鉴上相邻的地图：火山炎域、王陵、白玉神庙\n- 额外目标：在 腐化 稀有 版本的该地图内击败头目\n\n来源：POEDB → 异界图鉴\nhttps://poedb.tw/cn/Atlas_of_Worlds",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E3",
+      "chunk_id": "map:无边原野#0#e3615ecc39995262",
+      "entity_id": "map:无边原野",
+      "title": "无边原野（地图）",
+      "url": "https://poedb.tw/cn/Atlas_of_Worlds",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 无边原野（地图）\n等阶：14\n\n- 头目：权利猎人德里克\n- 掉落的命运卡：创痕之原、狡狐、宁静、垂青之运\n- 异界图鉴上相邻的地图：王陵、冰冷通道、梦魇拟像\n- 额外目标：在 腐化 稀有 版本的该地图内击败头目\n\n来源：POEDB → 异界图鉴\nhttps://poedb.tw/cn/Atlas_of_Worlds",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E4",
+      "chunk_id": "map:亡者之财#0#d577015e2863c130",
+      "entity_id": "map:亡者之财",
+      "title": "亡者之财（地图）",
+      "url": "https://poedb.tw/cn/Atlas_of_Worlds",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 亡者之财（地图）\n等阶：POEDB 页面未给（梦魇 / 传奇等特殊地图多为此形态）\n\n- 头目：启示之象\n- 掉落的命运卡：黑暗术者、黑暗来犯、命运之晶、纯净帝王\n- 异界图鉴上相邻的地图：王陵\n- 额外目标：完成该地图\n- 传奇地图提供的异界天赋点：0/10\n\n来源：POEDB → 异界图鉴\nhttps://poedb.tw/cn/Atlas_of_Worlds",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E5",
+      "chunk_id": "map:贫瘠之地#0#622dc769f280905e",
+      "entity_id": "map:贫瘠之地",
+      "title": "贫瘠之地（地图）",
+      "url": "https://poedb.tw/cn/Atlas_of_Worlds",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 贫瘠之地（地图）\n等阶：14\n\n- 头目：灼眼者普利斯\n- 掉落的命运卡：大地吞食者、帝国的遗产、前程的诱惑、安赛娜丝的馈赠\n- 异界图鉴上相邻的地图：神主居所、王陵、疫源林谷、主脑之巢\n- 额外目标：在 腐化 稀有 版本的该地图内击败头目\n\n来源：POEDB → 异界图鉴\nhttps://poedb.tw/cn/Atlas_of_Worlds",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E6",
+      "chunk_id": "atlas_passive:Remnants_of_the_Past_8dc1eb122b#1982d8c8609161d9",
+      "entity_id": "atlas_passive:Remnants_of_the_Past_8dc1eb122b",
+      "title": "核心天赋·往日遗骸（Remnants of the Past）",
+      "url": "https://poedb.tw/cn/atlas-skill-tree/",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 核心天赋·往日遗骸（Remnants of the Past）\n核心天赋 ｜ Atlas 天赋树 3.29\n\n- 每张地图的最终地图首领有+3%几率掉落一个裂界守卫地图（14阶以上）\n- 每张地图的最终地图首领有+3%几率掉落一张塑界守卫地图（14阶以上）\n\n> （14+ 阶地图的最终首领有 3% 的基础几率掉落一个裂界守卫地图）\n> （14+ 阶地图的最终首领有 3% 的基础几率掉落一个塑界守卫地图）\n\n来源：POEDB → Atlas 天赋树 · 往日遗骸（Remnants of the Past）\nhttps://poedb.tw/cn/atlas-skill-tree/",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E7",
+      "chunk_id": "unique_item:Shadow_Shaping#0#3a1d5f37da36775e",
+      "entity_id": "unique_item:Shadow_Shaping",
+      "title": "暗影塑形（Shadow Shaping）",
+      "url": "https://poedb.tw/cn/Shadow_Shaping",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 暗影塑形（Shadow Shaping）\n类型：唯一装备 ｜ 底材：小型雕像 ｜ 分类：其他\n\n**需求**：需求 等级 68\n\n**隐式词缀**\n- [隐式词缀] 你地图中找到的地图数量提高 2%\n\n**显式词缀**\n- [显式词缀] 掉落的地图不会是偏好地图\n- [显式词缀] 你每拥有一个不同的恩典地图，你的地图中找到的地图就有+1%的几率拥有特殊基底属性\n\n来源：POEDB → 暗影塑形（Shadow Shaping）\nhttps://poedb.tw/cn/Shadow_Shaping",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E8",
+      "chunk_id": "unique_item:Twist_of_Fate#0#b391e29514973e1e",
+      "entity_id": "unique_item:Twist_of_Fate",
+      "title": "扭转命运（Twist of Fate）",
+      "url": "https://poedb.tw/cn/Twist_of_Fate",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 扭转命运（Twist of Fate）\n类型：唯一装备 ｜ 底材：小型雕像 ｜ 分类：其他\n\n**需求**：需求 等级 68\n\n**隐式词缀**\n- [隐式词缀] 你地图中找到的地图数量提高 2%\n\n**显式词缀**\n- [显式词缀] 你的已腐化的稀有地图在打开地图时获得无法预测的修改\n- [显式词缀] 以该方式修改的地图具有 1-3 个额外的随机地图词缀\n\n**附加说明**\n- [说明] （无法修改菌潮地图或异界图鉴上位于虚空石插槽后方的地图）\n\n来源：POEDB → 扭转命运（Twist of Fate）\nhttps://poedb.tw/cn/Twist_of_Fate",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    }
+  ]
+}

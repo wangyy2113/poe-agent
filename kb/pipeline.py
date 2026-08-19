@@ -30,6 +30,7 @@ from entities.taxonomy import EntityType, ModKind, Source, make_entity_id
 from kb import coverage as coverage_mod
 from kb.fetcher import Fetcher
 from kb import render_stackable
+from kb import render_maps
 from kb import render_monsters
 from kb import render_tree
 from kb.render import to_chunks
@@ -38,6 +39,7 @@ from kb.sources import (
     craftofexile_metamods,
     poedb_crafting,
     poedb_currency,
+    poedb_maps,
     poedb_scarab,
     poedb_index,
     poedb_mods,
@@ -1732,6 +1734,135 @@ def run_poedb_currency(*, force: bool = False, allow_shrink: bool = False) -> in
     return 0
 
 
+#: 地图条数下限。2026-08-19 实测 159 张。
+MIN_MAPS = 120
+
+
+def _map_entity(item: poedb_maps.MapEntry, priority: int, fetched_at: str) -> Entity:
+    """地图 → 实体。id 用中文名（实测 163 个名字全部唯一，且页面没给 slug）。"""
+    return Entity(
+        entity_id=make_entity_id(EntityType.MAP, item.name_zh),
+        entity_type=EntityType.MAP,
+        name_zh=item.name_zh,
+        attributes={
+            "tier": item.tier,
+            "bonus_objective": item.bonus_objective,
+            "bosses": list(item.bosses),
+            "divination_cards": list(item.divination_cards),
+            "links": list(item.links),
+            "bench_recipe": item.bench_recipe,
+            "atlas_points": item.atlas_points,
+        },
+        search_keywords=list(item.bosses),
+        ref=SourceRef(
+            source=Source.POEDB.value,
+            url=poedb_maps.POEDB_MAPS_URL,
+            priority=priority,
+            fetched_at=fetched_at,
+        ),
+        content_hash=item.content_hash,
+    )
+
+
+def run_poedb_maps(*, force: bool = False, allow_shrink: bool = False) -> int:
+    """采集地图（POEDB `/cn/Atlas_of_Worlds`）。
+
+    这个域挂了三页，**只有这一页有实质内容**：`Maps` 页主表是「地图碎片 → 区域」且区域名
+    未翻译，`Atlas` 页只有 1 张中文卡片。判据见 `kb/sources/poedb_maps.py`。
+    """
+    cfg = get_config()
+    conn = dbmod.init_db(cfg.db_path, vector_dim=int(cfg.get("retrieval.vector.dim", 0) or 0))
+    fetcher = _make_fetcher(cfg)
+    started = time.time()
+    cur = conn.execute(
+        "INSERT INTO ingest_run(source, category, started_at) VALUES (?,?,datetime('now'))",
+        (Source.POEDB.value, "maps"),
+    )
+    run_id = cur.lastrowid
+    conn.commit()
+
+    res = fetcher.fetch(poedb_maps.POEDB_MAPS_URL, force=force)
+    if not res.ok:
+        conn.execute(
+            "UPDATE ingest_run SET finished_at=datetime('now'), failed=1, note=? WHERE run_id=?",
+            (f"抓取失败 status={res.status_code}", run_id),
+        )
+        conn.commit()
+        return 2
+
+    extracted = poedb_maps.extract_maps(res.text)
+    items = extracted.maps
+    existing = int(conn.execute("SELECT count(*) FROM poedb_map").fetchone()[0])
+    if len(items) < MIN_MAPS or (existing and len(items) < existing * 0.8):
+        if not allow_shrink:
+            conn.execute(
+                "UPDATE ingest_run SET finished_at=datetime('now'), failed=1, note=? "
+                "WHERE run_id=?",
+                (f"拒绝替换快照：{existing} -> {len(items)}（下限 {MIN_MAPS}）", run_id),
+            )
+            conn.commit()
+            logger.error("地图数量护栏触发，已拒绝写入：%d -> %d", existing, len(items))
+            return 2
+
+    priority = int(cfg.priority_of(Source.POEDB.value))
+    entities = [_map_entity(i, priority, res.fetched_at) for i in items]
+    conn.execute("SAVEPOINT map_snapshot")
+    try:
+        conn.execute("DELETE FROM poedb_map")
+        conn.executemany(
+            """
+            INSERT INTO poedb_map(
+                name_zh,tier,bonus_objective,bosses,divination_cards,links,bench_recipe,
+                atlas_points,source,source_priority,url,content_hash,fetched_at,updated_at
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'))
+            """,
+            [
+                (i.name_zh, i.tier, i.bonus_objective,
+                 json.dumps(i.bosses, ensure_ascii=False),
+                 json.dumps(i.divination_cards, ensure_ascii=False),
+                 json.dumps(i.links, ensure_ascii=False),
+                 i.bench_recipe, i.atlas_points, Source.POEDB.value, priority,
+                 poedb_maps.POEDB_MAPS_URL, i.content_hash, res.fetched_at)
+                for i in items
+            ],
+        )
+        chunks, aliases = _reindex_entity_type(
+            conn, EntityType.MAP, entities, render_maps.to_chunks
+        )
+        conn.execute("RELEASE map_snapshot")
+    except Exception:
+        conn.execute("ROLLBACK TO map_snapshot")
+        conn.execute("RELEASE map_snapshot")
+        raise
+
+    elapsed_ms = int((time.time() - started) * 1000)
+    note = json.dumps(
+        {
+            "maps": len(items),
+            "with_tier": sum(1 for i in items if i.tier),
+            "with_bosses": sum(1 for i in items if i.bosses),
+            "with_cards": sum(1 for i in items if i.divination_cards),
+            "with_links": sum(1 for i in items if i.links),
+            "with_bench_recipe": sum(1 for i in items if i.bench_recipe),
+            "skipped_cards": extracted.skipped_cards,
+            "chunks": chunks,
+            "aliases": aliases,
+            "note": "Maps 页与 Atlas 页本轮不取：前者区域名未翻译、后者只有 1 张中文卡片",
+        },
+        ensure_ascii=False,
+    )
+    conn.execute(
+        "UPDATE ingest_run SET finished_at=datetime('now'), total=?, succeeded=?, failed=0, "
+        "elapsed_ms=?, note=? WHERE run_id=?",
+        (len(items), len(items), elapsed_ms, note, run_id),
+    )
+    conn.commit()
+    logger.info("地图采集完成：%d 张（卡片 %d、别名 %d；有等阶 %d、有头目 %d），耗时 %dms",
+                len(items), chunks, aliases,
+                sum(1 for i in items if i.tier), sum(1 for i in items if i.bosses), elapsed_ms)
+    return 0
+
+
 #: 圣甲虫条数下限。2026-08-19 实测 118 条（MapFragment）。
 MIN_SCARABS = 90
 
@@ -2170,12 +2301,12 @@ def main(argv: list[str] | None = None) -> int:
         "--category", default="unique_item",
         choices=[
             "unique_item", "unique_l2", "mods", "bench", "metamods", "tree",
-            "monsters", "currency", "scarab", "coverage", "all",
+            "monsters", "currency", "scarab", "maps", "coverage", "all",
         ],
         help="unique_item=唯一装备索引页, unique_l2=类别页补集+权威英文名+详情页兜底, "
              "mods=词缀, bench=工艺工作台目录与原始费用, "
              "metamods=Craft of Exile 元词缀交互矩阵（POEDB 镜像）, "
-             "tree=天赋树与 Atlas 天赋树, monsters=怪物词缀与幽魂倍率, currency=通货, scarab=圣甲虫, "
+             "tree=天赋树与 Atlas 天赋树, monsters=怪物词缀与幽魂倍率, currency=通货, scarab=圣甲虫, maps=地图, "
              "coverage=只刷新覆盖声明, all=全部",
     )
     ap.add_argument("--harvest", action="store_true",
@@ -2236,6 +2367,8 @@ def main(argv: list[str] | None = None) -> int:
             rc |= run_poedb_currency(
                 force=args.force, allow_shrink=args.allow_currency_shrink
             )
+        if args.category in ("maps", "all"):
+            rc |= run_poedb_maps(force=args.force, allow_shrink=args.allow_currency_shrink)
         if args.category in ("scarab", "all"):
             rc |= run_poedb_scarab(force=args.force, allow_shrink=args.allow_currency_shrink)
         if args.category in ("monsters", "all"):
@@ -2257,6 +2390,9 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     except craftofexile_metamods.MetamodMatrixStructureError as exc:
         logger.error("Metamod 矩阵结构断言失败，已拒绝写入：%s", exc)
+        return 2
+    except poedb_maps.MapStructureError as exc:
+        logger.error("地图页结构断言失败，已拒绝写入：%s", exc)
         return 2
     except poedb_currency.CurrencyStructureError as exc:
         # 通货与圣甲虫共用 `poedb_cards.CardStructureError`，一处捕获即可

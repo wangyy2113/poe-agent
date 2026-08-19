@@ -360,6 +360,38 @@ cases:
     expect_gap: true
     note: 掉落来源与获取途径未采集（页面只有效果、堆叠与放置上限）
 
+  # ── 地图（2026-08-19 第十九轮入库）──────────────────────────────
+  - id: desc_map_boss
+    query: 奇术秘殿的头目是谁
+    kind: description
+    expect_slug: "map:奇术秘殿"
+    expect_evidence_text: "天雷之使派蒂"
+    note: 地图头目。这个域挂了三页，只有 Atlas_of_Worlds 有实质内容
+
+  - id: num_map_tier
+    query: 王陵是几阶地图
+    kind: numeric
+    expect_slug: "map:王陵"
+    expect_values: ["13"]
+    note: 等阶。实测 159 张里只有 110 张有——没有的留空，不补 0
+
+  - id: desc_map_links
+    query: 晴空幽岛在异界图鉴上连着哪些地图
+    kind: description
+    expect_slug: "map:晴空幽岛"
+    expect_any_hit: true
+    note: >-
+      卡片里的 `Link` 就是图鉴连接关系，159 张全有。这条同时说明一件事：
+      一页的价值要看 DOM——同域另两页（Maps / Atlas）几乎没有可用内容
+
+  - id: gap_map_mods
+    query: 地图词缀有哪些
+    kind: gap
+    expect_gap: true
+    note: >-
+      地图词缀未采集：`Maps` 页那 12 条只有未翻译的内部 stat id
+      （`map implicit item drop quantity +%`），不能当中文答案输出
+
   - id: num_max_resistance_cap
     query: 抗性上限是多少
     kind: numeric

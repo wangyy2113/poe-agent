@@ -604,8 +604,23 @@ DOMAINS: tuple[DomainSpec, ...] = (
         category=Category.ATLAS,
         authority_url=f"{POEDB_BASE}/Maps",
         count_sql="SELECT count(*) FROM entity WHERE entity_type='map'",
+        chunk_prefix="map:",
         hints=("地图", "图鉴", "地图词缀"),
-        question_hints=("某地图的布局与 Boss", "地图词缀有哪些"),
+        question_hints=(
+            "某地图的等阶、头目与额外目标",
+            "某地图在图鉴上连着哪些图",
+            "某地图会掉落哪些命运卡",
+        ),
+        partial_note=(
+            "已入库 **159 张地图**：等阶（其中 110 张有，梦魇/传奇等特殊地图页面未给）、"
+            "头目、额外目标、掉落的命运卡、打完头目解锁的工艺台配方，以及"
+            "**异界图鉴上相邻的地图**（159 张全有）；"
+            "**未采集**：地图词缀（`Maps` 页那 12 条只有未翻译的内部 stat id）、"
+            "地图内部布局、完整掉落表、以及地图物品本身的隐式词缀"
+        ),
+        missing_dimension_hints=(
+            "地图词缀", "词缀有哪些", "布局", "怎么走", "掉落表", "隐式",
+        ),
         poedb_pages=("Maps", "Atlas", "Atlas_of_Worlds"),
         note="PoB 的 ModMap.lua 已明确排除（手写、无权重无区间），地图词缀须走 POEDB",
     ),
