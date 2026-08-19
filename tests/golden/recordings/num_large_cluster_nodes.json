@@ -1,0 +1,42 @@
+{
+  "format_version": 1,
+  "case_id": "num_large_cluster_nodes",
+  "query": "大型星团珠宝能加几个小天赋",
+  "recorded_at": "2026-08-19T16:10:52+08:00",
+  "model": "glm-5.2",
+  "tokens": {
+    "prompt": 11520,
+    "output": 110,
+    "reasoning": 59,
+    "total": 11630
+  },
+  "tool_calls": [
+    "kb_search",
+    "cluster_jewel_info"
+  ],
+  "evidence_gap": false,
+  "out_of_scope": false,
+  "precision_route": "",
+  "gap_answer": "",
+  "final_answer": "大型星团珠宝能加 **8–12 个小天赋**，另有 5 个核心天赋位与 3 个珠宝插槽位[[E1]]。\n\n> 只给尺寸、小天赋数量与清单；**哪些核心天赋出现在哪种小天赋类型上未采集**（本地来源没有这个映射），也不提供掉落与价格\n\n> 检索以降级通道完成（fts）：向量检索与重排未启用（网关无 embedding 模型），当前走 BM25 + 实体精确匹配",
+  "blocked_claims": 0,
+  "elapsed_ms": 4284,
+  "evidence_fingerprint": "sha256:60e33522464b0889c867a86ce7418857",
+  "_warning": "raw_answer 是未过出口闸门的模型原文，含可能无据的断言，不得当作事实引用",
+  "raw_answer": "大型星团珠宝能加 **8–12 个小天赋**，另有 5 个核心天赋位与 3 个珠宝插槽位[[E1]]。",
+  "evidence": [
+    {
+      "label": "E1",
+      "chunk_id": "cluster_jewel:大型星团珠宝",
+      "entity_id": null,
+      "title": "大型星团珠宝",
+      "url": "https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/ClusterJewels.lua",
+      "source": "Path of Building",
+      "source_priority": 2,
+      "text": "### 大型星团珠宝可选的小天赋类型（17 种）\n\n大型星团珠宝可加 8–12 个小天赋，有 5 个核心天赋位、3 个珠宝插槽位。\n\n| 类型（PoB 英文原文） | 小天赋给予（英文原文） |\n| --- | --- |\n| Attack Damage | 10% increased Attack Damage |\n| Attack Damage while Dual Wielding | 12% increased Attack Damage while Dual Wielding |\n| Attack Damage while holding a Shield | 12% increased Attack Damage while holding a Shield |\n| Axe and Sword Damage | Axe Attacks deal 12% increased Damage with Hits and Ailments；Sword Attacks deal 12% increased Damage with Hits and Ailments |\n| Bow Damage | 12% increased Damage with Bows；12% increased Damage Over Time with Bow Skills |\n| Chaos Damage | 12% increased Chaos Damage |\n| Cold Damage | 12% increased Cold Damage |\n| Dagger and Claw Damage | Claw Attacks deal 12% increased Damage with Hits and Ailments；Dagger Attacks deal 12% increased Damage with Hits and Ailments |\n| Damage with Two Handed Weapons | 12% increased Damage with Two Handed Weapons |\n| Elemental Damage | 10% increased Elemental Damage |\n| Fire Damage | 12% increased Fire Damage |\n| Lightning Damage | 12% increased Lightning Damage |\n\n（共 17 种，以上列出前 12 种）\n\n类型名与小天赋文本**只有英文**：POEDB 侧的中文附魔文本不在本库已缓存的任何一页上，所以按 PoB 原文给出，不自行翻译。\n\n只给尺寸、小天赋数量与清单；**哪些核心天赋出现在哪种小天赋类型上未采集**（本地来源没有这个映射），也不提供掉落与价格。",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    }
+  ]
+}

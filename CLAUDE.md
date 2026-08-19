@@ -54,6 +54,12 @@ PoB Community 的 PoE1 版（库里 `game_version` 全是 `3.29`；POE2 用 0.x 
   充分性判定之后的第二道闸门：问题命中的领域若未采集、或 `partial_note` 明确排除了被问的
   维度，即使别名精确命中也走缺据声明。它**只能把「充分」改判为「不足」**——放宽依据要有
   新证据，而这里没有引入新证据。
+- **偏好工具只豁免「BM25 命不中」，不豁免维度闸门。** 两者是不同的判断：前者说证据
+  不在 chunk 里（那正是工具要去查的），后者说**这一维根本没有数据**——工具也造不出来。
+  实测（第十八轮）：「大星团珠宝的斧剑伤害能开出哪些核心天赋」这个映射本库没有，
+  而「星团」命中偏好工具后整轮被豁免、进了模型，结果模型写 12 句、出口拦掉 11 句，
+  用户看到一篇拦截说明。**该拦的地方是入口，不是出口。**
+  同一处还修了另一半：覆盖层先前只在「检索充分」时才被问，于是偏好工具那条路上它从未被咨询。
 - **在图上算出来的数字要连路径一起给。** `passive_path` 的点数是 BFS 结果，不是原文，
   所以它把整条路径逐节点列进证据——用户能照着核对。这是「算」与「猜」的分界：
   算的东西必须能被复核到边一级（`passive_graph_edge` 的 3,382 条）。
@@ -101,7 +107,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 620 项，秒级
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 637 项，秒级
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选
@@ -118,7 +124,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 .venv/bin/python scripts/eval_run.py --record        # 重录真实响应（**要凭证、烧 token**）
 ```
 
-黄金问答集是 `tests/golden/questions.yaml`（78 条，六类），基线与全部结论在
+黄金问答集是 `tests/golden/questions.yaml`（80 条，六类），基线与全部结论在
 `tests/golden/BASELINE.md`——**动闸门前先读它**，里面记了四个已修缺陷、两个已知未修边界，
 以及两次「测量本身写错」的教训。
 
@@ -172,7 +178,8 @@ POST /chat[/stream]  api/chat.py（只做校验与编排调用）
 `bench_recipe_catalog`（工艺台目录）→ `metamod_interaction_matrix`（逐字矩阵单元格）→
 `mod_tiers`（T 级梯度）→ `skill_gem_levels`（宝石逐级字面值）→
 `spectre_stats`（幽魂倍率 / 抗性 / 排名）→ `passive_path`（点到某天赋要几点 + 逐节点路径）→
-`stat_sources`（某属性能从哪来）→ `entity_lookup` → `kb_coverage` → `kb_search`（兜底）
+`cluster_jewel_info`（星团珠宝尺寸 / 基石 / 是否在主树外）→ `stat_sources`（某属性能从哪来）→
+`entity_lookup` → `kb_coverage` → `kb_search`（兜底）
 
 新增工具时守住两条：**能力边界由 `ALLOWED_TOOLS` 限定而不是靠提示词描述**；工具描述里不要
 手写「尚未采集 X」这类清单——那种句子在数据入库当天就变成假话，未采集声明应由
@@ -220,6 +227,14 @@ POST /chat[/stream]  api/chat.py（只做校验与编排调用）
 与堆叠上限是两回事，混一起会把「最多放几个」答成 20）。那一页有三个物品类，
 只收 `MapFragment`；4 条亡者之城包与 1 条孵化器按物品类登记进台账。
 卡片解析与通货共用 `kb/sources/poedb_cards.py`（两页结构逐字相同），分开的只是表与域。
+
+`pob_cluster_notable` **308** 条星团珠宝核心天赋与基石（中文名由已入库的天赋卡按英文名桥接，
+100% 命中）+ `pob_cluster_jewel` 3 个尺寸（小 2–3 / 中 4–6 / 大 8–12 个小天赋）
++ `pob_cluster_skill` 55 条小天赋类型（**仅 PoB 英文原文**——中文附魔文本不在任何已缓存页上）。
+**这一轮补的是分类不是数据**：那 300 个核心天赋的属性早就随天赋树入库成了天赋卡，
+缺的是「它们只能从星团珠宝拿、不在主树上」这个事实——`passive_path` 先前只能说
+「可能只存在于星团珠宝或升华子树」。**哪些核心天赋出现在哪种小天赋类型上仍未采集**
+（本地来源没有这个映射）。
 
 `passive_graph_node` **3390** 个天赋树节点（其中可经过 **2478**）+ `passive_graph_edge`
 **3382** 条无向连线 + `passive_tree_meta`（`totalPoints` 123、`ascendancyPoints` 8）。

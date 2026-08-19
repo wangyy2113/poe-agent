@@ -211,6 +211,26 @@ def _exact_entity_ids(citations: list[dict[str, Any]]) -> list[str]:
     )
 
 
+def _dimension_verdict(question: str, citations: list[dict[str, Any]] | None):  # noqa: ANN202
+    """覆盖层对「被问的维度有没有数据」的判决。探测失败返回 None（不阻塞问答）。
+
+    **与检索是否充分无关**：先前只在 `sufficient=True` 时才问它，于是
+    「BM25 命不中 + 偏好工具路由」这条路上它根本没被咨询过——实测
+    「大星团珠宝的斧剑伤害能开出哪些核心天赋」因此进了模型（那个映射本库没有）。
+    """
+    try:
+        from kb.coverage import dimension_gap  # noqa: PLC0415  延迟导入避免循环
+
+        return dimension_gap(
+            dbmod.get_conn(),
+            question,
+            exact_entity_ids=_exact_entity_ids(citations or []),
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("维度覆盖检查失败，按检索判定继续：%s", exc)
+        return None
+
+
 def _apply_dimension_gate(
     question: str, data: dict[str, Any], *, citations: list[dict[str, Any]] | None = None
 ) -> dict[str, Any]:
@@ -224,18 +244,8 @@ def _apply_dimension_gate(
     只做一个方向的改判（充分 → 不足）：放宽依据需要新证据，这里没有引入任何新证据。
     探测失败时按检索判定继续——覆盖层不可用不该让问答停摆。
     """
-    try:
-        from kb.coverage import dimension_gap  # noqa: PLC0415  延迟导入避免循环
-
-        verdict = dimension_gap(
-            dbmod.get_conn(),
-            question,
-            exact_entity_ids=_exact_entity_ids(citations or []),
-        )
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("维度覆盖检查失败，按检索判定继续：%s", exc)
-        return data
-    if not verdict.is_gap:
+    verdict = _dimension_verdict(question, citations)
+    if verdict is None or not verdict.is_gap:
         return data
     logger.info("维度覆盖闸门改判为依据不足：%s", verdict.reason())
     out = dict(data)
@@ -761,6 +771,9 @@ _PREFERRED_TOOL_INTENTS: tuple[tuple[str, tuple[str, ...]], ...] = (
         # （「T1 需要多少物品等级」实测不路由）。T10 含 T1 子串也仍是档位问题
         "T1", "T2", "T3", "数值区间",
     )),
+    # 星团珠宝的尺寸、小点数与基石清单只有表、没有卡片。判据要专指「星团」——
+    # 单独的「珠宝」会把「珠宝上的词缀」这类有卡片可答的问题抢过来。
+    ("cluster_jewel_info", ("星团", "星团珠宝")),
     # 天赋点消耗是**在图上算**出来的，证据不在任何 chunk 里（卡片只有节点属性）。
     # 判据要专指「花几点 / 怎么走」，不能只放「天赋」——那会把
     # 「某天赋给什么属性」这类有卡片可答的问题也抢过来。
@@ -1466,15 +1479,36 @@ def _prepare_turn(question: str, result: TurnResult) -> _TurnSetup:
     preferred_tool = "" if precision_tool else _preferred_tool_route(question)
     if preferred_tool:
         result.retrieval_meta["preferred_tool"] = preferred_tool
+    gate_refused = False
     if precision_tool:
         result.retrieval_meta["precision_route"] = precision_tool
-    elif data.get("sufficient"):
-        # 精确路由不过这道闸：那类问题的维度由工具自己的缺据字段负责声明
-        data = _apply_dimension_gate(question, data, citations=first.citations)
-        if data.get("dimension_gate"):
+    else:
+        # 精确路由不过这道闸：那类问题的维度由工具自己的缺据字段负责声明。
+        # 其余情况**无论检索是否充分都先问覆盖层**——「这一维有没有数据」与
+        # 「这次 BM25 有没有命中」是两个问题，先前只在充分时问，
+        # 于是偏好工具那条路上它从没被咨询过。
+        verdict = _dimension_verdict(question, first.citations)
+        gate_refused = bool(verdict is not None and verdict.is_gap)
+        if gate_refused:
             result.retrieval_meta["dimension_gate"] = True
+            data = dict(data)
+            data["sufficient"] = False
+            data["reason"] = verdict.reason()
+            data["missing_terms"] = verdict.missing_points()
+            data["dimension_gate"] = True
+            logger.info("维度覆盖闸门改判为依据不足：%s", verdict.reason())
 
-    if not data.get("sufficient") and not precision_tool and not preferred_tool:
+    # 偏好工具**只豁免「BM25 命不中」，不豁免维度闸门**。
+    # 两者是不同的判断：前者说「证据不在 chunk 里」（那正是工具要去查的），
+    # 后者说「这一维根本没有数据」——工具也造不出没有的数据。
+    #
+    # 实测（2026-08-19 第十八轮）：「大星团珠宝的斧剑伤害能开出哪些核心天赋」这个映射
+    # 本库没有，维度闸门判了缺据，但「星团」命中偏好工具后整轮被豁免、进了模型，
+    # 结果模型写了 12 句、被出口闸门拦掉 11 句——用户看到一篇拦截说明。
+    # 该拦的地方是入口，不是出口。
+    if not data.get("sufficient") and not precision_tool and (
+        not preferred_tool or gate_refused
+    ):
         # 依据不足且没有确定性精确工具路由 → 由代码生成缺据声明，模型完全不参与
         result.evidence_gap = True
         answer, gap_category = _gap_answer(question, data)

@@ -26,6 +26,7 @@ ALLOWED_TOOLS = [
     "skill_gem_levels",  # 精确：宝石逐级字面值（等级需求 / 消耗 / 冷却 / 暴击率）
     "spectre_stats",  # 精确：某怪物作为幽魂的伤害% / 生命% / 抗性 / 排名
     "passive_path",   # 精确：点到某天赋节点要几点，并给出逐节点路径
+    "cluster_jewel_info",  # 精确：星团珠宝尺寸/小点数/基石清单，以及某核心天赋是否在主树外
     "stat_sources",   # 精确：某属性能从哪些渠道获得（逐渠道 + 未采集声明）
     "entity_lookup",  # 精确：按名查实体
     "kb_coverage",    # 元信息：本库覆盖了什么

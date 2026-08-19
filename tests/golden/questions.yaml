@@ -605,13 +605,37 @@ cases:
       起点要 24 点、从游侠 25 点。给一个笼统的数字就是错答案。
       路径逐节点列出来当证据，用户可以照着核对：这是「算」与「猜」的区别。
 
-  - id: gap_passive_cluster_jewel
+  - id: desc_cluster_jewel_not_on_tree
     query: 星团珠宝上的天赋要花几个天赋点
+    kind: description
+    expect_any_hit: true
+    expect_in_answer: ["哪些核心天赋出现在哪种小天赋类型上未采集"]
+    note: >-
+      2026-08-19 第十八轮起**可答**：星团珠宝清单入库后能给出三个尺寸的结构，
+      并说明这些天赋不在主天赋树上、没有「从起点走过去」的点数
+    lesson: >-
+      断言的是**代码逐字附上的边界声明**（`_NOTE_FIELDS`），不是模型的措辞。
+      第一版写的是 `expect_in_answer: ["主天赋树"]`——那句话在证据里，但模型可以选择
+      不复述（实测它换成了「证据中没有明确说明每个节点消耗几点」，同样诚实）。
+      **考模型措辞的断言天生不稳**，只有代码保证的内容才能当契约。
+
+  - id: num_large_cluster_nodes
+    query: 大型星团珠宝能加几个小天赋
+    kind: numeric
+    expect_values: ["8", "12"]
+    note: PoB ClusterJewels.lua 的 minNodes/maxNodes：大型 8–12
+
+  - id: gap_cluster_notable_pool
+    query: 大星团珠宝的斧剑伤害能开出哪些核心天赋
     kind: gap
     expect_gap: true
     note: >-
-      星团珠宝上的天赋不在主天赋树上（`cluster_jewel` 是独立领域且未采集），
-      主树的连接关系答不了它
+      「哪些核心天赋出现在哪种小天赋类型上」这个映射本地拿不到：
+      ClusterJewels.lua 只给「尺寸 → 类型」与一份扁平的 308 条清单，
+      树 JSON 的节点字段里也没有 affliction 标签
+    lesson: >-
+      有 308 条清单在手上，最容易犯的错是拿其中一部分去凑一个「看起来对」的答案。
+      这条哨兵钉住：清单在库里 ≠ 那个映射在库里。
 
   - id: route_passive_path
     query: 从起点点到坚毅之心要花几个天赋点
