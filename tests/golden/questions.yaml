@@ -259,6 +259,34 @@ cases:
     expect_any_hit: true
     note: 中文标签来自 POEDB 清单页（法术 / 效果区域 / 冰霜 / 新星），PoB 侧只有英文
 
+  # ── 怪物词缀与幽魂（2026-08-19 入库）────────────────────────────
+  - id: desc_monster_mod_gilded
+    query: 镀金的这个怪物词缀是什么效果
+    kind: numeric
+    expect_slug: "monster_mod:传奇_镀金的"
+    expect_evidence_text: "30% 额外物理伤害减免"
+    expect_values: ["30"]
+    note: POEDB 怪物表的传奇词缀。entity_id 带内容摘要，所以按「类型:前缀」匹配
+
+  - id: desc_monster_mod_multi_stat
+    query: 碎骨者这个怪物词缀有哪些效果
+    kind: description
+    expect_any_hit: true
+    note: >-
+      多条属性的词缀。POEDB 用 <br> 分隔，抽取时规范成 ` / `——不规范化会粘成
+      「60%命中值提高 100%」，数值与下一条属性的名字连在一起
+
+  - id: num_spectre_multipliers
+    query: 不朽精锐的幽魂倍率是多少
+    kind: numeric
+    expect_values: ["150", "120"]
+    note: >-
+      幽魂表没有卡片（1948 行名字 + 两个倍率，卡片高度雷同且怪物名多为通用词），
+      只能靠「幽魂」意图词路由到 spectre_stats。检索侧因此判不足，属**路由豁免**
+    lesson: >-
+      这条同时钉两件事：能力可达（没路由就是一个死了的能力），
+      以及评测必须模拟线上的豁免规则——否则线上答得出来的问题会显示成错误拒答。
+
   - id: num_max_resistance_cap
     query: 抗性上限是多少
     kind: numeric
@@ -450,7 +478,29 @@ cases:
     query: 潜伏之主的技能怎么应对
     kind: gap
     expect_gap: true
-    note: boss = harvested
+    note: >-
+      2026-08-19 起该域改名为「Boss 技能与应对」并仍是未采集：缓存的 Monsters 页里
+      **没有** Boss 技能与打法，只有怪物词缀、幽魂倍率与按等级的基础数值表
+    lesson: >-
+      拆域不能把这条变成能答。原先一个域叫「Boss 与怪物」，把三件事混在一起，
+      于是「已抓取未入库」读起来像是差一个抽取器——实际缺的是**来源**。
+
+  - id: gap_spectre_ranking
+    query: 生命倍率最高的幽魂是哪个
+    kind: gap
+    expect_gap: true
+    note: >-
+      幽魂清单里混着开发用怪物（「测试之灵」10000%/10000%），本库无法区分实际可用，
+      所以不支持倍率排名
+    lesson: >-
+      这条拦的是「有出处但对玩家是错」的答案。排名要先接入 PoB `Data/Spectres.lua`
+      的 268 条确认清单（实测按 slug→英文名 能与本表命中 297 行），那是下一轮的事。
+
+  - id: gap_monster_mod_weight
+    query: 惊悸迷雾怪物词缀的生成权重是多少
+    kind: gap
+    expect_gap: true
+    note: 怪物词缀入库了效果文本，但生成权重与出现规则未采集
 
   - id: gap_passive_path_cost
     query: 从起点点到神威之盾要花几个天赋点

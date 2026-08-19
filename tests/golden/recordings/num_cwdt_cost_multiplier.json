@@ -1,0 +1,129 @@
+{
+  "format_version": 1,
+  "case_id": "num_cwdt_cost_multiplier",
+  "query": "受伤时施放的消耗与保留倍率是多少",
+  "recorded_at": "2026-08-19T11:43:36+08:00",
+  "model": "glm-5.2",
+  "tokens": {
+    "prompt": 8313,
+    "output": 116,
+    "reasoning": 54,
+    "total": 8429
+  },
+  "tool_calls": [
+    "kb_search"
+  ],
+  "evidence_gap": false,
+  "gap_answer": "",
+  "blocked_claims": 0,
+  "elapsed_ms": 4030,
+  "evidence_fingerprint": "sha256:c5a59f16bb31471e65948b4efd84dbfc",
+  "_warning": "raw_answer 是未过出口闸门的模型原文，含可能无据的断言，不得当作事实引用",
+  "raw_answer": "受伤时施放(辅)（Cast when Damage Taken）的消耗与保留倍率为 **250%**，且在 1 级、20 级（自然最高）和 40 级（PoB 数据上限）均保持不变[[E1]]。",
+  "evidence": [
+    {
+      "label": "E1",
+      "chunk_id": "support_gem:Cast_when_Damage_Taken_Support#0#988784c4e9d3c308",
+      "entity_id": "support_gem:Cast_when_Damage_Taken_Support",
+      "title": "受伤时施放(辅)（Cast when Damage Taken）",
+      "url": "https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/sup_str.lua",
+      "source": "Path of Building",
+      "source_priority": 2,
+      "text": "# 受伤时施放(辅)（Cast when Damage Taken）\n类型：辅助宝石 ｜ 红色（力量）\n标签：辅助、法术、触发\n英文标签：Support, Spell, Trigger\n自然最高 20 级\n\n- 1 级：需角色 38 级，消耗与保留倍率 250%，冷却 0.25 秒\n- 20 级（自然最高）：需角色 70 级，消耗与保留倍率 250%，冷却 0.25 秒\n- 40 级（PoB 数据上限，需腐化或 +等级）：需角色 100 级，消耗与保留倍率 250%，冷却 0.25 秒\n\nPoB 英文说明：Each supported spell skill will track damage you take, and be triggered when the total damage taken reaches a threshold. Cannot support skills used by totems, traps, or mines. Vaal skills, channelling skills, and skills with a reservation cannot be triggered.\n\n来源：Path of Building → Data/Skills/sup_str.lua\nhttps://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/sup_str.lua\n中文名对照：https://poedb.tw/cn/Cast_when_Damage_Taken_Support",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E2",
+      "chunk_id": "support_gem:Cast_on_Death_Support#0#8c1671bffdf0072b",
+      "entity_id": "support_gem:Cast_on_Death_Support",
+      "title": "死亡时施放(辅)（Cast on Death）",
+      "url": "https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/sup_dex.lua",
+      "source": "Path of Building",
+      "source_priority": 2,
+      "text": "# 死亡时施放(辅)（Cast on Death）\n类型：辅助宝石 ｜ 绿色（敏捷）\n标签：辅助、法术、触发\n英文标签：Support, Spell, Trigger\n自然最高 20 级\n\n- 1 级：需角色 38 级，消耗与保留倍率 0%\n- 20 级（自然最高）：需角色 70 级，消耗与保留倍率 0%\n- 40 级（PoB 数据上限，需腐化或 +等级）：需角色 100 级，消耗与保留倍率 0%\n\nPoB 英文说明：Each supported spell skill will be triggered when you die. Cannot support skills used by totems, traps, or mines. Vaal skills, channelling skills, and skills with a reservation cannot be triggered.\n\n来源：Path of Building → Data/Skills/sup_dex.lua\nhttps://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/sup_dex.lua\n中文名对照：https://poedb.tw/cn/Cast_on_Death_Support",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E3",
+      "chunk_id": "support_gem:Cast_while_Channelling_Support#0#f8f09c9410c1dd3c",
+      "entity_id": "support_gem:Cast_while_Channelling_Support",
+      "title": "吟唱时施放(辅)（Cast while Channelling）",
+      "url": "https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/sup_int.lua",
+      "source": "Path of Building",
+      "source_priority": 2,
+      "text": "# 吟唱时施放(辅)（Cast while Channelling）\n类型：辅助宝石 ｜ 蓝色（智慧）\n标签：辅助、持续吟唱、法术、触发\n英文标签：Support, Channelling, Spell, Trigger\n自然最高 20 级\n\n- 1 级：需角色 38 级，消耗与保留倍率 120%\n- 20 级（自然最高）：需角色 70 级，消耗与保留倍率 120%\n- 40 级（PoB 数据上限，需腐化或 +等级）：需角色 100 级，消耗与保留倍率 120%\n\nPoB 英文说明：Must support both a channelling skill and a non-channelling spell skill to work. The channelling skill will trigger a spell periodically while channelling. Cannot support skills used by totems, traps, or mines. Vaal skills and skills with a reservation cannot be triggered.\n\n来源：Path of Building → Data/Skills/sup_int.lua\nhttps://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/sup_int.lua\n中文名对照：https://poedb.tw/cn/Cast_while_Channelling_Support",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E4",
+      "chunk_id": "support_gem:Awakened_Cast_While_Channelling_Support#0#a06a28e217f22ecb",
+      "entity_id": "support_gem:Awakened_Cast_While_Channelling_Support",
+      "title": "吟唱时施放（强辅）（Awakened Cast While Channelling）",
+      "url": "https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/sup_int.lua",
+      "source": "Path of Building",
+      "source_priority": 2,
+      "text": "# 吟唱时施放（强辅）（Awakened Cast While Channelling）\n类型：辅助宝石 ｜ 蓝色（智慧）\n标签：辅助、持续吟唱、法术、触发\n英文标签：Support, Channelling, Spell, Trigger\n自然最高 5 级\n\n- 1 级：需角色 72 级，消耗与保留倍率 120%\n- 5 级（自然最高）：需角色 80 级，消耗与保留倍率 120%\n- 20 级（PoB 数据上限，需腐化或 +等级）：需角色 100 级，消耗与保留倍率 120%\n\nPoB 英文说明：Must support both a channelling skill and a non-channelling spell skill to work. The channelling skill will trigger a spell periodically while channelling. Cannot support skills used by totems, traps, or mines. Vaal skills and skills with a reservation cannot be triggered.\n\n来源：Path of Building → Data/Skills/sup_int.lua\nhttps://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/sup_int.lua\n中文名对照：https://poedb.tw/cn/Awakened_Cast_While_Channelling_Support",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E5",
+      "chunk_id": "support_gem:Cast_on_Melee_Kill_Support#0#cea852da174f6a38",
+      "entity_id": "support_gem:Cast_on_Melee_Kill_Support",
+      "title": "近战击败时施放(辅)（Cast on Melee Kill）",
+      "url": "https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/sup_str.lua",
+      "source": "Path of Building",
+      "source_priority": 2,
+      "text": "# 近战击败时施放(辅)（Cast on Melee Kill）\n类型：辅助宝石 ｜ 红色（力量）\n标签：辅助、近战、攻击、法术、触发\n英文标签：Support, Melee, Attack, Spell, Trigger\n自然最高 20 级\n\n- 1 级：需角色 38 级，消耗与保留倍率 120%\n- 20 级（自然最高）：需角色 70 级，消耗与保留倍率 120%\n- 40 级（PoB 数据上限，需腐化或 +等级）：需角色 100 级，消耗与保留倍率 120%\n\nPoB 英文说明：Must support both a melee attack skill and a spell skill to work. The attack skill will trigger a spell when it kills an enemy. Cannot support totems, traps, or mines. Vaal skills, channelling skills, and skills with a reservation cannot be triggered.\n\n来源：Path of Building → Data/Skills/sup_str.lua\nhttps://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/sup_str.lua\n中文名对照：https://poedb.tw/cn/Cast_on_Melee_Kill_Support",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E6",
+      "chunk_id": "support_gem:Cast_On_Critical_Strike_Support#0#01f0d81af96818c9",
+      "entity_id": "support_gem:Cast_On_Critical_Strike_Support",
+      "title": "暴击时施放(辅)（Cast On Critical Strike）",
+      "url": "https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/sup_dex.lua",
+      "source": "Path of Building",
+      "source_priority": 2,
+      "text": "# 暴击时施放(辅)（Cast On Critical Strike）\n类型：辅助宝石 ｜ 绿色（敏捷）\n标签：暴击、辅助、法术、触发\n英文标签：Critical, Support, Spell, Trigger\n自然最高 20 级\n\n- 1 级：需角色 38 级，消耗与保留倍率 120%\n- 20 级（自然最高）：需角色 70 级，消耗与保留倍率 120%\n- 40 级（PoB 数据上限，需腐化或 +等级）：需角色 100 级，消耗与保留倍率 120%\n\nPoB 英文说明：Must support both an attack skill and a spell skill to work. The attack skill will trigger a spell when it critically strikes an enemy. Cannot support totems, traps, or mines. Vaal skills, channelling skills, and skills with a reservation cannot be triggered.\n\n来源：Path of Building → Data/Skills/sup_dex.lua\nhttps://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/sup_dex.lua\n中文名对照：https://poedb.tw/cn/Cast_On_Critical_Strike_Support",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E7",
+      "chunk_id": "support_gem:Awakened_Cast_On_Critical_Strike_Support#0#1906b59ffbcf24bb",
+      "entity_id": "support_gem:Awakened_Cast_On_Critical_Strike_Support",
+      "title": "暴击时施放（强辅）（Awakened Cast On Critical Strike）",
+      "url": "https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/sup_dex.lua",
+      "source": "Path of Building",
+      "source_priority": 2,
+      "text": "# 暴击时施放（强辅）（Awakened Cast On Critical Strike）\n类型：辅助宝石 ｜ 绿色（敏捷）\n标签：暴击、辅助、法术、触发\n英文标签：Critical, Support, Spell, Trigger\n自然最高 5 级\n\n- 1 级：需角色 72 级，消耗与保留倍率 120%\n- 5 级（自然最高）：需角色 80 级，消耗与保留倍率 120%\n- 20 级（PoB 数据上限，需腐化或 +等级）：需角色 100 级，消耗与保留倍率 120%\n\nPoB 英文说明：Must support both an attack skill and a spell skill to work. The attack skill will trigger a spell when it critically strikes an enemy. Cannot support totems, traps, or mines. Vaal skills, channelling skills, and skills with a reservation cannot be triggered.\n\n来源：Path of Building → Data/Skills/sup_dex.lua\nhttps://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/sup_dex.lua\n中文名对照：https://poedb.tw/cn/Awakened_Cast_On_Critical_Strike_Support",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E8",
+      "chunk_id": "support_gem:Mark_On_Hit_Support#0#68b374b1e014cd4b",
+      "entity_id": "support_gem:Mark_On_Hit_Support",
+      "title": "击中时施加印记（辅）（Mark On Hit）",
+      "url": "https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/sup_dex.lua",
+      "source": "Path of Building",
+      "source_priority": 2,
+      "text": "# 击中时施加印记（辅）（Mark On Hit）\n类型：辅助宝石 ｜ 绿色（敏捷）\n标签：辅助、印记、触发\n英文标签：Support, Mark, Trigger\n自然最高 20 级\n\n- 1 级：需角色 38 级，消耗与保留倍率 200%，冷却 4 秒\n- 20 级（自然最高）：需角色 70 级，消耗与保留倍率 200%，冷却 4 秒\n- 40 级（PoB 数据上限，需腐化或 +等级）：需角色 100 级，消耗与保留倍率 200%，冷却 4 秒\n\nPoB 英文说明：Supports mark curse skills.\n\n来源：Path of Building → Data/Skills/sup_dex.lua\nhttps://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/sup_dex.lua\n中文名对照：https://poedb.tw/cn/Mark_On_Hit_Support",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    }
+  ]
+}

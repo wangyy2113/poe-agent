@@ -2,7 +2,7 @@
   "format_version": 1,
   "case_id": "gap_metamod_blank_cell",
   "query": "元词缀矩阵里异能混沌石对无法骰出攻击词缀是什么结果",
-  "recorded_at": "2026-08-18T17:07:51+08:00",
+  "recorded_at": "2026-08-19T11:49:15+08:00",
   "model": "glm-5.2",
   "tokens": {},
   "tool_calls": [
@@ -10,9 +10,11 @@
     "metamod_interaction_matrix"
   ],
   "evidence_gap": true,
+  "out_of_scope": false,
+  "precision_route": "metamod_interaction_matrix",
   "gap_answer": "来源页面中“异能混沌石”与“无法骰出攻击词缀”对应的单元格为空，没有可引用的明确结果；因此不能推断为 N/A、YES、NO 或其它交互结论。",
   "blocked_claims": 0,
-  "elapsed_ms": 7703,
+  "elapsed_ms": 10660,
   "evidence_fingerprint": "sha256:e3b0c44298fc1c149afbf4c8996fb924",
   "_warning": "raw_answer 是未过出口闸门的模型原文，含可能无据的断言，不得当作事实引用",
   "raw_answer": "",

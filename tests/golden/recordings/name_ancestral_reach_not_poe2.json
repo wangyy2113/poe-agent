@@ -1,0 +1,129 @@
+{
+  "format_version": 1,
+  "case_id": "name_ancestral_reach_not_poe2",
+  "query": "先祖降临这个天赋给什么",
+  "recorded_at": "2026-08-19T11:44:06+08:00",
+  "model": "glm-5.2",
+  "tokens": {
+    "prompt": 6945,
+    "output": 103,
+    "reasoning": 33,
+    "total": 7048
+  },
+  "tool_calls": [
+    "kb_search"
+  ],
+  "evidence_gap": false,
+  "gap_answer": "",
+  "blocked_claims": 0,
+  "elapsed_ms": 2360,
+  "evidence_fingerprint": "sha256:7fb9e60ca2800edb760723c4611fd0f1",
+  "_warning": "raw_answer 是未过出口闸门的模型原文，含可能无据的断言，不得当作事实引用",
+  "raw_answer": "**先祖降临（Ancestral Reach）** 是天赋树 3.29 的一个核心天赋，效果如下[[E1]]：\n\n- 图腾伤害提高 25%[[E1]]\n- 图腾放置速度增加 25%[[E1]]\n- 图腾放置范围扩大 25%[[E1]]",
+  "evidence": [
+    {
+      "label": "E1",
+      "chunk_id": "passive:Ancestral_Reach_a5335cf433#d159c36e44ae2cdb",
+      "entity_id": "passive:Ancestral_Reach_a5335cf433",
+      "title": "核心天赋·先祖降临（Ancestral Reach）",
+      "url": "https://poedb.tw/cn/passive-skill-tree/",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 核心天赋·先祖降临（Ancestral Reach）\n核心天赋 ｜ 天赋树 3.29\n\n- 图腾伤害提高 25%\n- 图腾放置速度增加 25%\n- 图腾放置范围扩大 25%\n\n来源：POEDB → 天赋树 · 先祖降临（Ancestral Reach）\nhttps://poedb.tw/cn/passive-skill-tree/",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E2",
+      "chunk_id": "passive:Chilling_Presence_df0aaa8ef2#26e073bdcf109796",
+      "entity_id": "passive:Chilling_Presence_df0aaa8ef2",
+      "title": "核心天赋·惊寒降临（Chilling Presence）",
+      "url": "https://poedb.tw/cn/passive-skill-tree/",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 核心天赋·惊寒降临（Chilling Presence）\n核心天赋 ｜ 天赋树 3.29\n\n- 周围敌人被冰缓\n\n> (冰缓敌人10%)\n\n来源：POEDB → 天赋树 · 惊寒降临（Chilling Presence）\nhttps://poedb.tw/cn/passive-skill-tree/",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E3",
+      "chunk_id": "atlas_passive:Expedition_Chance_3439d3503e#d092d643ce256996",
+      "entity_id": "atlas_passive:Expedition_Chance_3439d3503e",
+      "title": "普通天赋·先祖秘藏几率（Expedition Chance）",
+      "url": "https://poedb.tw/cn/atlas-skill-tree/",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 普通天赋·先祖秘藏几率（Expedition Chance）\n普通天赋 ｜ Atlas 天赋树 3.29 ｜ 树上 7 处（同名同效，可分别点取）\n\n- 你的地图有+8%几率包含一场先祖秘藏遭遇战\n- 你的地图中掉落的圣甲虫为先祖秘藏圣甲虫的几率提高 8%\n\n来源：POEDB → Atlas 天赋树 · 先祖秘藏几率（Expedition Chance）\nhttps://poedb.tw/cn/atlas-skill-tree/",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E4",
+      "chunk_id": "atlas_passive:Expedition_Chance_5922dd806e#cccc4a3fd52c2556",
+      "entity_id": "atlas_passive:Expedition_Chance_5922dd806e",
+      "title": "普通天赋·先祖秘藏几率（Expedition Chance）",
+      "url": "https://poedb.tw/cn/atlas-skill-tree/",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 普通天赋·先祖秘藏几率（Expedition Chance）\n普通天赋 ｜ Atlas 天赋树 3.29 ｜ 树上 2 处（同名同效，可分别点取）\n\n- 你的地图有+12%几率包含一场先祖秘藏遭遇战\n- 你的地图中掉落的圣甲虫为先祖秘藏圣甲虫的几率提高 12%\n\n来源：POEDB → Atlas 天赋树 · 先祖秘藏几率（Expedition Chance）\nhttps://poedb.tw/cn/atlas-skill-tree/",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E5",
+      "chunk_id": "atlas_passive:Expedition_Slower_Detonation_Chain_Speed_58af2bf3cf#6fb687495ec3418e",
+      "entity_id": "atlas_passive:Expedition_Slower_Detonation_Chain_Speed_58af2bf3cf",
+      "title": "普通天赋·先祖秘藏更慢的爆破链速度（Expedition Slower Detonation Chain Speed）",
+      "url": "https://poedb.tw/cn/atlas-skill-tree/",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 普通天赋·先祖秘藏更慢的爆破链速度（Expedition Slower Detonation Chain Speed）\n普通天赋 ｜ Atlas 天赋树 3.29 ｜ 树上 2 处（同名同效，可分别点取）\n\n- 你地图中先祖秘藏爆破链的延伸速度减缓 25%\n\n来源：POEDB → Atlas 天赋树 · 先祖秘藏更慢的爆破链速度（Expedition Slower Detonation Chain Speed）\nhttps://poedb.tw/cn/atlas-skill-tree/",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E6",
+      "chunk_id": "atlas_passive:Expedition_Faster_Detonation_Chain_Speed_034d1b7c5e#c97dd21b367efc88",
+      "entity_id": "atlas_passive:Expedition_Faster_Detonation_Chain_Speed_034d1b7c5e",
+      "title": "普通天赋·先祖秘藏更快的爆破链速度（Expedition Faster Detonation Chain Speed）",
+      "url": "https://poedb.tw/cn/atlas-skill-tree/",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 普通天赋·先祖秘藏更快的爆破链速度（Expedition Faster Detonation Chain Speed）\n普通天赋 ｜ Atlas 天赋树 3.29 ｜ 树上 2 处（同名同效，可分别点取）\n\n- 你地图中先祖秘藏爆破链的延伸速度加快 25%\n\n来源：POEDB → Atlas 天赋树 · 先祖秘藏更快的爆破链速度（Expedition Faster Detonation Chain Speed）\nhttps://poedb.tw/cn/atlas-skill-tree/",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E7",
+      "chunk_id": "atlas_passive:Trade_Embargo_fa04860653#f72ce0cda06f520e",
+      "entity_id": "atlas_passive:Trade_Embargo_fa04860653",
+      "title": "核心天赋·贸易禁运（Trade Embargo）",
+      "url": "https://poedb.tw/cn/atlas-skill-tree/",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 核心天赋·贸易禁运（Trade Embargo）\n核心天赋 ｜ Atlas 天赋树 3.29\n\n- 你的地图不会包含先祖秘藏遭遇战\n- 地图中找到的圣甲虫不会是先祖秘藏圣甲虫\n- 你的地图包含可通过异界天赋关闭的\n  额外内容的几率 +2%\n\n> （深渊、菌潮遭遇战、裂隙、先祖秘藏遭遇战、战乱之殇遭遇战、佣兵，惊悸迷雾之镜、矿脉、驱灵仪式、古灵庄园、走私者秘藏和致命贪婪遭遇战均为可通过异界天赋关闭的额外内容）\n\n来源：POEDB → Atlas 天赋树 · 贸易禁运（Trade Embargo）\nhttps://poedb.tw/cn/atlas-skill-tree/",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E8",
+      "chunk_id": "atlas_passive:Hunt_for_Answers_a75cd8e0e8#0d039340117f98b7",
+      "entity_id": "atlas_passive:Hunt_for_Answers_a75cd8e0e8",
+      "title": "核心天赋·追寻到底（Hunt for Answers）",
+      "url": "https://poedb.tw/cn/atlas-skill-tree/",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 核心天赋·追寻到底（Hunt for Answers）\n核心天赋 ｜ Atlas 天赋树 3.29\n\n- 你的地图有+20%几率包含一场先祖秘藏遭遇战\n- 你的地图中掉落的圣甲虫为先祖秘藏圣甲虫的几率提高 20%\n\n来源：POEDB → Atlas 天赋树 · 追寻到底（Hunt for Answers）\nhttps://poedb.tw/cn/atlas-skill-tree/",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    }
+  ]
+}

@@ -16,6 +16,7 @@ import logging
 import math
 import sys
 import time
+from collections import Counter
 from pathlib import Path
 
 if __package__ in (None, ""):  # 支持 `python kb/pipeline.py` 直接运行
@@ -25,9 +26,10 @@ from core import db as dbmod
 from core.config import get_config
 from core.logging_setup import setup_logging
 from entities.models import Entity, ModLine, Requirement, SourceRef, ValueRange
-from entities.taxonomy import EntityType, ModKind
+from entities.taxonomy import EntityType, ModKind, Source, make_entity_id
 from kb import coverage as coverage_mod
 from kb.fetcher import Fetcher
+from kb import render_monsters
 from kb import render_tree
 from kb.render import to_chunks
 from kb.render_mods import build_mod_chunks
@@ -36,6 +38,7 @@ from kb.sources import (
     poedb_crafting,
     poedb_index,
     poedb_mods,
+    poedb_monsters,
     poedb_tree,
     poedb_unique,
 )
@@ -1558,6 +1561,216 @@ def run_passive_tree(*, force: bool = False, targets: list[str] | None = None) -
     return 0
 
 
+#: 怪物词缀的绝对下限。2026-08-19 实测 183 条有中文文本，留出上游删项余量。
+MIN_MONSTER_MODS = 150
+#: 幽魂条目下限。实测 1915 条。
+MIN_SPECTRES = 1500
+
+
+def _replace_monster_snapshot(
+    conn, extract: poedb_monsters.MonsterExtract, priority: int, fetched_at: str  # noqa: ANN001
+) -> tuple[int, int]:
+    """整体替换两张表。全量替换而不是增量：一页抓下来就是一个完整快照，
+    增量对账的成本远高于重建 2000 行。"""
+    conn.execute("DELETE FROM poedb_monster_mod")
+    conn.executemany(
+        """
+        INSERT INTO poedb_monster_mod(
+            mod_id,kind,monster_level,name_zh,text_zh,raw_stats,
+            source,source_priority,url,content_hash,fetched_at,updated_at
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,datetime('now'))
+        """,
+        [
+            (m.mod_id, m.kind, m.monster_level, m.name_zh, m.text_zh,
+             json.dumps(m.raw_stats, ensure_ascii=False),
+             Source.POEDB.value, priority, poedb_monsters.POEDB_MONSTERS_URL,
+             m.content_hash, fetched_at)
+            for m in extract.mods
+        ],
+    )
+    conn.execute("DELETE FROM poedb_spectre")
+    conn.executemany(
+        """
+        INSERT INTO poedb_spectre(
+            variety_key,name_zh,poedb_slug,damage_pct,life_pct,
+            source,source_priority,url,content_hash,fetched_at,updated_at
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,datetime('now'))
+        """,
+        [
+            (s.variety_key, s.name_zh, s.poedb_slug, s.damage_pct, s.life_pct,
+             Source.POEDB.value, priority, s.poedb_url, s.content_hash, fetched_at)
+            for s in extract.spectres
+        ],
+    )
+    return len(extract.mods), len(extract.spectres)
+
+
+def _monster_mod_entity(mod: poedb_monsters.MonsterMod, priority: int, fetched_at: str) -> Entity:
+    """怪物词缀 → 实体。
+
+    `entity_id` = (来源, 名字, 文本哈希前 8 位)。三段都必需：
+
+    - 同一个词缀名在不同来源下给不同效果（页面里「传奇」与「罪恶枷锁 传奇」各有一套）；
+    - **同 (来源, 名字) 也会有多条不同档位**——实测 12 组 24 行，如「死眼」的
+      「伤害提高 30%」与「伤害提高 20%」。只用前两段做 id 会让后写入的把前一条
+      UPSERT 覆盖掉，实测 183 行只落 171 个实体、悄悄丢了 12 张卡。
+      天赋树同名节点用的也是「slug + 内容摘要」这一招。
+    """
+    return Entity(
+        entity_id=make_entity_id(
+            EntityType.MONSTER_MOD, f"{mod.kind}_{mod.name_zh}_{mod.mod_id[:8]}"
+        ),
+        entity_type=EntityType.MONSTER_MOD,
+        name_zh=mod.name_zh,
+        attributes={
+            "kind": mod.kind,
+            "monster_level": mod.monster_level,
+            "text_zh": mod.text_zh,
+            "raw_stats": list(mod.raw_stats),
+        },
+        search_keywords=[mod.kind],
+        ref=SourceRef(
+            source=Source.POEDB.value,
+            url=poedb_monsters.POEDB_MONSTERS_URL,
+            priority=priority,
+            fetched_at=fetched_at,
+        ),
+        content_hash=mod.content_hash,
+    )
+
+
+def run_poedb_monsters(*, force: bool = False, allow_shrink: bool = False) -> int:
+    """采集怪物词缀与幽魂倍率（POEDB `/cn/Monsters`）。
+
+    这一页还有按等级的基础数值表，**刻意不取**：PoB 侧的 `monsterLifeTable` 等
+    早已在 `game_constant` 里，重复入库等于制造两份可能不一致的真源
+    （判据与其余几张表的取舍见 `kb/sources/poedb_monsters.py` 的模块 docstring）。
+
+    幽魂只入表、不建卡片，理由见 `kb/render_monsters.py`。
+    """
+    cfg = get_config()
+    conn = dbmod.init_db(cfg.db_path, vector_dim=int(cfg.get("retrieval.vector.dim", 0) or 0))
+    fetcher = _make_fetcher(cfg)
+    started = time.time()
+    cur = conn.execute(
+        "INSERT INTO ingest_run(source, category, started_at) VALUES (?,?,datetime('now'))",
+        (Source.POEDB.value, "monsters"),
+    )
+    run_id = cur.lastrowid
+    conn.commit()
+
+    res = fetcher.fetch(poedb_monsters.POEDB_MONSTERS_URL, force=force)
+    if not res.ok:
+        conn.execute(
+            "UPDATE ingest_run SET finished_at=datetime('now'), failed=1, note=? WHERE run_id=?",
+            (f"抓取失败 status={res.status}", run_id),
+        )
+        conn.commit()
+        return 2
+
+    extracted = poedb_monsters.extract(res.text)
+    mods_in, spectres_in = len(extracted.mods), len(extracted.spectres)
+    existing_mods = int(conn.execute("SELECT count(*) FROM poedb_monster_mod").fetchone()[0])
+    existing_spectres = int(conn.execute("SELECT count(*) FROM poedb_spectre").fetchone()[0])
+    guard = ""
+    if mods_in < MIN_MONSTER_MODS or spectres_in < MIN_SPECTRES:
+        guard = (f"低于绝对下限（词缀 {mods_in}/{MIN_MONSTER_MODS}、"
+                 f"幽魂 {spectres_in}/{MIN_SPECTRES}）")
+    elif existing_mods and mods_in < existing_mods * 0.8:
+        guard = f"词缀相对缩减超过 20%（{existing_mods} -> {mods_in}）"
+    elif existing_spectres and spectres_in < existing_spectres * 0.8:
+        guard = f"幽魂相对缩减超过 20%（{existing_spectres} -> {spectres_in}）"
+    if guard and not allow_shrink:
+        conn.execute(
+            "UPDATE ingest_run SET finished_at=datetime('now'), failed=1, note=? WHERE run_id=?",
+            (f"拒绝替换快照：{guard}", run_id),
+        )
+        conn.commit()
+        logger.error("怪物数据数量护栏触发，已拒绝写入：%s", guard)
+        return 2
+
+    priority = int(cfg.priority_of(Source.POEDB.value))
+    fetched_at = res.fetched_at
+    entities = [_monster_mod_entity(m, priority, fetched_at) for m in extracted.mods]
+
+    conn.execute("SAVEPOINT monster_snapshot")
+    try:
+        mods_written, spectres_written = _replace_monster_snapshot(
+            conn, extracted, priority, fetched_at
+        )
+        prefix = f"{EntityType.MONSTER_MOD.value}:"
+        fts_mod.clear_index(conn, entity_prefix=prefix)
+        alias_mod.clear_aliases(conn, entity_prefix=prefix)
+        conn.execute("DELETE FROM entity WHERE entity_type=?", (EntityType.MONSTER_MOD.value,))
+        for entity in entities:
+            _upsert_entity(conn, entity)
+        vocab_mod.build_vocab(conn)
+        chunks = 0
+        for entity in entities:
+            chunks += fts_mod.index_chunks(conn, render_monsters.to_chunks(entity))
+        aliases = alias_mod.index_aliases(conn, entities)
+        gap_rows = _record_monster_gaps(conn, extracted)
+        conn.execute("RELEASE monster_snapshot")
+    except Exception:
+        conn.execute("ROLLBACK TO monster_snapshot")
+        conn.execute("RELEASE monster_snapshot")
+        raise
+
+    elapsed_ms = int((time.time() - started) * 1000)
+    note = json.dumps(
+        {
+            "monster_mods": mods_written,
+            "spectres": spectres_written,
+            "chunks": chunks,
+            "aliases": aliases,
+            "skipped": dict(Counter(reason for reason, _ in extracted.skipped)),
+            "duplicate_spectre_names": len(extracted.duplicate_names),
+            "gap_rows": gap_rows,
+            "note": "按等级的基础数值表不取，PoB 侧已在 game_constant",
+        },
+        ensure_ascii=False,
+    )
+    conn.execute(
+        "UPDATE ingest_run SET finished_at=datetime('now'), total=?, succeeded=?, failed=0, "
+        "elapsed_ms=?, note=? WHERE run_id=?",
+        (mods_written + spectres_written, mods_written + spectres_written,
+         elapsed_ms, note, run_id),
+    )
+    conn.commit()
+    logger.info("怪物采集完成：词缀 %d（卡片 %d、别名 %d）、幽魂 %d，跳过 %d，耗时 %dms",
+                mods_written, chunks, aliases, spectres_written,
+                len(extracted.skipped), elapsed_ms)
+    return 0
+
+
+def _record_monster_gaps(conn, extracted: poedb_monsters.MonsterExtract) -> int:  # noqa: ANN001
+    """跳过项按成因登记。
+
+    两类必须分开写：`no_mod_text` 是**页面只给了词缀名**（POEDB 侧的缺口），
+    `raw_stat_only` 是**只有未翻译的内部 stat id**（有数据但不可面向用户）。
+    合成一句「跳过 311 条」就会让下一个人分不清该去补抓页面还是该找译名。
+    """
+    groups: dict[str, list[str]] = {}
+    for reason, name in extracted.skipped:
+        groups.setdefault(reason, []).append(name)
+    for reason, names in sorted(groups.items()):
+        unique_names = list(dict.fromkeys(names))
+        sample = "、".join(unique_names[:3])
+        point = (f"[{reason}] {len(names)} 条怪物词缀未入库：{sample}"
+                 f"{' 等' if len(names) > 3 else ''}")
+        conn.execute(
+            """
+            INSERT INTO knowledge_gap(question, missing_point, guessed_category,
+                                      kind, hit_count, first_seen, last_seen)
+            VALUES (?,?,?,?,1,datetime('now'),datetime('now'))
+            ON CONFLICT(question, missing_point) DO UPDATE SET
+                hit_count = hit_count + 1, last_seen = datetime('now')
+            """,
+            ("怪物词缀的完整清单", point[:500], "partial/monster_mod", "ingest_gap"),
+        )
+    return len(groups)
+
+
 def run_coverage() -> int:
     """探测并刷新覆盖声明。
 
@@ -1589,12 +1802,13 @@ def main(argv: list[str] | None = None) -> int:
         "--category", default="unique_item",
         choices=[
             "unique_item", "unique_l2", "mods", "bench", "metamods", "tree",
-            "coverage", "all",
+            "monsters", "coverage", "all",
         ],
         help="unique_item=唯一装备索引页, unique_l2=类别页补集+权威英文名+详情页兜底, "
              "mods=词缀, bench=工艺工作台目录与原始费用, "
              "metamods=Craft of Exile 元词缀交互矩阵（POEDB 镜像）, "
-             "tree=天赋树与 Atlas 天赋树, coverage=只刷新覆盖声明, all=全部",
+             "tree=天赋树与 Atlas 天赋树, monsters=怪物词缀与幽魂倍率, "
+             "coverage=只刷新覆盖声明, all=全部",
     )
     ap.add_argument("--harvest", action="store_true",
                     help="只抓取索引页与词缀类别页到本地缓存，不抽取")
@@ -1609,6 +1823,11 @@ def main(argv: list[str] | None = None) -> int:
         "--allow-metamod-shrink",
         action="store_true",
         help="显式允许 Metamod 矩阵大幅缩减；仅在人工核对源页面后使用",
+    )
+    ap.add_argument(
+        "--allow-monster-shrink",
+        action="store_true",
+        help="显式允许怪物词缀 / 幽魂快照大幅缩减；仅在人工核对源页面后使用",
     )
     args = ap.parse_args(argv)
 
@@ -1640,6 +1859,10 @@ def main(argv: list[str] | None = None) -> int:
             )
         if args.category in ("tree", "all"):
             rc |= run_passive_tree(force=args.force)
+        if args.category in ("monsters", "all"):
+            rc |= run_poedb_monsters(
+                force=args.force, allow_shrink=args.allow_monster_shrink
+            )
         # 覆盖声明总是最后刷新：它的每个数字都来自库里的实际行数，
         # 任何一次采集之后不刷新，它就开始说假话。
         rc |= run_coverage()
@@ -1655,6 +1878,9 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     except craftofexile_metamods.MetamodMatrixStructureError as exc:
         logger.error("Metamod 矩阵结构断言失败，已拒绝写入：%s", exc)
+        return 2
+    except poedb_monsters.MonsterStructureError as exc:
+        logger.error("怪物页结构断言失败，已拒绝写入：%s", exc)
         return 2
     except poedb_tree.TreeStructureError as exc:
         logger.error("天赋树结构断言失败，已拒绝写入：%s", exc)

@@ -1,0 +1,19 @@
+{
+  "format_version": 1,
+  "case_id": "gap_skill_gem_attribute_req",
+  "query": "冰霜脉冲需要多少智力需求",
+  "recorded_at": "2026-08-19T11:44:06+08:00",
+  "model": "",
+  "tokens": {},
+  "tool_calls": [
+    "kb_search"
+  ],
+  "evidence_gap": true,
+  "gap_answer": "知识库中查不到回答这个问题所需的依据，因此不作答——给一个听起来合理但没有依据的\n答案，代价比说查不到高得多。\n\n**为什么查不到**\n无法判断问题属于哪个已声明领域，可能超出本助手的服务范围。\n\n**缺失的信息点**\n- 技能石的数据\n\n**判定依据**\n问题所问的维度在知识库中没有数据 —— 技能石（部分采集）：该领域只是部分采集，而问题涉及的「智力需求」正落在未采集的部分（宝石清单、中英文名、颜色、标签、施放时间与**每级字面值**（等级需求、消耗、冷却、可存次数、暴击率、消耗与保留倍率）已入库；**技能的伤害数值、效果描述文本、属性需求（力/敏/智）与获取途径未采集**）\n\n**建议的查证途径**\n- POEDB 站内搜索：<https://poedb.tw/cn/search?q=技能石的数据>\n- PoE Wiki：<https://www.poewiki.net/index.php?search=技能石的数据>\n- 若属新赛季内容，可查 GGG 官方 Patch Notes\n",
+  "blocked_claims": 0,
+  "elapsed_ms": 20,
+  "evidence_fingerprint": "sha256:e3b0c44298fc1c149afbf4c8996fb924",
+  "_warning": "raw_answer 是未过出口闸门的模型原文，含可能无据的断言，不得当作事实引用",
+  "raw_answer": "",
+  "evidence": []
+}

@@ -1,0 +1,129 @@
+{
+  "format_version": 1,
+  "case_id": "num_kaoms_req_level",
+  "query": "冈姆的壮志的需求等级是多少",
+  "recorded_at": "2026-08-19T11:43:26+08:00",
+  "model": "glm-5.2",
+  "tokens": {
+    "prompt": 7361,
+    "output": 51,
+    "reasoning": 28,
+    "total": 7412
+  },
+  "tool_calls": [
+    "kb_search"
+  ],
+  "evidence_gap": false,
+  "gap_answer": "",
+  "blocked_claims": 0,
+  "elapsed_ms": 4764,
+  "evidence_fingerprint": "sha256:594cc1ad1645102f5070b5bc7bb97e38",
+  "_warning": "raw_answer 是未过出口闸门的模型原文，含可能无据的断言，不得当作事实引用",
+  "raw_answer": "冈姆的壮志（Kaom's Heart）的需求等级是 68[[E1]]。",
+  "evidence": [
+    {
+      "label": "E1",
+      "chunk_id": "unique_item:Kaoms_Heart#0#69d0a9d66ada19c9",
+      "entity_id": "unique_item:Kaoms_Heart",
+      "title": "冈姆的壮志（Kaom's Heart）",
+      "url": "https://poedb.tw/cn/Kaoms_Heart",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 冈姆的壮志（Kaom's Heart）\n类型：唯一装备 ｜ 底材：荣耀战铠 ｜ 分类：护甲\n\n**需求**：需求 等级 68, 191 力量\n\n**显式词缀**\n- [显式词缀] 没有插槽\n- [显式词缀] +1000 最大生命\n\n来源：POEDB → 冈姆的壮志（Kaom's Heart）\nhttps://poedb.tw/cn/Kaoms_Heart",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E2",
+      "chunk_id": "unique_item:Replica_Kaoms_Heart#0#305ac76fafe89d05",
+      "entity_id": "unique_item:Replica_Kaoms_Heart",
+      "title": "冈姆的壮志【仿品】（Replica Kaom's Heart）",
+      "url": "https://poedb.tw/cn/Replica_Kaoms_Heart",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 冈姆的壮志【仿品】（Replica Kaom's Heart）\n类型：唯一装备 ｜ 底材：荣耀战铠 ｜ 分类：护甲\n\n**需求**：需求 等级 68, 191 力量\n\n**显式词缀**\n- [显式词缀] 没有插槽\n- [显式词缀] 闪电伤害提高 (30-40)%\n- [显式词缀] +500 最大魔力\n\n来源：POEDB → 冈姆的壮志【仿品】（Replica Kaom's Heart）\nhttps://poedb.tw/cn/Replica_Kaoms_Heart",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E3",
+      "chunk_id": "unique_item:Kaoms_Sign#0#d4ea42a4454ec317",
+      "entity_id": "unique_item:Kaoms_Sign",
+      "title": "冈姆的远见（Kaom's Sign）",
+      "url": "https://poedb.tw/cn/Kaoms_Sign",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 冈姆的远见（Kaom's Sign）\n类型：唯一装备 ｜ 底材：珊瑚戒指 ｜ 分类：其他\n\n**需求**：需求 等级 1\n\n**隐式词缀**\n- [隐式词缀] +(20-30) 最大生命\n\n**显式词缀**\n- [显式词缀] 获得 10 级的主动技能坚决战吼\n- [显式词缀] +(10-20) 力量\n- [显式词缀] 耐力球数量上限 +1\n\n来源：POEDB → 冈姆的远见（Kaom's Sign）\nhttps://poedb.tw/cn/Kaoms_Sign",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E4",
+      "chunk_id": "unique_item:Lethal_Pride#0#3f7a8fc341ae7d35",
+      "entity_id": "unique_item:Lethal_Pride",
+      "title": "致命的骄傲（Lethal Pride）",
+      "url": "https://poedb.tw/cn/Lethal_Pride",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 致命的骄傲（Lethal Pride）\n类型：唯一装备 ｜ 底材：永恒珠宝 ｜ 分类：其他\n\n**需求**：需求 等级 20\n\n**显式词缀**\n- [显式词缀] 获得冈姆麾下 (10000-18000) 名武士的领导权范围内的天赋被卡鲁抑制\n- [显式词缀] 史实\n\n**附加说明**\n- [说明] (被抑制的天赋无法得到其它珠宝的加成)\n\n来源：POEDB → 致命的骄傲（Lethal Pride）\nhttps://poedb.tw/cn/Lethal_Pride",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E5",
+      "chunk_id": "unique_item:Kaoms_Roots#0#7debb02144cdfa96",
+      "entity_id": "unique_item:Kaoms_Roots",
+      "title": "冈姆的稳重之靴（Kaom's Roots）",
+      "url": "https://poedb.tw/cn/Kaoms_Roots",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 冈姆的稳重之靴（Kaom's Roots）\n类型：唯一装备 ｜ 底材：巨人胫甲 ｜ 分类：护甲\n\n**需求**：需求 等级 68, 120 力量\n\n**显式词缀**\n- [显式词缀] 没有插槽\n- [显式词缀] +(150-200) 最大生命\n- [显式词缀] 无法被击退\n- [显式词缀] 你的行动速度无法被减速至基础以下\n- [显式词缀] 烈士意志\n\n**附加说明**\n- [说明] (无法闪避敌人攻击。不会被晕眩)\n\n来源：POEDB → 冈姆的稳重之靴（Kaom's Roots）\nhttps://poedb.tw/cn/Kaoms_Roots",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E6",
+      "chunk_id": "unique_item:Kaoms_Command#0#2a110ceef450215a",
+      "entity_id": "unique_item:Kaoms_Command",
+      "title": "冈姆的命令（Kaom's Command）",
+      "url": "https://poedb.tw/cn/Kaoms_Command",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 冈姆的命令（Kaom's Command）\n类型：唯一装备 ｜ 底材：破城之盔 ｜ 分类：护甲\n\n**需求**：需求 等级 48, 101 力量\n\n**显式词缀**\n- [显式词缀] +(60-80) 最大生命\n- [显式词缀] 战吼施法速度加快 (25-35)%\n- [显式词缀] 当你使用战吼时，周围的灵柩爆炸，造成其生命 (5-10)% 的物理伤害\n- [显式词缀] 战吼技能的效果范围提高 (25-35)%\n\n来源：POEDB → 冈姆的命令（Kaom's Command）\nhttps://poedb.tw/cn/Kaoms_Command",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E7",
+      "chunk_id": "unique_item:Kaoms_Binding#0#b57222ab8aceb9b5",
+      "entity_id": "unique_item:Kaoms_Binding",
+      "title": "冈姆之束缚（Kaom's Binding）",
+      "url": "https://poedb.tw/cn/Kaoms_Binding",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 冈姆之束缚（Kaom's Binding）\n类型：唯一装备 ｜ 底材：重革腰带 ｜ 分类：其他\n\n**需求**：需求 等级 56\n\n**隐式词缀**\n- [隐式词缀] +(25-35) 力量\n\n**显式词缀**\n- [显式词缀] +(30-40) 力量\n- [显式词缀] +(300-500) 护甲\n- [显式词缀] 若你近期停止受到燃烧伤害，不会受到燃烧伤害\n- [显式词缀] 周围敌人将物理伤害的 25% 转化为火焰伤害\n\n**附加说明**\n- [说明] ( 近期内意指 4 秒内 )\n\n来源：POEDB → 冈姆之束缚（Kaom's Binding）\nhttps://poedb.tw/cn/Kaoms_Binding",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E8",
+      "chunk_id": "unique_item:Kaoms_Spirit#0#aeda33d95d020ac2",
+      "entity_id": "unique_item:Kaoms_Spirit",
+      "title": "冈姆的精神（Kaom's Spirit）",
+      "url": "https://poedb.tw/cn/Kaoms_Spirit",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 冈姆的精神（Kaom's Spirit）\n类型：唯一装备 ｜ 底材：巨人护手 ｜ 分类：护甲\n\n**需求**：需求 等级 69, 98 力量\n\n**显式词缀**\n- [显式词缀] +(50-70) 最大生命\n- [显式词缀] +(20-30)% 火焰抗性\n- [显式词缀] 物理攻击伤害的 (0.3-0.5)% 会转化为生命偷取\n- [显式词缀] 生命再生不再回复生命\n- [显式词缀] 每有 200 每秒生命回复来自再生，每秒再生 1 怒火不会延迟怒火本身的消逝\n\n**附加说明**\n- [说明] (吸取的生命会随时间逐渐回复。多个吸取效果可以同时发生, 但有一个上限)\n- [说明] （每点怒火使攻击伤害总增 1%。怒火上限为 30 点。若过去 2 秒内没有被击中或获得怒火，则每秒失去 10 点怒火）\n\n来源：POEDB → 冈姆的精神（Kaom's Spirit）\nhttps://poedb.tw/cn/Kaoms_Spirit",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    }
+  ]
+}
