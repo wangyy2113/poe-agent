@@ -39,6 +39,7 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
@@ -281,24 +282,32 @@ DOMAINS: tuple[DomainSpec, ...] = (
         category=Category.BASICS,
         authority_url=f"{POEDB_BASE}/Skill_Gems",
         count_sql="SELECT count(*) FROM entity WHERE entity_type='skill'",
-        # 「宝石等级」之外再加三个**专指技能石**的问法标记。加它们的理由是实测漏出：
-        # 「冰霜脉冲在 20 级时的基础伤害是多少」——技能石未采集，但这句里
-        # `冰霜`/`基础`/`伤害` 都是通用词，覆盖率 75% 达标；未覆盖的 `脉冲` 在库里有 12 条
-        # （全是能量护盾/防御词缀里的无关文本），所以「全库为零」那道护栏也不触发。
-        # 领域识别不到 → 维度闸门也不拦 → 整轮漏出。
-        #
+        chunk_prefix="skill:",  # 实体前缀是 entity_type，与 key 不同
+        tools=("skill_gem_levels",),
         # 判据必须**专指技能石**，这是踩过三次的坑（曾把「怪物」当 boss 意图、
-        # 「知识库」当路由意图、差点把「降临」当 POE2 标记）。所以：
-        #   「技能等级」「几级时」    装备说「物品等级」「需求等级」，角色说「角色等级」，
-        #                            **裸的「N 级」+ 数值问法是技能石特征**
-        #   「技能伤害数值」相关词    走 question_hints 那条，不放进 hints
-        hints=(
-            "技能石", "主动技能", "技能宝石", "宝石等级", "技能等级",
-            "级时的基础伤害", "级时的伤害", "级的基础伤害",
-        ),
-        question_hints=("某技能的数值与标签", "某效果由哪些技能提供"),
+        # 「知识库」当路由意图、差点把「降临」当 POE2 标记）：装备说「物品等级」
+        # 「需求等级」，角色说「角色等级」，所以这里只收明确指向宝石的说法。
+        hints=("技能石", "主动技能", "技能宝石", "宝石等级", "技能等级"),
+        question_hints=("某技能的等级需求、消耗、冷却与标签", "某宝石是什么颜色"),
         poedb_pages=("Skill_Gems", "Transfigured_Gems", "Gem"),
         pob_files=("Data/Gems.lua", "Data/Skills/"),
+        partial_note=(
+            "宝石清单、中英文名、颜色、标签、施放时间与**每级字面值**（等级需求、"
+            "消耗、冷却、可存次数、暴击率、消耗与保留倍率）已入库；"
+            "**技能的伤害数值、效果描述文本、属性需求（力/敏/智）与获取途径未采集**"
+        ),
+        # 「级时的基础伤害」这三条原先在 hints 里（PR #12 加的，当时整个领域未采集，
+        # 识别到领域就等于拒答）。现在领域已入库，它们的位置改成这里：
+        # 领域识别照旧靠上面那五个词，而**伤害问法要落进「问的正是缺的那一面」**。
+        # 两处说的是同一件事，改一处必须同步另一处（规约第 5 条的成对点）。
+        #
+        # 不放宽成「等级」或「伤害」：那会误拦「冈姆的壮志的需求等级是多少」
+        # （黄金集里的反例哨兵 num_kaoms_req_level，答案 68 就在库里）。
+        missing_dimension_hints=(
+            "基础伤害", "伤害是多少", "伤害数值", "伤害有多少", "多少伤害",
+            "dps", "每秒伤害", "力量需求", "敏捷需求", "智力需求", "属性需求",
+            "怎么获得", "哪里获得", "哪里买", "任务奖励",
+        ),
         provides_stats=True,
     ),
     DomainSpec(
@@ -307,10 +316,22 @@ DOMAINS: tuple[DomainSpec, ...] = (
         category=Category.BASICS,
         authority_url=f"{POEDB_BASE}/Support_Gems",
         count_sql="SELECT count(*) FROM entity WHERE entity_type='support_gem'",
+        tools=("skill_gem_levels",),
         hints=("辅助", "辅助宝石", "辅助石"),
-        question_hints=("某辅助宝石的加成与代价", "哪些辅助能提升某类伤害"),
+        question_hints=("某辅助宝石的等级需求、消耗倍率与冷却", "某辅助宝石是什么颜色"),
         poedb_pages=("Support_Gems", "Exceptional"),
         pob_files=("Data/Gems.lua",),
+        partial_note=(
+            "辅助宝石清单、中英文名、颜色、标签与**每级字面值**（等级需求、"
+            "消耗与保留倍率、冷却、可存次数）已入库；"
+            "**它给出的加成数值与效果描述文本、属性需求与获取途径未采集**"
+        ),
+        # 与技能石同一条边界：加成数值要靠 PoB 的 stat 插值算，本轮不算也不存。
+        missing_dimension_hints=(
+            "加成多少", "提升多少", "增加多少", "伤害是多少", "伤害数值",
+            "dps", "力量需求", "敏捷需求", "智力需求", "属性需求",
+            "怎么获得", "哪里获得",
+        ),
         provides_stats=True,
     ),
     DomainSpec(
@@ -981,17 +1002,55 @@ class DimensionVerdict:
         return "unknown"
 
 
-def dimension_gap(conn: sqlite3.Connection, question: str) -> DimensionVerdict:
+def dimension_gap(
+    conn: sqlite3.Connection,
+    question: str,
+    *,
+    exact_entity_ids: Sequence[str] = (),
+) -> DimensionVerdict:
     """判断问题所问的维度有没有数据。
 
     与 `attribute_gap()` 的分工：那个在**已经判定缺据之后**归因（是没采集还是没召回），
-    这个在**判定充分之后**复核（被问的维度是否真的有数据）。两者都靠 `hints` 做
-    意图识别，判错只会指路指错，不会输出错误的游戏事实。
+    这个在**判定充分之后**复核（被问的维度是否真的有数据）。判错只会指路指错，
+    不会输出错误的游戏事实。
+
+    ## 领域识别有两条通道：意图词，和**实体精确命中**
+
+    只靠 `hints` 不够，因为专名本身就是最强的领域信号，而专名不可能进词表：
+    「冰霜脉冲的伤害是多少」里没有任何一个技能石意图词，可它点名了一颗库里的宝石——
+    810 颗宝石的名字不能写成 `hints`。所以别名精确命中的实体，其类型所属的领域也算
+    「被问到了」，随后照旧由 `missing_dimension_hints` 判断问的是不是缺的那一面。
+
+    `exact_entity_ids` **只收别名通道（`channel="alias"`）的命中**，不收 BM25 的。
+    区别是决定性的：别名命中意味着用户点名了这个实体；而全文检索的前若干条里
+    夹着一张宝石卡是常事，拿它当「在问技能石」，任何含「伤害」的装备问题都会被误拦。
     """
+    prefixes: list[tuple[str, DomainStatus]] = []
     verdict = DimensionVerdict()
-    for s in load(conn):
-        if not any(h and h in question for h in s.spec.hints):
+    statuses = load(conn)
+    for s in statuses:
+        prefixes.append((s.spec.chunk_prefix or f"{s.spec.key}:", s))
+
+    asked_by_entity = {
+        status.key
+        for prefix, status in prefixes
+        if any(str(eid).startswith(prefix) for eid in exact_entity_ids)
+    }
+
+    for s in statuses:
+        hinted = any(h and h in question for h in s.spec.hints)
+        if not hinted and s.key not in asked_by_entity:
             continue
+        # 只靠实体命中识别出来的领域**只能进 uncovered，不能进 covered**。
+        #
+        # 两条通道的证明力不同：意图词命中说明「在问这个领域的这一面」，而实体命中
+        # 只说明「句子里点了这个领域的一个专名」。把后者也算成 covered 会放宽闸门——
+        # 实测反例：「猎首现在值多少混沌石」别名命中猎首（unique_item 已全量入库），
+        # 于是 covered 非空，而 `is_gap` 要求「没有任何领域覆盖到」，价格缺口就被放过了
+        # （2026-08-19 评测里 gap_price_headhunter 因此漏出）。
+        #
+        # 这一层的不变量是**只能收紧**（见类 docstring），所以这里直接跳过。
+        entity_only = not hinted
         if not s.usable:
             verdict.uncovered.append(s)
             verdict.why.append(
@@ -1008,6 +1067,8 @@ def dimension_gap(conn: sqlite3.Connection, question: str) -> DimensionVerdict:
                 f"该领域只是部分采集，而问题涉及的「{'、'.join(asked_missing[:3])}」"
                 f"正落在未采集的部分（{s.spec.partial_note or '见覆盖声明'}）"
             )
+            continue
+        if entity_only:
             continue
         verdict.covered.append(s)
     return verdict

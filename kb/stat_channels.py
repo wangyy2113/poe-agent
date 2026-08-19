@@ -301,14 +301,30 @@ register(ChannelSpec(
 
 # ── 对外：扫描 + 未采集声明 ───────────────────────────────────────
 
+@dataclass(frozen=True)
+class UncoveredChannel:
+    """枚举覆盖不到的属性来源，**带成因**。
+
+    两种成因的措辞不能混：说底材「未采集」是句假话（库里 1,022 条），
+    而说它「已采集」又会让人以为枚举里有它。区别是实打实的：
+    `base_item` 有数据但没有注册枚举渠道，所以它的隐式词缀既不在清单里，
+    以前也不再被声明为缺口——那正是这个字段要修掉的静默漏洞。
+    """
+
+    display_zh: str
+    authority_url: str
+    #: not_collected 该领域一条都没入库 / not_enumerable 已入库但没有枚举渠道
+    cause: str
+
+
 @dataclass
 class ScanResult:
     hits: list[ChannelHit] = field(default_factory=list)
     #: 已采集、但这次没有条目的属性文本完全包含查询串的渠道。
     #: **这不等于该渠道不能提供该属性**，见 `no_match_note()`。
     no_match: list[str] = field(default_factory=list)
-    #: 声明了是属性来源、却尚未采集的领域 → 枚举必然在这些维度上不完整
-    uncovered: list[tuple[str, str]] = field(default_factory=list)
+    #: 枚举覆盖不到的属性来源渠道 → 枚举必然在这些维度上不完整
+    uncovered: list[UncoveredChannel] = field(default_factory=list)
     #: 用词提示：库里实际存在的相近说法（见 `_wording_hint`）
     wording_hint: str = ""
 
@@ -323,11 +339,23 @@ class ScanResult:
         把不完整的枚举当成完整的呈现出来就是给了一个错答案。
         """
         if not self.uncovered:
-            return "已声明的全部属性来源渠道均已采集，本次枚举覆盖了所有已知渠道。"
-        items = "；".join(f"{name}（{url}）" for name, url in self.uncovered)
+            return "已声明的全部属性来源渠道均已接入本枚举，本次枚举覆盖了所有已知渠道。"
+        parts: list[str] = []
+        missing = [c for c in self.uncovered if c.cause == "not_collected"]
+        unwired = [c for c in self.uncovered if c.cause == "not_enumerable"]
+        if missing:
+            items = "；".join(f"{c.display_zh}（{c.authority_url}）" for c in missing)
+            parts.append(f"**本知识库尚未采集**：{items}")
+        if unwired:
+            # 措辞必须与上一类分开：这些领域**有数据**，缺的是把它们的属性接进枚举。
+            # 说成「未采集」就是在一个有 1,022 条底材的库上讲假话。
+            items = "；".join(f"{c.display_zh}（{c.authority_url}）" for c in unwired)
+            parts.append(
+                f"**已采集但其属性尚未接入本枚举**（查这些渠道要单独用对应工具）：{items}"
+            )
         return (
-            "以下渠道也能提供属性，但**本知识库尚未采集**，因此上面的清单在这些"
-            f"维度上必然不完整——回答时必须如实说明：{items}"
+            "以下渠道也能提供属性，因此上面的清单在这些维度上必然不完整——"
+            "回答时必须如实说明：" + "；".join(parts)
         )
 
     def no_match_note(self) -> str:
@@ -435,11 +463,26 @@ def scan_all(conn: sqlite3.Connection, query: str) -> ScanResult:
         res.wording_hint = _wording_hint(conn, q)
 
     by_key = {s.key: s for s in cov.load(conn)}
+    # 判据是「**这个领域的属性能不能被本枚举列出来**」，而不是「它有没有数据」。
+    # 两者不等价，实测就有反例：`base_item` 已入库 1,022 条、`provides_stats=True`、
+    # 却没有注册枚举渠道，于是底材隐式词缀既不出现在清单里、也不再被声明为缺口——
+    # 一份看起来完整的枚举。所以「有数据」还要再加一个条件：有枚举 SQL。
+    #
+    # 这个条件是**派生**的（渠道注册表里有没有它），不是手写的开关，
+    # 所以接入新渠道的当天声明就自动变化，不会变成假话。
+    enumerable = {spec.domain_key for spec in _CHANNELS}
     for spec_dom in cov.DOMAINS:
         if not spec_dom.provides_stats:
             continue
         st = by_key.get(spec_dom.key)
-        if st is not None and st.usable:
+        usable = st is not None and st.usable
+        if usable and spec_dom.key in enumerable:
             continue
-        res.uncovered.append((spec_dom.display_zh, spec_dom.authority_url))
+        res.uncovered.append(
+            UncoveredChannel(
+                display_zh=spec_dom.display_zh,
+                authority_url=spec_dom.authority_url,
+                cause="not_enumerable" if usable else "not_collected",
+            )
+        )
     return res

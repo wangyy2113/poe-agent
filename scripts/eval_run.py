@@ -41,6 +41,7 @@ from core.config import get_config  # noqa: E402
 from core.logging_setup import setup_logging  # noqa: E402
 from kb.coverage import dimension_gap  # noqa: E402
 from orchestrator.loop import poe2_marker  # noqa: E402
+from retrieval import alias as alias_mod  # noqa: E402
 from retrieval.hybrid import retrieve  # noqa: E402
 from tests.golden.loader import (  # noqa: E402
     KIND_ZH,
@@ -132,9 +133,19 @@ def run_case(conn, case: Case, params: dict) -> CaseOutcome:
 
     # 与 `orchestrator/loop.py._apply_dimension_gate` 同一道闸门、同一个函数。
     # 评测必须量到线上真正生效的那条路径——各测一半会让指标与线上行为分叉。
+    #
+    # 别名精确命中的实体也要一起传：领域识别有两条通道（意图词 + 点名了库里的实体），
+    # 少传这一个参数，凡是靠专名识别领域的用例都会在评测里显示为漏出，
+    # 而线上其实拦住了（2026-08-19 实测三条宝石用例就是这么假报的）。
     sufficient, reason, gated = r.sufficient, r.reason, False
     if sufficient:
-        verdict = dimension_gap(conn, case.query)
+        verdict = dimension_gap(
+            conn,
+            case.query,
+            exact_entity_ids=alias_mod.exact_entity_ids(
+                (h.channel, h.entity_id or "") for h in r.hits
+            ),
+        )
         if verdict.is_gap:
             sufficient, reason, gated = False, verdict.reason(), True
 

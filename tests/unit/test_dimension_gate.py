@@ -37,7 +37,11 @@ class DimensionGapTest(unittest.TestCase):
             _status("passive_tree", "partial", 1631),
             _status("base_item", "partial", 123),
             _status("economy_price", "not_collected", 0),
-            _status("skill_gem", "harvested", 0),
+            _status("cluster_jewel", "not_collected", 0),
+            # 2026-08-18：技能石与辅助宝石已入库（PoB × POEDB 桥接 810 颗），
+            # 转 partial —— 伤害数值、效果描述与属性需求仍未采集
+            _status("skill_gem", "partial", 548),
+            _status("support_gem", "partial", 262),
             _status("boss", "harvested", 0),
             _status("currency", "harvested", 0),
         ]
@@ -47,8 +51,8 @@ class DimensionGapTest(unittest.TestCase):
     def tearDown(self) -> None:
         self.cov.load = self._real_load  # type: ignore[assignment]
 
-    def _verdict(self, question: str) -> DimensionVerdict:
-        return dimension_gap(_FakeConn(), question)
+    def _verdict(self, question: str, ids: tuple[str, ...] = ()) -> DimensionVerdict:
+        return dimension_gap(_FakeConn(), question, exact_entity_ids=ids)
 
     # ── 该拦的拦住 ──
 
@@ -67,8 +71,9 @@ class DimensionGapTest(unittest.TestCase):
         self.assertIn("未采集的部分", v.reason())
 
     def test_not_collected_domain_is_gap(self) -> None:
-        v = self._verdict("大型星团珠宝的技能石有什么")
-        self.assertTrue(any(s.key == "skill_gem" for s in v.uncovered))
+        """星团珠宝一条都没入库 —— 未采集的领域整个维度都是缺的。"""
+        v = self._verdict("大型星团珠宝能开出哪些天赋")
+        self.assertTrue(any(s.key == "cluster_jewel" for s in v.uncovered))
 
     # ── 该放的放行 ──
 
@@ -112,6 +117,31 @@ class DimensionGapTest(unittest.TestCase):
         self.assertFalse(v.is_gap)
         # 没有任何 API 能让 verdict 把不足改判为充分
         self.assertFalse(hasattr(v, "make_sufficient"))
+
+    def test_实体命中不能把缺口放宽成有据(self) -> None:
+        """别名命中的领域**只能进 uncovered，不能进 covered**。
+
+        2026-08-19 实测回归：给闸门加上「实体命中也算问到该领域」之后，
+        「猎首现在值多少混沌石」因为命中了猎首（unique_item 全量入库）而让 covered
+        非空，于是「有一个领域覆盖到就不拦」的规则把价格缺口放过去了
+        （评测里 gap_price_headhunter 从通过变成漏出）。
+
+        两条通道证明力不同：意图词说明「在问这一面」，实体命中只说明「点了个专名」。
+        """
+        v = self._verdict("猎首现在值多少混沌石", ("unique_item:Headhunter",))
+        self.assertTrue(v.is_gap)
+        # 「混沌石」还会命中通货领域（harvested），它一起进 uncovered 是对的；
+        # 关键是命中的唯一装备**没有**进 covered
+        self.assertIn("economy_price", [s.key for s in v.uncovered])
+        self.assertEqual([], [s.key for s in v.covered])
+
+    def test_意图词命中的已入库领域照旧算覆盖(self) -> None:
+        """上一条不能顺手把正常放行也压掉：靠意图词命中的领域仍要进 covered，
+        否则复合问题会被整轮拦掉（拒答粒度是断言不是整轮）。"""
+        v = self._verdict("猎首有哪些词缀，值多少钱", ("unique_item:Headhunter",))
+        self.assertTrue(v.uncovered)
+        self.assertTrue(v.covered)
+        self.assertFalse(v.is_gap)
 
     def test_category_label_feeds_the_ledger(self) -> None:
         v = self._verdict("猎首现在值多少混沌石")
@@ -173,41 +203,74 @@ if __name__ == "__main__":
 
 
 class SkillGemIntentTest(DimensionGapTest):
-    """技能石意图词必须**专指**（2026-08-18）。
+    """宝石入库后的维度边界（2026-08-18 第十二轮）。
 
-    ## 来历
+    ## 机制换了一层，用例也跟着换
 
-    检索侧唯一剩下的漏出：「冰霜脉冲在 20 级时的基础伤害是多少」。技能石未采集，
-    但这句里 `冰霜`/`基础`/`伤害` 都是通用词、覆盖率 75% 达标；未覆盖的 `脉冲` 在库里
-    有 12 条（全是能量护盾与防御词缀里的无关文本），所以「未覆盖词全库为零」那道护栏
-    也不触发。领域识别不到 → 维度闸门不拦 → 整轮漏出。
+    PR #12 时技能石整个领域未采集，于是「识别出这是技能石问题」等于拒答，伤害类问法
+    （`级时的基础伤害` 等）就放在 `hints` 里。这一轮 810 颗宝石入库、领域转 `partial`，
+    同一批问法必须改由 `missing_dimension_hints` 拦——领域是「问到了」，缺的是伤害那一面。
+    两处说的是同一件事，所以只能同时改（规约第 5 条的成对点）。
 
-    ## 为什么不改成按稀有度加权
+    ## 领域识别多了一条通道：别名精确命中
 
-    `retrieval/fts.absent_from_corpus` 的 docstring 明确写着「刻意不做 IDF 或稀有度
-    加权」，理由是那会把「已采集但这次没召回」也判成拒答，而两类的正确处理完全不同。
-    那是一个**已决且写下理由的决定**，所以这里不动它，改在领域识别层解决。
-
-    ## 判据只能专指技能石
-
-    装备说「物品等级」「需求等级」，角色说「角色等级」，**裸的「N 级」+ 数值问法**
-    才是技能石特征。放宽成「等级」或「级」会把「冈姆的壮志的需求等级是多少」误拦——
-    黄金问答集里 `num_kaoms_req_level` 就是钉这个的反例哨兵。
+    「冰霜脉冲的伤害是多少」里没有任何技能石意图词，而 810 颗宝石名不可能进词表。
+    所以别名通道命中的实体类型也算「问到了这个领域」。**只收别名通道**：BM25 的前几条
+    里夹一张宝石卡是常事，拿它当领域信号会让含「伤害」的装备问题被误拦。
     """
 
-    def test_技能石问法被拦(self) -> None:
-        for q in ("冰霜脉冲在 20 级时的基础伤害是多少",
-                  "冰霜脉冲 20 级的基础伤害",
-                  "技能等级提高有什么用",
-                  "技能石的数值在哪查"):
+    #: 别名精确命中的宝石实体（真实链路里由 `orchestrator/loop._exact_entity_ids` 传入）
+    GEM_HIT = ("skill:FreezingPulse",)
+
+    def test_伤害维度被拦_靠意图词(self) -> None:
+        for q in ("技能石的伤害数值在哪查", "宝石等级提升后伤害是多少"):
             with self.subTest(q=q):
                 self.assertTrue(self._verdict(q).is_gap, q)
 
+    def test_伤害维度被拦_靠别名命中(self) -> None:
+        """点名了一颗库里的宝石 + 问的是伤害 → 仍然拒答（本轮不入库伤害数值）。"""
+        for q in ("冰霜脉冲在 20 级时的基础伤害是多少",
+                  "冰霜脉冲 20 级的基础伤害",
+                  "冰霜脉冲的伤害是多少",
+                  "冰霜脉冲要多少智力需求"):
+            with self.subTest(q=q):
+                self.assertTrue(self._verdict(q, self.GEM_HIT).is_gap, q)
+
+    def test_已入库维度放行(self) -> None:
+        """同一颗宝石，问的是已入库的那一面 —— 必须答得出来。"""
+        for q in ("冰霜脉冲 20 级需要多少魔力",
+                  "冰霜脉冲是什么颜色的宝石",
+                  "冰霜脉冲有哪些标签",
+                  "冰霜脉冲 20 级需要角色多少级"):
+            with self.subTest(q=q):
+                self.assertFalse(self._verdict(q, self.GEM_HIT).is_gap, q)
+
     def test_装备等级问法不被误拦(self) -> None:
-        """这四句都必须能答——它们问的是装备/词缀，不是技能石。"""
+        """这四句问的是装备/词缀，不是宝石。
+
+        判据必须**专指**：放宽成「等级」或「伤害」就会误拦
+        「冈姆的壮志的需求等级是多少」——黄金集里 `num_kaoms_req_level` 是钉这个的
+        反例哨兵（答案 68 在库里）。
+        """
         for q in ("冈姆的壮志的需求等级是多少",
                   "猎首的需求等级是多少",
                   "腰带上物品等级 85 的力量词缀有几档",
                   "冈姆的壮志需要多少力量"):
             with self.subTest(q=q):
                 self.assertFalse(self._verdict(q).is_gap, q)
+
+    def test_唯一装备的伤害问题不被宝石维度误拦(self) -> None:
+        """别名命中的是唯一装备时，宝石领域不该被牵连。
+
+        这是「只收别名通道」之外的第二道保险：命中的实体类型决定问到了哪个领域。
+        """
+        v = self._verdict("冈姆的壮志加多少伤害", ("unique_item:Kaoms_Heart",))
+        self.assertFalse(v.is_gap)
+        self.assertFalse(any(s.key in {"skill_gem", "support_gem"} for s in v.uncovered))
+
+    def test_辅助宝石的加成维度被拦(self) -> None:
+        """辅助宝石给出的加成数值同样未入库（要靠 PoB 的 stat 插值算）。"""
+        v = self._verdict("受伤时施放能提升多少伤害",
+                          ("support_gem:SupportCastWhenDamageTaken",))
+        self.assertTrue(v.is_gap)
+        self.assertIn("辅助宝石", v.reason())

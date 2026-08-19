@@ -197,12 +197,29 @@ def _gap_answer(question: str, data: dict[str, Any]) -> tuple[str, str]:
     )
 
 
-def _apply_dimension_gate(question: str, data: dict[str, Any]) -> dict[str, Any]:
+def _exact_entity_ids(citations: list[dict[str, Any]]) -> list[str]:
+    """别名通道命中的实体 id —— 维度闸门的第二条领域识别信号。
+
+    判据本身在 `retrieval.alias.exact_entity_ids`，这里只做形态适配（citation 字典
+    → (通道, 实体 id)）。评测侧拿到的是 `Hit` 对象，走同一个函数——两边各写一份
+    过滤就会让「评测量到的路径」与线上分叉。
+    """
+    from retrieval import alias as alias_mod  # noqa: PLC0415  与本模块其它处一致，避免导入环
+
+    return alias_mod.exact_entity_ids(
+        (str(c.get("channel") or ""), str(c.get("entity_id") or "")) for c in citations
+    )
+
+
+def _apply_dimension_gate(
+    question: str, data: dict[str, Any], *, citations: list[dict[str, Any]] | None = None
+) -> dict[str, Any]:
     """充分性判定之后的第二道：**被问的维度**有没有数据（见 `kb.coverage.dimension_gap`）。
 
     别名精确命中只证明「这个实体在库里」，不证明「被问的那一面有数据」。实测
     「猎首现在值多少混沌石」命中猎首即判依据充分，而价格维度一个字都没有；
-    「点到某节点要花几点」命中天赋节点即判充分，而天赋点消耗未入库。
+    「点到某节点要花几点」命中天赋节点即判充分，而天赋点消耗未入库；
+    「冰霜脉冲的伤害是多少」命中宝石即判充分，而伤害数值本轮明确未入库。
 
     只做一个方向的改判（充分 → 不足）：放宽依据需要新证据，这里没有引入任何新证据。
     探测失败时按检索判定继续——覆盖层不可用不该让问答停摆。
@@ -210,7 +227,11 @@ def _apply_dimension_gate(question: str, data: dict[str, Any]) -> dict[str, Any]
     try:
         from kb.coverage import dimension_gap  # noqa: PLC0415  延迟导入避免循环
 
-        verdict = dimension_gap(dbmod.get_conn(), question)
+        verdict = dimension_gap(
+            dbmod.get_conn(),
+            question,
+            exact_entity_ids=_exact_entity_ids(citations or []),
+        )
     except Exception as exc:  # noqa: BLE001
         logger.warning("维度覆盖检查失败，按检索判定继续：%s", exc)
         return data
@@ -1433,7 +1454,7 @@ def _prepare_turn(question: str, result: TurnResult) -> _TurnSetup:
         result.retrieval_meta["precision_route"] = precision_tool
     elif data.get("sufficient"):
         # 精确路由不过这道闸：那类问题的维度由工具自己的缺据字段负责声明
-        data = _apply_dimension_gate(question, data)
+        data = _apply_dimension_gate(question, data, citations=first.citations)
         if data.get("dimension_gate"):
             result.retrieval_meta["dimension_gate"] = True
 
