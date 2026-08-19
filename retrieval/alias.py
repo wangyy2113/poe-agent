@@ -15,6 +15,7 @@ import json
 import logging
 import re
 import sqlite3
+from collections.abc import Iterable
 
 from entities.models import Entity
 from retrieval.fts import Hit
@@ -30,8 +31,16 @@ def normalize(text: str) -> str:
 
 
 def aliases_of(entity: Entity) -> list[tuple[str, str]]:
-    """产出 [(别名, 类型)]。"""
+    """产出 [(别名, 类型)]。
+
+    `attributes["name_zh_alt"]` 也算别名：同一个对象存在两种官方译名时（宝石的
+    国服 / 繁中并列，如「魔卫复苏」与「僵尸复苏」），只收正名会让另一种问法查不到，
+    而它并不是错名字。放在这里而不是各导入器自己插表——什么算别名只该有一处说法。
+    """
     out: list[tuple[str, str]] = [(entity.name_zh, "name_zh")]
+    for alt in entity.attributes.get("name_zh_alt") or []:
+        if isinstance(alt, str) and alt.strip():
+            out.append((alt, "name_zh_alt"))
     if entity.name_en:
         out.append((entity.name_en, "name_en"))
     if entity.slug:
@@ -90,6 +99,22 @@ def lookup(conn: sqlite3.Connection, query: str) -> list[str]:
         (norm,),
     ).fetchall()
     return list(dict.fromkeys(r["entity_id"] for r in rows))
+
+
+#: 别名精确命中的通道名。命中它意味着用户**点名**了这个实体，
+#: 是维度闸门的领域识别信号之一（见 `kb.coverage.dimension_gap`）。
+CHANNEL = "alias"
+
+
+def exact_entity_ids(pairs: Iterable[tuple[str, str]]) -> list[str]:
+    """从 ``(通道, 实体 id)`` 序列里挑出别名精确命中的实体 id，保序去重。
+
+    判据只写在这一处：调用方有两种形态——请求链路上是工具返回的 citation 字典
+    （`orchestrator/loop`），评测链路上是 `Hit` 对象（`scripts/eval_run`）。
+    两边各写一份 `channel == "alias"` 的过滤，就会出现「评测量到的路径与线上不同」，
+    而 `eval_run` 自己的注释正是为这件事写的。
+    """
+    return list(dict.fromkeys(eid for channel, eid in pairs if channel == CHANNEL and eid))
 
 
 def hits_for_entities(conn: sqlite3.Connection, entity_ids: list[str]) -> list[Hit]:

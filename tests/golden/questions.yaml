@@ -212,12 +212,53 @@ cases:
     expect_values: ["68"]
     note: 唯一装备的需求等级，POEDB 侧 1215 件全有，必须答得出来
     lesson: >-
-      这条是**反例哨兵**，防的是技能石意图词被放宽。2026-08-18 为堵
-      `gap_skill_gem_numbers` 的漏出，给 skill_gem 领域加了「技能等级」「级时的基础伤害」
-      这类专指标记——一旦有人把它们放宽成「等级」或「级」，这句「需求等级」就会被
-      误判成技能石问题而拒答，而它的答案（68）明明在库里。
+      这条是**反例哨兵**，防的是宝石意图词被放宽。2026-08-18 为堵
+      `gap_skill_gem_numbers` 的漏出，给 skill_gem 领域加了「技能等级」这类专指标记；
+      2026-08-19 宝石入库后，伤害类问法又进了 `missing_dimension_hints`——
+      两处只要有人放宽成「等级」或「伤害」，这句「需求等级」就会被误判成宝石问题而拒答，
+      而它的答案（68）明明在库里。
       意图词必须专指，这是踩过三次的坑（「怪物」当 boss 意图、「知识库」当路由意图、
       差点把「降临」当 POE2 标记）。
+
+  # ── 宝石每级字面值（2026-08-19 入库）──────────────────────────────
+  # 数值来自 PoB `Data/Skills/*.lua`（钉 commit），逐条从库里核对后写死。
+  - id: num_ice_nova_mana_at_20
+    query: 冰霜新星 20 级需要多少魔力
+    kind: numeric
+    expect_slug: Ice_Nova
+    expect_evidence_text: "消耗 23 魔力"
+    expect_values: ["23"]
+    note: 宝石每级消耗，pob_skill_level 表里 IceNova 的 20 级 = 23 魔力
+    lesson: >-
+      与 `gap_skill_gem_numbers` 成对：同一颗宝石、同一个等级，问消耗要答得出来，
+      问伤害必须拒答。只压一头就会退化成「宝石入库了但什么都不敢说」
+      或者「拿加成系数当伤害答出去」。
+
+  - id: num_ice_nova_char_level_at_20
+    query: 冰霜新星 20 级需要角色多少级
+    kind: numeric
+    expect_slug: Ice_Nova
+    expect_values: ["70"]
+    note: pob_skill_level 表里 IceNova 的 20 级 levelRequirement = 70
+
+  - id: num_cwdt_cost_multiplier
+    query: 受伤时施放的消耗与保留倍率是多少
+    kind: numeric
+    expect_values: ["250"]
+    note: >-
+      PoB 存 manaMultiplier=150，游戏显示 100+150=250%（口径取自 PoB 自己的
+      GemTooltip.lua）。换算只在渲染层做一次，DB 存原值
+    lesson: >-
+      跨来源的**单位口径**不能猜：这条钉住的是「显示值 = 存储值 + 100」这个换算。
+      同一文件里还有两个不同口径（damageEffectiveness 是 ×100、cost 要除 Divisor），
+      三者写错任何一个都会输出一个带着引用的错数字。
+
+  - id: desc_ice_nova_tags
+    query: 冰霜新星有哪些标签
+    kind: description
+    expect_any_hit: true
+    note: 中文标签来自 POEDB 清单页（法术 / 效果区域 / 冰霜 / 新星），PoB 侧只有英文
+
   - id: num_max_resistance_cap
     query: 抗性上限是多少
     kind: numeric
@@ -376,7 +417,34 @@ cases:
     query: 冰霜脉冲在 20 级时的基础伤害是多少
     kind: gap
     expect_gap: true
-    note: skill_gem = harvested（页面已抓、一条未入库）
+    note: >-
+      2026-08-19 起 skill_gem = partial：宝石本身入库了（冰霜脉冲是库里的实体），
+      但**伤害数值仍未采集**——PoB 存的是乘数，要按它的公式算才是显示值
+    lesson: >-
+      这条哨兵考的东西**换了一层**：入库前它验的是「领域未采集就别答」，
+      入库后验的是第二道闸门——实体在库里不等于被问的那一面有数据。
+      两条路都必须走得通，所以用例不动、note 改掉。
+
+  - id: gap_skill_gem_damage_no_level_wording
+    query: 冰霜脉冲的伤害是多少
+    kind: gap
+    expect_gap: true
+    note: >-
+      同一个边界，但句子里**没有任何宝石意图词**——领域靠别名精确命中识别
+      （810 颗宝石名不可能进词表）
+    lesson: >-
+      加这条是因为 `gap_skill_gem_numbers` 只覆盖了带「20 级」的问法。
+      去掉等级说法后，靠 hints 的那条路就断了；补上「别名命中的实体类型也算问到该领域」
+      之后才拦得住。只收别名通道、不收 BM25：检索前几条里夹一张宝石卡是常事，
+      拿它当领域信号会让含「伤害」的装备问题被误拦。
+
+  - id: gap_skill_gem_attribute_req
+    query: 冰霜脉冲需要多少智力需求
+    kind: gap
+    expect_gap: true
+    note: >-
+      属性需求（力/敏/智）明确不入库：Gems.lua 的 reqInt 是换算系数不是显示值，
+      PoB 要按 round((20+(等级需求-3)×3)×(系数/100)^0.9×statType) 才得到显示需求
 
   - id: gap_boss_mechanics
     query: 潜伏之主的技能怎么应对

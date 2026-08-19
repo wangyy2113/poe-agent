@@ -139,6 +139,18 @@ FACTS: tuple[Fact, ...] = (
          _count_where("source_conflict", "kind='mod_review'")),
     Fact("审计样本量", "tests/golden/BASELINE.md", r"审计样本 \| 24 条（判 18） \| \*\*(\d+) 条",
          lambda _c: 48),
+    Fact("宝石颗数", "README.md", r"技能石与辅助宝石 \| ([\d,]+) 颗",
+         _count("pob_skill_gem")),
+    Fact("宝石等级行数", "README.md", r"\+ ([\d,]+) 行每级字面值",
+         _count("pob_skill_level")),
+    Fact("CLAUDE.md 宝石颗数", "CLAUDE.md", r"`pob_skill_gem` \*\*([\d,]+)\*\*",
+         _count("pob_skill_gem")),
+    Fact("CLAUDE.md 宝石等级行数", "CLAUDE.md", r"`pob_skill_level` \*\*([\d,]+)\*\* 行",
+         _count("pob_skill_level")),
+    Fact("CLAUDE.md 技能石颗数", "CLAUDE.md", r"（([\d,]+) 技能石 \+ ",
+         _count_where("pob_skill_gem", "gem_kind='active'")),
+    Fact("CLAUDE.md 辅助宝石颗数", "CLAUDE.md", r"技能石 \+ ([\d,]+) 辅助）",
+         _count_where("pob_skill_gem", "gem_kind='support'")),
 )
 
 

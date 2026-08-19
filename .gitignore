@@ -35,3 +35,6 @@ desktop.ini
 
 # Claude Code 的个人覆盖（团队共享的在 .claude/settings.json，入库）
 .claude/settings.local.json
+
+# 本地差异审查产物（CLAUDE.md 已说明不入版本库）
+semantic-review/

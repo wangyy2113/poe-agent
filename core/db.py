@@ -352,6 +352,84 @@ CREATE TABLE IF NOT EXISTS pob_unique (
 CREATE INDEX IF NOT EXISTS idx_pobuniq_name ON pob_unique(name_en);
 CREATE INDEX IF NOT EXISTS idx_pobuniq_base ON pob_unique(base_type_en);
 
+-- ── PoB 技能石与辅助宝石（P2 出结构，POEDB 出中文名）──
+-- 桥接键是 PoB 的 `grantedEffectId`，它同时出现在 POEDB 清单页的
+-- `data-hover="?s=Data\\GemEffects/<id>"` 里，两侧只差大小写（实测 810/861 = 94.1%
+-- 命中、零多解）。**不按名字配对**：中文名要从 POEDB 取，用名字配就成了循环依赖。
+CREATE TABLE IF NOT EXISTS pob_skill_gem (
+    gem_id          TEXT PRIMARY KEY,  -- grantedEffectId，保留 PoB 侧原大小写
+    name_en         TEXT NOT NULL CHECK(name_en <> ''),
+    name_zh         TEXT NOT NULL CHECK(name_zh <> ''),
+    -- 同一颗宝石的其它译名（JSON 数组）。POEDB 的 /cn 页对 7 颗宝石同时给出国服与
+    -- 繁中译名（魔卫复苏 / 僵尸复苏、召唤魔侍 / 召唤骷髅），两个都是真名字：
+    -- 正名取页面文档顺序第一个，其余进这里并一起入别名表，两种问法都能命中。
+    name_zh_alt     TEXT NOT NULL CHECK(json_valid(name_zh_alt)),
+    poedb_slug      TEXT NOT NULL CHECK(poedb_slug <> ''),
+    gem_kind        TEXT NOT NULL CHECK(gem_kind IN ('active','support')),
+    -- 宝石颜色即属性归属。POEDB 用 gem_red/green/blue 三个 class 表达，
+    -- PoB 用 color=1/2/3；两侧都可能给出白色（无属性需求）的第四态。
+    attr_color      TEXT NOT NULL CHECK(attr_color IN ('str','dex','int','none')),
+    tags            TEXT NOT NULL CHECK(json_valid(tags)),
+    tag_string      TEXT NOT NULL,     -- PoB 的英文标签串（Spell, AoE, Cold）
+    -- POEDB 的中文标签（法术 / 效果区域 / 冰霜）。单列一份而不是靠英文翻：
+    -- 中文问法「有哪些冰霜法术」只能靠这一份命中，而翻译表一旦手写就会过期。
+    tags_zh         TEXT NOT NULL CHECK(json_valid(tags_zh)),
+    -- **没有属性需求列（力/敏/智）**：Gems.lua 的 reqStr/reqDex/reqInt 不是显示值，
+    -- 而是换算系数。PoB 算的是
+    --   round((20 + (等级需求 - 3) × 3) × (系数 / 100) ^ 0.9 × statType)
+    -- （主动 0.7 / 辅助 0.5，小于 14 归零，见 CalcTools.getGemStatRequirement）。
+    -- 把系数当需求写出去就是个带引用的错数字，所以这一维明确划进未采集
+    -- （attr_color 是字面的，「这是红宝石还是蓝宝石」照样答得出）。
+    -- 自然最大等级：20（少数辅助是 3–6）。腐化与加等级能超过它，
+    -- 所以它是「正常获取的上限」而不是 pob_skill_level 里的最大 gem_level。
+    natural_max_level INTEGER NOT NULL CHECK(natural_max_level > 0),
+    cast_time       REAL,              -- 辅助宝石没有施放时间，为 NULL
+    skill_types     TEXT NOT NULL CHECK(json_valid(skill_types)),
+    is_vaal         INTEGER NOT NULL CHECK(is_vaal IN (0,1)),
+    is_transfigured INTEGER NOT NULL CHECK(is_transfigured IN (0,1)),
+    description_en  TEXT,              -- PoB 的英文一句话说明，缓存页里没有中文版
+    source_file     TEXT NOT NULL CHECK(source_file LIKE 'Data/%'),
+    source          TEXT NOT NULL,
+    source_priority INTEGER NOT NULL,
+    pob_url         TEXT NOT NULL CHECK(pob_url <> ''),
+    poedb_url       TEXT NOT NULL CHECK(poedb_url <> ''),
+    source_commit   TEXT NOT NULL CHECK(length(source_commit) = 40),
+    pob_version     TEXT,
+    game_version    TEXT,
+    content_hash    TEXT NOT NULL CHECK(content_hash <> ''),
+    updated_at      TEXT NOT NULL,
+    UNIQUE(name_en),
+    UNIQUE(poedb_slug)
+    -- **没有 UNIQUE(name_zh)**：同一个中文名对应多颗宝石是真实形态
+    -- （瓦尔版与常规版、蜕变宝石与本体在个别条目上重名）。
+    -- 这条约束在 pob_base_item 上就是错的，别在这里重犯。
+);
+CREATE INDEX IF NOT EXISTS idx_gem_zh ON pob_skill_gem(name_zh);
+CREATE INDEX IF NOT EXISTS idx_gem_kind ON pob_skill_gem(gem_kind, attr_color);
+
+-- ── 宝石每级数值：只放**字面值** ──
+-- 为什么没有伤害列：PoB 存的每级伤害是**乘数**（冰霜新星 1 级存 0.8 / 1.2），
+-- 要配 baseEffectiveness、incrementalEffectiveness 与 statInterpolation 按 PoB 的
+-- 公式算出来才是游戏里显示的数字。那是计算器的事（calc/ 未实现），算错就等于
+-- 输出一个带着引用的错数字——比查不到更糟。**也不留空列**：留了下一个人会以为
+-- 它待填，然后拿乘数当伤害写进去。
+CREATE TABLE IF NOT EXISTS pob_skill_level (
+    gem_id          TEXT NOT NULL REFERENCES pob_skill_gem(gem_id) ON DELETE CASCADE,
+    gem_level       INTEGER NOT NULL CHECK(gem_level >= 1),
+    level_requirement INTEGER,         -- 角色等级需求
+    cost            TEXT NOT NULL CHECK(json_valid(cost)),  -- {"Mana":23} / {} 表示无消耗
+    cooldown        REAL,
+    stored_uses     INTEGER,
+    crit_chance     REAL,
+    mana_multiplier REAL,              -- 辅助宝石的魔力消耗乘数
+    attack_speed_multiplier REAL,
+    reservation_percent REAL,
+    -- 伤害有效度。PoB 存 2.3，游戏里显示「伤害效果 230%」，
+    -- 换算只在渲染层做一次（工具与卡片共用同一个函数），DB 存原值。
+    damage_effectiveness REAL,
+    PRIMARY KEY(gem_id, gem_level)
+);
+
 -- ── 跨来源冲突台账 ──
 -- 需求 15.5/15.6：冲突时并列展示双方并推荐 POEDB，不得自行判定谁对而隐藏一方。
 -- 因此冲突必须**落库**，不能只在导入日志里一闪而过。

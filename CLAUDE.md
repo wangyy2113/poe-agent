@@ -86,13 +86,14 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 .venv/bin/python scripts/import_pob_mods.py       # 词缀（--dry-run 只体检）
 .venv/bin/python scripts/import_pob_uniques.py    # 唯一装备（自动过滤历史变体）
 .venv/bin/python scripts/import_pob_bases.py      # 底材，18 个装备类别（--dry-run 先清点）
+.venv/bin/python scripts/import_pob_skills.py     # 技能石与辅助宝石（中文名取自已缓存的 POEDB 清单页）
 .venv/bin/python scripts/verify_pob_mods.py       # 与 POEDB 对账
 ```
 
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 450 项，秒级
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 500 项，秒级
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选
@@ -109,7 +110,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 .venv/bin/python scripts/eval_run.py --record        # 重录真实响应（**要凭证、烧 token**）
 ```
 
-黄金问答集是 `tests/golden/questions.yaml`（54 条，六类），基线与全部结论在
+黄金问答集是 `tests/golden/questions.yaml`（60 条，六类），基线与全部结论在
 `tests/golden/BASELINE.md`——**动闸门前先读它**，里面记了四个已修缺陷、两个已知未修边界，
 以及两次「测量本身写错」的教训。
 
@@ -161,8 +162,8 @@ POST /chat[/stream]  api/chat.py（只做校验与编排调用）
 
 `affix_pool_odds`（胸甲同侧普通词缀条件概率）→ `check_mod_combination`（三态可行性）→
 `bench_recipe_catalog`（工艺台目录）→ `metamod_interaction_matrix`（逐字矩阵单元格）→
-`mod_tiers`（T 级梯度）→ `stat_sources`（某属性能从哪来）→ `entity_lookup` →
-`kb_coverage` → `kb_search`（兜底全文检索）
+`mod_tiers`（T 级梯度）→ `skill_gem_levels`（宝石逐级字面值）→
+`stat_sources`（某属性能从哪来）→ `entity_lookup` → `kb_coverage` → `kb_search`（兜底全文检索）
 
 新增工具时守住两条：**能力边界由 `ALLOWED_TOOLS` 限定而不是靠提示词描述**；工具描述里不要
 手写「尚未采集 X」这类清单——那种句子在数据入库当天就变成假话，未采集声明应由
@@ -172,7 +173,7 @@ POST /chat[/stream]  api/chat.py（只做校验与编排调用）
 ## 数据层
 
 全部状态在 `data/poe.db` 一个文件（WAL），复制该文件即完成备份。表分工见 `core/db.py` 的
-`SCHEMA` 注释，两条容易踩的建模决定：
+`SCHEMA` 注释，三条容易踩的建模决定：
 
 - `mod_affix` 按「词缀 × 底材类别」一行（同一词缀在弓上 T5、法杖上 T4 是两行），主键是实质
   字段全集的哈希，**不跨类别去重**；互斥判断用整个 `family_list` 求交集，T 级分组只用
@@ -180,11 +181,23 @@ POST /chat[/stream]  api/chat.py（只做校验与编排调用）
 - `pob_mod` 单独建表而不是塞进 `mod_affix`：两源粒度不同，且交叉校验要求各自独立保存，
   混表会让 UPSERT 在冲突被发现前就互相覆盖。对账结果落 `source_conflict`，其中
   `kind=mod` 是已确认冲突（并列展示给用户），`mod_review` 只是待人工核对，**不得当作冲突呈现**。
+- `pob_skill_level` **只放字面值，没有伤害列也没有属性需求列**。PoB 存的每级伤害是乘数
+  （冰霜新星 1 级存 `0.8 / 1.2`），`reqStr/reqDex/reqInt` 是换算系数（真需求要按
+  `round((20+(等级需求-3)×3)×(系数/100)^0.9×statType)` 算）。两者都得按 PoB 的公式算才是
+  游戏里的显示值，算错就是「带着引用的错数字」——比查不到更糟。也**不留空列**：留了下一个人
+  会以为它待填，然后把乘数当伤害写进去。这两维明确划进 `partial_note` 的未采集部分。
 
-本机 `data/poe.db` 现状（`GET /healthz` 与 `/admin/stats` 可查）：`entity` 3812、
-`mod_affix` 93897、`pob_mod` 25487、`chunk` 17062、`alias` 5407、`game_constant` 499、
+本机 `data/poe.db` 现状（`GET /healthz` 与 `/admin/stats` 可查）：`entity` 4622、
+`mod_affix` 93897、`pob_mod` 25487、`chunk` 17872、`alias` 7298、`game_constant` 499、
 `craft_bench_recipe` 783、`pob_base_item` **1022**（18 个装备类别，PoB × POEDB 逐条桥接，
 覆盖 PoB 侧 96.1%；未桥接的 41 条已按类别登记在台账）、`source_conflict` **464**（`mod_review` 254 + `unique_review` 207 + `tree_review` 3）。
+
+`pob_skill_gem` **810** 颗宝石（548 技能石 + 262 辅助）+ `pob_skill_level` **30422** 行
+每级数值。桥接键是 PoB 的 `grantedEffectId`（它也出现在 POEDB 清单页的 `data-hover` 里），
+不分大小写配对命中 810/861、零多解；未桥接的 62 条按成因登记在台账
+（`pob_missing` 51 = POEDB 保留的历史/未上线条目，`no_zh_name` 11 = 取不到中文名）。
+**这两张表刻意没有伤害列，也没有属性需求列**——理由见 `core/db.py` 的表注释，
+那是本轮最重要的一条边界。
 
 `craft_metamod_interaction` **134** 行（5 个小节 × 34 行操作，2 个空白格只进审计不成为
 证据）。这张表长期是 0 行，而文档一直写着「需联网跑」——**那句是错的**：pipeline 只抓
