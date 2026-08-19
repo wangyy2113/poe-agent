@@ -588,6 +588,37 @@ CREATE TABLE IF NOT EXISTS passive_tree_meta (
     updated_at      TEXT NOT NULL
 );
 
+-- ── 通货（POEDB `/cn/Currency`）──
+-- 那页**一张表都没有**（卡片布局），内容在 `a.item_currency` + `div.property`
+-- + `div.explicitMod` 三个 class 里。先前把它记成「已抓取未入库」时，
+-- 「0 张表」曾被当成「抽不出来」——实测能抽出 113 条，那个判断是错的。
+--
+-- 稳定键取 `data-hover` 里的 GGG 元数据路径（`Metadata/Items/Currency/CurrencyRerollRare`），
+-- 不用中文名也不用 slug：中文名会随译名调整，slug 只是 URL 标识。
+CREATE TABLE IF NOT EXISTS poedb_currency (
+    metadata_id     TEXT PRIMARY KEY,
+    name_zh         TEXT NOT NULL CHECK(name_zh <> ''),
+    -- 权威英文名来自 `/us/Currency` 同一页。取不到时为 NULL，
+    -- **禁止由 slug 反推**（与 entity.name_en 同一条规则）。
+    name_en         TEXT,
+    poedb_slug      TEXT NOT NULL CHECK(poedb_slug <> ''),
+    item_class      TEXT NOT NULL,     -- 页面 class，实测 113 条全是 StackableCurrency
+    stack_max       INTEGER NOT NULL CHECK(stack_max > 0),
+    -- 效果原文。**15 条是 NULL**：碎片（卷轴碎片、混沌石碎片…）与命能/结晶在页面上
+    -- 没有效果文本。补一句自己写的说明就是编造，所以留空并在覆盖声明里写清有多少条。
+    effect_zh       TEXT,
+    source          TEXT NOT NULL,
+    source_priority INTEGER NOT NULL,
+    url             TEXT NOT NULL CHECK(url <> ''),
+    content_hash    TEXT NOT NULL CHECK(content_hash <> ''),
+    fetched_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL,
+    UNIQUE(poedb_slug)
+    -- **没有 UNIQUE(name_zh)**：同名不同条目在 POEDB 上是真实形态（底材那边实测过 4 例），
+    -- 通货目前没撞上，但不预先加一条将来要删的约束。
+);
+CREATE INDEX IF NOT EXISTS idx_currency_name ON poedb_currency(name_zh);
+
 -- ── 跨来源冲突台账 ──
 -- 需求 15.5/15.6：冲突时并列展示双方并推荐 POEDB，不得自行判定谁对而隐藏一方。
 -- 因此冲突必须**落库**，不能只在导入日志里一闪而过。

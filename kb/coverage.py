@@ -683,9 +683,30 @@ DOMAINS: tuple[DomainSpec, ...] = (
         category=Category.ECONOMY,
         authority_url=f"{POEDB_BASE}/Currency",
         count_sql="SELECT count(*) FROM entity WHERE entity_type='currency'",
-        hints=("通货", "混沌石", "崇高石", "神圣石", "改造石"),
-        question_hints=("某通货的作用",),
+        chunk_prefix="currency:",
+        # **只留「通货」这一个泛化词**，具体通货名交给别名实体通道识别
+        # （`dimension_gap` 的 exact_entity_ids，实体命中只能收紧不能放宽）。
+        #
+        # 为什么不把「混沌石」这类名字放进来：它们经常是**计价单位或操作名**而不是主体。
+        # 实测两条漏出：「猎首现在值多少混沌石」与「元词缀矩阵里异能混沌石对…是什么结果」——
+        # 通货域因命中「混沌石」被记为 covered，于是价格缺口与矩阵空白格缺口都被取消了
+        # （「有一个领域覆盖到就不拦」）。走实体通道就没有这个问题：那条通道只能加 uncovered。
+        hints=("通货",),
+        question_hints=("某通货的作用是什么", "某通货的堆叠上限"),
         poedb_pages=("Currency", "Scarab"),
+        partial_note=(
+            "已入库 **113 条通货**：中英文名、堆叠上限、效果原文（其中 **15 条**"
+            "在 POEDB 上没有效果文本——碎片与命能/结晶类，留空而不是自己补一句）；"
+            "**未采集**：获取途径与掉落来源、兑换比例、碎片合成数量，以及价格"
+            "（价格属「市场价格」域，经济源未接入）；"
+            "圣甲虫（Scarab）也还没抽——它在另一页且是另一个物品类"
+        ),
+        # 「多少钞」是社区对混沌石价格的说法。价格问题会同时命中 economy_price 域，
+        # 这里也列上是为了在只问通货时也拦住——两处都拦不冲突，漏一处才是问题。
+        missing_dimension_hints=(
+            "怎么获得", "哪里获得", "哪里刷", "掉落", "兑换", "多少钞", "价格", "多少钱",
+            "值多少", "合成", "几个碎片", "圣甲虫",
+        ),
     ),
     DomainSpec(
         key="economy_price",

@@ -29,6 +29,7 @@ from entities.models import Entity, ModLine, Requirement, SourceRef, ValueRange
 from entities.taxonomy import EntityType, ModKind, Source, make_entity_id
 from kb import coverage as coverage_mod
 from kb.fetcher import Fetcher
+from kb import render_currency
 from kb import render_monsters
 from kb import render_tree
 from kb.render import to_chunks
@@ -36,6 +37,7 @@ from kb.render_mods import build_mod_chunks
 from kb.sources import (
     craftofexile_metamods,
     poedb_crafting,
+    poedb_currency,
     poedb_index,
     poedb_mods,
     poedb_monsters,
@@ -1574,6 +1576,148 @@ def run_passive_tree(*, force: bool = False, targets: list[str] | None = None) -
     return 0
 
 
+#: 通货条数下限。2026-08-19 实测 113 条。
+MIN_CURRENCIES = 90
+
+
+def _currency_entity(item: poedb_currency.Currency, priority: int, fetched_at: str) -> Entity:
+    """通货 → 实体。id 用 slug（与全仓库其它实体一致），元数据路径进 attributes。"""
+    return Entity(
+        entity_id=make_entity_id(EntityType.CURRENCY, item.poedb_slug),
+        entity_type=EntityType.CURRENCY,
+        name_zh=item.name_zh,
+        name_en=item.name_en,
+        slug=item.poedb_slug,
+        item_class=item.item_class,
+        attributes={
+            "metadata_id": item.metadata_id,
+            "item_class": item.item_class,
+            "stack_max": item.stack_max,
+            "effect_zh": item.effect_zh,
+        },
+        ref=SourceRef(
+            source=Source.POEDB.value,
+            url=item.poedb_url,
+            priority=priority,
+            fetched_at=fetched_at,
+        ),
+        content_hash=item.content_hash,
+    )
+
+
+def run_poedb_currency(*, force: bool = False, allow_shrink: bool = False) -> int:
+    """采集通货（POEDB `/cn/Currency`，英文名取同一页的 `/us/` 版本）。
+
+    那页**一张表都没有**——先前「已抓取未入库」读起来像是抽不出内容，实测是卡片布局、
+    抽得出 113 条（判据见 `kb/sources/poedb_currency.py` 的模块 docstring）。
+
+    英文页取不到时 `name_en` 留空并记进 note：中文名才是必需的，
+    英文名缺了只是英文检索差一点，**但缺多少必须可见**（与天赋树的 missing_en 同一处理）。
+    """
+    cfg = get_config()
+    conn = dbmod.init_db(cfg.db_path, vector_dim=int(cfg.get("retrieval.vector.dim", 0) or 0))
+    fetcher = _make_fetcher(cfg)
+    started = time.time()
+    cur = conn.execute(
+        "INSERT INTO ingest_run(source, category, started_at) VALUES (?,?,datetime('now'))",
+        (Source.POEDB.value, "currency"),
+    )
+    run_id = cur.lastrowid
+    conn.commit()
+
+    res = fetcher.fetch(poedb_currency.POEDB_CURRENCY_URL_ZH, force=force)
+    if not res.ok:
+        conn.execute(
+            "UPDATE ingest_run SET finished_at=datetime('now'), failed=1, note=? WHERE run_id=?",
+            (f"抓取失败 status={res.status_code}", run_id),
+        )
+        conn.commit()
+        return 2
+    html_en: str | None = None
+    try:
+        res_en = fetcher.fetch(poedb_currency.POEDB_CURRENCY_URL_EN, force=force)
+        html_en = res_en.text if res_en.ok else None
+    except Exception as exc:  # noqa: BLE001  英文名缺失不阻塞采集
+        logger.warning("通货英文页取不到（%s），本轮 name_en 将为空", exc)
+
+    items = poedb_currency.extract_currencies(res.text, html_en)
+    other_class = poedb_currency.count_other_class(res.text)
+    existing = int(conn.execute("SELECT count(*) FROM poedb_currency").fetchone()[0])
+    if len(items) < MIN_CURRENCIES or (existing and len(items) < existing * 0.8):
+        if not allow_shrink:
+            conn.execute(
+                "UPDATE ingest_run SET finished_at=datetime('now'), failed=1, note=? "
+                "WHERE run_id=?",
+                (f"拒绝替换快照：{existing} -> {len(items)}（下限 {MIN_CURRENCIES}）", run_id),
+            )
+            conn.commit()
+            logger.error("通货数量护栏触发，已拒绝写入：%d -> %d", existing, len(items))
+            return 2
+
+    priority = int(cfg.priority_of(Source.POEDB.value))
+    entities = [_currency_entity(i, priority, res.fetched_at) for i in items]
+    conn.execute("SAVEPOINT currency_snapshot")
+    try:
+        conn.execute("DELETE FROM poedb_currency")
+        conn.executemany(
+            """
+            INSERT INTO poedb_currency(
+                metadata_id,name_zh,name_en,poedb_slug,item_class,stack_max,effect_zh,
+                source,source_priority,url,content_hash,fetched_at,updated_at
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'))
+            """,
+            [
+                (i.metadata_id, i.name_zh, i.name_en, i.poedb_slug, i.item_class,
+                 i.stack_max, i.effect_zh, Source.POEDB.value, priority, i.poedb_url,
+                 i.content_hash, res.fetched_at)
+                for i in items
+            ],
+        )
+        prefix = f"{EntityType.CURRENCY.value}:"
+        fts_mod.clear_index(conn, entity_prefix=prefix)
+        alias_mod.clear_aliases(conn, entity_prefix=prefix)
+        conn.execute("DELETE FROM entity WHERE entity_type=?", (EntityType.CURRENCY.value,))
+        for entity in entities:
+            _upsert_entity(conn, entity)
+        vocab_mod.build_vocab(conn)
+        chunks = 0
+        for entity in entities:
+            chunks += fts_mod.index_chunks(conn, render_currency.to_chunks(entity))
+        aliases = alias_mod.index_aliases(conn, entities)
+        conn.execute("RELEASE currency_snapshot")
+    except Exception:
+        conn.execute("ROLLBACK TO currency_snapshot")
+        conn.execute("RELEASE currency_snapshot")
+        raise
+
+    elapsed_ms = int((time.time() - started) * 1000)
+    note = json.dumps(
+        {
+            "currencies": len(items),
+            "with_effect": sum(1 for i in items if i.effect_zh),
+            "missing_effect": sum(1 for i in items if not i.effect_zh),
+            "missing_en": sum(1 for i in items if not i.name_en),
+            "chunks": chunks,
+            "aliases": aliases,
+            # 页面上另一种 class 的卡片（历史赛季物品），本轮不取但要报数：
+            # 静默省略与「页面上就没有」事后分不清
+            "other_class_not_taken": other_class,
+        },
+        ensure_ascii=False,
+    )
+    conn.execute(
+        "UPDATE ingest_run SET finished_at=datetime('now'), total=?, succeeded=?, failed=0, "
+        "elapsed_ms=?, note=? WHERE run_id=?",
+        (len(items), len(items), elapsed_ms, note, run_id),
+    )
+    conn.commit()
+    logger.info("通货采集完成：%d 条（卡片 %d、别名 %d，缺效果文本 %d、缺英文名 %d），耗时 %dms",
+                len(items), chunks, aliases,
+                sum(1 for i in items if not i.effect_zh),
+                sum(1 for i in items if not i.name_en), elapsed_ms)
+    return 0
+
+
 #: 怪物词缀的绝对下限。2026-08-19 实测 183 条有中文文本，留出上游删项余量。
 MIN_MONSTER_MODS = 150
 #: 幽魂条目下限。实测 1915 条。
@@ -1870,12 +2014,12 @@ def main(argv: list[str] | None = None) -> int:
         "--category", default="unique_item",
         choices=[
             "unique_item", "unique_l2", "mods", "bench", "metamods", "tree",
-            "monsters", "coverage", "all",
+            "monsters", "currency", "coverage", "all",
         ],
         help="unique_item=唯一装备索引页, unique_l2=类别页补集+权威英文名+详情页兜底, "
              "mods=词缀, bench=工艺工作台目录与原始费用, "
              "metamods=Craft of Exile 元词缀交互矩阵（POEDB 镜像）, "
-             "tree=天赋树与 Atlas 天赋树, monsters=怪物词缀与幽魂倍率, "
+             "tree=天赋树与 Atlas 天赋树, monsters=怪物词缀与幽魂倍率, currency=通货, "
              "coverage=只刷新覆盖声明, all=全部",
     )
     ap.add_argument("--harvest", action="store_true",
@@ -1891,6 +2035,11 @@ def main(argv: list[str] | None = None) -> int:
         "--allow-metamod-shrink",
         action="store_true",
         help="显式允许 Metamod 矩阵大幅缩减；仅在人工核对源页面后使用",
+    )
+    ap.add_argument(
+        "--allow-currency-shrink",
+        action="store_true",
+        help="显式允许通货快照大幅缩减；仅在人工核对源页面后使用",
     )
     ap.add_argument(
         "--allow-monster-shrink",
@@ -1927,6 +2076,10 @@ def main(argv: list[str] | None = None) -> int:
             )
         if args.category in ("tree", "all"):
             rc |= run_passive_tree(force=args.force)
+        if args.category in ("currency", "all"):
+            rc |= run_poedb_currency(
+                force=args.force, allow_shrink=args.allow_currency_shrink
+            )
         if args.category in ("monsters", "all"):
             rc |= run_poedb_monsters(
                 force=args.force, allow_shrink=args.allow_monster_shrink
@@ -1946,6 +2099,9 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     except craftofexile_metamods.MetamodMatrixStructureError as exc:
         logger.error("Metamod 矩阵结构断言失败，已拒绝写入：%s", exc)
+        return 2
+    except poedb_currency.CurrencyStructureError as exc:
+        logger.error("通货页结构断言失败，已拒绝写入：%s", exc)
         return 2
     except poedb_monsters.MonsterStructureError as exc:
         logger.error("怪物页结构断言失败，已拒绝写入：%s", exc)
