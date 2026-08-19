@@ -55,6 +55,7 @@ class SubCategory(StrEnum):
     ATLAS = "Atlas"
     MAP = "地图"
     BOSS = "Boss"
+    MONSTER_MOD = "怪物词缀"
     ATLAS_PASSIVE = "Atlas 天赋"
 
     # 经济系统
@@ -79,6 +80,9 @@ class EntityType(StrEnum):
     #: 把地图产出词条也算进角色属性里。
     ATLAS_PASSIVE = "atlas_passive"
     BOSS = "boss"
+    #: 怪物身上的词缀（传奇 / 精华 / 魔符 / 惊悸迷雾 …）。与 MOD 分开：
+    #: 那个是**装备**词缀，混在一起会让「哪些词缀给抗性」把怪物词缀也算进装备池。
+    MONSTER_MOD = "monster_mod"
     MAP = "map"
     CURRENCY = "currency"
 

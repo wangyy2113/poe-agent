@@ -602,7 +602,7 @@ DOMAINS: tuple[DomainSpec, ...] = (
     ),
     DomainSpec(
         key="boss",
-        display_zh="Boss 与怪物",
+        display_zh="Boss 技能与应对",
         category=Category.ATLAS,
         authority_url=f"{POEDB_BASE}/Monsters",
         count_sql="SELECT count(*) FROM entity WHERE entity_type='boss'",
@@ -615,6 +615,57 @@ DOMAINS: tuple[DomainSpec, ...] = (
             "装备问题误判到本领域：实测「击败稀有怪物获得其属性修正的腰带」与"
             "「猎首获得稀有怪物属性修正持续多久」都因此被维度闸门拦成缺据，"
             "属错误拒答。领域意图词必须足够专指。"
+            " 2026-08-19 从「Boss 与怪物」改名为「Boss 技能与应对」：那张缓存页里"
+            "**没有** Boss 技能与打法，只有怪物词缀、幽魂倍率与按等级的基础数值表。"
+            "前两者已各自单列成域（monster_mod / spectre），第三类 PoB 侧早在"
+            " game_constant 里。所以本域仍是未采集，且缺的不是抽取器而是**来源**——"
+            "要另找 Boss 详情页或 wiki。原先把三件事挂在一个域名下，"
+            "让「已抓取未入库」读起来像是差一个抽取器。"
+        ),
+    ),
+    DomainSpec(
+        key="monster_mod",
+        display_zh="怪物词缀（传奇 / 魔符 / 惊悸迷雾 / 猎魔）",
+        category=Category.ATLAS,
+        authority_url=f"{POEDB_BASE}/Monsters",
+        count_sql="SELECT count(*) FROM entity WHERE entity_type='monster_mod'",
+        chunk_prefix="monster_mod:",
+        # 「传奇」单独用不得：POE1 里装备稀有度也叫传奇，会把唯一装备问题拉进本域。
+        # 同理不用裸的「精华」（那是制作系统的域）与裸的「怪物」（词缀文本里到处都是）。
+        hints=("怪物词缀", "传奇怪物", "怪物身上的词缀", "魔符", "惊悸迷雾", "猎魔"),
+        question_hints=("某个怪物词缀是什么效果", "传奇怪物会带哪些词缀"),
+        poedb_pages=("Monsters",),
+        partial_note=(
+            "已入库**页面上有中文文本的 183 条**（来源、怪物等级、效果原文）；"
+            "**63 条只有未翻译的内部 stat id、248 条页面只给了词缀名没有效果文本，"
+            "这两类未入库**；怪物词缀的生成权重与出现规则也未采集"
+        ),
+        missing_dimension_hints=("生成权重", "出现几率", "多大概率", "权重"),
+    ),
+    DomainSpec(
+        key="spectre",
+        display_zh="可作幽魂的怪物与倍率",
+        category=Category.BASICS,
+        authority_url=f"{POEDB_BASE}/Monsters",
+        count_sql="SELECT count(*) FROM poedb_spectre",
+        tools=("spectre_stats",),
+        # 这个域**没有卡片**（见 kb/render_monsters.py），所以 chunk_prefix 留空，
+        # 覆盖声明里 chunk_count 为 0 是正确状态而不是漏建索引。
+        hints=("幽魂", "亡灵召唤"),
+        question_hints=("某怪物作为幽魂的伤害与生命倍率", "某怪物能不能当幽魂"),
+        poedb_pages=("Monsters",),
+        partial_note=(
+            "已入库 1,948 个可作幽魂的怪物与它们的**伤害% / 生命%**；"
+            "**抗性、技能、掉落未采集**；也**不支持倍率排名**——清单里混着开发用怪物"
+            "（「测试之灵」10000%），要排名得先接入 PoB `Data/Spectres.lua` 的 268 条"
+            "确认清单（含四抗性与技能列表，实测可与本表命中 297 行）"
+        ),
+        # 「最高」「最强」这类比较词只在**本域已被识别**时才参与判定（判定顺序见
+        # `dimension_gap`），所以不会误伤「最高档位是多少」那类词缀问题。
+        # 写「最高的是」不够：实测「生命倍率最高的幽魂是哪个」这种语序就漏了。
+        missing_dimension_hints=(
+            "抗性", "技能", "掉落", "最强", "最高", "最低", "最好",
+            "排名", "排行", "推荐用哪", "哪个好", "选哪个",
         ),
     ),
     # ── 经济系统 ──
@@ -1037,8 +1088,11 @@ def dimension_gap(
         if any(str(eid).startswith(prefix) for eid in exact_entity_ids)
     }
 
+    matched_hints: dict[str, list[str]] = {}
     for s in statuses:
-        hinted = any(h and h in question for h in s.spec.hints)
+        hits = [h for h in s.spec.hints if h and h in question]
+        hinted = bool(hits)
+        matched_hints[s.key] = hits
         if not hinted and s.key not in asked_by_entity:
             continue
         # 只靠实体命中识别出来的领域**只能进 uncovered，不能进 covered**。
@@ -1071,7 +1125,41 @@ def dimension_gap(
         if entity_only:
             continue
         verdict.covered.append(s)
+
+    _drop_subsumed_coverage(verdict, matched_hints)
     return verdict
+
+
+def _drop_subsumed_coverage(
+    verdict: DimensionVerdict, matched_hints: dict[str, list[str]]
+) -> None:
+    """更专指的意图词命中时，被它**包含**的泛化命中不算覆盖。
+
+    为什么需要：`is_gap` 的规则是「有一个领域覆盖到就不拦」，那是给**复合问题**写的
+    （「猎首有哪些词缀，值多少钱」要答词缀那半）。但同一个主语被两个领域用不同精度的
+    词命中时，那条规则会让泛化的一方把专指的一方的缺口取消掉。
+
+    实测反例：「惊悸迷雾怪物词缀的生成权重是多少」——`monster_mod` 靠「怪物词缀」
+    「惊悸迷雾」命中且权重正落在它的未采集维度，而 `mod_affix`（装备词缀，已全量入库）
+    靠泛化的「词缀」「权重」命中并被记为 covered，于是整句判为有据，
+    模型拿到的是**装备**词缀的权重（评测里 gap_monster_mod_weight 因此漏出）。
+
+    判据只取「子串」这一档：covered 的某个命中词是 uncovered 的某个命中词的**真子串**
+    （「词缀」⊂「怪物词缀」）。不做同义词或语义相似度——那会把复合问题也误判成同一主语，
+    而复合问题必须保留部分作答的能力（需求里的拒答粒度是断言不是整轮）。
+    """
+    if not verdict.uncovered or not verdict.covered:
+        return
+    specific = [h for s in verdict.uncovered for h in matched_hints.get(s.key, ())]
+    kept: list[DomainStatus] = []
+    for status in verdict.covered:
+        hits = matched_hints.get(status.key, ())
+        subsumed = any(
+            hit != longer and hit in longer for hit in hits for longer in specific
+        )
+        if not subsumed:
+            kept.append(status)
+    verdict.covered = kept
 
 
 def render_manifest(conn: sqlite3.Connection, *, for_prompt: bool = True) -> str:

@@ -102,6 +102,14 @@ class Recording:
     evidence_fingerprint: str = ""
     #: 缺据路径（不经模型）也录：它同样要回归，且 tokens 必须为空
     evidence_gap: bool = False
+    #: 是否走的是 **POE1/POE2 越界**声明（`orchestrator.loop.poe2_marker` 命中）。
+    #: 与缺据声明分开记：两者的契约不同——越界**不能**说「查不到」，
+    #: 那会让用户以为游戏里没这东西（`agents/knowledge.py` 与 CLAUDE.md 都写着这条）。
+    out_of_scope: bool = False
+    #: 精确工具路由（`orchestrator.loop._precision_tool_route`）。非空时这一轮的
+    #: 不作答理由由**工具**给出（「来源该格为空」「没形成确定调用」），
+    #: 契约与另两条路径又不同，见 `scripts/eval_run.replay_case`。
+    precision_route: str = ""
     gap_answer: str = ""
     model: str = ""
     tokens: dict[str, int] = field(default_factory=dict)
@@ -123,6 +131,8 @@ class Recording:
             "tokens": self.tokens,
             "tool_calls": self.tool_calls,
             "evidence_gap": self.evidence_gap,
+            "out_of_scope": self.out_of_scope,
+            "precision_route": self.precision_route,
             "gap_answer": self.gap_answer,
             "blocked_claims": self.blocked_claims,
             "elapsed_ms": self.elapsed_ms,
@@ -146,6 +156,8 @@ class Recording:
             evidence=[_evidence_from_dict(x) for x in (d.get("evidence") or [])],
             evidence_fingerprint=str(d.get("evidence_fingerprint") or ""),
             evidence_gap=bool(d.get("evidence_gap")),
+            out_of_scope=bool(d.get("out_of_scope")),
+            precision_route=str(d.get("precision_route") or ""),
             gap_answer=str(d.get("gap_answer") or ""),
             model=str(d.get("model") or ""),
             tokens=dict(d.get("tokens") or {}),

@@ -40,6 +40,7 @@ from core import db as dbmod  # noqa: E402
 from core.config import get_config  # noqa: E402
 from core.logging_setup import setup_logging  # noqa: E402
 from kb.coverage import dimension_gap  # noqa: E402
+from orchestrator.loop import _precision_tool_route, _preferred_tool_route  # noqa: E402
 from orchestrator.loop import poe2_marker  # noqa: E402
 from retrieval import alias as alias_mod  # noqa: E402
 from retrieval.hybrid import retrieve  # noqa: E402
@@ -83,6 +84,11 @@ class CaseOutcome:
     dimension_gate: bool = False
     #: 是否被 POE1/POE2 边界拦下（`orchestrator.loop.poe2_marker`）
     out_of_scope: bool = False
+    #: 代码路由指定的偏好工具（`orchestrator.loop._preferred_tool_route`）。
+    #: 线上这类问题**豁免检索不足**——它们的证据本来就不在 chunk 里
+    #: （幽魂倍率只有表、覆盖声明是元信息），所以评测也必须照同样的规则判，
+    #: 否则「线上答得出来」的问题会在指标里显示为错误拒答。
+    preferred_tool: str = ""
 
     # ── 判定 ──
     @property
@@ -90,8 +96,19 @@ class CaseOutcome:
         return self.sufficient == self.case.expects_sufficient
 
     @property
+    def route_exempt(self) -> bool:
+        """代码路由把它交给了精确工具，检索不足不影响这条能否作答。"""
+        return bool(self.preferred_tool) and not self.dimension_gate
+
+    @property
     def is_wrong_refusal(self) -> bool:
-        """正类被判为依据不足 —— 错误拒答的上游。"""
+        """正类被判为依据不足 —— 错误拒答的上游。
+
+        路由豁免的用例不计入：线上它们根本不看 `sufficient`（见 `preferred_tool`）。
+        豁免仍会在明细里印出来，不让它变成一个看不见的免检通道。
+        """
+        if self.route_exempt:
+            return False
         return self.case.expects_sufficient and not self.sufficient
 
     @property
@@ -107,8 +124,12 @@ class CaseOutcome:
 
     @property
     def passed(self) -> bool:
-        """这条用例整体算不算通过。"""
-        if not self.sufficiency_ok:
+        """这条用例整体算不算通过。
+
+        充分性一项与 `is_wrong_refusal` 用同一套规则：路由豁免的用例不看 `sufficient`
+        （线上也不看）。两处判据必须一致，否则同一条用例会「不算错误拒答但仍显示 FAIL」。
+        """
+        if not self.sufficiency_ok and not self.route_exempt:
             return False
         if self.case.has_retrieval_target and self.hit_rank is None:
             return False
@@ -149,6 +170,9 @@ def run_case(conn, case: Case, params: dict) -> CaseOutcome:
         if verdict.is_gap:
             sufficient, reason, gated = False, verdict.reason(), True
 
+    # 与线上同序：精确路由优先，其次偏好工具（见 `loop._prepare_turn`）
+    preferred = "" if _precision_tool_route(case.query) else _preferred_tool_route(case.query)
+
     rank: int | None = None
     if case.expect_slug:
         for i, h in enumerate(r.hits, start=1):
@@ -171,6 +195,7 @@ def run_case(conn, case: Case, params: dict) -> CaseOutcome:
         evidence_recalled=evidence_recalled,
         total_hits=len(r.hits),
         dimension_gate=gated,
+        preferred_tool=preferred,
     )
 
 
@@ -261,6 +286,9 @@ def print_report(outcomes: list[CaseOutcome], summary: dict, *, verbose: bool) -
                 )
             if o.case.expect_gap:
                 detail.append("正确拒答" if not o.sufficient else "**漏出**：判为有依据")
+            if o.route_exempt:
+                # 印出来：豁免不能变成一个看不见的免检通道
+                detail.append(f"路由豁免（{o.preferred_tool}，证据不在 chunk 里）")
             if o.case.expect_evidence_text:
                 detail.append(
                     "证据已召回" if o.evidence_recalled else
@@ -368,6 +396,8 @@ def record_case(case: Case) -> Recording:
         evidence=list(r.evidence),
         evidence_fingerprint=evidence_fingerprint(list(r.evidence)),
         evidence_gap=r.evidence_gap,
+        out_of_scope=bool(r.retrieval_meta.get("out_of_scope")),
+        precision_route=str(r.retrieval_meta.get("precision_route") or ""),
         gap_answer=r.answer if r.evidence_gap else "",
         model=r.model,
         tokens=dict(r.tokens),
@@ -398,13 +428,36 @@ def replay_case(conn, case: Case, rec: Recording, params: dict) -> GateOutcome:
             out.stale = str(exc)
 
     if rec.evidence_gap:
-        # 缺据路径的契约由代码保证，逐条查
+        # 两条不作答路径的契约**不同**，分开查。混在一起会逼着越界声明去说「查不到」，
+        # 而项目自己的规定是那句话不能说——它会让用户以为游戏里没这东西。
         if rec.tokens.get("total"):
-            out.gap_contract.append(f"缺据路径消耗了 {rec.tokens['total']} token（应为 0）")
-        if "查不到" not in rec.gap_answer:
-            out.gap_contract.append("缺据声明里没有「查不到」这类明确表述")
-        if "poedb.tw" not in rec.gap_answer and "poewiki" not in rec.gap_answer:
-            out.gap_contract.append("缺据声明没有给出查证途径")
+            out.gap_contract.append(f"不作答路径消耗了 {rec.tokens['total']} token（应为 0）")
+        if rec.out_of_scope:
+            if "流放之路 2" not in rec.gap_answer:
+                out.gap_contract.append("越界声明没有说清问题指向《流放之路 2》")
+            if "只覆盖" not in rec.gap_answer:
+                out.gap_contract.append("越界声明没有说明本库只覆盖 POE1")
+            if "poedb.tw" not in rec.gap_answer and "poewiki" not in rec.gap_answer:
+                out.gap_contract.append("越界声明没有给出查证途径")
+        elif rec.precision_route:
+            # 第三条路径：不作答理由由**工具**给出（「来源该格为空」「没形成确定调用」）。
+            # 这类措辞比笼统的「查不到」更准确，所以这里反过来**禁止**那句话：
+            # 数据可能是有的，只是这一格为空或这次没形成确定调用，
+            # 说成「查不到」会让用户以为游戏里没这东西。
+            if len(rec.gap_answer.strip()) < 20:
+                out.gap_contract.append(
+                    f"精确路由（{rec.precision_route}）没有给出具体的不作答理由"
+                )
+            if "查不到" in rec.gap_answer:
+                out.gap_contract.append(
+                    "精确路由的不作答理由说成了「查不到」——该说清是哪一格为空 / "
+                    "为什么没形成确定调用"
+                )
+        else:
+            if "查不到" not in rec.gap_answer:
+                out.gap_contract.append("缺据声明里没有「查不到」这类明确表述")
+            if "poedb.tw" not in rec.gap_answer and "poewiki" not in rec.gap_answer:
+                out.gap_contract.append("缺据声明没有给出查证途径")
     else:
         out.binding = verify(
             rec.raw_answer, rec.evidence,
@@ -774,6 +827,11 @@ def main() -> int:
     ap.add_argument("-v", "--verbose", action="store_true", help="每条都打明细")
     ap.add_argument("--record", action="store_true",
                     help="跑真实链路并录制响应（**需要 LLM 凭证、会消耗 token**）")
+    ap.add_argument("--only", default="",
+                    help="只跑指定用例 id，逗号分隔。规约要求「只重录真正涉及的用例」，"
+                         "而 --kind 会把同类里已录好的几十条一起重录")
+    ap.add_argument("--missing-only", action="store_true",
+                    help="配合 --record：只录**尚无录制**的用例")
     ap.add_argument("--gate", action="store_true",
                     help="用已有录制回放出口闸门指标（离线）")
     ap.add_argument("--audit", action="store_true",
@@ -795,6 +853,17 @@ def main() -> int:
             print(f"未知类别：{sorted(unknown)}，可选 {KINDS}")
             return 2
         cases = [c for c in cases if c.kind in wanted]
+    if args.only:
+        wanted_ids = {i.strip() for i in args.only.split(",") if i.strip()}
+        unknown_ids = wanted_ids - {c.id for c in cases}
+        if unknown_ids:
+            print(f"未知用例 id：{sorted(unknown_ids)}")
+            return 2
+        cases = [c for c in cases if c.id in wanted_ids]
+    if args.missing_only:
+        recorded = set(load_recordings())
+        cases = [c for c in cases if c.id not in recorded]
+        print(f"  --missing-only：待录 {len(cases)} 条")
     if args.limit:
         cases = cases[: args.limit]
     if not cases:

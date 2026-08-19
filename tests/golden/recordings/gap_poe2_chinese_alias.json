@@ -1,0 +1,18 @@
+{
+  "format_version": 1,
+  "case_id": "gap_poe2_chinese_alias",
+  "query": "流放之路：降临的通货有哪些",
+  "recorded_at": "2026-08-19T11:45:47+08:00",
+  "model": "",
+  "tokens": {},
+  "tool_calls": [],
+  "evidence_gap": true,
+  "out_of_scope": true,
+  "gap_answer": "这个问题指向《流放之路 2》（问题里出现了「流放之路：降临」），而本助手只覆盖**《流放之路 1》**，因此不作答。\n\n**为什么不能拿 POE1 的数据回答**\n两款游戏大量概念同名（升华、词缀、通货、地图、暴击），但机制与数值并不通用。用 POE1 的数值回答 POE2 的问题，得到的是一个看起来合理、实际错误的答案，而你无法从答案里看出这一点。\n\n**建议的查证途径**\n- https://poe2db.tw/cn/  （POE2 的数据站，与本库用的 poedb.tw 是两个站）\n- https://pathofbuilding.community/  的 Path of Building 2（POE2 是独立的 app）\n",
+  "blocked_claims": 0,
+  "elapsed_ms": 0,
+  "evidence_fingerprint": "sha256:e3b0c44298fc1c149afbf4c8996fb924",
+  "_warning": "raw_answer 是未过出口闸门的模型原文，含可能无据的断言，不得当作事实引用",
+  "raw_answer": "",
+  "evidence": []
+}

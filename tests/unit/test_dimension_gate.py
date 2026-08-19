@@ -44,6 +44,10 @@ class DimensionGapTest(unittest.TestCase):
             _status("support_gem", "partial", 262),
             _status("boss", "harvested", 0),
             _status("currency", "harvested", 0),
+            # 2026-08-19：怪物页拆成三个域。boss（技能与应对）仍未采集，
+            # 怪物词缀与幽魂各自入库
+            _status("monster_mod", "partial", 183),
+            _status("spectre", "partial", 1948),
         ]
         cov.load = lambda conn: self.rows  # type: ignore[assignment]
         self.cov = cov
@@ -274,3 +278,76 @@ class SkillGemIntentTest(DimensionGapTest):
                           ("support_gem:SupportCastWhenDamageTaken",))
         self.assertTrue(v.is_gap)
         self.assertIn("辅助宝石", v.reason())
+
+
+class MonsterDomainTest(DimensionGapTest):
+    """怪物页拆成三个域之后的边界（2026-08-19 第十三轮）。
+
+    原先 `boss` 一个域叫「Boss 与怪物」，把三件事混在一起：Boss 打法（缓存页里**没有**）、
+    怪物词缀（有）、按等级的基础数值表（PoB 侧早在 `game_constant` 里）。
+    混在一起时「已抓取未入库」读起来像是差一个抽取器，而实际缺的是**来源**。
+    """
+
+    def test_Boss打法仍然拒答(self) -> None:
+        """黄金集里的 `gap_boss_mechanics` 钉的就是这条：拆域不能把它变成能答。"""
+        for q in ("潜伏之主的技能怎么应对", "这个 boss 怎么打"):
+            with self.subTest(q=q):
+                v = self._verdict(q)
+                self.assertTrue(v.is_gap, q)
+                self.assertIn("boss", [s.key for s in v.uncovered])
+
+    def test_怪物词缀效果可答(self) -> None:
+        for q in ("传奇怪物会带哪些词缀", "魔符词缀是什么效果"):
+            with self.subTest(q=q):
+                self.assertFalse(self._verdict(q).is_gap, q)
+
+    def test_幽魂倍率可答而排名与抗性拒答(self) -> None:
+        self.assertFalse(self._verdict("不朽精锐的幽魂倍率是多少").is_gap)
+        for q in ("生命倍率最高的幽魂是哪个", "幽魂的抗性是多少", "幽魂选哪个好"):
+            with self.subTest(q=q):
+                v = self._verdict(q)
+                self.assertTrue(v.is_gap, q)
+                self.assertIn("spectre", [s.key for s in v.uncovered])
+
+    def test_档位问法不被幽魂的比较词误伤(self) -> None:
+        """`spectre` 的 `missing_dimension_hints` 里有「最高」，但它只在本域被识别后
+        才参与判定——词缀档位问题不含「幽魂」，不该被它拦。"""
+        self.assertFalse(self._verdict("腰带上力量词缀的最高档位是多少").is_gap)
+
+    def test_怪物词缀意图词不误伤装备问题(self) -> None:
+        """「传奇」在 POE1 同时是装备稀有度，所以域意图词只收「传奇怪物」这种专指写法。"""
+        for q in ("击败稀有怪物获得其属性修正的腰带", "猎首获得稀有怪物属性修正持续多久"):
+            with self.subTest(q=q):
+                self.assertFalse(self._verdict(q).is_gap, q)
+
+
+class SubsumedCoverageTest(DimensionGapTest):
+    """更专指的意图词命中时，被它包含的泛化命中不算覆盖（2026-08-19）。"""
+
+    def test_泛化词缀命中不取消怪物词缀的缺口(self) -> None:
+        """实测反例：「惊悸迷雾怪物词缀的生成权重是多少」。
+
+        `monster_mod` 靠「怪物词缀」命中且权重正落在它的未采集维度，而 `mod_affix`
+        （装备词缀，已全量入库）靠泛化的「词缀」「权重」命中被记为 covered，
+        于是整句判为有据、模型拿到的是**装备**词缀的权重。
+        """
+        v = self._verdict("惊悸迷雾怪物词缀的生成权重是多少")
+        self.assertTrue(v.is_gap)
+        self.assertIn("monster_mod", [s.key for s in v.uncovered])
+        self.assertEqual([], [s.key for s in v.covered])
+
+    def test_复合问题仍然保留部分作答(self) -> None:
+        """这条是上一条的成对点：判据只取「子串」这一档，不做同义词或语义相似度——
+        否则复合问题会被误判成同一主语，而它必须能答有据的那半。
+        """
+        v = self._verdict("猎首有哪些词缀，值多少钱")
+        self.assertTrue(v.uncovered)
+        self.assertTrue(v.covered)
+        self.assertFalse(v.is_gap)
+
+    def test_不同主语的两个领域互不吞并(self) -> None:
+        """「幽魂」与「词缀」没有包含关系，两边各自成立。"""
+        v = self._verdict("猎首有哪些词缀，幽魂的抗性是多少")
+        self.assertIn("spectre", [s.key for s in v.uncovered])
+        self.assertTrue(v.covered)
+        self.assertFalse(v.is_gap)

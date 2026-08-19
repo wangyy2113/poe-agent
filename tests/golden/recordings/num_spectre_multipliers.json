@@ -1,0 +1,39 @@
+{
+  "format_version": 1,
+  "case_id": "num_spectre_multipliers",
+  "query": "不朽精锐的幽魂倍率是多少",
+  "recorded_at": "2026-08-19T11:44:04+08:00",
+  "model": "glm-5.2",
+  "tokens": {
+    "prompt": 9934,
+    "output": 354,
+    "reasoning": 149,
+    "total": 10288
+  },
+  "tool_calls": [
+    "kb_search",
+    "spectre_stats"
+  ],
+  "evidence_gap": false,
+  "gap_answer": "",
+  "blocked_claims": 1,
+  "elapsed_ms": 7902,
+  "evidence_fingerprint": "sha256:489db90bc1c3a509749e60b79049b58e",
+  "_warning": "raw_answer 是未过出口闸门的模型原文，含可能无据的断言，不得当作事实引用",
+  "raw_answer": "「不朽精锐」（英文标识 Abhorred_Elitist）在本库中命中 2 条记录，幽魂倍率如下[[E1]]：\n\n| 中文名 | 英文标识 | 伤害% | 生命% |\n| --- | --- | --- | --- |\n| 不朽精锐 | Abhorred_Elitist | 150% | 120% |\n| 不朽精锐 | Abhorred_Elitist | 125% | 110% |\n\n倍率以 100% 为基础值[[E1]]。存在两条记录的原因可能是不同版本或不同数据条目，本库无法判断哪条对应当前版本。\n\n**覆盖说明：** 本库只提供页面上的伤害% 与生命%，不提供抗性、技能、掉落信息，也不支持倍率排名（本库尚未区分开发用怪物与实际可用幽魂）[[E1]]。",
+  "evidence": [
+    {
+      "label": "E1",
+      "chunk_id": "spectre_stats:v:53074",
+      "entity_id": null,
+      "title": "不朽精锐（幽魂倍率）",
+      "url": "https://poedb.tw/cn/Abhorred_Elitist",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "### 不朽精锐（可作幽魂的怪物）\n\n本库共收录 1948 个可作幽魂的怪物；「不朽精锐」命中 2 条。\n\n| 中文名 | 英文标识 | 伤害% | 生命% |\n| --- | --- | --- | --- |\n| 不朽精锐 | Abhorred_Elitist | 150% | 120% |\n| 不朽精锐 | Abhorred_Elitist | 125% | 110% |\n\n倍率以 100% 为基础值。只给页面上的伤害% / 生命%；不提供抗性、技能、掉落，也不做倍率排名（本库尚未区分开发用怪物与实际可用幽魂）。\n\n来源：POEDB https://poedb.tw/cn/Abhorred_Elitist",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    }
+  ]
+}

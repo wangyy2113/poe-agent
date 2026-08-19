@@ -430,6 +430,60 @@ CREATE TABLE IF NOT EXISTS pob_skill_level (
     PRIMARY KEY(gem_id, gem_level)
 );
 
+-- ── 怪物词缀（POEDB `/cn/Monsters` 的「怪物」表）──
+-- 只收**有中文文本**的行。实测 501 行里：190 行有中文（127 只有中文 + 63 中文与未翻译
+-- 原始 stat id 并存），63 行只有未翻译的内部 stat id（`maven map boss buffed [50]`），
+-- 248 行连效果文本都没有（页面只列了词缀名，如「法瑞尔的狂野之灵」）。
+-- 后两类跳过并登记台账：把内部 stat id 当中文答案输出，等于拿调试字段冒充游戏文本。
+CREATE TABLE IF NOT EXISTS poedb_monster_mod (
+    mod_id          TEXT PRIMARY KEY,  -- hash(kind, name_zh, text_zh)
+    -- 词缀来源分类，页面「类型」列原文：传奇 / 精华 / Talisman / 惊悸迷雾 / 猎魔 / 菌潮 …
+    kind            TEXT NOT NULL CHECK(kind <> ''),
+    monster_level   INTEGER,           -- 页面「等级」列，多为 1
+    name_zh         TEXT NOT NULL CHECK(name_zh <> ''),
+    text_zh         TEXT NOT NULL CHECK(text_zh <> ''),
+    -- POEDB 未翻译的原始 stat id（`monster dropped item rarity +% [0]`）。
+    -- 单列一份而不是拼进 text_zh：它是调试信息，**不可作为面向用户的文本**，
+    -- 但留着能说明「这条词缀还有一部分效果没有中文」。
+    raw_stats       TEXT NOT NULL CHECK(json_valid(raw_stats)),
+    source          TEXT NOT NULL,
+    source_priority INTEGER NOT NULL,
+    url             TEXT NOT NULL CHECK(url <> ''),
+    content_hash    TEXT NOT NULL CHECK(content_hash <> ''),
+    fetched_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_monstermod_kind ON poedb_monster_mod(kind);
+CREATE INDEX IF NOT EXISTS idx_monstermod_name ON poedb_monster_mod(name_zh);
+
+-- ── 幽魂可用怪物与倍率（同一页的最后一张表）──
+-- 那张表的「幽魂」列 1948 行**全是勾**，所以它本身就是「可作幽魂的怪物」清单，
+-- 这一列不携带信息（别把它存成布尔值，那会让人以为库里还有不可作幽魂的怪物）。
+--
+-- 刻意**不建 entity/卡片**，只有表 + `spectre_stats` 工具 + 意图词路由：
+-- 1948 张「名字 + 两个倍率」的卡片彼此高度雷同，而怪物名里有大量通用词
+-- （「恶魔」「守卫」），别名精确命中会把它们注入任何含这些词的问题的候选集——
+-- 词缀梯度卡踩过同一个坑（粒度不对就靠排序层补偿，补偿层最后都被删了）。
+CREATE TABLE IF NOT EXISTS poedb_spectre (
+    -- POEDB 侧的稳定键：`data-hover` 给 `Data\\MonsterVarieties/<id>` 时取 id
+    -- （2026-08-19 实测 1921 行），只给 tooltip 缓存哈希时取哈希 + 倍率（27 行；
+    -- 哈希是 tooltip 内容的键、会撞，判据见 poedb_monsters._variety_key）。
+    variety_key     TEXT PRIMARY KEY,
+    name_zh         TEXT NOT NULL CHECK(name_zh <> ''),
+    -- 英文 slug 来自链接。**不是权威英文名**（那要详情页），只用于对照与检索
+    poedb_slug      TEXT NOT NULL CHECK(poedb_slug <> ''),
+    damage_pct      INTEGER NOT NULL,  -- 页面「伤害%」列原值，100 = 基础
+    life_pct        INTEGER NOT NULL,  -- 页面「生命%」列原值
+    source          TEXT NOT NULL,
+    source_priority INTEGER NOT NULL,
+    url             TEXT NOT NULL CHECK(url <> ''),
+    content_hash    TEXT NOT NULL CHECK(content_hash <> ''),
+    fetched_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_spectre_name ON poedb_spectre(name_zh);
+CREATE INDEX IF NOT EXISTS idx_spectre_life ON poedb_spectre(life_pct DESC);
+
 -- ── 跨来源冲突台账 ──
 -- 需求 15.5/15.6：冲突时并列展示双方并推荐 POEDB，不得自行判定谁对而隐藏一方。
 -- 因此冲突必须**落库**，不能只在导入日志里一闪而过。
