@@ -68,10 +68,16 @@ class DimensionGapTest(unittest.TestCase):
         self.assertIn("市场价格", v.reason())
 
     def test_partial_domain_gaps_when_asked_dimension_is_the_missing_one(self) -> None:
-        """天赋节点属性已入库，但天赋点消耗未入库 —— 问的正是缺的那面。"""
-        v = self._verdict("从起点点到神威之盾要花几个天赋点")
+        """partial 领域被问到它缺的那一维时必须拒答。
+
+        例子换过一次：原先用「点到某节点要花几点」，那一维在 2026-08-19 第十五轮
+        随连接关系入库而变成能力（见 `num_passive_path_cost`）。现在用同一个领域
+        **当前**仍缺的那维——星团珠宝上的天赋不在主树上。
+        用例要跟着数据走，留着一句已经不成立的边界比没有用例更糟。
+        """
+        v = self._verdict("星团珠宝上的天赋要花几个天赋点")
         self.assertTrue(v.is_gap)
-        self.assertEqual(["passive_tree"], [s.key for s in v.uncovered])
+        self.assertIn("passive_tree", [s.key for s in v.uncovered])
         self.assertIn("未采集的部分", v.reason())
 
     def test_not_collected_domain_is_gap(self) -> None:

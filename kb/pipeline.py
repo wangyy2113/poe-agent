@@ -1529,6 +1529,18 @@ def run_passive_tree(*, force: bool = False, targets: list[str] | None = None) -
         aliasable = poedb_tree.aliasable_entities(entities)
         n_alias = alias_mod.index_aliases(conn, aliasable)
 
+        # 图结构（连接关系 / 职业起点 / 总点数）。节点属性与图分两步抽：
+        # 属性按 (种类, 名字, 内容) 合并，而图必须保留**每一个树上位置**，
+        # 合并过的实体没法用来算路径。
+        #
+        # **只主天赋树入图**：Atlas 树没有职业起点（它压根没有 classes），
+        # 而且它的点数来源与消耗是另一套规则，没实测过就不入库——
+        # 否则 `passive_path` 会拿主树的模型去算 Atlas。
+        n_graph: dict = {"skipped": "非主天赋树"}
+        if target == poedb_tree.TARGET_PASSIVE:
+            graph = poedb_tree.extract_graph(payload_zh, payload_en, ep_zh)
+            n_graph = _replace_passive_graph(conn, graph, ep_zh, version)
+
         total_entities += len(entities)
         total_indexed += indexed
         total_alias += n_alias
@@ -1542,6 +1554,7 @@ def run_passive_tree(*, force: bool = False, targets: list[str] | None = None) -
             "aliased": len(aliasable),
             "missing_en": st.missing_en,
             "skipped_empty": st.skipped_empty,
+            "graph": n_graph,
         }
         logger.info(
             "%s 入库：实体 %d，卡片 %d，别名实体 %d/%d（只收有专名的种类）",
@@ -1741,6 +1754,61 @@ def run_poedb_monsters(*, force: bool = False, allow_shrink: bool = False) -> in
                 mods_written, chunks, aliases, spectres_written,
                 len(extracted.skipped), elapsed_ms)
     return 0
+
+
+def _replace_passive_graph(conn, graph, ep, version: str) -> dict:  # noqa: ANN001
+    """整体替换一棵树的图。返回计数，写进 ingest_run 的 note。
+
+    只有主天赋树写图：Atlas 树的「点数消耗」是另一套规则（它自己的点数来源不同），
+    没有实测过就不入库，免得让 `passive_path` 拿主树的模型去算 Atlas。
+    """
+    if ep.target != poedb_tree.TARGET_PASSIVE:
+        return {"skipped": "只主天赋树入图"}
+    cfg = get_config()
+    priority = int(cfg.priority_of(Source.POEDB.value))
+    conn.execute("DELETE FROM passive_graph_node WHERE tree_version = ?", (version,))
+    conn.execute("DELETE FROM passive_graph_edge WHERE tree_version = ?", (version,))
+    conn.executemany(
+        """
+        INSERT INTO passive_graph_node(
+            node_id,name_zh,name_en,kind,ascendancy_id,class_start,passable,
+            tree_version,source,source_priority,url,updated_at
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,datetime('now'))
+        ON CONFLICT(node_id) DO UPDATE SET
+            name_zh=excluded.name_zh, name_en=excluded.name_en, kind=excluded.kind,
+            ascendancy_id=excluded.ascendancy_id, class_start=excluded.class_start,
+            passable=excluded.passable, tree_version=excluded.tree_version,
+            updated_at=datetime('now')
+        """,
+        [
+            (n.node_id, n.name_zh, n.name_en, n.kind, n.ascendancy_id, n.class_start,
+             int(n.passable), version, Source.POEDB.value, priority, ep.json_url)
+            for n in graph.nodes
+        ],
+    )
+    conn.executemany(
+        "INSERT OR REPLACE INTO passive_graph_edge(node_a,node_b,tree_version) VALUES (?,?,?)",
+        [(a, b, version) for a, b in sorted(graph.edges)],
+    )
+    conn.executemany(
+        """
+        INSERT INTO passive_tree_meta(key,value_num,tree_version,source,source_priority,
+                                      url,updated_at)
+        VALUES (?,?,?,?,?,?,datetime('now'))
+        ON CONFLICT(key) DO UPDATE SET
+            value_num=excluded.value_num, tree_version=excluded.tree_version,
+            updated_at=datetime('now')
+        """,
+        [(k, v, version, Source.POEDB.value, priority, ep.json_url)
+         for k, v in sorted(graph.meta.items())],
+    )
+    return {
+        "nodes": len(graph.nodes),
+        "passable": len(graph.passable_ids),
+        "edges": len(graph.edges),
+        "class_starts": len(graph.class_starts),
+        "meta": graph.meta,
+    }
 
 
 def _record_monster_gaps(conn, extracted: poedb_monsters.MonsterExtract) -> int:  # noqa: ANN001

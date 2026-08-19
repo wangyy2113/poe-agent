@@ -54,6 +54,11 @@ PoB Community 的 PoE1 版（库里 `game_version` 全是 `3.29`；POE2 用 0.x 
   充分性判定之后的第二道闸门：问题命中的领域若未采集、或 `partial_note` 明确排除了被问的
   维度，即使别名精确命中也走缺据声明。它**只能把「充分」改判为「不足」**——放宽依据要有
   新证据，而这里没有引入新证据。
+- **在图上算出来的数字要连路径一起给。** `passive_path` 的点数是 BFS 结果，不是原文，
+  所以它把整条路径逐节点列进证据——用户能照着核对。这是「算」与「猜」的分界：
+  算的东西必须能被复核到边一级（`passive_graph_edge` 的 3,382 条）。
+  同理三条排除（树心 root / 升华节点 / 大师天赋）都是**游戏规则**并写在表注释里：
+  不排除 root，「野蛮人 → 女巫」会算成 2 点，实测真值 22。
 - **Markdown 表格是一个断言单位**，不是若干行。绑定标记出现在表内任何位置都对整张表生效，
   数值仍逐个回填校验（序号列除外）；流式侧表格没收齐**不下发**。
 - **流式粒度是句不是字。** 未校验内容一旦推给用户就撤不回来。增量校验由
@@ -95,7 +100,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 564 项，秒级
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 587 项，秒级
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选
@@ -112,7 +117,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 .venv/bin/python scripts/eval_run.py --record        # 重录真实响应（**要凭证、烧 token**）
 ```
 
-黄金问答集是 `tests/golden/questions.yaml`（69 条，六类），基线与全部结论在
+黄金问答集是 `tests/golden/questions.yaml`（71 条，六类），基线与全部结论在
 `tests/golden/BASELINE.md`——**动闸门前先读它**，里面记了四个已修缺陷、两个已知未修边界，
 以及两次「测量本身写错」的教训。
 
@@ -165,8 +170,8 @@ POST /chat[/stream]  api/chat.py（只做校验与编排调用）
 `affix_pool_odds`（胸甲同侧普通词缀条件概率）→ `check_mod_combination`（三态可行性）→
 `bench_recipe_catalog`（工艺台目录）→ `metamod_interaction_matrix`（逐字矩阵单元格）→
 `mod_tiers`（T 级梯度）→ `skill_gem_levels`（宝石逐级字面值）→
-`spectre_stats`（某怪物作为幽魂的倍率）→ `stat_sources`（某属性能从哪来）→
-`entity_lookup` → `kb_coverage` → `kb_search`（兜底全文检索）
+`spectre_stats`（幽魂倍率 / 抗性 / 排名）→ `passive_path`（点到某天赋要几点 + 逐节点路径）→
+`stat_sources`（某属性能从哪来）→ `entity_lookup` → `kb_coverage` → `kb_search`（兜底）
 
 新增工具时守住两条：**能力边界由 `ALLOWED_TOOLS` 限定而不是靠提示词描述**；工具描述里不要
 手写「尚未采集 X」这类清单——那种句子在数据入库当天就变成假话，未采集声明应由
@@ -190,8 +195,8 @@ POST /chat[/stream]  api/chat.py（只做校验与编排调用）
   游戏里的显示值，算错就是「带着引用的错数字」——比查不到更糟。也**不留空列**：留了下一个人
   会以为它待填，然后把乘数当伤害写进去。这两维明确划进 `partial_note` 的未采集部分。
 
-本机 `data/poe.db` 现状（`GET /healthz` 与 `/admin/stats` 可查）：`entity` 4805、
-`mod_affix` 93897、`pob_mod` 25487、`chunk` 18055、`alias` 7481、`game_constant` 499、
+本机 `data/poe.db` 现状（`GET /healthz` 与 `/admin/stats` 可查）：`entity` 4807、
+`mod_affix` 93897、`pob_mod` 25487、`chunk` 18057、`alias` 7485、`game_constant` 499、
 `craft_bench_recipe` 783、`pob_base_item` **1022**（18 个装备类别，PoB × POEDB 逐条桥接，
 覆盖 PoB 侧 96.1%；未桥接的 41 条已按类别登记在台账）、`source_conflict` **515**（`mod_review` 254 + `unique_review` 207 + `spectre_review` 43
 + `spectre` **8** + `tree_review` 3）。
@@ -202,6 +207,13 @@ POST /chat[/stream]  api/chat.py（只做校验与编排调用）
 （`pob_missing` 51 = POEDB 保留的历史/未上线条目，`no_zh_name` 11 = 取不到中文名）。
 **这两张表刻意没有伤害列，也没有属性需求列**——理由见 `core/db.py` 的表注释，
 那是本轮最重要的一条边界。
+
+`passive_graph_node` **3390** 个天赋树节点（其中可经过 **2478**）+ `passive_graph_edge`
+**3382** 条无向连线 + `passive_tree_meta`（`totalPoints` 123、`ascendancyPoints` 8）。
+节点属性早就入库了，缺的一直是「怎么连的」——树 JSON 本来就在缓存里也一直被解析，
+只是 `in`/`out` 与 `classes` 没被取出来。节点 id 就是 GGG 的 skill id
+（实测 3389/3389 与 JSON 键相等），所以能与天赋卡的 `skill_ids` 对上。
+**只有主天赋树入图**：Atlas 树没有职业起点，点数规则也是另一套。
 
 `pob_spectre` **268** 条 PoB 幽魂建模数据（四抗性、护甲/闪避/能量护盾系数、攻击间隔、
 怪物技能 id）。它同时是一份「玩家实际会用」的确认清单，倍率排名只在这 268 个里做——

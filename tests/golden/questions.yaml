@@ -534,13 +534,31 @@ cases:
     expect_gap: true
     note: 怪物词缀入库了效果文本，但生成权重与出现规则未采集
 
-  - id: gap_passive_path_cost
+  - id: num_passive_path_cost
     query: 从起点点到神威之盾要花几个天赋点
+    kind: numeric
+    expect_values: ["11"]
+    note: >-
+      2026-08-19 第十五轮起**可答**：连接关系与职业起点入库后，`passive_path` 按职业
+      分别算。最省是圣堂武僧与野蛮人各 11 点（树 3.29）
+    lesson: >-
+      这条用例**从拒答翻成可答**，而且答案必须**按职业分别给**——同一个基石从暗影
+      起点要 24 点、从游侠 25 点。给一个笼统的数字就是错答案。
+      路径逐节点列出来当证据，用户可以照着核对：这是「算」与「猜」的区别。
+
+  - id: gap_passive_cluster_jewel
+    query: 星团珠宝上的天赋要花几个天赋点
     kind: gap
     expect_gap: true
     note: >-
-      天赋树节点属性已入库，但**天赋点消耗与连接关系未入库**（passive_tree=partial）。
-      这条考的是「领域部分采集」时能否说清缺的是哪个维度，而不是笼统说查不到
+      星团珠宝上的天赋不在主天赋树上（`cluster_jewel` 是独立领域且未采集），
+      主树的连接关系答不了它
+
+  - id: route_passive_path
+    query: 从起点点到坚毅之心要花几个天赋点
+    kind: tool_route
+    expect_tool: passive_path
+    note: 点数要在图上算，kb_search 只能命中节点卡片（卡片里没有连接关系）
 
   # ══ 工具路由：能精确算的不要猜（需要在线或录制）══════════════════════════
   # ALLOWED_TOOLS 的顺序即推荐优先级，这一类验证模型是否按该优先级选工具。

@@ -533,6 +533,61 @@ CREATE TABLE IF NOT EXISTS pob_spectre (
 CREATE INDEX IF NOT EXISTS idx_pobspectre_name ON pob_spectre(name_en);
 CREATE INDEX IF NOT EXISTS idx_pobspectre_life ON pob_spectre(life_mult DESC);
 
+-- ── 天赋树的图结构（连接关系与职业起点）──
+-- 节点**属性**早就入库了（`entity` 里 1631 条天赋卡），缺的一直是「怎么连的」。
+-- 树 JSON 本来就在缓存里、也一直被解析，只是 `in` / `out` 与 `classes` 没被取出来——
+-- 与元词缀矩阵、技能石同一个形态：数据在手上，缺的是抽取那一步。
+--
+-- 节点 id 就是 GGG 的 skill id（实测 3389/3389 与 JSON 键相等），
+-- 所以 `entity.attributes.skill_ids` 能直接连到这里。
+CREATE TABLE IF NOT EXISTS passive_graph_node (
+    node_id         TEXT PRIMARY KEY,  -- = GGG skill id
+    name_zh         TEXT NOT NULL,
+    name_en         TEXT,
+    -- keystone / notable / mastery / jewel_socket / ascendancy / normal
+    kind            TEXT NOT NULL CHECK(kind <> ''),
+    ascendancy_id   TEXT NOT NULL,     -- 非空 = 升华子树上的节点
+    -- 职业起点节点的职业名（中文），其余为空串
+    class_start     TEXT NOT NULL,
+    -- 路径能否**经过**它。三类不可经过，每一类都是游戏规则而不是数据问题：
+    --   root       7 个职业起点都连在它上面，但游戏里不能从一个职业穿到另一个职业
+    --              （不排除它，「野蛮人→女巫」会算成 2 点，实测就是这么错的）
+    --   升华节点   只能从升华起点进入，不在主树连通域里
+    --   大师天赋   点了之后选一个效果，它不作为通路
+    -- 珠宝插槽**可经过**：游戏里它就是一个能点的普通节点。
+    passable        INTEGER NOT NULL CHECK(passable IN (0,1)),
+    tree_version    TEXT NOT NULL,
+    source          TEXT NOT NULL,
+    source_priority INTEGER NOT NULL,
+    url             TEXT NOT NULL CHECK(url <> ''),
+    updated_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_pgnode_name ON passive_graph_node(name_zh);
+CREATE INDEX IF NOT EXISTS idx_pgnode_kind ON passive_graph_node(kind, passable);
+
+-- 无向边，规范化存一次（node_a < node_b）。JSON 里 `in` / `out` 两侧都列了同一条边，
+-- 不规范化会存成两条，最短路径本身不受影响，但「树上有多少条连线」会翻倍。
+CREATE TABLE IF NOT EXISTS passive_graph_edge (
+    node_a          TEXT NOT NULL,
+    node_b          TEXT NOT NULL,
+    tree_version    TEXT NOT NULL,
+    PRIMARY KEY (node_a, node_b),
+    CHECK (node_a < node_b)
+);
+
+-- 树的总量常量。**不塞进 `game_constant`**：那张表的列注释与来源约定都是围绕
+-- PoB 的 dat 导出写的（`dat_source`、钉 commit 的 blob 行号锚点），
+-- 混进 POEDB 的树数据会让那些列对一半的行说不通。
+CREATE TABLE IF NOT EXISTS passive_tree_meta (
+    key             TEXT PRIMARY KEY,  -- totalPoints / ascendancyPoints
+    value_num       REAL NOT NULL,
+    tree_version    TEXT NOT NULL,
+    source          TEXT NOT NULL,
+    source_priority INTEGER NOT NULL,
+    url             TEXT NOT NULL CHECK(url <> ''),
+    updated_at      TEXT NOT NULL
+);
+
 -- ── 跨来源冲突台账 ──
 -- 需求 15.5/15.6：冲突时并列展示双方并推荐 POEDB，不得自行判定谁对而隐藏一方。
 -- 因此冲突必须**落库**，不能只在导入日志里一闪而过。

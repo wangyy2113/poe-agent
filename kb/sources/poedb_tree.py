@@ -42,6 +42,7 @@ import hashlib
 import json
 import logging
 import re
+from collections import deque
 from dataclasses import dataclass, field
 
 from entities.models import Entity, ModLine, SourceRef
@@ -513,3 +514,190 @@ def aliasable_entities(entities: list[Entity]) -> list[Entity]:
     for e in named:
         seen[normalize(e.name_zh)] = seen.get(normalize(e.name_zh), 0) + 1
     return [e for e in named if seen[normalize(e.name_zh)] == 1]
+
+# ── 图结构：连接关系、职业起点、总点数 ──────────────────────────────
+
+#: 珠宝插槽在图里**可经过**（游戏里它就是一个能点的节点），所以不单列 kind。
+KIND_JEWEL = "jewel_socket"
+
+#: 中心节点。7 个职业起点都连在它上面，但游戏里**不能从一个职业穿到另一个职业**。
+#: 不排除它，「野蛮人 → 女巫」会算成 2 点——实测就是这么错的（真值 22）。
+ROOT_ID = "root"
+
+
+@dataclass(frozen=True)
+class GraphNode:
+    """图里的一个节点。`passable` 决定它能不能出现在路径中间。"""
+
+    node_id: str
+    name_zh: str
+    name_en: str
+    kind: str
+    ascendancy_id: str
+    class_start: str
+    passable: bool
+
+
+@dataclass
+class TreeGraph:
+    """一棵树的图。`edges` 已规范化为 node_a < node_b 的无向边。"""
+
+    nodes: list[GraphNode] = field(default_factory=list)
+    edges: set[tuple[str, str]] = field(default_factory=set)
+    #: totalPoints / ascendancyPoints
+    meta: dict[str, float] = field(default_factory=dict)
+
+    @property
+    def passable_ids(self) -> set[str]:
+        return {n.node_id for n in self.nodes if n.passable}
+
+    @property
+    def class_starts(self) -> dict[str, str]:
+        """中文职业名 → 起点节点 id。"""
+        return {n.class_start: n.node_id for n in self.nodes if n.class_start}
+
+
+def _graph_kind(raw: dict) -> str:
+    if raw.get("isJewelSocket"):
+        return KIND_JEWEL
+    return _kind_of(raw)
+
+
+def _class_start_names(payload: dict) -> dict[int, str]:
+    """classStartIndex → 中文职业名。索引是 `classes` 数组的下标。"""
+    out: dict[int, str] = {}
+    for i, cls in enumerate(_as_list(payload.get("classes"))):
+        if isinstance(cls, dict):
+            out[i] = str(cls.get("name") or "")
+    return out
+
+
+def extract_graph(
+    payload_zh: dict, payload_en: dict | None, ep: TreeEndpoint
+) -> TreeGraph:
+    """抽取图结构。节点属性走 `extract()`，这里只管「怎么连的」。
+
+    `passable` 的三条排除都是**游戏规则**，不是数据问题（判据见 `core/db.py` 的
+    `passive_graph_node` 表注释）：root 不能穿、升华节点只能从升华起点进、
+    大师天赋不作为通路。
+
+    节点 id 直接用 JSON 的键——实测它与节点的 `skill` 字段 3389/3389 相等，
+    也就是 GGG 的 skill id，所以能与已入库天赋卡的 `skill_ids` 对上。
+    """
+    nodes_zh = payload_zh.get("nodes")
+    if not isinstance(nodes_zh, dict) or not nodes_zh:
+        raise TreeStructureError(f"{ep.json_url} 缺少 nodes 字典")
+    nodes_en = (payload_en or {}).get("nodes") or {}
+    class_names = _class_start_names(payload_zh)
+
+    graph = TreeGraph()
+    for node_id, raw in nodes_zh.items():
+        if not isinstance(raw, dict):
+            continue
+        start_index = raw.get("classStartIndex")
+        class_start = (
+            class_names.get(int(start_index), "") if isinstance(start_index, int) else ""
+        )
+        kind = _graph_kind(raw)
+        ascendancy_id = str(raw.get("ascendancyName") or "")
+        passable = (
+            node_id != ROOT_ID
+            and not ascendancy_id
+            and kind != KIND_MASTERY
+        )
+        graph.nodes.append(
+            GraphNode(
+                node_id=str(node_id),
+                name_zh=str(raw.get("name") or ""),
+                name_en=str((nodes_en.get(node_id) or {}).get("name") or ""),
+                kind=kind,
+                ascendancy_id=ascendancy_id,
+                class_start=class_start,
+                passable=passable,
+            )
+        )
+
+    known = {n.node_id for n in graph.nodes}
+    for node_id, raw in nodes_zh.items():
+        if not isinstance(raw, dict):
+            continue
+        for other in _as_list(raw.get("out")) + _as_list(raw.get("in")):
+            other_id = str(other)
+            if other_id not in known or other_id == str(node_id):
+                continue
+            a, b = sorted((str(node_id), other_id))
+            graph.edges.add((a, b))
+
+    points = payload_zh.get("points")
+    if isinstance(points, dict):
+        for key in ("totalPoints", "ascendancyPoints"):
+            value = points.get(key)
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                graph.meta[key] = float(value)
+
+    if len(graph.class_starts) < 7:
+        raise TreeStructureError(
+            f"{ep.json_url} 只解析到 {len(graph.class_starts)} 个职业起点（应为 7），"
+            "classStartIndex 可能已改名，拒绝写入"
+        )
+    if not graph.edges:
+        raise TreeStructureError(f"{ep.json_url} 没有解析到任何连接关系（in/out 可能已改名）")
+    return graph
+
+
+def build_adjacency(
+    graph_edges: set[tuple[str, str]], passable: set[str]
+) -> dict[str, set[str]]:
+    """邻接表。只保留两端都可经过的边。"""
+    adj: dict[str, set[str]] = {}
+    for a, b in graph_edges:
+        if a in passable and b in passable:
+            adj.setdefault(a, set()).add(b)
+            adj.setdefault(b, set()).add(a)
+    return adj
+
+
+def nearest_path(
+    adj: dict[str, set[str]], src: str, targets: set[str]
+) -> list[str] | None:
+    """一次 BFS 找出离 `src` **最近的那个目标**，返回节点 id 序列（含起点与终点）。
+
+    点数 = ``len(path) - 1``（起点是职业出生点，不消耗天赋点）。
+
+    为什么是「一次 BFS 找最近的一个」而不是「对每个目标各跑一次」：同名小点在树上
+    有几十处（「力量」73 处），逐个跑就是 7 个职业 × 73 次 = 511 次 BFS，实测那样
+    单次查询要 327ms；BFS 本身就是按距离扩展的，第一个命中的目标必然最近。
+    """
+    if src not in adj and src not in targets:
+        return None
+    if src in targets:
+        return [src]
+    prev: dict[str, str] = {src: src}
+    queue = deque([src])
+    while queue:
+        cur = queue.popleft()
+        for nxt in adj.get(cur, ()):
+            if nxt in prev:
+                continue
+            prev[nxt] = cur
+            if nxt in targets:
+                path = [nxt]
+                while path[-1] != src:
+                    path.append(prev[path[-1]])
+                return list(reversed(path))
+            queue.append(nxt)
+    return None
+
+
+def shortest_path(
+    graph_edges: set[tuple[str, str]], passable: set[str], src: str, dst: str
+) -> list[str] | None:
+    """单目标最短路径。`nearest_path` 的一元特例，判据只写在那一处。
+
+    **只走 `passable`**：终点自己可以是不可经过的类型吗？不能——升华节点与大师天赋
+    本来就不是「从起点走过去」这个模型能描述的东西，调用方要先判掉并说明原因，
+    而不是在这里返回一条穿过它们的假路径。
+    """
+    if src not in passable or dst not in passable:
+        return None
+    return nearest_path(build_adjacency(graph_edges, passable), src, {dst})
