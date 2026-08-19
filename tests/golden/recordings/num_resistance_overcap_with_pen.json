@@ -1,0 +1,42 @@
+{
+  "format_version": 1,
+  "case_id": "num_resistance_overcap_with_pen",
+  "query": "我火抗 120，敌人有 25% 火焰穿透，实际生效的火抗是多少",
+  "recorded_at": "2026-08-19T17:17:36+08:00",
+  "model": "glm-5.2",
+  "tokens": {
+    "prompt": 13287,
+    "output": 1181,
+    "reasoning": 781,
+    "total": 14468
+  },
+  "tool_calls": [
+    "kb_search",
+    "resistance_calc"
+  ],
+  "evidence_gap": false,
+  "out_of_scope": false,
+  "precision_route": "",
+  "gap_answer": "",
+  "final_answer": "## 火焰抗性结算结果\n\n你的火抗加总为 120%，火焰最大抗性上限为 75%（基础常量，问题未提及额外最大抗性加成），因此实际生效的火焰抗性被夹在 **75%**[[E1]]。\n\n### 逐步推导\n\n〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕[[E1]]\n\n### 关键点\n\n〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕超出上限的 45% 不直接减伤，但能抵消至多 45% 的减抗词缀或诅咒[[E1]]。\n〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕穿透直接把已夹上限的 75% 再砍 25%，用于减伤的抗性降到 50%[[E1]]。\n- 承受倍率 0.50 意味着每 100 点火焰伤害你实际吃 50 点[[E1]]。\n\n> 只按 PoB 的抗性公式复算：输入逐字取自问题，没给的项按 0 算；**不含图腾抗性与持续伤害抗性**（PoB 另有分支），也不读取角色档案、不给装备推荐与价格\n\n> 检索以降级通道完成（fts）：向量检索与重排未启用（网关无 embedding 模型），当前走 BM25 + 实体精确匹配",
+  "blocked_claims": 3,
+  "elapsed_ms": 25040,
+  "evidence_fingerprint": "sha256:81ec3b35cf54e32f50730777b8b667eb",
+  "_warning": "raw_answer 是未过出口闸门的模型原文，含可能无据的断言，不得当作事实引用",
+  "raw_answer": "## 火焰抗性结算结果\n\n你的火抗加总为 120%，火焰最大抗性上限为 75%（基础常量，问题未提及额外最大抗性加成），因此实际生效的火焰抗性被夹在 **75%**[[E1]]。\n\n### 逐步推导\n\n| 步骤 | 算式 | 结果 |\n|---|---|---|\n| 火抗加总 | 120% | 120 |\n| 最大抗性 | min(硬上限 90%, 基础最大抗性 75%) | 75% |\n| 实际生效抗性（夹上限后） | max(min(120, 75), -200) | **75%** |\n| 超出上限部分 | 120% − 75% | 45% |\n| 敌方穿透后用于减伤的抗性 | 75% − 25% | 50% |\n| 承受倍率 | 1 − (75 − 25) / 100 | **0.50** |\n\n[[E1]]\n\n### 关键点\n\n- **实际生效的火抗是 75%**，而不是 120%。超出上限的 45% 不直接减伤，但能抵消至多 45% 的减抗词缀或诅咒[[E1]]。\n- **穿透在夹上限之后才减**，所以超抗的 45% 顶不住穿透。穿透直接把已夹上限的 75% 再砍 25%，用于减伤的抗性降到 50%[[E1]]。\n- 承受倍率 0.50 意味着每 100 点火焰伤害你实际吃 50 点[[E1]]。",
+  "evidence": [
+    {
+      "label": "E1",
+      "chunk_id": "resistance_calc:火焰抗性结算（75%）",
+      "entity_id": null,
+      "title": "火焰抗性结算（75%）",
+      "url": "https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Modules/CalcDefence.lua#L578-L615",
+      "source": "Path of Building",
+      "source_priority": 2,
+      "text": "### 火焰抗性结算（按 PoB 公式复算）\n\n**输入（逐字取自问题，其余项问题未给、按 0 算）**：\n- 该抗性的「+X% 抗性」之和：120%\n- 敌方穿透：25%\n\n| 步骤 | 算式 | 结果 |\n| --- | --- | --- |\n| 火焰抗性加总 | 120% | 120 |\n| 总抗性（小数截断） | 截断(120%) | 120 |\n| 基础最大抗性 | 游戏常量 75% | 75 |\n| 最大抗性 | min(90%, 75%) | 75 |\n| 实际生效抗性 | max(min(120%, 75%), -200%) | 75 |\n| 超出上限（超抗） | 120% - 75% = 45% | 45 |\n| 承受倍率（含穿透） | 1 - (75% - 25%) / 100 | 0.5 |\n\n**火焰抗性实际生效 75%**（最大抗性 75%，下限 -200%）。总抗 120% 超出上限 45%：这部分**不减伤**，但能顶住 45% 以内的减抗词缀或诅咒。\n\n**承受倍率 0.50**（已减去敌方穿透 25%）：每 100 点火焰伤害实际吃 50 点。\n换个口径：面对火焰伤害时，同一血量顶得住的伤害是裸抗时的 2.00 倍。\n\n**穿透是在夹上限之后才减的**，所以超抗顶不住穿透（两处代码的先后顺序，引用里给了行号）。\n\n只按 PoB 的抗性公式复算：输入逐字取自问题，没给的项按 0 算；**不含图腾抗性与持续伤害抗性**（PoB 另有分支），也不读取角色档案、不给装备推荐与价格。\n\n来源：\n- 基础最大抗性 75%：characterConstants.base_maximum_all_resistances_%（GGG 原始表 Metadata/Characters/Character.ot）https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Misc.lua#L62\n- 最大抗性硬上限 90%：pobMisc.MaxResistCap（PoB 自己的 magic numbers，无 GGG 原始表出处）https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Modules/Data.lua#L239\n- 抗性下限 -200%：pobMisc.ResistFloor https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Modules/Data.lua#L238\n- 抗性结算公式：`calcs.resistances` https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Modules/CalcDefence.lua#L578-L615\n- 抗性 → 承受倍率：`resMult = 1 - (resist - enemyPen) / 100` https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Modules/CalcDefence.lua#L1970\n- 剧情抗性惩罚三档（0 / −30 / −60，PoB 默认 −60）：https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Modules/ConfigOptions.lua#L135",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    }
+  ]
+}

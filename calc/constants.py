@@ -53,6 +53,13 @@ PHYS_DR_PER_ENDURANCE_CHARGE = "characterConstants.physical_damage_reduction_%_p
 CRIT_CHANCE_PER_POWER_CHARGE = "characterConstants.critical_strike_chance_+%_per_power_charge"
 ATTACK_SPEED_PER_FRENZY_CHARGE = "characterConstants.base_attack_speed_+%_per_frenzy_charge"
 
+#: 这两个不在 `Data/Misc.lua`，而在 PoB 自己的 magic numbers 表 `Modules/Data.lua`，
+#: 因此 `dat_source` 为空（没有 GGG 原始表出处）。抗性结算离不开它们：
+#: 上限 90 是「最大抗性」自己的天花板（基础 75 + 加成后仍不能超过它），
+#: 下限 −200 是被减抗/诅咒压下去时的地板。
+MAX_RESIST_CAP = "pobMisc.MaxResistCap"
+RESIST_FLOOR = "pobMisc.ResistFloor"
+
 ES_RATIO_OF_LIFE = "gameConstants.EnergyShieldRatioOfLife"
 MONSTER_DR_IMPROVEMENT = "gameConstants.MonsterDamageReductionImprovement"
 MONSTER_ACCURACY_IMPROVEMENT = "gameConstants.MonsterAccuracyImprovement"
@@ -71,6 +78,7 @@ REQUIRED = (
     ES_RECHARGE_RATE_PER_MINUTE, MANA_REGEN_RATE_PER_MINUTE,
     PHYS_DR_PER_ENDURANCE_CHARGE, CRIT_CHANCE_PER_POWER_CHARGE,
     ATTACK_SPEED_PER_FRENZY_CHARGE,
+    MAX_RESIST_CAP, RESIST_FLOOR,
     ES_RATIO_OF_LIFE, MONSTER_DR_IMPROVEMENT,
     MONSTER_LIFE_TABLE, MONSTER_ARMOUR_TABLE, MONSTER_EVASION_TABLE,
     MONSTER_ACCURACY_TABLE, MONSTER_DAMAGE_TABLE,

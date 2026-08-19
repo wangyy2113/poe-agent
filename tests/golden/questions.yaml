@@ -401,6 +401,43 @@ cases:
       常量走 calc/constants.py，缺失即抛异常绝不给默认值。这条同时验证
       game_constant 表（P2 PoB，钉 commit）能被检索到。
 
+      2026-08-19 第二十轮起这条**改由 resistance_calc 作答**（意图词「抗性上限」），
+      因此在检索侧成了路由豁免。它的旧录制是「从 chunk 里读到 75」那一版，
+      已经过期——真实答案现在还会带上最大抗性 90 的硬上限与承受倍率。
+
+  - id: route_resistance_calc
+    query: 我火抗 120 是不是浪费了
+    kind: tool_route
+    expect_tool: resistance_calc
+    note: >-
+      「抗性词 + 数字」这条路由通道（意图词表里没有这种问法，也不可能列全）
+    lesson: >-
+      它**放在意图词表之后**判，所以优先级最低：「+40% 火焰抗性这条词缀有几档」
+      仍归 mod_tiers、「火焰抗性能从哪些渠道获得」仍归 stat_sources。
+      顺序就是判据的一部分，挪到前面会立刻抢走那两类问题
+      （`tests/unit/test_resistance.py` 的 ResistanceRouteTest 成对钉住）。
+
+  - id: num_resistance_overcap_with_pen
+    query: 我火抗 120，敌人有 25% 火焰穿透，实际生效的火抗是多少
+    kind: numeric
+    expect_values: ["75", "45"]
+    expect_in_answer: ["图腾抗性"]
+    note: >-
+      实际生效 75%（被上限夹住）、超出上限 45%。穿透在**夹上限之后**才减，
+      所以那 45% 超抗顶不住穿透——这是 PoB 两处代码的先后顺序，不是经验之谈
+    lesson: >-
+      `expect_in_answer` 只断言**代码附注**的内容（`loop._NOTE_FIELDS` 逐字附上的
+      边界声明里有「图腾抗性」），不断言模型的措辞——第十七轮在这上面栽过一次：
+      断言「主天赋树」失败，而失败原因只是模型换了个说法。
+
+  - id: num_resistance_after_map_penalty
+    query: 地图上有 -60% 元素抗性，我火抗 120，进图之后火抗还剩多少
+    kind: numeric
+    expect_values: ["60"]
+    note: >-
+      120 − 60 = 60，落在上限以下 → 实际生效 60%。这条与上一条成对：
+      超抗顶得住减抗（减抗进的是加总那一步），顶不住穿透（穿透在夹上限之后）
+
   - id: num_max_phys_reduction
     query: 物理伤害减免的上限是多少
     kind: numeric

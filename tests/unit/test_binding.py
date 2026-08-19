@@ -439,6 +439,65 @@ class TestSplitting(unittest.TestCase):
         self.assertEqual(len(parts), 1)
 
 
+class TestOrderedListMarkers(unittest.TestCase):
+    """有序列表的序号是排版，不是断言——成对写：只删序号，不放行正文里的同一个数。"""
+
+    def test_列表序号不要求溯源(self):
+        """实测：五步推导里只有第 3 步被拦，因为 1、2、4、5 碰巧出现在证据原文里。"""
+        e = [ev("E1", "火焰抗性加总 120%，实际生效 60%，承受倍率 0.40。")]
+        answer = (
+            "1. 火焰抗性加总：120%[[E1]]\n"
+            "2. 实际生效抗性：60%[[E1]]\n"
+            "3. 承受倍率：0.40[[E1]]\n"
+        )
+        r = run(answer, e)
+        self.assertEqual(0, r.blocked, [v.reason for v in r.verdicts if not v.ok])
+
+    def test_序号之外的同一个数字照旧要溯源(self):
+        """按值豁免会把正文里的 3 也放过；按位置删除不会。"""
+        e = [ev("E1", "猎首的效果持续 60 秒。")]
+        r = run("3. 这个效果持续 3 秒[[E1]]。", e)
+        self.assertEqual(1, r.blocked)
+        self.assertIn("3", r.verdicts[0].reason)
+
+    def test_句中出现的编号不被当成列表序号(self):
+        e = [ev("E1", "该词缀共有 5 档。")]
+        r = run("这条词缀有 4 档[[E1]]。", e)
+        self.assertEqual(1, r.blocked)
+
+
+class TestTypographicSigns(unittest.TestCase):
+    """排版负号必须与 ASCII 负号视为同一个数——成对写：归一不能顺带放宽。
+
+    2026-08-19 第二十轮实测：模型写「抗性下限为 −200%」（U+2212），证据原文写
+    `-200%`，提取器读出 `200`、在证据里找不到，于是把一句完全正确的话判成编造。
+    抗性、减抗、诅咒这些场景全是负数，不归一等于对整类负数误拦。
+    """
+
+    def test_模型用排版负号仍能溯源(self):
+        e = [ev("E1", "抗性下限为 -200%，火焰抗性上限 75%。")]
+        r = run("抗性下限是 −200%[[E1]]。", e)
+        self.assertEqual(0, r.blocked, [v.reason for v in r.verdicts])
+
+    def test_证据用排版负号也能被溯源(self):
+        """反方向同样成立：POEDB 中文页用全角符号是常态。"""
+        e = [ev("E1", "该词缀为 －60% 元素抗性。")]
+        r = run("这条词缀是 -60% 元素抗性[[E1]]。", e)
+        self.assertEqual(0, r.blocked, [v.reason for v in r.verdicts])
+
+    def test_归一不放行数值不符的断言(self):
+        e = [ev("E1", "抗性下限为 -200%。")]
+        r = run("抗性下限是 −300%[[E1]]。", e)
+        self.assertEqual(1, r.blocked)
+        self.assertIn("300", r.verdicts[0].reason)
+
+    def test_区间连接号不当成负号(self):
+        """`40–55` 里的连接号若被当成负号，会读出 −55 并把区间句判成编造。"""
+        e = [ev("E1", "力量词缀 T1 的区间是 40 到 55。")]
+        r = run("这条词缀的区间是 40–55[[E1]]。", e)
+        self.assertEqual(0, r.blocked, [v.reason for v in r.verdicts])
+
+
 class TestEvidence(unittest.TestCase):
     def test_编号从E1开始且去重(self):
         cites = [

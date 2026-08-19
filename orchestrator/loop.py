@@ -784,6 +784,14 @@ _PREFERRED_TOOL_INTENTS: tuple[tuple[str, tuple[str, ...]], ...] = (
     # 幽魂倍率表**没有卡片**（1915 行名字 + 两个倍率，卡片之间高度雷同，而怪物名里
     # 有大量通用词），所以它只能靠工具到达——不挂在这里它就是一个死了的能力。
     ("spectre_stats", ("幽魂", "亡灵召唤")),
+    # 抗性是**按顺序算**出来的，证据不在任何 chunk 里（常量表只有 75/90/−200 三个数）。
+    # 判据要专指「上限 / 超抗 / 减抗 / 穿透 / 承受」这些**结算**问法：
+    # 单独的「抗性」会把「哪些唯一装备给抗性」（stat_sources 的活）抢过来。
+    ("resistance_calc", (
+        "抗性上限", "最大抗性", "超抗", "抗性溢出", "抗性下限", "抗性怎么算",
+        "抗性如何计算", "减抗", "降低抗性", "抗性穿透", "元素穿透", "抗性够不够",
+        "抗性满了", "抗性浪费",
+    )),
     # 「某属性能从哪来」是枚举问题：不完整的枚举被当成完整的呈现就是错误答案
     ("stat_sources", (
         "从哪些渠道", "从哪来", "哪些渠道", "哪里获得", "怎么获得", "从哪获得",
@@ -808,6 +816,25 @@ _ENTITY_LOOKUP_INTENTS = (
 )
 
 
+#: 「带着具体数字问抗性」= 要算，不是要查。意图词表列不完这种问法
+#: （「火抗 120 是不是浪费了」「-60% 抗性的图我还剩多少」都没有固定说法），
+#: 所以用「抗性词 + 数字」判。
+#:
+#: 它**放在意图词表之后**判，因此优先级最低：「+40% 火焰抗性的词缀有几档」
+#: 会先被 `mod_tiers` 接走，「火焰抗性能从哪来」会先被 `stat_sources` 接走。
+#: 顺序就是判据的一部分——挪到前面会立刻抢走那两类问题。
+_RESIST_WORDS = (
+    "抗性", "火抗", "冰抗", "电抗", "混抗", "雷抗",
+)
+_RESIST_NUMBER_RE = re.compile(r"[-+]?\d")
+
+
+def _resistance_numeric_route(question: str) -> str:
+    if not any(word in question for word in _RESIST_WORDS):
+        return ""
+    return "resistance_calc" if _RESIST_NUMBER_RE.search(question) else ""
+
+
 def _preferred_tool_route(question: str) -> str:
     """代码决定本轮该先调哪个精确工具；无把握时返回空串，交回模型自选。
 
@@ -826,7 +853,7 @@ def _preferred_tool_route(question: str) -> str:
                 return "entity_lookup"
         except Exception as exc:  # noqa: BLE001  别名表不可用不该影响主流程
             logger.debug("实体路由探测失败，交回模型自选：%s", exc)
-    return ""
+    return _resistance_numeric_route(question)
 
 
 #: 参数能在代码里推导的偏好工具 → 直接由代码调用，模型没有裁量权。

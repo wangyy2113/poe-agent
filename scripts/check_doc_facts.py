@@ -127,6 +127,11 @@ FACTS: tuple[Fact, ...] = (
     Fact("CLAUDE.md 切片数", "CLAUDE.md", r"`chunk` ([\d,]+)", _count("chunk")),
     Fact("CLAUDE.md 别名数", "CLAUDE.md", r"`alias` ([\d,]+)", _count("alias")),
     Fact("CLAUDE.md 黄金用例数", "CLAUDE.md", r"questions\.yaml`（(\d+) 条", _golden_case_count),
+    # 这三个数此前只在一处被登记，另一处就悄悄漂了：README 的黄金用例数停在 47（实际 87），
+    # 常量数只登记了 README 而 CLAUDE.md 那份没人管。登记的成本是一行。
+    Fact("README 黄金用例数", "README.md", r"questions\.yaml`（(\d+) 条", _golden_case_count),
+    Fact("CLAUDE.md 游戏常量条数", "CLAUDE.md", r"`game_constant` ([\d,]+)",
+         _count("game_constant")),
     Fact("元词缀矩阵条数", "README.md", r"页面矩阵 ([\d,]+) 条（operation",
          _count("craft_metamod_interaction")),
     Fact("CLAUDE.md 元词缀矩阵条数", "CLAUDE.md",
