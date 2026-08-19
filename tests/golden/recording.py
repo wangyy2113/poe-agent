@@ -111,6 +111,14 @@ class Recording:
     #: 契约与另两条路径又不同，见 `scripts/eval_run.replay_case`。
     precision_route: str = ""
     gap_answer: str = ""
+    #: **用户实际看到的答案**：过闸门之后、再由代码附上边界声明与冲突并列
+    #: （`orchestrator.loop._answer_notes`）的那一版。
+    #:
+    #: 为什么必须单独存：`raw_answer` 是模型的待检材料，`binding.text` 是回放闸门的结果，
+    #: 两者都**不含代码附注**——于是「附注是否真的到达用户」以前没有任何东西在验证。
+    #: 实测撞到：`cross_spectre_conflict` 要求答案里并列两个来源，而冲突块正是代码附上的，
+    #: 按 `binding.text` 判就永远缺失。答案内容类契约一律按这一版判。
+    final_answer: str = ""
     model: str = ""
     tokens: dict[str, int] = field(default_factory=dict)
     tool_calls: list[str] = field(default_factory=list)
@@ -134,6 +142,7 @@ class Recording:
             "out_of_scope": self.out_of_scope,
             "precision_route": self.precision_route,
             "gap_answer": self.gap_answer,
+            "final_answer": self.final_answer,
             "blocked_claims": self.blocked_claims,
             "elapsed_ms": self.elapsed_ms,
             "evidence_fingerprint": self.evidence_fingerprint,
@@ -159,6 +168,7 @@ class Recording:
             out_of_scope=bool(d.get("out_of_scope")),
             precision_route=str(d.get("precision_route") or ""),
             gap_answer=str(d.get("gap_answer") or ""),
+            final_answer=str(d.get("final_answer") or ""),
             model=str(d.get("model") or ""),
             tokens=dict(d.get("tokens") or {}),
             tool_calls=list(d.get("tool_calls") or []),

@@ -1,0 +1,42 @@
+{
+  "format_version": 1,
+  "case_id": "cross_spectre_conflict",
+  "query": "水手咒灵作为幽魂的倍率是多少",
+  "recorded_at": "2026-08-19T14:27:04+08:00",
+  "model": "glm-5.2",
+  "tokens": {
+    "prompt": 10433,
+    "output": 443,
+    "reasoning": 134,
+    "total": 10876
+  },
+  "tool_calls": [
+    "kb_search",
+    "spectre_stats"
+  ],
+  "evidence_gap": false,
+  "out_of_scope": false,
+  "precision_route": "",
+  "gap_answer": "",
+  "final_answer": "## 水手咒灵作为幽魂的倍率\n\n〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕- **POEDB** 给出的生命为 100%、伤害为 165%[[E1]]。\n- **Path of Building** 给出的生命为 1×、伤害为 1.32×[[E1]]。\n\n两来源之间存在冲突：POEDB 的伤害倍率（165%）与 PoB 的伤害系数（1.32×）并不一致[[E1]]。当前更推荐采用 POEDB 的数据[[E1]]。\n\n此外，PoB 还为水手咒灵建模了以下系数：攻击间隔 1.5 秒、闪避系数 0.5×、能量护盾系数 0.2×，四抗性为火 0% / 冰 0% / 电 40% / 混 0%[[E1]]。\n\n**注意**：本库不提供掉落与怪物技能的中文说明[[E1]]。\n\n> 倍率与抗性按来源原值给出；不提供掉落、怪物技能的中文说明\n\n> ---\n**来源冲突（未自行判定，请自行核对）**\n\n- spectre=Cursed Mariner\n  - POEDB：生命 100%、伤害 165%\n  - Path of Building：生命 1×、伤害 1.32×\n  - 当前更推荐采用 POEDB\n\n> 检索以降级通道完成（fts）：向量检索与重排未启用（网关无 embedding 模型），当前走 BM25 + 实体精确匹配",
+  "blocked_claims": 3,
+  "elapsed_ms": 10612,
+  "evidence_fingerprint": "sha256:dba230b7e32d01714d1be5621323006e",
+  "_warning": "raw_answer 是未过出口闸门的模型原文，含可能无据的断言，不得当作事实引用",
+  "raw_answer": "## 水手咒灵作为幽魂的倍率\n\n根据本库收录的数据，水手咒灵（英文标识 Cursed_Mariner）作为幽魂的倍率存在两个来源的数据，且两者不一致：\n\n| 来源 | 生命倍率 | 伤害倍率 |\n| --- | --- | --- |\n| POEDB | 100% | 165% |\n| Path of Building | 1× | 1.32× |\n\n具体而言：\n\n- **POEDB** 给出的生命为 100%、伤害为 165%[[E1]]。\n- **Path of Building** 给出的生命为 1×、伤害为 1.32×[[E1]]。\n\n两来源之间存在冲突：POEDB 的伤害倍率（165%）与 PoB 的伤害系数（1.32×）并不一致[[E1]]。当前更推荐采用 POEDB 的数据[[E1]]。\n\n此外，PoB 还为水手咒灵建模了以下系数：攻击间隔 1.5 秒、闪避系数 0.5×、能量护盾系数 0.2×，四抗性为火 0% / 冰 0% / 电 40% / 混 0%[[E1]]。\n\n**注意**：本库不提供掉落与怪物技能的中文说明[[E1]]。",
+  "evidence": [
+    {
+      "label": "E1",
+      "chunk_id": "spectre_stats:v:26735",
+      "entity_id": null,
+      "title": "水手咒灵（幽魂数据）",
+      "url": "https://poedb.tw/cn/Cursed_Mariner",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "### 水手咒灵（可作幽魂的怪物）\n\n本库共收录 1948 个可作幽魂的怪物（其中 268 个有 PoB 的抗性与建模系数）；「水手咒灵」命中 1 条。\n\n| 中文名 | 英文标识 | 伤害%（POEDB） | 生命%（POEDB） | PoB 系数 | 四抗性（PoB） |\n| --- | --- | --- | --- | --- | --- |\n| 水手咒灵 | Cursed_Mariner | 165% | 100% | 生命 1×、伤害 1.32× | 火 0% / 冰 0% / 电 40% / 混 0% |\n\nPoB 建模的其它数值：攻击间隔 1.5 秒、闪避系数 0.5×、能量护盾系数 0.2×。\n\n倍率以 100%（PoB 侧写作 1.0×）为基础值。倍率与抗性按来源原值给出；不提供掉落、怪物技能的中文说明。\n\n来源：POEDB https://poedb.tw/cn/Cursed_Mariner\n抗性与系数来源：Path of Building https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Spectres.lua",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    }
+  ]
+}

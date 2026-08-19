@@ -301,9 +301,20 @@ class MonsterDomainTest(DimensionGapTest):
             with self.subTest(q=q):
                 self.assertFalse(self._verdict(q).is_gap, q)
 
-    def test_幽魂倍率可答而排名与抗性拒答(self) -> None:
-        self.assertFalse(self._verdict("不朽精锐的幽魂倍率是多少").is_gap)
-        for q in ("生命倍率最高的幽魂是哪个", "幽魂的抗性是多少", "幽魂选哪个好"):
+    def test_幽魂的倍率抗性与排名都可答(self) -> None:
+        """**期望在第十四轮变了**：接入 PoB `Data/Spectres.lua` 的 268 条建模数据后，
+        抗性与排名从缺口变成能力。上一轮这三句是断言拒答的——数据补上了就得改断言，
+        留着一句已经不成立的边界，等于让闸门把能答的问题声明成缺口。
+        """
+        for q in ("不朽精锐的幽魂倍率是多少", "生命倍率最高的幽魂是哪个",
+                  "幽魂的抗性是多少", "幽魂选哪个好"):
+            with self.subTest(q=q):
+                self.assertFalse(self._verdict(q).is_gap, q)
+
+    def test_幽魂的掉落与技能仍然拒答(self) -> None:
+        """上一条的成对点。这两维两个来源都没有：技能在 PoB 侧只有内部 id，
+        实测 1235 个与本库 810 颗宝石零命中，没有中文名可给。"""
+        for q in ("幽魂会掉落什么东西", "幽魂会放什么技能"):
             with self.subTest(q=q):
                 v = self._verdict(q)
                 self.assertTrue(v.is_gap, q)
@@ -347,7 +358,7 @@ class SubsumedCoverageTest(DimensionGapTest):
 
     def test_不同主语的两个领域互不吞并(self) -> None:
         """「幽魂」与「词缀」没有包含关系，两边各自成立。"""
-        v = self._verdict("猎首有哪些词缀，幽魂的抗性是多少")
+        v = self._verdict("猎首有哪些词缀，幽魂会掉落什么东西")
         self.assertIn("spectre", [s.key for s in v.uncovered])
         self.assertTrue(v.covered)
         self.assertFalse(v.is_gap)

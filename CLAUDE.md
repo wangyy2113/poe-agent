@@ -88,13 +88,14 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 .venv/bin/python scripts/import_pob_uniques.py    # 唯一装备（自动过滤历史变体）
 .venv/bin/python scripts/import_pob_bases.py      # 底材，18 个装备类别（--dry-run 先清点）
 .venv/bin/python scripts/import_pob_skills.py     # 技能石与辅助宝石（中文名取自已缓存的 POEDB 清单页）
+.venv/bin/python scripts/import_pob_spectres.py   # 幽魂抗性与建模系数，并与 POEDB 侧对账
 .venv/bin/python scripts/verify_pob_mods.py       # 与 POEDB 对账
 ```
 
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 557 项，秒级
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 564 项，秒级
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选
@@ -111,7 +112,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 .venv/bin/python scripts/eval_run.py --record        # 重录真实响应（**要凭证、烧 token**）
 ```
 
-黄金问答集是 `tests/golden/questions.yaml`（65 条，六类），基线与全部结论在
+黄金问答集是 `tests/golden/questions.yaml`（69 条，六类），基线与全部结论在
 `tests/golden/BASELINE.md`——**动闸门前先读它**，里面记了四个已修缺陷、两个已知未修边界，
 以及两次「测量本身写错」的教训。
 
@@ -192,7 +193,8 @@ POST /chat[/stream]  api/chat.py（只做校验与编排调用）
 本机 `data/poe.db` 现状（`GET /healthz` 与 `/admin/stats` 可查）：`entity` 4805、
 `mod_affix` 93897、`pob_mod` 25487、`chunk` 18055、`alias` 7481、`game_constant` 499、
 `craft_bench_recipe` 783、`pob_base_item` **1022**（18 个装备类别，PoB × POEDB 逐条桥接，
-覆盖 PoB 侧 96.1%；未桥接的 41 条已按类别登记在台账）、`source_conflict` **464**（`mod_review` 254 + `unique_review` 207 + `tree_review` 3）。
+覆盖 PoB 侧 96.1%；未桥接的 41 条已按类别登记在台账）、`source_conflict` **515**（`mod_review` 254 + `unique_review` 207 + `spectre_review` 43
++ `spectre` **8** + `tree_review` 3）。
 
 `pob_skill_gem` **810** 颗宝石（548 技能石 + 262 辅助）+ `pob_skill_level` **30422** 行
 每级数值。桥接键是 PoB 的 `grantedEffectId`（它也出现在 POEDB 清单页的 `data-hover` 里），
@@ -200,6 +202,10 @@ POST /chat[/stream]  api/chat.py（只做校验与编排调用）
 （`pob_missing` 51 = POEDB 保留的历史/未上线条目，`no_zh_name` 11 = 取不到中文名）。
 **这两张表刻意没有伤害列，也没有属性需求列**——理由见 `core/db.py` 的表注释，
 那是本轮最重要的一条边界。
+
+`pob_spectre` **268** 条 PoB 幽魂建模数据（四抗性、护甲/闪避/能量护盾系数、攻击间隔、
+怪物技能 id）。它同时是一份「玩家实际会用」的确认清单，倍率排名只在这 268 个里做——
+POEDB 那 1948 条里混着开发用怪物（「测试之灵」10000%/10000%）。
 
 `poedb_monster_mod` **183** 条怪物词缀（传奇 / 魔符 / 惊悸迷雾 / 猎魔 / 罪恶枷锁，
 有中文文本的那些）+ `poedb_spectre` **1948** 个可作幽魂的怪物与倍率。同一张
@@ -213,6 +219,14 @@ POEDB 镜像，而镜像页一直在 `data/http_cache` 里、抽取器对它跑�
 没被跑过。教训：「需要联网」这种判断要去看代码抓哪个 URL、缓存里有没有，别照抄注释。
 
 一处数据缺口会直接影响判断：
+
+- **需求 15.5「跨来源冲突并列展示」在 2026-08-19 第一次真正接上。** 在那之前
+  `citation.conflict_block` 是**不可达代码**：`kind='mod'` 的已确认冲突长期是 0 条。
+  幽魂对账给出 **8 条真分歧**（`kind='spectre'`，两侧各只有一条却对不上）之后，
+  `spectre_stats` 把渲染好的冲突块放进 `data['conflict_block']`，由
+  `loop._NOTE_FIELDS` 逐字附在答案末尾——**不让模型转述**：那几个数字来自两个来源，
+  模型说出来只能无绑定地说，然后被自己的闸门拦掉。
+  `kind='spectre_review'`（43 条，POEDB 记得更细的粒度差异）**不得当作冲突呈现**。
 
 - **`source_conflict` 里 `kind='mod'`（已确认冲突）是 0 条，而这次是个结论、不是缺口。**
   `mod_review` **254** 条（`ladder_ambiguous` 222 + `ladder_partial` 32，见 `cause` 列）。
