@@ -24,7 +24,8 @@ ALLOWED_TOOLS = [
     "metamod_interaction_matrix",  # 精确：来源矩阵逐字 operation × guard 单元格
     "mod_tiers",      # 精确：某类别上某词缀的完整 T 级梯度
     "skill_gem_levels",  # 精确：宝石逐级字面值（等级需求 / 消耗 / 冷却 / 暴击率）
-    "spectre_stats",  # 精确：某怪物作为幽魂的伤害% / 生命%
+    "spectre_stats",  # 精确：某怪物作为幽魂的伤害% / 生命% / 抗性 / 排名
+    "passive_path",   # 精确：点到某天赋节点要几点，并给出逐节点路径
     "stat_sources",   # 精确：某属性能从哪些渠道获得（逐渠道 + 未采集声明）
     "entity_lookup",  # 精确：按名查实体
     "kb_coverage",    # 元信息：本库覆盖了什么
