@@ -1,0 +1,132 @@
+{
+  "format_version": 1,
+  "case_id": "desc_map_boss",
+  "query": "奇术秘殿的头目是谁",
+  "recorded_at": "2026-08-19T16:31:15+08:00",
+  "model": "glm-5.2",
+  "tokens": {
+    "prompt": 8624,
+    "output": 61,
+    "reasoning": 39,
+    "total": 8685
+  },
+  "tool_calls": [
+    "kb_search"
+  ],
+  "evidence_gap": false,
+  "out_of_scope": false,
+  "precision_route": "",
+  "gap_answer": "",
+  "final_answer": "奇术秘殿的头目是**天雷之使派蒂**[[E1]]。\n\n> **括号内的百分比是该档在同组内的生成权重占比**，不等于任何通货或具体工艺的一次使用成功率，也不等于期望消耗。\n\n> 检索以降级通道完成（alias, fts）：向量检索与重排未启用（网关无 embedding 模型），当前走 BM25 + 实体精确匹配",
+  "blocked_claims": 0,
+  "elapsed_ms": 4259,
+  "evidence_fingerprint": "sha256:e7d824573ee250db9c4212cce85eddf3",
+  "_warning": "raw_answer 是未过出口闸门的模型原文，含可能无据的断言，不得当作事实引用",
+  "raw_answer": "奇术秘殿的头目是**天雷之使派蒂**[[E1]]。",
+  "evidence": [
+    {
+      "label": "E1",
+      "chunk_id": "map:奇术秘殿#0#9cfa2cb1d5d39b78",
+      "entity_id": "map:奇术秘殿",
+      "title": "奇术秘殿（地图）",
+      "url": "https://poedb.tw/cn/Atlas_of_Worlds",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 奇术秘殿（地图）\n等阶：5\n\n- 头目：天雷之使派蒂\n- 掉落的命运卡：薇妮雅的信物、大奇术师、月影女祭司、月影的子嗣\n- 异界图鉴上相邻的地图：中转码头、沉沦之城、恶念牢笼、珊瑚遗迹\n- 额外目标：在 魔法 或更稀有版本的该地图内击败头目\n- 打完头目解锁的工艺台配方：阻灵术 - 等级 1\n\n来源：POEDB → 异界图鉴\nhttps://poedb.tw/cn/Atlas_of_Worlds",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E2",
+      "chunk_id": "map:沉沦之城#0#4206fb0ffa0f96a2",
+      "entity_id": "map:沉沦之城",
+      "title": "沉沦之城（地图）",
+      "url": "https://poedb.tw/cn/Atlas_of_Worlds",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 沉沦之城（地图）\n等阶：6\n\n- 头目：寡妇制造者阿玛拉\n- 掉落的命运卡：狡狐、命运之网、执着的野心、新婚赠礼\n- 异界图鉴上相邻的地图：荒漠绿洲、奇术秘殿、晴空幽岛\n- 额外目标：在 稀有 版本的该地图内击败头目\n- 打完头目解锁的工艺台配方：魔力回复 - 等级 2\n\n来源：POEDB → 异界图鉴\nhttps://poedb.tw/cn/Atlas_of_Worlds",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E3",
+      "chunk_id": "map:珊瑚遗迹#0#551c3d6641ef805f",
+      "entity_id": "map:珊瑚遗迹",
+      "title": "珊瑚遗迹（地图）",
+      "url": "https://poedb.tw/cn/Atlas_of_Worlds",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 珊瑚遗迹（地图）\n等阶：6\n\n- 头目：幽足坦纳尔队长\n- 掉落的命运卡：平壤、暴虐之灵、风暴使者、稍纵即逝\n- 异界图鉴上相邻的地图：晴空幽岛、中转码头、暮色沙丘、奇术秘殿、寂灵之渊\n- 额外目标：在 稀有 版本的该地图内击败头目\n- 打完头目解锁的工艺台配方：生命和防御属性 - 等级 1\n\n来源：POEDB → 异界图鉴\nhttps://poedb.tw/cn/Atlas_of_Worlds",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E4",
+      "chunk_id": "map:恶念牢笼#0#079699dd839bb46a",
+      "entity_id": "map:恶念牢笼",
+      "title": "恶念牢笼（地图）",
+      "url": "https://poedb.tw/cn/Atlas_of_Worlds",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 恶念牢笼（地图）\n等阶：3\n\n- 头目：血翼处刑者\n- 掉落的命运卡：召唤师、狗仔队、最后的晚餐、药剂师\n- 异界图鉴上相邻的地图：魔灵幻狱、奇术秘殿、积水矿坑、阿佐亚特神庙\n- 额外目标：在 魔法 或更稀有版本的该地图内击败头目\n- 打完头目解锁的工艺台配方：异常状态 - 等级 1\n\n来源：POEDB → 异界图鉴\nhttps://poedb.tw/cn/Atlas_of_Worlds",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E5",
+      "chunk_id": "map:中转码头#0#fdac9b086547dc04",
+      "entity_id": "map:中转码头",
+      "title": "中转码头（地图）",
+      "url": "https://poedb.tw/cn/Atlas_of_Worlds",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 中转码头（地图）\n等阶：4\n\n- 头目：崩骨\n- 掉落的命运卡：好运连连、硕鼠归来、套娃、笑到最后\n- 异界图鉴上相邻的地图：暮色沙丘、奇术秘殿、危机海礁、珊瑚遗迹、赤贫居所\n- 额外目标：在 魔法 或更稀有版本的该地图内击败头目\n- 打完头目解锁的工艺台配方：药剂效果生效期间 - 等级 1\n\n来源：POEDB → 异界图鉴\nhttps://poedb.tw/cn/Atlas_of_Worlds",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E6",
+      "chunk_id": "map:沉沦之间#0#a765d2c95e268732",
+      "entity_id": "map:沉沦之间",
+      "title": "沉沦之间（地图）",
+      "url": "https://poedb.tw/cn/Atlas_of_Worlds",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 沉沦之间（地图）\n等阶：POEDB 页面未给（梦魇 / 传奇等特殊地图多为此形态）\n\n- 头目：海塞莉亚女士\n- 掉落的命运卡：宝石皇后的赠礼、大奇术师、鲜血大军、月影的子嗣\n- 异界图鉴上相邻的地图：夺魂之殿\n- 额外目标：完成该地图\n- 传奇地图提供的异界天赋点：0/10\n\n来源：POEDB → 异界图鉴\nhttps://poedb.tw/cn/Atlas_of_Worlds",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E7",
+      "chunk_id": "mod_ladder:Thaumaturgical_Ward:HeistNPCJobSpeed#3104a7c9b8baa768",
+      "entity_id": "mod_ladder:Thaumaturgical_Ward:HeistNPCJobSpeed",
+      "title": "奇术结界 · HeistNPCJobSpeed",
+      "url": "https://poedb.tw/cn/Thaumaturgical_Ward#ModifiersCalc",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 奇术结界 · HeistNPCJobSpeed\n底材类别：奇术结界 ｜ 词缀组：HeistNPCJobSpeed ｜ 类型：前缀 ｜ 来源渠道：1 个\n标签：速度\n\n本词缀组在该底材上共 4 条，来自 1 个来源：Base。\n互斥规则：与本组（HeistNPCJobSpeed）有相同词缀组的其他词缀不能同时存在于一件装备上。\n\n## Base · 前缀 · 4 档\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/4 | 大师的 | 逆向奇术速度加快 (18-20)% | 83 | 400（2.5%） |\n| T2/4 | 专家的 | 逆向奇术速度加快 (15-17)% | 75 | 600（3.75%） |\n| T3/4 | 学徒的 | 逆向奇术速度加快 (12-14)% | 45 | 800（5.0%） |\n| T4/4 | 新手的 | 逆向奇术速度加快 (9-11)% | 1 | 1000（6.25%） |\n\n置信度说明：\n- T 级按 POEDB 的算法推导——在同一来源类别与词缀组内，把物品等级去重后降序排名，物品等级最高者为 T1（算法已复刻并通过不变量校验）\n\n来源：POEDB → 奇术结界 · HeistNPCJobSpeed\nhttps://poedb.tw/cn/Thaumaturgical_Ward#ModifiersCalc",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E8",
+      "chunk_id": "mod_ladder:Thaumaturgical_Ward:HeistNPCJobSpecificCost#3957e5054c78c200",
+      "entity_id": "mod_ladder:Thaumaturgical_Ward:HeistNPCJobSpecificCost",
+      "title": "奇术结界 · HeistNPCJobSpecificCost",
+      "url": "https://poedb.tw/cn/Thaumaturgical_Ward#ModifiersCalc",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 奇术结界 · HeistNPCJobSpecificCost\n底材类别：奇术结界 ｜ 词缀组：HeistNPCJobSpecificCost ｜ 类型：后缀 ｜ 来源渠道：1 个\n\n本词缀组在该底材上共 4 条，来自 1 个来源：Base。\n互斥规则：与本组（HeistNPCJobSpecificCost）有相同词缀组的其他词缀不能同时存在于一件装备上。\n\n## Base · 后缀 · 4 档\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/4 | 降价之 | 逆向奇术任务的招募费用降低 (13-15)% | 82 | 400（2.6667%） |\n| T2/4 | 让步之 | 逆向奇术任务的招募费用降低 (10-12)% | 75 | 600（4.0%） |\n| T3/4 | 减免之 | 逆向奇术任务的招募费用降低 (8-9)% | 45 | 800（5.3333%） |\n| T4/4 | 折扣之 | 逆向奇术任务的招募费用降低 (6-7)% | 1 | 1000（6.6667%） |\n\n置信度说明：\n- T 级按 POEDB 的算法推导——在同一来源类别与词缀组内，把物品等级去重后降序排名，物品等级最高者为 T1（算法已复刻并通过不变量校验）\n\n来源：POEDB → 奇术结界 · HeistNPCJobSpecificCost\nhttps://poedb.tw/cn/Thaumaturgical_Ward#ModifiersCalc",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    }
+  ]
+}

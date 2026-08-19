@@ -692,6 +692,33 @@ CREATE TABLE IF NOT EXISTS pob_cluster_notable (
 );
 CREATE INDEX IF NOT EXISTS idx_clusternotable_zh ON pob_cluster_notable(name_zh);
 
+-- ── 地图（POEDB `/cn/Atlas_of_Worlds`）──
+-- 三页里只有这一页有实质内容：`Maps` 页的主表是「地图碎片 → 区域」且区域名是未翻译的
+-- 英文 id（`AnyCorruptedSideArea`），`Atlas` 页只有 1 张中文卡片。**结构要一页一页看**。
+--
+-- 这一页是卡片布局（`div.d-flex` × 164），每张卡给：名字、等阶、额外目标、头目、
+-- 掉落的命运卡、解锁的工艺台配方、以及 **Link（异界图鉴上连着哪些图）**。
+CREATE TABLE IF NOT EXISTS poedb_map (
+    name_zh         TEXT PRIMARY KEY,  -- 实测 163 个名字全部唯一
+    -- 等阶。**实测只有 110/159 张有**（梦魇/传奇等特殊地图没给），所以可空——
+    -- 补 0 会让「这张图几阶」答成 0 阶。
+    tier            INTEGER,
+    bonus_objective TEXT,              -- 「在 魔法 或更稀有版本的该地图内击败头目」
+    bosses          TEXT NOT NULL CHECK(json_valid(bosses)),        -- 头目中文名
+    divination_cards TEXT NOT NULL CHECK(json_valid(divination_cards)),
+    -- 异界图鉴上相邻的地图（中文名）。这就是图鉴的连接关系，159 张卡全有。
+    links           TEXT NOT NULL CHECK(json_valid(links)),
+    bench_recipe    TEXT,              -- 打完头目解锁的工艺台配方，如「阻灵术 - 等级 1」
+    atlas_points    TEXT,              -- 传奇/梦魇地图提供的异界天赋点
+    source          TEXT NOT NULL,
+    source_priority INTEGER NOT NULL,
+    url             TEXT NOT NULL CHECK(url <> ''),
+    content_hash    TEXT NOT NULL CHECK(content_hash <> ''),
+    fetched_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_map_tier ON poedb_map(tier);
+
 -- ── 跨来源冲突台账 ──
 -- 需求 15.5/15.6：冲突时并列展示双方并推荐 POEDB，不得自行判定谁对而隐藏一方。
 -- 因此冲突必须**落库**，不能只在导入日志里一闪而过。

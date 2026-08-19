@@ -1,0 +1,132 @@
+{
+  "format_version": 1,
+  "case_id": "desc_map_links",
+  "query": "晴空幽岛在异界图鉴上连着哪些地图",
+  "recorded_at": "2026-08-19T16:31:21+08:00",
+  "model": "glm-5.2",
+  "tokens": {
+    "prompt": 8040,
+    "output": 67,
+    "reasoning": 28,
+    "total": 8107
+  },
+  "tool_calls": [
+    "kb_search"
+  ],
+  "evidence_gap": false,
+  "out_of_scope": false,
+  "precision_route": "",
+  "gap_answer": "",
+  "final_answer": "晴空幽岛在异界图鉴上相邻的地图为：**珊瑚遗迹**、**寂灵之渊**、**沉沦之城**[[E1]]。\n\n> 检索以降级通道完成（alias, fts）：向量检索与重排未启用（网关无 embedding 模型），当前走 BM25 + 实体精确匹配",
+  "blocked_claims": 0,
+  "elapsed_ms": 3442,
+  "evidence_fingerprint": "sha256:8d3351c14756ba604390a51d277bcd21",
+  "_warning": "raw_answer 是未过出口闸门的模型原文，含可能无据的断言，不得当作事实引用",
+  "raw_answer": "晴空幽岛在异界图鉴上相邻的地图为：**珊瑚遗迹**、**寂灵之渊**、**沉沦之城**[[E1]]。",
+  "evidence": [
+    {
+      "label": "E1",
+      "chunk_id": "map:晴空幽岛#0#6adbe817519d135a",
+      "entity_id": "map:晴空幽岛",
+      "title": "晴空幽岛（地图）",
+      "url": "https://poedb.tw/cn/Atlas_of_Worlds",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 晴空幽岛（地图）\n等阶：7\n\n- 头目：巨猿血祖\n- 掉落的命运卡：先祖的代价、斥候、天蓝之怒、卡兰德之湖\n- 异界图鉴上相邻的地图：珊瑚遗迹、寂灵之渊、沉沦之城\n- 额外目标：在 稀有 版本的该地图内击败头目\n- 打完头目解锁的工艺台配方：持续火焰伤害 - 等级 1\n\n来源：POEDB → 异界图鉴\nhttps://poedb.tw/cn/Atlas_of_Worlds",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E2",
+      "chunk_id": "map:寂灵之渊#0#0c4a0f40459a68dc",
+      "entity_id": "map:寂灵之渊",
+      "title": "寂灵之渊（地图）",
+      "url": "https://poedb.tw/cn/Atlas_of_Worlds",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 寂灵之渊（地图）\n等阶：8\n\n- 头目：狱炎之王\n- 掉落的命运卡：希望、王者之心、燃烧之血、孤胆英雄\n- 异界图鉴上相邻的地图：月色回廊、晴空幽岛、海风高原、珊瑚遗迹\n- 额外目标：在 稀有 版本的该地图内击败头目\n- 打完头目解锁的工艺台配方：冰霜伤害 - 等级 3\n\n来源：POEDB → 异界图鉴\nhttps://poedb.tw/cn/Atlas_of_Worlds",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E3",
+      "chunk_id": "map:沉沦之城#0#4206fb0ffa0f96a2",
+      "entity_id": "map:沉沦之城",
+      "title": "沉沦之城（地图）",
+      "url": "https://poedb.tw/cn/Atlas_of_Worlds",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 沉沦之城（地图）\n等阶：6\n\n- 头目：寡妇制造者阿玛拉\n- 掉落的命运卡：狡狐、命运之网、执着的野心、新婚赠礼\n- 异界图鉴上相邻的地图：荒漠绿洲、奇术秘殿、晴空幽岛\n- 额外目标：在 稀有 版本的该地图内击败头目\n- 打完头目解锁的工艺台配方：魔力回复 - 等级 2\n\n来源：POEDB → 异界图鉴\nhttps://poedb.tw/cn/Atlas_of_Worlds",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E4",
+      "chunk_id": "map:珊瑚遗迹#0#551c3d6641ef805f",
+      "entity_id": "map:珊瑚遗迹",
+      "title": "珊瑚遗迹（地图）",
+      "url": "https://poedb.tw/cn/Atlas_of_Worlds",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 珊瑚遗迹（地图）\n等阶：6\n\n- 头目：幽足坦纳尔队长\n- 掉落的命运卡：平壤、暴虐之灵、风暴使者、稍纵即逝\n- 异界图鉴上相邻的地图：晴空幽岛、中转码头、暮色沙丘、奇术秘殿、寂灵之渊\n- 额外目标：在 稀有 版本的该地图内击败头目\n- 打完头目解锁的工艺台配方：生命和防御属性 - 等级 1\n\n来源：POEDB → 异界图鉴\nhttps://poedb.tw/cn/Atlas_of_Worlds",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E5",
+      "chunk_id": "passive:Hit_and_Run_0c24f0cb47#54368b08f1706b32",
+      "entity_id": "passive:Hit_and_Run_0c24f0cb47",
+      "title": "核心天赋·连打带跑（Hit and Run）",
+      "url": "https://poedb.tw/cn/passive-skill-tree/",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 核心天赋·连打带跑（Hit and Run）\n核心天赋 ｜ 天赋树 3.29\n\n- 双持武器时，攻击技能的伤害提高 25%\n- 法术伤害压制率在你近期内击中过敌人的情况下 +10%\n\n> ( 近期内意指 4 秒内 )\n> （被压制的击中和异常状态，其施加的伤害会被阻挡 40%）\n\n来源：POEDB → 天赋树 · 连打带跑（Hit and Run）\nhttps://poedb.tw/cn/passive-skill-tree/",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E6",
+      "chunk_id": "map:元帅殿堂#0#a0c0e7d2defa3748",
+      "entity_id": "map:元帅殿堂",
+      "title": "元帅殿堂（地图）",
+      "url": "https://poedb.tw/cn/Atlas_of_Worlds",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 元帅殿堂（地图）\n等阶：POEDB 页面未给（梦魇 / 传奇等特殊地图多为此形态）\n\n- 异界图鉴上相邻的地图：月色回廊\n- 额外目标：完成该地图\n- 传奇地图提供的异界天赋点：0/10\n\n来源：POEDB → 异界图鉴\nhttps://poedb.tw/cn/Atlas_of_Worlds",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E7",
+      "chunk_id": "map:魔诅之域#0#04924a32c2ed57f3",
+      "entity_id": "map:魔诅之域",
+      "title": "魔诅之域（地图）",
+      "url": "https://poedb.tw/cn/Atlas_of_Worlds",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 魔诅之域（地图）\n等阶：POEDB 页面未给（梦魇 / 传奇等特殊地图多为此形态）\n\n- 头目：泥潭之主\n- 掉落的命运卡：典狱长、束缚之链、忏悔者、执行官\n- 异界图鉴上相邻的地图：晨曦墓地\n- 额外目标：完成该地图\n- 传奇地图提供的异界天赋点：0/10\n\n来源：POEDB → 异界图鉴\nhttps://poedb.tw/cn/Atlas_of_Worlds",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E8",
+      "chunk_id": "map:阿兹里的秘宝库#0#f22ddf06ccd8c337",
+      "entity_id": "map:阿兹里的秘宝库",
+      "title": "阿兹里的秘宝库（地图）",
+      "url": "https://poedb.tw/cn/Atlas_of_Worlds",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 阿兹里的秘宝库（地图）\n等阶：POEDB 页面未给（梦魇 / 传奇等特殊地图多为此形态）\n\n- 掉落的命运卡：弃财求生、发明家、黑暗来犯、仰慕者\n- 异界图鉴上相邻的地图：机关宝库\n- 额外目标：完成该地图\n- 传奇地图提供的异界天赋点：0/10\n\n来源：POEDB → 异界图鉴\nhttps://poedb.tw/cn/Atlas_of_Worlds",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    }
+  ]
+}
