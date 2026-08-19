@@ -60,6 +60,13 @@ PoB Community 的 PoE1 版（库里 `game_version` 全是 `3.29`；POE2 用 0.x 
   而「星团」命中偏好工具后整轮被豁免、进了模型，结果模型写 12 句、出口拦掉 11 句，
   用户看到一篇拦截说明。**该拦的地方是入口，不是出口。**
   同一处还修了另一半：覆盖层先前只在「检索充分」时才被问，于是偏好工具那条路上它从未被咨询。
+- **算出来的数字要连算式一起给，而且输入不许工具替用户先算。** `resistance_calc`
+  的证据是一张逐步推导表（加总 → 截断 → 夹上下限 → 承受倍率），每个中间值都在里面，
+  所以模型复述时数值回填校验能过。第二十轮实测到反面：地图减抗那条问题里模型
+  自己先算了 `120 − 60`，只把 `60` 传进工具，于是证据里没有 `120`，
+  它写的「120% − 60% = 60%」被自己的闸门拦掉——**一句完全正确的话，
+  因为工具没给它表达输入的地方**。修法是给减抗单开一个参数（`resist_penalty`），
+  不是放宽闸门。
 - **在图上算出来的数字要连路径一起给。** `passive_path` 的点数是 BFS 结果，不是原文，
   所以它把整条路径逐节点列进证据——用户能照着核对。这是「算」与「猜」的分界：
   算的东西必须能被复核到边一级（`passive_graph_edge` 的 3,382 条）。
@@ -107,7 +114,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 650 项，秒级
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 699 项，秒级
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选
@@ -124,7 +131,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 .venv/bin/python scripts/eval_run.py --record        # 重录真实响应（**要凭证、烧 token**）
 ```
 
-黄金问答集是 `tests/golden/questions.yaml`（84 条，六类），基线与全部结论在
+黄金问答集是 `tests/golden/questions.yaml`（87 条，六类），基线与全部结论在
 `tests/golden/BASELINE.md`——**动闸门前先读它**，里面记了四个已修缺陷、两个已知未修边界，
 以及两次「测量本身写错」的教训。
 
@@ -165,7 +172,7 @@ POST /chat[/stream]  api/chat.py（只做校验与编排调用）
 | `kb/` | `pipeline.py` 采集管线、`sources/` 各来源抽取器、`coverage.py` 知识库自描述层、`stat_channels.py` 属性来源渠道注册表、`render*.py` 卡片切片 |
 | `parsers/` | `item_text.py`（纯文本，不连库）→ `item_mods.py` T 级匹配 → `mod_bridge.py` 英文桥接 → `item_report.py` 报告 |
 | `craft/` | `feasibility.py` 词缀组合三态可行性、`pool.py` 胸甲普通词缀有效池与条件概率 |
-| `calc/` | `constants.py` 常量访问层，**缺失即抛异常，绝不给默认值**；计算器本体未实现 |
+| `calc/` | `constants.py` 常量访问层，**缺失即抛异常，绝不给默认值**；`resistance.py` 抗性结算（复算 PoB 原式，输出逐步推导）。其余防御 / 攻击维度未实现 |
 | `static/` | 单页前端三个文件，无构建步骤、无 Node、无第三方 JS（Markdown 渲染器自写，为了强制先转义再解析） |
 | `tests/golden/` | 评测资产：`questions.yaml` 黄金问答集、`loader.py` 严格校验、`recording.py` 录制回放、`recordings/` 真实响应、`audit.yaml` 人工结论、`BASELINE.md` 指标基线 |
 
@@ -178,7 +185,8 @@ POST /chat[/stream]  api/chat.py（只做校验与编排调用）
 `bench_recipe_catalog`（工艺台目录）→ `metamod_interaction_matrix`（逐字矩阵单元格）→
 `mod_tiers`（T 级梯度）→ `skill_gem_levels`（宝石逐级字面值）→
 `spectre_stats`（幽魂倍率 / 抗性 / 排名）→ `passive_path`（点到某天赋要几点 + 逐节点路径）→
-`cluster_jewel_info`（星团珠宝尺寸 / 基石 / 是否在主树外）→ `stat_sources`（某属性能从哪来）→
+`cluster_jewel_info`（星团珠宝尺寸 / 基石 / 是否在主树外）→
+`resistance_calc`（按 PoB 原式复算抗性，给逐步推导）→ `stat_sources`（某属性能从哪来）→
 `entity_lookup` → `kb_coverage` → `kb_search`（兜底）
 
 新增工具时守住两条：**能力边界由 `ALLOWED_TOOLS` 限定而不是靠提示词描述**；工具描述里不要
@@ -204,7 +212,7 @@ POST /chat[/stream]  api/chat.py（只做校验与编排调用）
   会以为它待填，然后把乘数当伤害写进去。这两维明确划进 `partial_note` 的未采集部分。
 
 本机 `data/poe.db` 现状（`GET /healthz` 与 `/admin/stats` 可查）：`entity` 5197、
-`mod_affix` 93897、`pob_mod` 25487、`chunk` 18447、`alias` 8106、`game_constant` 499、
+`mod_affix` 93897、`pob_mod` 25487、`chunk` 18447、`alias` 8106、`game_constant` 501、
 `craft_bench_recipe` 783、`pob_base_item` **1022**（18 个装备类别，PoB × POEDB 逐条桥接，
 覆盖 PoB 侧 96.1%；未桥接的 41 条已按类别登记在台账）、`source_conflict` **515**（`mod_review` 254 + `unique_review` 207 + `spectre_review` 43
 + `spectre` **8** + `tree_review` 3）。
@@ -262,6 +270,31 @@ POEDB `/cn/Monsters` 页还有按等级的基础数值表，**刻意不取**—�
 证据）。这张表长期是 0 行，而文档一直写着「需联网跑」——**那句是错的**：pipeline 只抓
 POEDB 镜像，而镜像页一直在 `data/http_cache` 里、抽取器对它跑得通，这条采集只是从来
 没被跑过。教训：「需要联网」这种判断要去看代码抓哪个 URL、缓存里有没有，别照抄注释。
+
+`game_constant` 新增 `pobMisc` 组 **2** 条（`ResistFloor` −200、`MaxResistCap` 90），
+它们来自 PoB 自己的 magic numbers 表 `Modules/Data.lua` 而**不是** `Data/Misc.lua`，
+因此 `dat_source` 为空——那张表开头就写着 `-- magic numbers`，里面既有游戏真值也有 PoB
+建模取值，还混着表达式与**重复键**（`EnergyShieldRechargeBase` 出现两次）。所以按
+**白名单**取（`kb/sources/pob_misc.MODULE_MISC_WHITELIST`），只取计算器真正需要的；
+整表入库会把「有没有 GGG 原始表出处」这条区别抹掉，而这个库的价值正在于每个数字都说得清出处。
+
+抗性计算器（`calc/resistance.py` + `resistance_calc`）复算的是 PoB 的
+`calcs.resistances`：**加总 → 乘「增加的抗性」→ 截断小数 → 夹在 −200% 与最大抗性之间**，
+最大抗性本身是 `min(90%, 75% + 各项加成)`。三条容易搞反的结论都由代码顺序决定，
+不是经验之谈：
+
+- **超抗顶得住减抗与诅咒，顶不住穿透**。减抗进的是加总那一步（夹上限**之前**），
+  而穿透在 `resMult = 1 - (resist - enemyPen) / 100` 里减（夹上限**之后**）。
+- **混沌抗性不吃「+X% 全部元素抗性」与「+X% 最大元素抗性」**（`isElemental` 只有火冰电）。
+- **剧情抗性惩罚 −60% 是 PoB 建角色时就加的 BASE**（`CalcSetup.lua:503`，三档 0/−30/−60）。
+  工具**默认不加**：角色面板上的抗性已经含它，替用户再减一次就是把一个对的数字算错。
+
+这一轮引入的验证方式对后面每一块计算器都适用：**公式要钉住上游原文**。
+`tests/unit/test_resistance.py` 一边拿 **PoB 自己的测试期望值**对账
+（`spec/System/TestDefence_spec.lua:386` 断言 `LightningResistTotal == 90`、
+超抗 15，差额正是那个 −60），一边直接读本地检出断言我建模的那几行**原文仍在、
+且引用的行号锚点确实指向它们**。数据漂移有 `check_doc_facts.py` 拦，
+**公式漂移此前没有任何东西拦**——第一次跑就抓到 `TAKEN_LINE` 差了一行。
 
 一处数据缺口会直接影响判断：
 
@@ -326,6 +359,15 @@ POEDB 镜像，而镜像页一直在 `data/http_cache` 里、抽取器对它跑�
   复述）让引用有效率 67%→55%、拦截 91→122，只换来元说明类少 3 句，已撤销
   （`tests/golden/BASELINE.md` 第四轮有三向对比）。它不只影响被提到的那几句，会拖垮整体
   绑定纪律。另外**两次数字的差不能当因果**——模型有轮次波动，判因要有同条件重复运行。
+- **数值回填校验前必须把排版正负号归一成 ASCII**（`binding.normalize_signs`）。
+  模型写「−200%」（U+2212）而证据原文写 `-200%`，提取器读出的是 `200`、在证据里找不到，
+  于是把一句完全正确的话判成编造。**只映射真正的正负号**：连接号 `–`/`—`/`~` 在这个领域
+  是区间分隔符（`(40–55)`），当成负号会把区间读成两个负数。抗性、减抗、诅咒全是负数场景，
+  不归一等于对整类负数误拦。
+- **表格后面单独一行的 `[[E1]]` 继承不到那张表**（已知未修）。表格继承只看**前一句**，
+  因为增量校验必须与批量一致，而向后看一行就要让流式先把表憋住——那是另一套语义。
+  实测代价：模型把推导表贴出来、标记写在表后，整张表被拦，用户看到一段拦截说明
+  （数字仍从别的句子到达）。要修的话得连流式缓冲一起改，单独一轮做。
 - 装备分析不给市场价格：经济源未接入，三项价值判断一律输出「数据不足」+ 缺哪项数据。
   T 级查不到就标「未匹配」并写原因，不给推测值。
 - 引用 PoB 必须用钉住 commit 的 GitHub blob URL；缺 `url` 或 `source` 的文档不得进可引用索引。

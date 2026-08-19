@@ -221,11 +221,21 @@ DOMAINS: tuple[DomainSpec, ...] = (
         authority_url="https://github.com/PathOfBuildingCommunity/PathOfBuilding",
         count_sql="SELECT count(*) FROM game_constant",
         channel_sql="SELECT DISTINCT group_name FROM game_constant",
-        tools=(),
+        tools=("resistance_calc",),
         hints=("抗性上限", "减伤上限", "格挡上限", "怪物生命", "常量"),
-        question_hints=("抗性 / 物理减伤 / 格挡的上限是多少", "某等级怪物的基础生命"),
-        pob_files=("Data/Misc.lua",),
-        note="不含前后缀数量上限与影响力规则——Misc.lua 里没有，需另找来源",
+        question_hints=(
+            "抗性 / 物理减伤 / 格挡的上限是多少",
+            "某等级怪物的基础生命",
+            "抗性怎么算、超抗有什么用、地图减抗之后还剩多少",
+        ),
+        # `Modules/Data.lua` 是 PoB 自己的 magic numbers 表，按白名单取（当前只取
+        # 抗性上下限两项）——判据见 `kb/sources/pob_misc.MODULE_MISC_WHITELIST`
+        pob_files=("Data/Misc.lua", "Modules/Data.lua"),
+        note=(
+            "不含前后缀数量上限与影响力规则——Misc.lua 里没有，需另找来源；"
+            "抗性一维已有计算器（`calc/resistance.py` 复算 PoB 原式），"
+            "护甲 / 闪避 / 格挡 / 暴击等其余防御维度只有常量、还没有计算器"
+        ),
     ),
     DomainSpec(
         key="passive_tree",

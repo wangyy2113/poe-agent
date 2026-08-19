@@ -28,6 +28,24 @@ from kb.sources.pob_lua import load_lua_file, parse_assignments
 logger = logging.getLogger(__name__)
 
 MISC_FILE = "Data/Misc.lua"
+#: PoB 自己的 magic numbers 表（`data.misc`），与 `Data/Misc.lua` 不是一个文件。
+MODULE_DATA_FILE = "Modules/Data.lua"
+
+#: 从 `Modules/Data.lua` 的 `misc` 表里**按白名单**取的常量。
+#:
+#: 为什么不整表取（那张表有 40 多项）：
+#:   1. **provenance 不同**。`Data/Misc.lua` 的每组都有 `-- From X.dat` 注释，
+#:      而这张表开头就写着 `-- magic numbers`——里面既有公认的游戏真值
+#:      （最大抗性上限 90、抗性下限 -200），也有 PoB 的建模取值。
+#:      整表入库会把这条区别抹掉，而这个库的价值就在于「每个数字都说得清出处」。
+#:   2. 表里有**表达式**（`data.characterConstants[...] / 60 / 100`），解析出来是未求值对象。
+#:   3. 表里有**重复键**（`EnergyShieldRechargeBase` 出现两次，后一个覆盖前一个）——
+#:      整表入库会静默取到其中一个。
+#: 所以只取计算器当前真正需要的，缺了就在 `calc/` 里炸掉（那是刻意的设计）。
+MODULE_MISC_WHITELIST: tuple[str, ...] = (
+    "ResistFloor",
+    "MaxResistCap",
+)
 
 #: 出处注释：`-- From GameConstants.dat`
 _PROVENANCE_RE = re.compile(r"^--\s*From\s+(.+?)\s*$", re.M)
@@ -103,6 +121,45 @@ def _provenance_map(text: str) -> dict[str, tuple[str, int, bool]]:
             out[am.group(1)] = (current, idx, fresh and bool(current))
             fresh = False
     return out
+
+
+def extract_module_misc(pob_root: Path) -> tuple[dict[str, tuple[float, int | None]], list[str]]:
+    """从 `Modules/Data.lua` 的 `misc` 表里按白名单取数值常量。
+
+    返回 ``({键: (值, 行号)}, 问题)``。非数值（表达式）与不在白名单里的一律跳过；
+    白名单里缺项算问题——那说明上游改名了，而计算器依赖它。
+
+    行号是为了让引用带锚点、点开就是那一行。取不到就留 None，不猜一个。
+    """
+    path = pob_root / "src" / MODULE_DATA_FILE
+    problems: list[str] = []
+    if not path.is_file():
+        return {}, [f"{MODULE_DATA_FILE}：文件不存在"]
+    source = load_lua_file(path)
+    table = parse_assignments(source)
+    misc = table.get("misc")
+    if not isinstance(misc, dict):
+        return {}, [f"{MODULE_DATA_FILE}：没有 misc 表"]
+
+    out: dict[str, tuple[float, int | None]] = {}
+    for key in MODULE_MISC_WHITELIST:
+        value = misc.get(key)
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            problems.append(
+                f"{MODULE_DATA_FILE} 的 misc.{key} 不是数值（{value!r}）——上游可能改了写法"
+            )
+            continue
+        out[key] = (float(value), _line_of(source, key))
+    return out, problems
+
+
+def _line_of(source: str, key: str) -> int | None:
+    """`key = ` 所在行号（1-based）。找不到返回 None——引用宁可没有锚点，不要错的锚点。"""
+    pattern = re.compile(rf"^\s*{re.escape(key)}\s*=", re.MULTILINE)
+    match = pattern.search(source)
+    if match is None:
+        return None
+    return source.count("\n", 0, match.start()) + 1
 
 
 def extract(pob_root: Path) -> tuple[list[ConstantGroup], list[str]]:

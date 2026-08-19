@@ -125,6 +125,21 @@ _FRAMED_LEAD_IN_RE = re.compile(
 #: 数值。带千分位与小数，含正负号与百分号。
 _NUM_RE = re.compile(r"[-+]?\d+(?:,\d{3})*(?:\.\d+)?")
 
+#: 排版用的正负号 → ASCII。**只映射真正的正负号**：
+#: `−`(U+2212 减号)、`＋`/`－`(全角)。连接号 `–`/`—`/`~` 一律不动——
+#: 在这个领域里它们是区间分隔符（`(40–55)`），当成负号会把区间读成两个负数。
+#:
+#: 为什么必须归一（2026-08-19 第二十轮实测）：模型写「抗性下限为 −200%」，
+#: 而证据原文写 `-200%`。提取器认不出 U+2212，于是从模型那句里读出 `200`、
+#: 在证据里找不到 `200`（只有 `-200`），把一句**完全正确**的话判成编造。
+#: 抗性、减抗、诅咒这些场景全是负数，不归一等于对整类负数误拦。
+_SIGN_NORMALIZE = str.maketrans({"\u2212": "-", "\uff0d": "-", "\uff0b": "+"})
+
+
+def normalize_signs(text: str) -> str:
+    """把排版正负号换成 ASCII，供数值提取用。"""
+    return text.translate(_SIGN_NORMALIZE)
+
 #: 建议类句式。命中即归为建议，不强制绑定，但必须能被用户辨识为建议。
 _RECOMMEND_HINTS = (
     "建议", "推荐", "可以考虑", "不妨", "更划算", "更稳", "优先选", "思路是",
@@ -342,7 +357,10 @@ class Evidence:
     @property
     def numbers(self) -> set[str]:
         """证据里出现的全部数值，归一后用于回填校验。"""
-        return {_norm_num(m.group()) for m in _NUM_RE.finditer(self.text)}
+        return {
+            _norm_num(m.group())
+            for m in _NUM_RE.finditer(normalize_signs(self.text))
+        }
 
 
 @dataclass
@@ -774,6 +792,24 @@ def _table_rows(block: str) -> list[list[str]]:
             continue
         rows.append([c.strip() for c in s.strip("|").split("|")])
     return rows
+
+
+#: 有序列表的序号：行首的 `1. ` / `2、` / `3) `。
+_ORDERED_ITEM_RE = re.compile(r"^([\s*＊>]*)\d{1,2}\s*[.、)）]\s", re.MULTILINE)
+
+
+def _strip_ordered_markers(sentence: str) -> str:
+    """去掉有序列表的序号，它是排版而不是断言。
+
+    实测（第二十轮）：模型把抗性推导写成 1./2./3./4./5. 五步，其中**只有第 3 步**被拦，
+    理由是「数值 3 未出现在绑定证据中」——而 1、2、4、5 只是碰巧在证据原文里出现过。
+    也就是说那条拦截与内容无关，纯看运气。
+
+    **按位置删除而不是按值豁免**：按值豁免会把正文里同一个数字也一起放过
+    （「3. 冷却时间 3 秒」里的第二个 3 仍须溯源）。表格序号列那条老规则是按值豁免的，
+    但它有「整列必须构成从 1 开始的连续整数」这道很紧的判据兜着。
+    """
+    return _ORDERED_ITEM_RE.sub(r"\1", sentence)
 
 
 def _index_column_numbers(block: str) -> set[str]:
@@ -1251,7 +1287,8 @@ def _check_sentence(
 
     # 数值回填校验：句中数值必须能在绑定证据里找到。
     # 编造的具体形态就是数字，这一条抓得最准。
-    missing = unsupported_numbers(stripped, bound)
+    # 有序列表的序号是排版，**按位置**去掉而不是按值豁免（见 `_strip_ordered_markers`）
+    missing = unsupported_numbers(_strip_ordered_markers(stripped), bound)
     if missing and _is_table_line(sentence.strip("\n").splitlines()[0] if sentence.strip() else ""):
         # 表格的序号列是排版，不是断言（见 `_index_column_numbers`）
         ignored = _index_column_numbers(sentence)
@@ -1447,10 +1484,10 @@ def unsupported_numbers(sentence: str, bound: list[Evidence]) -> list[str]:
     ranges: list[tuple[float, float]] = []
     for e in bound:
         pool |= e.numbers
-        ranges.extend(_ranges_in(e.text))
+        ranges.extend(_ranges_in(normalize_signs(e.text)))
 
     missing: list[str] = []
-    for m in _NUM_RE.finditer(sentence):
+    for m in _NUM_RE.finditer(normalize_signs(sentence)):
         raw = m.group()
         norm = _norm_num(raw)
         if norm in pool:

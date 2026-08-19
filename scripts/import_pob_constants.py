@@ -24,7 +24,12 @@ from core import db as dbmod  # noqa: E402
 from core.config import get_config  # noqa: E402
 from core.logging_setup import setup_logging  # noqa: E402
 from kb.sources.pob import MISC_URL_FILE, PoBNotFound, load_repo  # noqa: E402
-from kb.sources.pob_misc import extract, flatten  # noqa: E402
+from kb.sources.pob_misc import (  # noqa: E402
+    MODULE_DATA_FILE,
+    extract,
+    extract_module_misc,
+    flatten,
+)
 
 #: `calc/` 依赖的常量清单以 `calc.constants.REQUIRED` 为唯一真源。
 #: 在这里再抄一份的话，两边迟早不一致，而不一致的表现是「calc 运行时才炸」。
@@ -58,6 +63,27 @@ def main() -> int:
     started = time.time()
     groups, problems = extract(repo.root)
     rows = flatten(groups)
+    # `Modules/Data.lua` 的 magic numbers：按白名单取，group 单列成 `pobMisc`、
+    # `dat_source` 留空——它们**不是 dat 导出**，provenance 与上面那些不同，
+    # 这条区别要在数据里看得见（判据见 kb/sources/pob_misc.MODULE_MISC_WHITELIST）。
+    module_misc, module_problems = extract_module_misc(repo.root)
+    problems.extend(module_problems)
+    rows.extend(
+        {
+            "key": f"pobMisc.{key}",
+            "group_name": "pobMisc",
+            # dat_source 留空 = 「没有 GGG 原始表出处」，而不是「忘了填」：
+            # 这张表开头就写着 `-- magic numbers`
+            "dat_source": None,
+            "dat_source_direct": True,
+            "kind": "scalar",
+            "value_num": value,
+            "value_json": None,
+            "line": line,
+            "url_file": MODULE_DATA_FILE,
+        }
+        for key, (value, line) in sorted(module_misc.items())
+    )
     elapsed = time.time() - started
 
     print(f"\n抽取 {len(groups)} 组、{len(rows)} 行常量，{elapsed:.2f}s")
@@ -110,7 +136,7 @@ def main() -> int:
             r["value_num"],
             json.dumps(r["value_json"], ensure_ascii=False) if r["value_json"] is not None else None,
             repo.source_name(), priority,
-            repo.blob_url(MISC_URL_FILE, line=r["line"] or None),
+            repo.blob_url(r.get("url_file") or MISC_URL_FILE, line=r["line"] or None),
             repo.version_label, repo.game_version or None,
         )
         for r in rows
