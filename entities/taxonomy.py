@@ -85,6 +85,9 @@ class EntityType(StrEnum):
     MONSTER_MOD = "monster_mod"
     MAP = "map"
     CURRENCY = "currency"
+    #: 圣甲虫。与 CURRENCY 分开：它是地图机制物品（MapFragment），
+    #: 归到通货里会让「通货有哪些」把圣甲虫也算进去。
+    SCARAB = "scarab"
 
 
 class ModKind(StrEnum):

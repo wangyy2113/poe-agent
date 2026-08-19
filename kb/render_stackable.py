@@ -1,4 +1,7 @@
-"""通货 → 知识卡片。
+"""通货 / 圣甲虫 → 知识卡片。
+
+两类卡片结构相同（名字 + 堆叠上限 + 效果原文），圣甲虫多一条地图装置放置上限。
+共用一处渲染而不是各写一份——它们的措辞必须一致，否则出口的数值回填会在两种说法之间对不上。
 
 卡片很短（名字 + 堆叠上限 + 效果原文），一条一张，不切分。
 
@@ -18,33 +21,50 @@ from __future__ import annotations
 import hashlib
 
 from entities.models import Chunk, DocumentMetadata, Entity
-from entities.taxonomy import Category, SubCategory
+from entities.taxonomy import Category, EntityType, SubCategory
 from retrieval.tokenize import content_words, tokens_for_fts
 
 MAX_CHUNK_CHARS = 1200
 
 
+#: 实体类型 → 卡片上的类型名与二级分类。
+_KIND = {
+    EntityType.CURRENCY: ("通货", SubCategory.CURRENCY.value, Category.ECONOMY),
+    EntityType.SCARAB: ("圣甲虫", SubCategory.SCARAB.value, Category.ATLAS),
+}
+
+
+def _kind_of(entity: Entity) -> tuple[str, str, Category]:
+    return _KIND.get(entity.entity_type, ("物品", SubCategory.CURRENCY.value, Category.ECONOMY))
+
+
 def render_card(entity: Entity) -> str:
     attrs = entity.attributes
+    label, _sub, _cat = _kind_of(entity)
     head = f"{entity.name_zh}（{entity.name_en}）" if entity.name_en else entity.name_zh
     parts: list[str] = [f"# {head}"]
-    parts.append(f"类型：通货 ｜ 堆叠上限 {attrs.get('stack_max')}")
+    meta = [f"类型：{label}", f"堆叠上限 {attrs.get('stack_max')}"]
+    if attrs.get("device_limit") is not None:
+        # 与堆叠上限分开写：混一起会让「最多能放几个」答成 20
+        meta.append(f"地图装置放置上限 {attrs['device_limit']}")
+    parts.append(" ｜ ".join(meta))
     parts.append("")
     effect = attrs.get("effect_zh")
     if effect:
         parts.append(f"- 效果：{effect}")
     else:
-        parts.append("- POEDB 页面上没有给这条通货的效果说明（碎片与命能类多为此形态）")
-    parts.append(f"\n来源：{entity.ref.source} → 通货")
+        parts.append(f"- POEDB 页面上没有给这条{label}的效果说明（碎片与命能类多为此形态）")
+    parts.append(f"\n来源：{entity.ref.source} → {label}")
     parts.append(entity.ref.url)
     return "\n".join(parts)
 
 
 def build_metadata(entity: Entity) -> DocumentMetadata:
+    _label, subcategory, category = _kind_of(entity)
     return DocumentMetadata(
         title=f"{entity.name_zh}（{entity.name_en}）" if entity.name_en else entity.name_zh,
-        category=Category.ECONOMY,
-        subcategory=SubCategory.CURRENCY.value,
+        category=category,
+        subcategory=subcategory,
         source=entity.ref.source,
         source_priority=entity.ref.priority,
         url=entity.ref.url,

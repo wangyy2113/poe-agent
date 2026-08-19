@@ -1,0 +1,22 @@
+{
+  "format_version": 1,
+  "case_id": "gap_scarab_drop_source",
+  "query": "深渊圣甲虫怎么获得",
+  "recorded_at": "2026-08-19T15:47:12+08:00",
+  "model": "glm-5.2",
+  "tokens": {},
+  "tool_calls": [
+    "kb_search"
+  ],
+  "evidence_gap": true,
+  "out_of_scope": false,
+  "precision_route": "",
+  "gap_answer": "知识库中查不到回答这个问题所需的依据，因此不作答——给一个听起来合理但没有依据的\n答案，代价比说查不到高得多。\n\n**为什么查不到**\n问题涉及的领域（圣甲虫）本知识库**已采集**，但这次没有召回到足够依据——可能是用词与库中表述不一致。换用更具体的专名或词缀原文再试可能有效。\n\n**缺失的信息点**\n- 圣甲虫的数据\n\n**判定依据**\n已按问题类型改由精确工具 `stat_sources` 回答，但该工具本轮未返回任何可引用证据\n\n**建议的查证途径**\n- POEDB 站内搜索：<https://poedb.tw/cn/search?q=圣甲虫的数据>\n- PoE Wiki：<https://www.poewiki.net/index.php?search=圣甲虫的数据>\n- 若属新赛季内容，可查 GGG 官方 Patch Notes\n",
+  "final_answer": "知识库中查不到回答这个问题所需的依据，因此不作答——给一个听起来合理但没有依据的\n答案，代价比说查不到高得多。\n\n**为什么查不到**\n问题涉及的领域（圣甲虫）本知识库**已采集**，但这次没有召回到足够依据——可能是用词与库中表述不一致。换用更具体的专名或词缀原文再试可能有效。\n\n**缺失的信息点**\n- 圣甲虫的数据\n\n**判定依据**\n已按问题类型改由精确工具 `stat_sources` 回答，但该工具本轮未返回任何可引用证据\n\n**建议的查证途径**\n- POEDB 站内搜索：<https://poedb.tw/cn/search?q=圣甲虫的数据>\n- PoE Wiki：<https://www.poewiki.net/index.php?search=圣甲虫的数据>\n- 若属新赛季内容，可查 GGG 官方 Patch Notes\n",
+  "blocked_claims": 0,
+  "elapsed_ms": 14057,
+  "evidence_fingerprint": "sha256:e3b0c44298fc1c149afbf4c8996fb924",
+  "_warning": "raw_answer 是未过出口闸门的模型原文，含可能无据的断言，不得当作事实引用",
+  "raw_answer": "",
+  "evidence": []
+}

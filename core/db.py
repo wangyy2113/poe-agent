@@ -619,6 +619,32 @@ CREATE TABLE IF NOT EXISTS poedb_currency (
 );
 CREATE INDEX IF NOT EXISTS idx_currency_name ON poedb_currency(name_zh);
 
+-- ── 圣甲虫（POEDB `/cn/Scarab`）──
+-- 与 `poedb_currency` 分表而不是合表：那张表的语义是「通货」，把圣甲虫塞进去会让表名说谎。
+-- 卡片解析两页共用 `kb/sources/poedb_cards.py`（结构逐字相同），分开的只是表与域。
+--
+-- 页面上有三个物品类，只收 `MapFragment`（118 条真圣甲虫）；
+-- 4 条亡者之城包与 1 条孵化器按类别登记进台账，不入这张表。
+CREATE TABLE IF NOT EXISTS poedb_scarab (
+    metadata_id     TEXT PRIMARY KEY,
+    name_zh         TEXT NOT NULL CHECK(name_zh <> ''),
+    name_en         TEXT,              -- 取不到时为 NULL，**禁止由 slug 反推**
+    poedb_slug      TEXT NOT NULL CHECK(poedb_slug <> ''),
+    stack_max       INTEGER NOT NULL CHECK(stack_max > 0),
+    -- 地图装置里的放置上限（页面上的「限制」）。与 stack_max 是两回事：
+    -- 混一起会把「最多能放几个」答成堆叠上限 20。实测分布 1..5。
+    device_limit    INTEGER,
+    effect_zh       TEXT,              -- 实测 118 条全有
+    source          TEXT NOT NULL,
+    source_priority INTEGER NOT NULL,
+    url             TEXT NOT NULL CHECK(url <> ''),
+    content_hash    TEXT NOT NULL CHECK(content_hash <> ''),
+    fetched_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL,
+    UNIQUE(poedb_slug)
+);
+CREATE INDEX IF NOT EXISTS idx_scarab_name ON poedb_scarab(name_zh);
+
 -- ── 跨来源冲突台账 ──
 -- 需求 15.5/15.6：冲突时并列展示双方并推荐 POEDB，不得自行判定谁对而隐藏一方。
 -- 因此冲突必须**落库**，不能只在导入日志里一闪而过。

@@ -1,0 +1,132 @@
+{
+  "format_version": 1,
+  "case_id": "num_scarab_device_limit",
+  "query": "深渊圣甲虫在地图装置里最多能放几个",
+  "recorded_at": "2026-08-19T15:46:50+08:00",
+  "model": "glm-5.2",
+  "tokens": {
+    "prompt": 7433,
+    "output": 508,
+    "reasoning": 280,
+    "total": 7941
+  },
+  "tool_calls": [
+    "kb_search"
+  ],
+  "evidence_gap": false,
+  "out_of_scope": false,
+  "precision_route": "",
+  "gap_answer": "",
+  "final_answer": "根据证据，各类深渊圣甲虫在地图装置中的放置上限如下：\n\n| 圣甲虫 | 地图装置放置上限 |\n|---|---|\n| 深渊圣甲虫（Abyss Scarab） | **5**[[E1]] |\n| 下降之深渊圣甲虫（Abyss Scarab of Descending） | **1**[[E2]] |\n| 配偶之深渊圣甲虫（Abyss Scarab of the Consort） | **1**[[E3]] |\n| 水晶之深渊圣甲虫（Abyss Scarab of Crystals） | **1**[[E4]] |\n| 结群之深渊圣甲虫（Abyss Scarab of Multitudes） | **2**[[E5]] |\n\n如果你问的是基础版**深渊圣甲虫（Abyss Scarab）**，它在地图装置里最多能放 **5** 个[[E1]]。其他变体圣甲虫的放置上限各不相同，从 1 到 2 不等[[E2,E3,E4,E5]]。\n\n> 检索以降级通道完成（alias, fts）：向量检索与重排未启用（网关无 embedding 模型），当前走 BM25 + 实体精确匹配",
+  "blocked_claims": 0,
+  "elapsed_ms": 10415,
+  "evidence_fingerprint": "sha256:eee6a99002f93c9f9d6c4441f632511d",
+  "_warning": "raw_answer 是未过出口闸门的模型原文，含可能无据的断言，不得当作事实引用",
+  "raw_answer": "根据证据，各类深渊圣甲虫在地图装置中的放置上限如下：\n\n| 圣甲虫 | 地图装置放置上限 |\n|---|---|\n| 深渊圣甲虫（Abyss Scarab） | **5**[[E1]] |\n| 下降之深渊圣甲虫（Abyss Scarab of Descending） | **1**[[E2]] |\n| 配偶之深渊圣甲虫（Abyss Scarab of the Consort） | **1**[[E3]] |\n| 水晶之深渊圣甲虫（Abyss Scarab of Crystals） | **1**[[E4]] |\n| 结群之深渊圣甲虫（Abyss Scarab of Multitudes） | **2**[[E5]] |\n\n如果你问的是基础版**深渊圣甲虫（Abyss Scarab）**，它在地图装置里最多能放 **5** 个[[E1]]。其他变体圣甲虫的放置上限各不相同，从 1 到 2 不等[[E2,E3,E4,E5]]。",
+  "evidence": [
+    {
+      "label": "E1",
+      "chunk_id": "scarab:Abyss_Scarab#0#84c098a7c03b0926",
+      "entity_id": "scarab:Abyss_Scarab",
+      "title": "深渊圣甲虫（Abyss Scarab）",
+      "url": "https://poedb.tw/cn/Abyss_Scarab",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 深渊圣甲虫（Abyss Scarab）\n类型：圣甲虫 ｜ 堆叠上限 20 ｜ 地图装置放置上限 5\n\n- 效果：区域内包含一个额外的深渊\n\n来源：POEDB → 圣甲虫\nhttps://poedb.tw/cn/Abyss_Scarab",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E2",
+      "chunk_id": "scarab:Abyss_Scarab_of_Descending#0#cfe074640859ef72",
+      "entity_id": "scarab:Abyss_Scarab_of_Descending",
+      "title": "下降之深渊圣甲虫（Abyss Scarab of Descending）",
+      "url": "https://poedb.tw/cn/Abyss_Scarab_of_Descending",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 下降之深渊圣甲虫（Abyss Scarab of Descending）\n类型：圣甲虫 ｜ 堆叠上限 20 ｜ 地图装置放置上限 1\n\n- 效果：区域内有 1 个绝望深渊\n\n来源：POEDB → 圣甲虫\nhttps://poedb.tw/cn/Abyss_Scarab_of_Descending",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E3",
+      "chunk_id": "scarab:Abyss_Scarab_of_the_Consort#0#74674c8745a84c5c",
+      "entity_id": "scarab:Abyss_Scarab_of_the_Consort",
+      "title": "配偶之深渊圣甲虫（Abyss Scarab of the Consort）",
+      "url": "https://poedb.tw/cn/Abyss_Scarab_of_the_Consort",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 配偶之深渊圣甲虫（Abyss Scarab of the Consort）\n类型：圣甲虫 ｜ 堆叠上限 20 ｜ 地图装置放置上限 1\n\n- 效果：区域中的 1 个深渊巨坑将会生成一个深渊配偶。\n\n来源：POEDB → 圣甲虫\nhttps://poedb.tw/cn/Abyss_Scarab_of_the_Consort",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E4",
+      "chunk_id": "scarab:Abyss_Scarab_of_Crystals#0#b0ef0e83921bf3e9",
+      "entity_id": "scarab:Abyss_Scarab_of_Crystals",
+      "title": "水晶之深渊圣甲虫（Abyss Scarab of Crystals）",
+      "url": "https://poedb.tw/cn/Abyss_Scarab_of_Crystals",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 水晶之深渊圣甲虫（Abyss Scarab of Crystals）\n类型：圣甲虫 ｜ 堆叠上限 20 ｜ 地图装置放置上限 1\n\n- 效果：区域内非最终的深渊巨坑关闭时会生成 1 个深渊水晶\n\n来源：POEDB → 圣甲虫\nhttps://poedb.tw/cn/Abyss_Scarab_of_Crystals",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E5",
+      "chunk_id": "scarab:Abyss_Scarab_of_Multitudes#0#5e70a30d5d68c10a",
+      "entity_id": "scarab:Abyss_Scarab_of_Multitudes",
+      "title": "结群之深渊圣甲虫（Abyss Scarab of Multitudes）",
+      "url": "https://poedb.tw/cn/Abyss_Scarab_of_Multitudes",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 结群之深渊圣甲虫（Abyss Scarab of Multitudes）\n类型：圣甲虫 ｜ 堆叠上限 20 ｜ 地图装置放置上限 2\n\n- 效果：深渊裂口在区域内每喂养 1 个灵魂，生成的怪物数量提高 100%。\n\n来源：POEDB → 圣甲虫\nhttps://poedb.tw/cn/Abyss_Scarab_of_Multitudes",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E6",
+      "chunk_id": "atlas_passive:Abyss_Chance_cc3157daee#cd1601dcb67398c7",
+      "entity_id": "atlas_passive:Abyss_Chance_cc3157daee",
+      "title": "普通天赋·深渊几率（Abyss Chance）",
+      "url": "https://poedb.tw/cn/atlas-skill-tree/",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 普通天赋·深渊几率（Abyss Chance）\n普通天赋 ｜ Atlas 天赋树 3.29 ｜ 树上 5 处（同名同效，可分别点取）\n\n- 地图内有深渊的几率 +8%\n- 你的地图中掉落的圣甲虫为深渊圣甲虫的几率提高 8%\n\n来源：POEDB → Atlas 天赋树 · 深渊几率（Abyss Chance）\nhttps://poedb.tw/cn/atlas-skill-tree/",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E7",
+      "chunk_id": "atlas_passive:Abyss_Chance_dac5f89734#05a7aaa4bdd61739",
+      "entity_id": "atlas_passive:Abyss_Chance_dac5f89734",
+      "title": "普通天赋·深渊几率（Abyss Chance）",
+      "url": "https://poedb.tw/cn/atlas-skill-tree/",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 普通天赋·深渊几率（Abyss Chance）\n普通天赋 ｜ Atlas 天赋树 3.29 ｜ 树上 3 处（同名同效，可分别点取）\n\n- 地图内有深渊的几率 +12%\n- 你的地图中掉落的圣甲虫为深渊圣甲虫的几率提高 12%\n\n来源：POEDB → Atlas 天赋树 · 深渊几率（Abyss Chance）\nhttps://poedb.tw/cn/atlas-skill-tree/",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E8",
+      "chunk_id": "atlas_passive:Loved_by_the_Sun_c8ebcc4574#aa89ef8fad518bc5",
+      "entity_id": "atlas_passive:Loved_by_the_Sun_c8ebcc4574",
+      "title": "核心天赋·太阳恩泽（Loved by the Sun）",
+      "url": "https://poedb.tw/cn/atlas-skill-tree/",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 核心天赋·太阳恩泽（Loved by the Sun）\n核心天赋 ｜ Atlas 天赋树 3.29\n\n- 你的地图不会包含深渊\n- 地图中找到的圣甲虫不会是深渊圣甲虫\n- 你的地图包含可通过异界天赋关闭的\n  额外内容的几率 +2%\n\n> （深渊、菌潮遭遇战、裂隙、先祖秘藏遭遇战、战乱之殇遭遇战、佣兵，惊悸迷雾之镜、矿脉、驱灵仪式、古灵庄园、走私者秘藏和致命贪婪遭遇战均为可通过异界天赋关闭的额外内容）\n\n来源：POEDB → Atlas 天赋树 · 太阳恩泽（Loved by the Sun）\nhttps://poedb.tw/cn/atlas-skill-tree/",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    }
+  ]
+}
