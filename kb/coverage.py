@@ -270,13 +270,33 @@ DOMAINS: tuple[DomainSpec, ...] = (
         display_zh="星团珠宝天赋（可选核心与大点）",
         category=Category.BASICS,
         authority_url=f"{POEDB_BASE}/Cobalt_Jewel",
-        count_sql=None,
+        count_sql="SELECT count(*) FROM pob_cluster_notable",
+        tools=("cluster_jewel_info",),
         hints=("星团", "星团珠宝", "大点", "小点"),
-        question_hints=("某个星团珠宝能开出哪些天赋", "某天赋出现在哪种星团珠宝上"),
+        question_hints=(
+            "各尺寸星团珠宝能加几个小天赋",
+            "哪些基石只能从星团珠宝获得",
+            "某个核心天赋是不是星团珠宝上的",
+        ),
         pob_files=("Data/ClusterJewels.lua",),
+        partial_note=(
+            "已入库 **3 个尺寸**（小 2–3 / 中 4–6 / 大 8–12 个小天赋，含核心位与插槽位数）、"
+            "**55 条小天赋类型**（仅 PoB 英文原文——中文附魔文本不在已缓存的任何一页上）、"
+            "以及 **308 条星团核心天赋与基石清单**（中文名由已入库的天赋卡桥接，100% 命中）；"
+            "**未采集**：哪些核心天赋出现在哪种小天赋类型上（`ClusterJewels.lua` 只给"
+            "「尺寸 → 类型」与一份扁平清单，树 JSON 的节点字段里也没有 affliction 标签），"
+            "以及星团珠宝自身的掉落与价格"
+        ),
+        # 「能开出哪些」正是那条未采集的映射。问到就拒答，不拿 308 条里的一部分去凑。
+        missing_dimension_hints=(
+            "能开出", "会开出", "开出哪些", "哪种类型", "哪个类型", "词缀池",
+            "掉落", "价格", "多少钱", "值多少",
+        ),
         note=(
-            "易误判：ModJewelCluster.lua 已入库，但那是星团珠宝**自身的词缀**，"
-            "不是它能开出的天赋点定义（ClusterJewels.lua 未接）"
+            "易误判：ModJewelCluster.lua 早就入库了，但那是星团珠宝**自身的词缀**，"
+            "不是它能开出的天赋定义——后者在 ClusterJewels.lua，2026-08-19 第十八轮接上。"
+            " 另一处易误判：那 300 个核心天赋的**属性**一直都在库里（随天赋树入库成天赋卡），"
+            "这一轮补的是**分类**（它们只能从星团珠宝拿、不在主树上）。"
         ),
         provides_stats=True,
     ),

@@ -645,6 +645,53 @@ CREATE TABLE IF NOT EXISTS poedb_scarab (
 );
 CREATE INDEX IF NOT EXISTS idx_scarab_name ON poedb_scarab(name_zh);
 
+-- ── 星团珠宝（PoB `Data/ClusterJewels.lua`）──
+-- 300 个星团核心天赋**早就作为天赋实体在库里了**（它们在树 JSON 里，随天赋树一起入库），
+-- 缺的一直是**分类**：不知道这 300 个只能从星团珠宝拿、不在主树上。
+-- 上一轮的 `passive_path` 因此只能说「可能只存在于星团珠宝或升华子树」——
+-- 这三张表把那句「可能」变成事实。
+CREATE TABLE IF NOT EXISTS pob_cluster_jewel (
+    size            TEXT PRIMARY KEY,  -- Small / Medium / Large
+    min_nodes       INTEGER NOT NULL CHECK(min_nodes > 0),
+    max_nodes       INTEGER NOT NULL CHECK(max_nodes >= min_nodes),
+    notable_slots   INTEGER NOT NULL,
+    socket_slots    INTEGER NOT NULL,
+    source          TEXT NOT NULL,
+    source_priority INTEGER NOT NULL,
+    pob_url         TEXT NOT NULL CHECK(pob_url <> ''),
+    source_commit   TEXT NOT NULL CHECK(length(source_commit) = 40),
+    updated_at      TEXT NOT NULL
+);
+
+-- 每个尺寸可选的「增加的小天赋给予…」类型。实测 Small 17 / Medium 21 / Large 17。
+-- **只有英文**：POEDB 侧的中文附魔文本不在已缓存的任何一页上（`Cobalt_Jewel` 页
+-- 601KB 里一句「小天赋」都没有），所以按 PoB 原文存并在卡片上标明是英文——
+-- 与宝石的 `description_en` 同一处理，不自己翻译。
+CREATE TABLE IF NOT EXISTS pob_cluster_skill (
+    size            TEXT NOT NULL,
+    tag             TEXT NOT NULL,     -- affliction_maximum_life
+    name_en         TEXT NOT NULL CHECK(name_en <> ''),
+    stats_en        TEXT NOT NULL CHECK(json_valid(stats_en)),
+    enchant_en      TEXT NOT NULL CHECK(json_valid(enchant_en)),
+    PRIMARY KEY (size, tag)
+);
+
+-- 星团珠宝上的核心天赋与基石清单。中文名**从已入库的天赋实体桥接**
+-- （按 PoB 的英文名对 `entity.name_en`），不另抓一遍树数据。
+CREATE TABLE IF NOT EXISTS pob_cluster_notable (
+    name_en         TEXT PRIMARY KEY,
+    name_zh         TEXT,              -- 桥接不上时为 NULL，不由英文名硬翻
+    entity_id       TEXT,              -- 对应的天赋卡实体，便于回查属性
+    is_keystone     INTEGER NOT NULL CHECK(is_keystone IN (0,1)),
+    sort_order      INTEGER,
+    source          TEXT NOT NULL,
+    source_priority INTEGER NOT NULL,
+    pob_url         TEXT NOT NULL CHECK(pob_url <> ''),
+    source_commit   TEXT NOT NULL CHECK(length(source_commit) = 40),
+    updated_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_clusternotable_zh ON pob_cluster_notable(name_zh);
+
 -- ── 跨来源冲突台账 ──
 -- 需求 15.5/15.6：冲突时并列展示双方并推荐 POEDB，不得自行判定谁对而隐藏一方。
 -- 因此冲突必须**落库**，不能只在导入日志里一闪而过。

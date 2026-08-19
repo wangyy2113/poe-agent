@@ -217,14 +217,31 @@ def passive_path(node_name: str, class_name: str | None = None) -> ToolResult:
         if path is not None:
             per_class[cls] = (len(path) - 1, path)
     if not per_class:
+        # 说清是「走不到」而不是「查不到」。**优先给精确理由**：
+        # 2026-08-19 第十八轮起星团珠宝清单入库，所以这里不再说「可能」——
+        # 能查到就直接说它是星团珠宝上的核心天赋/基石。
+        from tools.impl.cluster import cluster_notable_row  # noqa: PLC0415  避免导入环
+
+        cluster = cluster_notable_row(conn, str(target["name_zh"]))
+        if cluster is not None:
+            kind_zh = "基石" if cluster["is_keystone"] else "核心天赋"
+            reason = (
+                f"「{target['name_zh']}」是**星团珠宝上的{kind_zh}**，不在主天赋树上，"
+                "所以没有「从起点走过去要几点」这个数字——它要靠星团珠宝提供，"
+                "而珠宝插在树上的珠宝插槽里。详情用 cluster_jewel_info 查"
+            )
+        else:
+            reason = (
+                f"「{target['name_zh']}」在主天赋树上不可达。它不在星团珠宝清单里，"
+                "多半属于升华子树（那要从升华起点进入，与天赋点是两套点数）"
+            )
         return ToolResult(
             ok=True,
             data={
                 "found": False,
-                # 同名节点全都在主树之外时会走到这里：说清是「走不到」而不是「查不到」
-                "reason": f"「{target['name_zh']}」在主天赋树上不可达"
-                          "（可能只存在于星团珠宝或升华子树）",
+                "reason": reason,
                 "node_kind": str(target["kind"]),
+                "cluster_only": cluster is not None,
             },
         )
 
