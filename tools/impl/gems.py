@@ -4,8 +4,14 @@
 逐级数值直查表**（见 `kb/render_skills.py` 的模块说明）。一颗宝石有 20–40 个等级，
 放进卡片会被出口的 1200 字截断切掉尾部，而被截掉的等级看起来就像不存在。
 
-本工具只输出**字面值**。技能的伤害数值不在库里（PoB 存的是乘数，要按它的公式算），
-所以这里也不会有——问伤害的问题在进模型之前就已经被维度闸门改判为缺据
+本工具输出三类数据，出处不同、界限要写清楚：
+
+* **每级字面值**（等级需求、消耗、冷却、暴击率…）与**基础伤害**——PoB 侧；
+* **效果文本与属性需求**——POEDB 详情页的逐级表（第三十二轮入库，逐级与 PoB
+  对过账才入库；对不上的那几颗**这里就是没有**，会逐颗写明而不是笼统说未采集）；
+* 仍然没有的：**DPS**（要攻速与整条加成链）与**获取途径**。
+
+问 DPS 与获取途径的问法在进模型之前就被维度闸门改判为缺据
 （`kb/coverage.py` 的 `missing_dimension_hints`）。
 """
 
@@ -51,7 +57,34 @@ def _level_dict(row: sqlite3.Row) -> dict[str, Any]:
     }
 
 
-def _render_gem(gem: sqlite3.Row, levels: list[sqlite3.Row], total: int) -> str:
+def _poedb_levels(conn, gem_id: str) -> dict[int, dict[str, Any]]:  # noqa: ANN001
+    """POEDB 侧的每级属性需求与效果取值。没有就是没有（那一颗没入库）。"""
+    return {
+        int(r["gem_level"]): {
+            "req_str": r["req_str"], "req_dex": r["req_dex"], "req_int": r["req_int"],
+            "stat_values": json.loads(r["values_json"] or "{}"),
+        }
+        for r in conn.execute(
+            "SELECT gem_level, req_str, req_dex, req_int, values_json "
+            "FROM poedb_gem_stat_level WHERE gem_id = ?", (gem_id,)
+        )
+    }
+
+
+def _poedb_stat_lines(conn, gem_id: str) -> list[dict[str, Any]]:  # noqa: ANN001
+    return [
+        {"index": int(r["stat_index"]), "text_zh": r["text_zh"]}
+        for r in conn.execute(
+            "SELECT stat_index, text_zh FROM poedb_gem_stat WHERE gem_id = ? "
+            "ORDER BY stat_index", (gem_id,)
+        )
+    ]
+
+
+def _render_gem(
+    gem: sqlite3.Row, levels: list[sqlite3.Row], total: int, *,
+    stat_lines: list[dict[str, Any]], poedb_levels: dict[int, dict[str, Any]],
+) -> str:
     name = f"{gem['name_zh']}（{gem['name_en']}）"
     kind = KIND_LABEL.get(gem["gem_kind"], "宝石")
     out = [f"### {name}", ""]
@@ -71,7 +104,11 @@ def _render_gem(gem: sqlite3.Row, levels: list[sqlite3.Row], total: int) -> str:
     out.append("")
     out.append(f"逐级数值（本库共 {total} 级）：")
     for row in levels:
-        line = level_line(_level_dict(row))
+        merged = _level_dict(row)
+        extra = poedb_levels.get(int(row["gem_level"])) or {}
+        # 属性需求并进同一行：卡片与工具用同一个 `level_line`，措辞逐字一致
+        merged.update({k: v for k, v in extra.items() if k != "stat_values"})
+        line = level_line(merged)
         suffix = ""
         if row["damage_effectiveness"] is not None:
             # 这是**附加伤害的加成系数**，不是技能伤害。PoB 存 2.3、游戏显示 230%
@@ -84,11 +121,30 @@ def _render_gem(gem: sqlite3.Row, levels: list[sqlite3.Row], total: int) -> str:
             f"（本库共 {total} 级，以上仅列 {len(levels)} 级；"
             "指定 level 参数可直接取某一级）"
         )
+    if stat_lines:
+        out.append("")
+        out.append("效果文本（POEDB 逐级表，含各列在上面这些等级的取值）：")
+        for line_row in stat_lines:
+            key = str(line_row["index"])
+            marks = [
+                f"{int(row['gem_level'])} 级 {(poedb_levels.get(int(row['gem_level'])) or {}).get('stat_values', {})[key]}"
+                for row in levels
+                if key in ((poedb_levels.get(int(row["gem_level"])) or {}).get("stat_values") or {})
+            ]
+            suffix = f"（{'｜'.join(marks)}）" if marks else ""
+            out.append(f"- {line_row['text_zh']}{suffix}")
     out.append("")
-    out.append(
-        "本库未采集该技能的伤害数值、效果描述与属性需求（力/敏/智）——"
-        "这些不在上表里，不要从上表推断。"
-    )
+    if stat_lines:
+        out.append(
+            "本库未采集该技能的 DPS 与获取途径——这些不在上表里，不要从上表推断。"
+        )
+    else:
+        # 逐颗说真话：819 颗有效果文本，这一颗没有。笼统说「本库未采集效果文本」
+        # 会在另外 819 颗上变成假话，而那正是覆盖声明要避免的那种句子。
+        out.append(
+            "本库没有这颗宝石的效果文本与属性需求（POEDB 详情页未取到或与 PoB "
+            "逐级数值对不上），也未采集 DPS 与获取途径——不要从上表推断这些。"
+        )
     out.append("")
     out.append(f"来源：{gem['source']} {gem['source_file']}")
     return "\n".join(out)
@@ -119,8 +175,9 @@ def _citation(gem: sqlite3.Row, text: str) -> dict[str, Any]:
         "几级能用 / 冷却多久 / 满级要多少等级」时用它，**不要用 kb_search**——"
         "这个工具直查结构化宝石表，逐级精确；kb_search 只能命中卡片，且卡片只列三个"
         "关键等级。\n"
-        "本库**没有技能的伤害数值、效果描述与属性需求**，返回里也不会有，不得从"
-        "返回内容推断这些。"
+        "返回里还有**每级效果文本与属性需求（力/敏/智）**（出自 POEDB 详情页的逐级表）"
+        "以及**基础伤害**。本库**没有 DPS 与获取途径**，返回里也不会有，"
+        "不得从返回内容推断这两项。"
     ),
     parameters={
         "type": "object",
@@ -190,13 +247,23 @@ def skill_gem_levels(gem_query: str, level: int | None = None) -> ToolResult:
             shown = wanted
         else:
             shown = _sample_levels(rows, int(gem["natural_max_level"] or 0))
-        citations.append(_citation(gem, _render_gem(gem, shown, total)))
+        stat_lines = _poedb_stat_lines(conn, gem["gem_id"])
+        poedb_levels = _poedb_levels(conn, gem["gem_id"])
+        citations.append(_citation(gem, _render_gem(
+            gem, shown, total, stat_lines=stat_lines, poedb_levels=poedb_levels)))
         picked.append({
             "name_zh": gem["name_zh"],
             "name_en": gem["name_en"],
             "gem_kind": gem["gem_kind"],
             "levels_total": total,
             "levels_shown": len(shown),
+            "stat_lines": [line["text_zh"] for line in stat_lines],
+            "requirements_by_level": {
+                str(lv): {k: v for k, v in row.items()
+                          if k.startswith("req_") and v is not None}
+                for lv, row in sorted(poedb_levels.items())
+                if any(v is not None for k, v in row.items() if k.startswith("req_"))
+            },
             "poedb_url": gem["poedb_url"],
         })
 
@@ -219,8 +286,8 @@ def skill_gem_levels(gem_query: str, level: int | None = None) -> ToolResult:
             #（metamods / bench / craft_pool 三个工具都走它）。
             # 让模型自己说这句话就会被出口闸门拦掉——那是同一个模式的第五次。
             "boundary": (
-                "只给每级字面值；不提供技能伤害数值、效果描述文本、"
-                "属性需求（力/敏/智）与获取途径"
+                "每级字面值与基础伤害出自 PoB，效果文本与属性需求出自 POEDB 详情页"
+                "（逐级对过账）；不提供 DPS 与获取途径"
             ),
         },
         citations=citations,

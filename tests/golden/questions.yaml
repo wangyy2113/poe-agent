@@ -892,13 +892,44 @@ cases:
       与上一条成对：两条路（意图词、别名命中）都要能通到**答案**，
       而不是都能通到拒答。别名通道那条判据本身没变，变的是那一维有没有数据。
 
-  - id: gap_skill_gem_attribute_req
+  - id: num_skill_gem_attribute_req
     query: 冰霜脉冲需要多少智力需求
+    kind: numeric
+    expect_slug: Freezing_Pulse
+    expect_values: ["155"]
+    note: >-
+      20 级要 155 智慧。**这条用例第三十二轮从 `kind: gap` 翻成了数值类**：
+      属性需求取自 POEDB 详情页的逐级表（819 颗，逐级与 PoB 的需求等级/消耗/
+      基础伤害对过账才入库）
+    lesson: >-
+      与 `num_skill_gem_base_damage` 是同一个教训的第二例：先前拒答的理由
+      「Gems.lua 的 reqInt 是换算系数不是显示值」**只说明 PoB 侧取不到**，
+      不等于这一维没有来源。判断「做不了」之前要把「缺数据」「缺口径」
+      「缺的只是没去看另一页」分清楚。
+
+  - id: num_support_gem_added_damage
+    query: 附加冰霜伤害辅助 20 级加多少冰霜伤害
+    kind: numeric
+    expect_slug: Added_Cold_Damage_Support
+    expect_values: ["152", "228"]
+    note: >-
+      「被辅助技能附加 4 - 6 基础冰霜伤害」这条效果文本 20 级是 152–228，
+      取自 POEDB 详情页逐级表（第三十二轮入库）
+    lesson: >-
+      辅助宝石「给多少加成」是这个域最常被问、又长期答不了的一块：
+      `missing_dimension_hints` 里「加成多少 / 提升多少 / 增加多少」三条
+      因此在这一轮被删掉。成对的那面是 `gap_skill_gem_acquisition`。
+
+  - id: gap_skill_gem_acquisition
+    query: 冰霜新星这个技能石怎么获得
     kind: gap
     expect_gap: true
     note: >-
-      属性需求（力/敏/智）明确不入库：Gems.lua 的 reqInt 是换算系数不是显示值，
-      PoB 要按 round((20+(等级需求-3)×3)×(系数/100)^0.9×statType) 才得到显示需求
+      获取途径（任务奖励 / 掉落 / 兑换）不在任何已缓存页上；效果文本与属性需求
+      第三十二轮入库之后，这一维是宝石域仅剩的两个缺口之一（另一个是 DPS）
+    lesson: >-
+      成对哨兵：同一轮里放行了三批问法（属性需求、效果文本、辅助加成），
+      就必须有一条钉住「剩下的仍然拒答」。只压一头不算完成。
 
   - id: gap_boss_mechanics
     query: 潜伏之主的技能怎么应对

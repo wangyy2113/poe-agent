@@ -211,6 +211,15 @@ FACTS: tuple[Fact, ...] = (
          _count_where("pob_skill_gem", "gem_kind='active'")),
     Fact("CLAUDE.md 辅助宝石颗数", "CLAUDE.md", r"技能石 \+ ([\d,]+) 辅助）",
          _count_where("pob_skill_gem", "gem_kind='support'")),
+    Fact("CLAUDE.md 宝石效果文本条数", "CLAUDE.md",
+         r"`poedb_gem_stat` \*\*([\d,]+)\*\*", _count("poedb_gem_stat")),
+    Fact("CLAUDE.md 宝石每级取值行数", "CLAUDE.md",
+         r"`poedb_gem_stat_level` \*\*([\d,]+)\*\* 行", _count("poedb_gem_stat_level")),
+    Fact("CLAUDE.md 效果文本入库颗数", "CLAUDE.md", r"820 颗里 \*\*([\d,]+) 颗\*\*",
+         lambda c: int(c.execute(
+             "SELECT count(DISTINCT gem_id) FROM poedb_gem_stat_level").fetchone()[0])),
+    Fact("CLAUDE.md 宝石待核对颗数", "CLAUDE.md", r"`gem_review` \*\*([\d,]+)\*\*",
+         _count_where("source_conflict", "kind='gem_review'")),
     #: 文档里写的「未桥接 N 条」直接对着**台账**核：那句话的出处就是台账，
     #: 而台账的 `hit_count` 这一类量的正是缺多少条（见 `core.db.record_ingest_gaps`）。
     #: 第三十一轮实测过反面——文档与台账都写着 11 条，而实际只剩 1 条。

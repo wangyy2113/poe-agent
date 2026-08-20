@@ -676,8 +676,13 @@ class GemToolTest(unittest.TestCase):
 
         result = skill_gem_levels("冰霜新星")
         self.assertIn("boundary", _NOTE_FIELDS)
-        self.assertIn("伤害数值", result.data["boundary"])
-        self.assertIn("本库未采集", result.citations[0]["text"])
+        # 第三十二轮边界前移了一格：效果文本与属性需求已入库（POEDB 详情页逐级表），
+        # 仍然没有的是 DPS 与获取途径。**声明必须跟着数据改**——留着「未采集效果文本」
+        # 就是让代码把一句现成的假话逐字附在答案末尾。
+        self.assertIn("DPS", result.data["boundary"])
+        self.assertIn("获取途径", result.data["boundary"])
+        self.assertNotIn("不提供技能伤害数值", result.data["boundary"])
+        self.assertIn("本库", result.citations[0]["text"])
 
     def test_引用指向PoB钉commit地址(self) -> None:
         """数值出自 PoB 的那个文件，引用就得指向它，而不是中文名对照页。"""

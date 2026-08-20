@@ -248,6 +248,109 @@ def rebuild_index(conn, entities: list[Entity]) -> tuple[int, int]:  # noqa: ANN
     return chunks, aliases
 
 
+def load_poedb_stats(conn) -> dict[str, dict]:  # noqa: ANN001
+    """`gem_id` → POEDB 详情页那两维（效果文本 + 每级属性需求/取值）。
+
+    表不存在或没有行时返回空字典：那两维是**另一个脚本**导入的
+    （`scripts/import_gem_stats.py`），本脚本不能因为它没跑过就失败。
+    """
+    lines: dict[str, list[dict]] = {}
+    for row in conn.execute(
+        "SELECT gem_id, stat_index, text_zh FROM poedb_gem_stat ORDER BY gem_id, stat_index"
+    ):
+        lines.setdefault(row["gem_id"], []).append(
+            {"index": int(row["stat_index"]), "text_zh": row["text_zh"]}
+        )
+    per_level: dict[str, dict[int, dict]] = {}
+    for row in conn.execute(
+        "SELECT gem_id, gem_level, req_str, req_dex, req_int, values_json, url "
+        "FROM poedb_gem_stat_level"
+    ):
+        per_level.setdefault(row["gem_id"], {})[int(row["gem_level"])] = {
+            "req_str": row["req_str"], "req_dex": row["req_dex"], "req_int": row["req_int"],
+            "stat_values": json.loads(row["values_json"] or "{}"),
+        }
+    out: dict[str, dict] = {}
+    for gem_id in set(lines) | set(per_level):
+        out[gem_id] = {"stat_lines": lines.get(gem_id, []), "levels": per_level.get(gem_id, {})}
+    return out
+
+
+def merge_poedb_stats(entity: Entity, stats: dict | None) -> Entity:
+    """把 POEDB 的两维并进实体属性。**卡片与工具都从这里读**，只有一份合并逻辑。
+
+    每级的属性需求并进 `levels` 里那一级的字典（而不是另开一份平行列表）：
+    卡片按等级渲染，两份平行结构迟早会错位到不同的等级上。
+    """
+    if not stats:
+        return entity
+    attrs = dict(entity.attributes)
+    attrs["stat_lines"] = stats["stat_lines"]
+    per_level = stats["levels"]
+    levels = []
+    for level in attrs.get("levels") or []:
+        merged = dict(level)
+        extra = per_level.get(int(level["gem_level"]))
+        if extra:
+            merged.update(
+                {k: v for k, v in extra.items() if k != "stat_values" and v is not None}
+            )
+            if extra["stat_values"]:
+                merged["stat_values"] = extra["stat_values"]
+        levels.append(merged)
+    attrs["levels"] = levels
+    return entity.model_copy(update={"attributes": attrs})
+
+
+def rebuild_cards_from_db(conn) -> int:  # noqa: ANN001
+    """只重建宝石卡片：从 `entity` 行读回属性、并进 POEDB 两维、重渲染切片。
+
+    为什么从库里读而不是重新解析 PoB：卡片是 `entity.attributes` 的纯函数，
+    而实体行就是本脚本写的。`scripts/import_gem_stats.py` 因此不需要再解析一遍
+    PoB（2.4 秒）也不需要第二份 `to_entity`——**同一条渲染路径，两个入口。**
+    """
+    stats = load_poedb_stats(conn)
+    rows = list(conn.execute(
+        "SELECT entity_id, entity_type, name_zh, name_en, slug, attributes, source, "
+        "source_priority, url, version, content_hash, fetched_at FROM entity "
+        "WHERE entity_type IN (?,?)",
+        (EntityType.SKILL.value, EntityType.SUPPORT_GEM.value),
+    ))
+    entities: list[Entity] = []
+    for row in rows:
+        attrs = json.loads(row["attributes"] or "{}")
+        attrs.pop("mods", None)  # 写库时由 _upsert_entity 拼进去的字段，不是原始属性
+        entity = Entity(
+            entity_id=row["entity_id"],
+            entity_type=EntityType(row["entity_type"]),
+            name_zh=row["name_zh"],
+            name_en=row["name_en"],
+            slug=row["slug"],
+            attributes=attrs,
+            ref=SourceRef(
+                source=row["source"], url=row["url"], priority=int(row["source_priority"]),
+                fetched_at=row["fetched_at"],
+            ),
+            version=row["version"],
+            content_hash=row["content_hash"],
+        )
+        entities.append(merge_poedb_stats(entity, stats.get(str(attrs.get("gem_id")))))
+    for entity in entities:
+        _upsert_entity_shared(conn, entity)
+    chunks = 0
+    for entity_type in (EntityType.SKILL, EntityType.SUPPORT_GEM):
+        fts_mod.clear_index(conn, entity_prefix=f"{entity_type.value}:")
+    for entity in entities:
+        chunks += fts_mod.index_chunks(conn, render_skills.to_chunks(entity))
+    return chunks
+
+
+def _upsert_entity_shared(conn, entity: Entity) -> None:  # noqa: ANN001
+    from kb.pipeline import _upsert_entity  # noqa: PLC0415  复用同一套写法，避免两份 SQL
+
+    _upsert_entity(conn, entity)
+
+
 def record_skipped(conn, skipped: list[SkippedGem]) -> int:  # noqa: ANN001
     """按成因聚合登记进缺口台账。
 
@@ -396,6 +499,10 @@ def main() -> int:
         return 0
 
     conn = dbmod.get_conn()
+    # POEDB 那两维挂在外键上，替换宝石快照会把它们级联删掉。**必须提醒**：
+    # 悄悄留着旧行更糟（宝石改版后效果文本会挂到另一颗上），而悄悄删掉不说
+    # 会让卡片少一整块内容却没人知道——「入库但没有出口」的镜像版本。
+    stats_before = int(conn.execute("SELECT count(*) FROM poedb_gem_stat").fetchone()[0])
     priority = repo.priority(cfg)
     entities = [to_entity(gem, repo, priority) for gem in gems]
     try:
@@ -438,6 +545,10 @@ def main() -> int:
     print(f"已写入 {written} 颗宝石、{levels_written} 行等级；卡片 {chunks}、别名 {aliases}"
           f"（run_id={run_id}）")
     print(f"跳过项按成因登记进缺口台账：{gap_rows} 组；覆盖声明已刷新 {domains} 个领域")
+    if stats_before:
+        print(f"[注意] 替换快照时级联清掉了 {stats_before} 条 POEDB 效果文本"
+              "（外键约束），卡片上的效果文本与属性需求现在是空的——"
+              "请紧接着跑 scripts/import_gem_stats.py 补回来")
     return 0
 
 
