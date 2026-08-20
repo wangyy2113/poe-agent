@@ -1,0 +1,42 @@
+{
+  "format_version": 1,
+  "case_id": "num_max_hit_with_armour",
+  "query": "我 5000 血、10000 护甲，一发物理伤害最多能挨多少",
+  "recorded_at": "2026-08-20T15:35:46+08:00",
+  "model": "glm-5.2",
+  "tokens": {
+    "prompt": 10734,
+    "output": 594,
+    "reasoning": 138,
+    "total": 11328
+  },
+  "tool_calls": [
+    "kb_search",
+    "max_hit_calc"
+  ],
+  "evidence_gap": false,
+  "out_of_scope": false,
+  "precision_route": "",
+  "gap_answer": "",
+  "final_answer": "〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕在你 **5000 血、10000 护甲、物理抗性 0%** 的条件下，一发原始物理伤害最多能挨 **6531**，相当于裸池的 **1.31 倍**[[E1]]。\n\n### 逐步推导\n\n〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕以上各步数值均来自 [E1]。\n\n### 关键说明\n\n〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕同一堆护甲对更大的打击挡得更少——护甲不是固定百分比减伤，而是随单次伤害增大而衰减[[E1]]。\n\n2. **物理减伤上限为 90%**：这是 GGG 原始表中的硬上限（`maximum_physical_damage_reduction_%`），所以\"吃满减伤\"时的理论上限是 5000 ÷ (1 − 90%) = 50,000，但 10000 护甲远不足以触及这个上限[[E1]]。\n\n3. **此计算仅适用于单一物理伤害、100% 不转化**的情形，不含伤害转化、守护技能、Ward、灵体与 Mind over Matter——PoB 对多类型转化用的是多轮平滑逼近而非闭式解[[E1]]。\n\n> 只算**单一伤害类型、100% 不转化**的一发：池子由问题给出（生命 + 能量护盾），抗性用实际生效值；**不含伤害转化、守护技能、Ward、灵体与 Mind over Matter**（PoB 对那些情形用的是多轮平滑逼近，不是闭式解）；护甲只对物理伤害生效\n\n> 检索以降级通道完成（fts）：向量检索与重排未启用（网关无 embedding 模型），当前走 BM25 + 实体精确匹配",
+  "blocked_claims": 3,
+  "elapsed_ms": 10766,
+  "evidence_fingerprint": "sha256:88a00ba3d6d2c0cb162e96daff727a6a",
+  "_warning": "raw_answer 是未过出口闸门的模型原文，含可能无据的断言，不得当作事实引用",
+  "raw_answer": "## 结果：一发物理最多能挨 6531\n\n在你 **5000 血、10000 护甲、物理抗性 0%** 的条件下，一发原始物理伤害最多能挨 **6531**，相当于裸池的 **1.31 倍**[[E1]]。\n\n### 逐步推导\n\n| 步骤 | 算式 | 结果 |\n|---|---|---|\n| 抗性倍率 | 1 − 0% / 100 | 1 |\n| 不算护甲时能挨 | 5000 ÷ 1 ÷ 1 | 5000 |\n| 有护甲时的二次方程求解 | a=5, b=−2.5e+04, c=−5e+07 | 6531.13 |\n| 护甲吃满减伤上限时能挨 | 5000 ÷ (1 − 90% / 100) | 50,000 |\n| 夹在两个边界之间并向下取整 | floor(min(max(6531.13, 5000), 50,000)) | **6531** |\n\n以上各步数值均来自 [E1]。\n\n### 关键说明\n\n1. **护甲减伤依赖伤害大小**：这一发会被护甲与减伤挡掉约 **23.4%**。同一堆护甲对更大的打击挡得更少——护甲不是固定百分比减伤，而是随单次伤害增大而衰减[[E1]]。\n\n2. **物理减伤上限为 90%**：这是 GGG 原始表中的硬上限（`maximum_physical_damage_reduction_%`），所以\"吃满减伤\"时的理论上限是 5000 ÷ (1 − 90%) = 50,000，但 10000 护甲远不足以触及这个上限[[E1]]。\n\n3. **此计算仅适用于单一物理伤害、100% 不转化**的情形，不含伤害转化、守护技能、Ward、灵体与 Mind over Matter——PoB 对多类型转化用的是多轮平滑逼近而非闭式解[[E1]]。",
+  "evidence": [
+    {
+      "label": "E1",
+      "chunk_id": "max_hit_calc:一发物理最多能挨 6531",
+      "entity_id": null,
+      "title": "一发物理最多能挨 6531",
+      "url": "https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Modules/CalcDefence.lua#L3198-L3214",
+      "source": "Path of Building",
+      "source_priority": 2,
+      "text": "### 一发物理最多能挨 6531\n\n| 步骤 | 算式 | 结果 |\n| --- | --- | --- |\n| 抗性倍率 | 1 - 0% / 100 | 1 |\n| 不算护甲时能挨 | 5000 ÷ 1 ÷ 1 | 5000 |\n| 二次方程的系数 | a = 5，b = -2.5e+04，c = -5e+07 | 6531.13 |\n| 护甲吃满减伤上限时能挨 | 5000 ÷ (1 - (90% - 0%) / 100) | 50,000 |\n| 夹在两个边界之间并向下取整 | floor(min(max(6531.13, 5000), 50,000.00)) | 6531 |\n| 相当于裸池的倍数 | 6531 ÷ 5000 | 1.31 |\n\n池子 5000、物理抗性 0%、护甲 10,000：**一发最多能挨 6531 原始伤害**（相当于裸池的 1.31 倍）。\n这一发会被护甲与减伤挡掉约 23.4%——护甲减伤依赖伤害大小，所以**同一堆护甲对更大的打击挡得更少**。\n\n只算**单一伤害类型、100% 不转化**的一发：池子由问题给出（生命 + 能量护盾），抗性用实际生效值；**不含伤害转化、守护技能、Ward、灵体与 Mind over Matter**（PoB 对那些情形用的是多轮平滑逼近，不是闭式解）；护甲只对物理伤害生效。\n\n来源：\n- 无护甲时的闭式：https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Modules/CalcDefence.lua#L3175-L3179\n- 有护甲时的二次方程（含两个边界）：https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Modules/CalcDefence.lua#L3198-L3214\n- PoB 自己的注释：完整解要解六次多项式，所以多类型转化用逼近：https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Modules/CalcDefence.lua#L3196\n- 物理减伤上限 90%：characterConstants.maximum_physical_damage_reduction_%（GGG 原始表 Metadata/Characters/Character.ot）https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Misc.lua#L62",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    }
+  ]
+}

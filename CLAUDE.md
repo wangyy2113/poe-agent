@@ -119,7 +119,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 934 项，秒级
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 965 项，秒级
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选
@@ -136,7 +136,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 .venv/bin/python scripts/eval_run.py --record        # 重录真实响应（**要凭证、烧 token**）
 ```
 
-黄金问答集是 `tests/golden/questions.yaml`（105 条，六类），基线与全部结论在
+黄金问答集是 `tests/golden/questions.yaml`（107 条，六类），基线与全部结论在
 `tests/golden/BASELINE.md`——**动闸门前先读它**，里面记了多个已修缺陷与三条已知未修边界，
 以及两次「测量本身写错」的教训。
 
@@ -177,7 +177,7 @@ POST /chat[/stream]  api/chat.py（只做校验与编排调用）
 | `kb/` | `pipeline.py` 采集管线、`sources/` 各来源抽取器、`coverage.py` 知识库自描述层、`stat_channels.py` 属性来源渠道注册表、`render*.py` 卡片切片 |
 | `parsers/` | `item_text.py`（纯文本，不连库）→ `item_mods.py` T 级匹配 → `mod_bridge.py` 英文桥接 → `item_report.py` 报告 |
 | `craft/` | `feasibility.py` 词缀组合三态可行性、`pool.py` 胸甲普通词缀有效池与条件概率 |
-| `calc/` | `constants.py` 常量访问层，**缺失即抛异常，绝不给默认值**；`derive.py` 两个计算器共用的推导件（`Step` / 引用推导）；`resistance.py` 抗性结算；`mitigation.py` 受击结算（闪避/命中、格挡、法术压制、护甲）；`recovery.py` 回复（护盾回充、偷取、魔力再生）；`reservation.py` 保留（取整是难点）；`ailment.py` 持续伤害；`threshold.py` 门槛型异常。暴击 / Max Hit / 冰冻时长曲线未实现 |
+| `calc/` | `constants.py` 常量访问层，**缺失即抛异常，绝不给默认值**；`derive.py` 两个计算器共用的推导件（`Step` / 引用推导）；`resistance.py` 抗性结算；`mitigation.py` 受击结算（闪避/命中、格挡、法术压制、护甲）；`recovery.py` 回复（护盾回充、偷取、魔力再生）；`reservation.py` 保留（取整是难点）；`ailment.py` 持续伤害；`threshold.py` 门槛型异常；`maxhit.py` 一发最大承受伤害。暴击 / 伤害转化下的 Max Hit / 冰冻时长曲线未实现 |
 | `static/` | 单页前端三个文件，无构建步骤、无 Node、无第三方 JS（Markdown 渲染器自写，为了强制先转义再解析） |
 | `tests/golden/` | 评测资产：`questions.yaml` 黄金问答集、`loader.py` 严格校验、`recording.py` 录制回放、`recordings/` 真实响应、`audit.yaml` 人工结论、`BASELINE.md` 指标基线 |
 
@@ -197,6 +197,7 @@ POST /chat[/stream]  api/chat.py（只做校验与编排调用）
 `reservation_calc`（光环保留合计与剩余魔力，按名字查库）→
 `ailment_dot_calc`（点燃/中毒/流血：每秒 / 持续 / 总共 + 叠加与减伤口径）→
 `ailment_threshold_calc`（感电/冰缓等：伤害 ÷ 异常门槛 → 强度；含反问）→
+`max_hit_calc`（一发最多能挨多少：抗性 → 护甲 → 池 的反解）→
 `stat_sources`（某属性能从哪来）→
 `entity_lookup` → `kb_coverage` → `kb_search`（兜底）
 
@@ -403,6 +404,22 @@ Lua 后者覆盖前者，解析器同样取后者——**行号锚点也因此�
 **「入库」不等于「取得出来」**，这是同一句话的第三种形态（前两种是「已入库 ≠ 那一维已入库」、
 「数据入库但没有出口」）。
 
+**Max Hit（`calc/maxhit.py` + `max_hit_calc`）是前六块计算器的合流**：一发打到身上依次
+经过抗性 → 护甲与物理减伤 → 生命+护盾池，Max Hit 把这条链反解。没有护甲时是一步除法
+（75% 抗性、5000 池 ⇒ 20,000）；**有护甲时不是**——护甲减伤自身依赖伤害大小
+（`护甲 /(护甲 + 5 × 伤害)`），反解要解二次方程，再夹在「完全不算护甲」与
+「护甲吃满 90% 减伤上限」之间。10000 护甲 + 5000 池 ⇒ **6,531**，既不是 5000 也不是 10000；
+同一堆护甲对更大的池边际收益更低，这就是「护甲挡不住大招」的算术来源。
+
+这一维**上游没有可对账的期望值**，所以验证方式是**自洽回代**：把算出来的 Max Hit
+重新走一遍正向链路（`maxhit.taken_from`），结果必须正好打满池子，而且再多打 1% 就撑不住。
+七组参数都过——公式抄错、系数写反、上下限夹反，回代会立刻对不上。
+
+**边界是这一块最重要的产出**：只做**单一伤害类型、100% 不转化**那一支。
+伤害转化、守护技能、Ward、灵体、Mind over Matter 都不算——依据是 PoB 自己的注释
+（完整解「可能要解一个六次多项式」，所以它对多类型用多轮平滑逼近）。
+拿单类型结果去冒充那些情形，是一个带着推导表的错数字。
+
 一处数据缺口会直接影响判断：
 
 - **需求 15.5「跨来源冲突并列展示」在 2026-08-19 第一次真正接上。** 在那之前
@@ -478,6 +495,10 @@ Lua 后者覆盖前者，解析器同样取后者——**行号锚点也因此�
   而被拦的是有据的话。放宽的是**写法**不是**判据**——数值回填照旧跑。
   这条改了一个此前刻意的决定（`test_malformed_markers_still_rejected` 曾把 `[E1]`
   列进残缺写法），依据是新测出来的数字：**放宽依据要有新证据，这次有。**
+- **数值契约要忽略千分位。** `eval_run.py` 的 `expect_values` 原先逐字比对，
+  于是模型写「20,000」而用例写「20000」时，一个完全正确的答案被判成缺数值
+  （实测两次：20000 与 2000000）。**这是测量本身的缺陷，不是用例的**——
+  修在 `_strip_thousands`（只去掉数字之间的逗号），而不是逐条改用例迁就模型的写法。
 - **判据也不能是「很多计算题的共同问法」。** 实测（第二十四轮）：给
   `reservation_calc` 加了意图词「还剩多少」，它立刻把
   「地图 −60% 元素抗性之后我还剩多少火抗」从抗性计算器抢走——**现有成对用例当场拦下**。

@@ -37,6 +37,7 @@ POE1 的机制耦合极深，一个错误的小前提会让整条结论反向。
 | 跨来源对账 | 词缀区间一致 86.4%、唯一装备实质字段一致 83.5%，差异登记待核对 |
 | 游戏常量 | `calc/constants.py`，逐个常量可溯源到 GGG 原始表；**缺失即抛异常，不给默认值** |
 | 受击结算 | `calc/mitigation.py` + `mitigation_calc` 工具：闪避与命中率（怪物命中值取自库里的等级表）、格挡几率与上限、法术压制（减 **40%** 不是 50%）、护甲对某一击的减伤（**护甲不是固定百分比减伤**，不给伤害数值就没有答案）。**不含头目的护甲/闪避倍率** |
+| 一发最大承受 | `calc/maxhit.py` + `max_hit_calc` 工具：把抗性 → 护甲/减伤 → 生命+护盾池反解，给出「一发最多能挨多少」与「相当于裸池的多少倍」。无护甲是一步除法，有护甲按 PoB 的二次方程闭式解。验证方式是**自洽回代**（算出来的值走正向链路必须正好打满池子）。**只算单一伤害类型、不转化**，不含守护技能 / Ward / Mind over Matter |
 | 门槛型异常 | `calc/threshold.py` + `ailment_threshold_calc` 工具：感电 / 冰缓 / 焦灼 / 脆弱 / 干枯的强度 = 基数 ×(伤害 ÷ 异常门槛)^0.4；门槛按等级表 × 头目 7.68 × 地图倍率算（83 级小怪 32,017、头目 1,086,003）。也能反问「要感电到 X% 需要多大伤害」。**冰冻只给门槛判据、不算时长曲线** |
 | 持续伤害 | `calc/ailment.py` + `ailment_dot_calc` 工具：点燃 / 中毒 / 流血的**每秒**伤害、持续与总伤害（点燃每秒 90%×4 秒 = 总共 360%），含叠加规则（中毒无上限）与减伤口径（**流血不吃护甲**）。**感电与冰冻是门槛型异常、不算** |
 | 保留计算 | `calc/reservation.py` + `reservation_calc` 工具：按名字查库取每个光环的基础保留（**含定值保留**，第二十四轮补上的 400 行），套 PoB 的取整规则（各自 round 2 位 → 求和 → 只向上取整一次）与保留效率（除法），给出合计与剩余。**不含血魔法** |
@@ -60,7 +61,7 @@ POE1 的机制耦合极深，一个错误的小前提会让整条结论反向。
 - PoB 码解析（前端能识别出来，但明说未实现，排在 V2）
 - 市场价值与经济数据（所以装备分析里「值不值得裂界」一律输出「数据不足」）
 - 会话重命名、图片上传
-- 计算器的其余部分（抗性、受击结算、回复、保留、持续伤害已实现；暴击 / Max Hit / 冰冻时长曲线还没有）
+- 计算器的其余部分（抗性、受击结算、回复、保留、持续伤害已实现；暴击 / 伤害转化下的 Max Hit / 冰冻时长曲线还没有）
 
 也就是说：**打开浏览器就能聊，也能直接把装备贴进去**，交互方式见下。
 
@@ -478,7 +479,7 @@ PoB 排 P2 而不是 P1：它在数值上更接近一手，但不含中文名与
 ### 评测：四项指标与黄金问答集
 
 `config.yaml` 里的阈值与 `orchestrator/binding.py` 的闸门规则都需要判据，否则改动之后
-无法判断是变好还是变坏。判据来自 `tests/golden/questions.yaml`（105 条，六类样本：
+无法判断是变好还是变坏。判据来自 `tests/golden/questions.yaml`（107 条，六类样本：
 专名 / 描述性 / 数值 / 跨来源 / **确定不覆盖** / 工具路由），基线与结论记在
 `tests/golden/BASELINE.md`。
 
@@ -509,7 +510,7 @@ PoB 排 P2 而不是 P1：它在数值上更接近一手，但不含中文名与
 .venv/bin/python -m unittest discover -s tests -t .
 ```
 
-目前 934 项，其中与「无据不答」直接相关的：
+目前 965 项，其中与「无据不答」直接相关的：
 
 | 组 | 项数 | 重点 |
 | --- | --- | --- |
@@ -548,7 +549,8 @@ tools/                  工具注册与实现。顺序即推荐优先级：
                           / spectre_stats / passive_path / cluster_jewel_info
                           / resistance_calc / mitigation_calc / recovery_calc / reservation_calc
                           / ailment_dot_calc
-                          / ailment_threshold_calc / stat_sources
+                          / ailment_threshold_calc
+                          / max_hit_calc / stat_sources
                           / entity_lookup / kb_coverage / kb_search（兜底）
 craft/                  制作分析：feasibility.py 组合三态可行性 / pool.py 胸甲条件权重概率
 calc/                   常量访问层与计算器（constants.py 缺失即抛异常 / derive.py 推导件
@@ -556,7 +558,8 @@ calc/                   常量访问层与计算器（constants.py 缺失即抛�
                           / mitigation.py 受击结算
                           / recovery.py 回复
                           / reservation.py 保留
-                          / ailment.py 持续伤害 / threshold.py 门槛型异常）
+                          / ailment.py 持续伤害
+                          / threshold.py 门槛型异常 / maxhit.py 一发最大承受）
 parsers/                输入解析：装备文本、词缀档位匹配、分析报告
                           item_text.py（纯文本，不连库）/ item_mods.py / mod_bridge.py / item_report.py
 entities/               实体模型、分类体系、词缀反查

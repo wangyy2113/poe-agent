@@ -1,0 +1,42 @@
+{
+  "format_version": 1,
+  "case_id": "num_max_hit_resist_only",
+  "query": "我 5000 血、火抗 75%，一发火焰伤害最多能挨多少",
+  "recorded_at": "2026-08-20T15:35:35+08:00",
+  "model": "glm-5.2",
+  "tokens": {
+    "prompt": 10577,
+    "output": 331,
+    "reasoning": 108,
+    "total": 10908
+  },
+  "tool_calls": [
+    "kb_search",
+    "max_hit_calc"
+  ],
+  "evidence_gap": false,
+  "out_of_scope": false,
+  "precision_route": "",
+  "gap_answer": "",
+  "final_answer": "你 5000 血、火抗 75%，一发火焰伤害最多能挨 **20,000 原始伤害**[[E1]]。\n\n〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕也就是说，抗性把 75% 的火焰伤害挡掉了，你只承受 25%，所以 5000 的池子能扛住原始 20,000 的火焰一击[[E1]]。\n\n补充说明：以上结果仅适用于**单一火焰伤害、无转化**的一发[[E1]]。〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕不含伤害转化、守护技能、Ward、灵体与 Mind over Matter[[E1]]。\n\n> 只算**单一伤害类型、100% 不转化**的一发：池子由问题给出（生命 + 能量护盾），抗性用实际生效值；**不含伤害转化、守护技能、Ward、灵体与 Mind over Matter**（PoB 对那些情形用的是多轮平滑逼近，不是闭式解）；护甲只对物理伤害生效\n\n> 检索以降级通道完成（fts）：向量检索与重排未启用（网关无 embedding 模型），当前走 BM25 + 实体精确匹配",
+  "blocked_claims": 3,
+  "elapsed_ms": 9405,
+  "evidence_fingerprint": "sha256:e47b9acfa54a3f4752e3e7cb1f2f7844",
+  "_warning": "raw_answer 是未过出口闸门的模型原文，含可能无据的断言，不得当作事实引用",
+  "raw_answer": "你 5000 血、火抗 75%，一发火焰伤害最多能挨 **20,000 原始伤害**[[E1]]。\n\n推导过程：\n\n| 步骤 | 算式 | 结果 |\n|---|---|---|\n| 抗性倍率 | 1 − 75% | 0.25 |\n| 最多能挨 | 5000 ÷ 0.25 | **20,000** |\n| 相当于裸池的倍数 | 20,000 ÷ 5000 | **4 倍** |\n\n也就是说，抗性把 75% 的火焰伤害挡掉了，你只承受 25%，所以 5000 的池子能扛住原始 20,000 的火焰一击[[E1]]。\n\n补充说明：以上结果仅适用于**单一火焰伤害、无转化**的一发[[E1]]。如果你还有护甲或其他减伤手段，结论会不同；不含伤害转化、守护技能、Ward、灵体与 Mind over Matter[[E1]]。",
+  "evidence": [
+    {
+      "label": "E1",
+      "chunk_id": "max_hit_calc:一发火焰最多能挨 20,000",
+      "entity_id": null,
+      "title": "一发火焰最多能挨 20,000",
+      "url": "https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Modules/CalcDefence.lua#L3198-L3214",
+      "source": "Path of Building",
+      "source_priority": 2,
+      "text": "### 一发火焰最多能挨 20,000\n\n| 步骤 | 算式 | 结果 |\n| --- | --- | --- |\n| 抗性倍率 | 1 - 75% / 100 | 0.25 |\n| 不算护甲时能挨 | 5000 ÷ 0.25 ÷ 1 | 20,000 |\n| 相当于裸池的倍数 | 20,000 ÷ 5000 | 4 |\n\n池子 5000、火焰抗性 75%：**一发最多能挨 20,000 原始伤害**（相当于裸池的 4.00 倍）。\n\n只算**单一伤害类型、100% 不转化**的一发：池子由问题给出（生命 + 能量护盾），抗性用实际生效值；**不含伤害转化、守护技能、Ward、灵体与 Mind over Matter**（PoB 对那些情形用的是多轮平滑逼近，不是闭式解）；护甲只对物理伤害生效。\n\n来源：\n- 无护甲时的闭式：https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Modules/CalcDefence.lua#L3175-L3179\n- 有护甲时的二次方程（含两个边界）：https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Modules/CalcDefence.lua#L3198-L3214\n- PoB 自己的注释：完整解要解六次多项式，所以多类型转化用逼近：https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Modules/CalcDefence.lua#L3196\n- 物理减伤上限 90%：characterConstants.maximum_physical_damage_reduction_%（GGG 原始表 Metadata/Characters/Character.ot）https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Misc.lua#L62",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    }
+  ]
+}

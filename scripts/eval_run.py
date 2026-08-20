@@ -27,6 +27,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -536,12 +537,26 @@ def replay_case(conn, case: Case, rec: Recording, params: dict) -> GateOutcome:
                 )
 
     text = out.answer_text
-    out.missing_values = [v for v in case.expect_values if v not in text]
+    # 数值契约要**忽略千分位**：模型写「20,000」而用例写「20000」时，
+    # 逐字比对会把一个完全正确的答案判成缺数值（实测踩过两次：20000 与 2000000）。
+    # 这是测量本身的缺陷，不是用例的——所以修在这里，不是逐条改用例。
+    flat = _strip_thousands(text)
+    out.missing_values = [
+        v for v in case.expect_values if v not in text and _strip_thousands(v) not in flat
+    ]
     out.missing_phrases = [p for p in case.expect_in_answer if p not in text]
     out.forbidden_phrases = [p for p in case.forbid_in_answer if p in text]
     if case.expect_tool:
         out.tool_ok = case.expect_tool in rec.tool_calls
     return out
+
+
+#: 千分位逗号：只去掉**数字之间**的那种（`20,000`），不动「甲, 乙」这类枚举逗号。
+_THOUSANDS_RE = re.compile(r"(?<=\d),(?=\d{3}\b)")
+
+
+def _strip_thousands(text: str) -> str:
+    return _THOUSANDS_RE.sub("", text)
 
 
 def summarize_gate(outs: list[GateOutcome]) -> dict:
