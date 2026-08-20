@@ -526,6 +526,41 @@ cases:
       与 `num_leech_caps`、护甲那一对同一条纪律：给了池就必须算得出来，
       没给就必须说缺什么。
 
+  # ── 保留（2026-08-20 第二十四轮）─────────────────────────────
+  - id: num_aura_reservation
+    query: 我 4000 魔力，开坚定和优雅之后还剩多少
+    kind: numeric
+    expect_values: ["50", "4000"]
+    note: >-
+      两个光环 20 级各保留 50% 最大魔力 → 合计 100% → 4000 全部保留、剩 0。
+      保留百分比是**查库**来的（`pob_skill_level`），不是让用户报数
+    lesson: >-
+      「20 级」这个前提要写进推导：它是查出来的，不是替用户假定的
+      （与 `passive_path` 的「路径要逐节点列出」同一条纪律）。
+
+  - id: num_clarity_flat_reservation
+    query: 清晰 20 级保留多少魔力
+    kind: numeric
+    expect_slug: Clarity
+    expect_values: ["279"]
+    note: >-
+      **定值保留 279 点**。这一列（`reservation_flat`）是第二十四轮才补的——
+      先前库里只有百分比那一列，于是清晰 / 精准 / 活力看起来「不保留任何魔力」
+    lesson: >-
+      这条是「已入库 ≠ 被问的那一维已入库」的又一例：宝石早就入库了，
+      缺的是它保留资源的**那一种写法**。实测 PoB 侧有 400 条 manaReservationFlat。
+
+  - id: route_reservation_calc
+    query: 坚定和优雅一共保留多少魔力
+    kind: tool_route
+    expect_tool: reservation_calc
+    note: 「保留多少」+ 库里认得的技能名 → reservation_calc
+    lesson: >-
+      **不能**把「还剩多少」当意图词：实测它会把
+      「地图 −60% 元素抗性之后我还剩多少火抗」从抗性计算器抢走（成对用例当场拦下）。
+      带技能名的保留问法由数字通道兜，且要求问题里有「保留 / 光环 / 还剩 / 开得起」
+      这类信号——光环名 + 魔力还不够，否则「20 级憎恨的魔力消耗」会被抢走。
+
   - id: route_recovery_calc
     query: 魔力再生怎么算
     kind: tool_route

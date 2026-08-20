@@ -91,6 +91,7 @@ def gem_rows(gem: SkillGem, repo: PoBRepo, priority: int) -> tuple[tuple, list[t
             lv.mana_multiplier,
             lv.attack_speed_multiplier,
             lv.reservation_percent,
+            lv.reservation_flat,
             lv.damage_effectiveness,
         )
         for lv in gem.levels
@@ -143,6 +144,7 @@ def to_entity(gem: SkillGem, repo: PoBRepo, priority: int) -> Entity:
                     "mana_multiplier": lv.mana_multiplier,
                     "attack_speed_multiplier": lv.attack_speed_multiplier,
                     "reservation_percent": lv.reservation_percent,
+                    "reservation_flat": lv.reservation_flat,
                     # 卡片刻意不渲染它（见 render_skills 模块说明），
                     # 但结构化字段留着——工具要按等级给完整数据
                     "damage_effectiveness": lv.damage_effectiveness,
@@ -203,8 +205,9 @@ def replace_snapshot(
         """
         INSERT INTO pob_skill_level(
             gem_id,gem_level,level_requirement,cost,cooldown,stored_uses,crit_chance,
-            mana_multiplier,attack_speed_multiplier,reservation_percent,damage_effectiveness
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?)
+            mana_multiplier,attack_speed_multiplier,reservation_percent,
+            reservation_flat,damage_effectiveness
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
         """,
         levels,
     )
