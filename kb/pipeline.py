@@ -1997,20 +1997,18 @@ def _record_scarab_gaps(conn, skipped: list) -> int:  # noqa: ANN001
     groups: dict[str, list[str]] = {}
     for item in skipped:
         groups.setdefault(item.item_class, []).append(item.name)
-    for item_class, names in sorted(groups.items()):
-        point = (f"[other_item_class] 圣甲虫页上有 {len(names)} 条 {item_class} 类物品未入库："
-                 f"{'、'.join(names[:3])}{' 等' if len(names) > 3 else ''}")
-        conn.execute(
-            """
-            INSERT INTO knowledge_gap(question, missing_point, guessed_category,
-                                      kind, hit_count, first_seen, last_seen)
-            VALUES (?,?,?,?,1,datetime('now'),datetime('now'))
-            ON CONFLICT(question, missing_point) DO UPDATE SET
-                hit_count = hit_count + 1, last_seen = datetime('now')
-            """,
-            ("圣甲虫页上的其它物品类", point[:500], "not_collected/scarab", "ingest_gap"),
+    points = [
+        (
+            f"[other_item_class] 圣甲虫页上有 {len(names)} 条 {item_class} 类物品未入库："
+            f"{'、'.join(names[:3])}{' 等' if len(names) > 3 else ''}",
+            len(names),
         )
-    return len(groups)
+        for item_class, names in sorted(groups.items())
+    ]
+    return dbmod.record_ingest_gaps(
+        conn, question="圣甲虫页上的其它物品类",
+        category="not_collected/scarab", points=points,
+    )
 
 
 #: 怪物词缀的绝对下限。2026-08-19 实测 183 条有中文文本，留出上游删项余量。
@@ -2252,22 +2250,19 @@ def _record_monster_gaps(conn, extracted: poedb_monsters.MonsterExtract) -> int:
     groups: dict[str, list[str]] = {}
     for reason, name in extracted.skipped:
         groups.setdefault(reason, []).append(name)
-    for reason, names in sorted(groups.items()):
-        unique_names = list(dict.fromkeys(names))
-        sample = "、".join(unique_names[:3])
-        point = (f"[{reason}] {len(names)} 条怪物词缀未入库：{sample}"
-                 f"{' 等' if len(names) > 3 else ''}")
-        conn.execute(
-            """
-            INSERT INTO knowledge_gap(question, missing_point, guessed_category,
-                                      kind, hit_count, first_seen, last_seen)
-            VALUES (?,?,?,?,1,datetime('now'),datetime('now'))
-            ON CONFLICT(question, missing_point) DO UPDATE SET
-                hit_count = hit_count + 1, last_seen = datetime('now')
-            """,
-            ("怪物词缀的完整清单", point[:500], "partial/monster_mod", "ingest_gap"),
+    points = [
+        (
+            f"[{reason}] {len(names)} 条怪物词缀未入库："
+            f"{'、'.join(list(dict.fromkeys(names))[:3])}"
+            f"{' 等' if len(names) > 3 else ''}",
+            len(names),
         )
-    return len(groups)
+        for reason, names in sorted(groups.items())
+    ]
+    return dbmod.record_ingest_gaps(
+        conn, question="怪物词缀的完整清单",
+        category="partial/monster_mod", points=points,
+    )
 
 
 def run_coverage() -> int:

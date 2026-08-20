@@ -31,7 +31,9 @@ from kb.sources.pob_skills import (  # noqa: E402
     SKIP_POB_MISSING,
     GemStructureError,
     extract_gems,
+    parse_poedb_detail_name,
     parse_poedb_gems,
+    poedb_detail_slug,
 )
 from tools.impl.gems import MAX_LEVEL_ROWS, skill_gem_levels  # noqa: E402
 
@@ -109,6 +111,31 @@ skills["SupportCastOnMeleeKill"] = {
 """
 
 
+#: `*Instant` 变体：与本体同名（因此详情页 slug 相同），PoB 侧却是两个 granted effect。
+#: 实测原型是 `VaalLightningWarpInstant` 与清单页上的 `VaalLightningWarp`。
+GEMS_LUA_WITH_INSTANT = GEMS_LUA.rstrip().rstrip("}") + """
+	["Metadata/Items/Gems/SupportCastOnMeleeKillInstant"] = {
+		name = "Cast on Melee Kill",
+		grantedEffectId = "SupportCastOnMeleeKillInstant",
+		tags = { strength = true, support = true, },
+		tagString = "Support, Trigger",
+		naturalMaxLevel = 20,
+	},
+}
+"""
+SKILLS_LUA_WITH_INSTANT = SKILLS_LUA + """
+skills["SupportCastOnMeleeKillInstant"] = {
+	name = "Cast on Melee Kill",
+	color = 1,
+	support = true,
+	skillTypes = { [SkillType.Support] = true, },
+	levels = {
+		[1] = { manaMultiplier = 150, levelRequirement = 38, },
+	},
+}
+"""
+
+
 def pob_root(gems: str = GEMS_LUA, skills: str = SKILLS_LUA, costs: str = COSTS_LUA) -> Path:
     """临时 PoB 检出。**十个技能文件都要存在**——少一个就该报错，
     那是「上游改了目录结构」的信号，不该被静默当成少了几颗宝石。"""
@@ -179,6 +206,156 @@ class BridgeTest(unittest.TestCase):
         self.assertEqual(["IceNova"], [s.gem_key for s in conflicts])
         self.assertIn("POEDB 判为 str", conflicts[0].detail)
         self.assertIn("PoB 判为 int", conflicts[0].detail)
+
+
+def detail_page(name_zh: str, name_en: str) -> str:
+    """POEDB 详情页：中文名在 `<title>` 里，`<h1>` 反而是英文（实测形态）。"""
+    return (
+        f"<html><head><title>{name_zh} - 流亡编年史, Path of Exile Wiki cn</title></head>"
+        f"<body><h1>{name_en}</h1><div class=\"gem_red\"></div>"
+        f"<div class=\"gem_blue\"></div><p>{name_en}</p>"
+        "<p>放入物品插槽以获得此技能。</p></body></html>"
+    )
+
+
+class DetailFallbackTest(unittest.TestCase):
+    """清单页没收录的宝石去详情页取中文名（第三十一轮）。
+
+    实测 11 颗未桥接里 10 颗有自己的详情页，中文名就在标题里。这条兜底**没有放宽
+    「不许用英文名或 slug 顶替」**：名字仍然来自 POEDB，只是多看了一页。
+    所以这里成对钉两侧——**该桥的桥上了**，**该跳的仍然跳**（页面不存在、
+    标题里没有中文名、以及一页被两个 granted effect 抢的情形）。
+    """
+
+    def _detail(self, pages: dict[str, str]):  # noqa: ANN202
+        seen: list[str] = []
+
+        def read(slug: str) -> str | None:
+            seen.append(slug)
+            return pages.get(slug)
+
+        self.seen = seen
+        return read
+
+    def test_清单页没有但详情页有中文名就桥接(self) -> None:
+        gems, skipped = extract_gems(
+            pob_root(), gem_page(ICE_NOVA_ANCHOR),
+            detail_html=self._detail(
+                {"Cast_on_Melee_Kill": detail_page("近战击败时施放(辅)", "Cast on Melee Kill")}
+            ),
+        )
+        self.assertEqual([], skipped)
+        by_id = {g.gem_id: g for g in gems}
+        bridged = by_id["SupportCastOnMeleeKill"]
+        self.assertEqual("近战击败时施放(辅)", bridged.name_zh)
+        self.assertEqual("Cast_on_Melee_Kill", bridged.poedb_slug)
+        # 颜色只能取 PoB 那一侧：详情页上三种 gem_ class 都在（那是相关宝石的链接）
+        self.assertEqual("str", bridged.attr_color)
+        # 详情页给不出中文标签，留空而不是拿英文标签顶替
+        self.assertEqual((), bridged.tags_zh)
+        # 每级字面值照旧从 PoB 取，兜底只换了名字这一维
+        self.assertEqual(150.0, bridged.levels[0].mana_multiplier)
+
+    def test_详情页不存在时仍然跳过并写明查过了(self) -> None:
+        """成对点：**取不到就是取不到**，不许退回英文名。"""
+        gems, skipped = extract_gems(
+            pob_root(), gem_page(ICE_NOVA_ANCHOR), detail_html=self._detail({}),
+        )
+        self.assertEqual(["IceNova"], [g.gem_id for g in gems])
+        self.assertEqual([SKIP_NO_ZH], [s.reason for s in skipped])
+        self.assertIn("清单页与详情页", skipped[0].detail)
+        self.assertIn("Cast_on_Melee_Kill", skipped[0].detail)
+
+    def test_标题里没有中文名时跳过(self) -> None:
+        """英文标题说明这一页没有译名——那也是「取不到」。"""
+        page = detail_page("Cast on Melee Kill", "Cast on Melee Kill")
+        _, skipped = extract_gems(
+            pob_root(), gem_page(ICE_NOVA_ANCHOR),
+            detail_html=self._detail({"Cast_on_Melee_Kill": page}),
+        )
+        self.assertEqual([SKIP_NO_ZH], [s.reason for s in skipped])
+
+    def test_没给回调时记成未查详情页而不是查了没有(self) -> None:
+        """两种成因指向完全不同的动作：一个是补一次采集，一个是 POEDB 真的没有。"""
+        _, skipped = extract_gems(pob_root(), gem_page(ICE_NOVA_ANCHOR))
+        self.assertEqual([SKIP_NO_ZH], [s.reason for s in skipped])
+        self.assertIn("未查详情页", skipped[0].detail)
+        self.assertIn("--fetch", skipped[0].detail)
+
+    def test_一页被两个条目抢时不重复占用(self) -> None:
+        """实测 PoB 的 `*Instant` 变体与本体共用一张详情页。硬写会撞
+        `UNIQUE(poedb_slug)`，而挑一个留下就是替用户断言两者是同一颗宝石。"""
+        same_name = gem_anchor(
+            "SupportCastOnMeleeKill", "Cast_on_Melee_Kill", "近战击败时施放(辅)",
+            "gem_red", "辅助",
+        )
+        gems, skipped = extract_gems(
+            pob_root(GEMS_LUA_WITH_INSTANT, SKILLS_LUA_WITH_INSTANT),
+            gem_page(ICE_NOVA_ANCHOR, same_name),
+            detail_html=self._detail(
+                {"Cast_on_Melee_Kill": detail_page("近战击败时施放(辅)", "Cast on Melee Kill")}
+            ),
+        )
+        self.assertEqual(
+            {"IceNova", "SupportCastOnMeleeKill"}, {g.gem_id for g in gems}
+        )
+        self.assertEqual(
+            ["SupportCastOnMeleeKillInstant"], [s.gem_key for s in skipped]
+        )
+        self.assertIn("已属于另一颗已入库的宝石", skipped[0].detail)
+
+    def test_兜底上来之后清单页那一侧不再算缺口(self) -> None:
+        """同一颗宝石不能既算已入库、又算「PoB 未发布」——那是台账里的重复计数。
+        实测 1 条：清单页的 `VaalLightningWarp` 对上 PoB 的 `*Instant`。"""
+        alias_anchor = gem_anchor(
+            "SupportCastOnMeleeKillOld", "Cast_on_Melee_Kill", "近战击败时施放(辅)",
+            "gem_red", "辅助",
+        )
+        gems, skipped = extract_gems(
+            pob_root(), gem_page(ICE_NOVA_ANCHOR, alias_anchor),
+            detail_html=self._detail(
+                {"Cast_on_Melee_Kill": detail_page("近战击败时施放(辅)", "Cast on Melee Kill")}
+            ),
+        )
+        self.assertEqual(
+            {"IceNova", "SupportCastOnMeleeKill"}, {g.gem_id for g in gems}
+        )
+        self.assertEqual([], [s for s in skipped if s.reason == SKIP_POB_MISSING])
+
+    def test_只有未桥接的才去查详情页(self) -> None:
+        """已经桥上的不该再发请求——810 颗各来一次就是 810 个多余请求。"""
+        extract_gems(
+            pob_root(), gem_page(ICE_NOVA_ANCHOR),
+            detail_html=self._detail({}),
+        )
+        self.assertEqual(["Cast_on_Melee_Kill"], self.seen)
+
+
+class DetailNameParseTest(unittest.TestCase):
+    """标题解析的两道校验，缺一条都可能把别的东西的名字装到这颗宝石上。"""
+
+    def test_取标题里破折号前那一段(self) -> None:
+        self.assertEqual(
+            "时空之门",
+            parse_poedb_detail_name(detail_page("时空之门", "Portal"), name_en="Portal"),
+        )
+
+    def test_页面里没有这颗宝石的英文名就拒绝(self) -> None:
+        """slug 猜错时 POEDB 会给别的条目或搜索页，那时英文名不会出现。"""
+        self.assertIsNone(
+            parse_poedb_detail_name(detail_page("号召", "Convocation"), name_en="Portal")
+        )
+
+    def test_标题不是那个形状就拒绝(self) -> None:
+        html = "<html><head><title>时空之门</title></head><body>Portal</body></html>"
+        self.assertIsNone(parse_poedb_detail_name(html, name_en="Portal"))
+
+    def test_空页面不报错(self) -> None:
+        self.assertIsNone(parse_poedb_detail_name("", name_en="Portal"))
+
+    def test_slug由英文名下划线化(self) -> None:
+        self.assertEqual("Pact_of_Beidat", poedb_detail_slug("Pact of Beidat"))
+        self.assertEqual("Portal", poedb_detail_slug(" Portal "))
 
 
 class DualTranslationTest(unittest.TestCase):

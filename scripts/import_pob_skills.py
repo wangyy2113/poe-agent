@@ -39,6 +39,7 @@ from kb.sources.pob_skills import (  # noqa: E402
     SkillGem,
     SkippedGem,
     extract_gems,
+    poedb_url,
 )
 from retrieval import alias as alias_mod  # noqa: E402
 from retrieval import fts as fts_mod  # noqa: E402
@@ -252,39 +253,74 @@ def record_skipped(conn, skipped: list[SkippedGem]) -> int:  # noqa: ANN001
 
     逐条写会用 62 行淹掉台账里真正的采集待办；只写一个总数则把「PoB 没发」与
     「我们取不到中文名」混成一件事——那正是上一轮在底材上修掉的错误。
+    整组替换与 `hit_count` 的口径见 `core.db.record_ingest_gaps`。
     """
     groups: dict[str, list[SkippedGem]] = {}
     for item in skipped:
         groups.setdefault(item.reason, []).append(item)
-    for reason, items in sorted(groups.items()):
-        sample = "、".join(i.name or i.gem_key for i in items[:3])
-        point = (
+    points = [
+        (
             f"[{reason}] {len(items)} 颗宝石未能在 PoB 与 POEDB 之间桥接："
-            f"{sample}{' 等' if len(items) > 3 else ''}（{items[0].detail}）"
+            f"{'、'.join(i.name or i.gem_key for i in items[:3])}"
+            f"{' 等' if len(items) > 3 else ''}（{items[0].detail}）",
+            len(items),
         )
-        conn.execute(
-            """
-            INSERT INTO knowledge_gap(question, missing_point, guessed_category,
-                                      kind, hit_count, first_seen, last_seen)
-            VALUES (?,?,?,?,1,datetime('now'),datetime('now'))
-            ON CONFLICT(question, missing_point) DO UPDATE SET
-                hit_count = hit_count + 1, last_seen = datetime('now')
-            """,
-            ("技能石与辅助宝石的完整清单", point[:500], "partial/skill_gem", "ingest_gap"),
-        )
-    return len(groups)
+        for reason, items in sorted(groups.items())
+    ]
+    return dbmod.record_ingest_gaps(
+        conn, question="技能石与辅助宝石的完整清单",
+        category="partial/skill_gem", points=points,
+    )
 
 
-def _poedb_html(*, fetcher: Fetcher | None) -> str:
+def _cached_or_fetch(url: str, *, fetcher: Fetcher | None) -> str | None:
+    """先看缓存，再看要不要联网。两者都没有就返回 None（由调用方决定怎么记）。"""
     cfg = get_config()
-    path = cache_path_for(cfg.cache_dir, POEDB_GEM_URL)
+    path = cache_path_for(cfg.cache_dir, url)
     if path.is_file():
         return path.read_text(encoding="utf-8", errors="ignore")
     if fetcher is None:
+        return None
+    return fetcher.fetch(url).text
+
+
+def _poedb_html(*, fetcher: Fetcher | None) -> str:
+    html = _cached_or_fetch(POEDB_GEM_URL, fetcher=fetcher)
+    if html is None:
+        path = cache_path_for(get_config().cache_dir, POEDB_GEM_URL)
         raise GemStructureError(
             f"缺少本地缓存 {POEDB_GEM_URL}（{path.name}）；加 --fetch 允许联网补抓"
         )
-    return fetcher.fetch(POEDB_GEM_URL).text
+    return html
+
+
+class DetailReader:
+    """给 `extract_gems` 的详情页兜底回调：``slug -> html``，取不到返回 None。
+
+    清单页没收录的宝石（实测 11 颗）中文名在自己的详情页标题里，一颗一个请求、
+    抓一次就进缓存。**不联网时不算失败**：抽取器会把「未查详情页」与
+    「查了没有」记成两条不同的台账原因——前者是待办，后者是 POEDB 真的没有。
+
+    单颗抓取失败（404 / 超时）只影响这一颗：整批中断会让另外 800 多颗一起进不来。
+    `served` 留着是为了**把兜底的战果打印出来**——静默生效等于没法核对。
+    """
+
+    def __init__(self, *, fetcher: Fetcher | None) -> None:
+        self.fetcher = fetcher
+        self.served: set[str] = set()
+        self.empty: list[str] = []
+
+    def __call__(self, slug: str) -> str | None:
+        try:
+            html = _cached_or_fetch(poedb_url(slug), fetcher=self.fetcher)
+        except OSError as exc:  # 网络/IO 层面的失败
+            print(f"  [提示] 详情页 {slug} 取不到：{exc}")
+            return None
+        if html:
+            self.served.add(slug)
+        else:
+            self.empty.append(slug)
+        return html
 
 
 def main() -> int:
@@ -292,7 +328,7 @@ def main() -> int:
     parser.add_argument("--pob-path", default=None)
     parser.add_argument("--dry-run", action="store_true", help="只解析和体检，不写库")
     parser.add_argument("--fetch", action="store_true",
-                        help="缺少 POEDB 页面缓存时联网补抓（遵守 robots 与限速）")
+                        help="缺少 POEDB 页面缓存时联网补抓（清单页 + 逐颗详情页，遵守限速）")
     parser.add_argument("--allow-shrink", action="store_true",
                         help="显式允许低于下限或大幅缩减（仅人工确认上游变化后使用）")
     args = parser.parse_args()
@@ -329,8 +365,10 @@ def main() -> int:
             game_constants = None
             print("  [提示] 常量表缺 SkillDamage*Effectiveness，基础伤害三列将留空"
                   "（先跑 scripts/import_pob_constants.py）")
+        detail = DetailReader(fetcher=fetcher)
         gems, skipped = extract_gems(
-            repo.root, _poedb_html(fetcher=fetcher), game_constants=game_constants
+            repo.root, _poedb_html(fetcher=fetcher), game_constants=game_constants,
+            detail_html=detail,
         )
         elapsed_ms = int((time.monotonic() - started) * 1000)
     except (PoBNotFound, GemStructureError, OSError) as exc:
@@ -348,6 +386,10 @@ def main() -> int:
     print(f"等级行：{level_rows}；蜕变 {sum(g.is_transfigured for g in gems)}、"
           f"瓦尔 {sum(g.is_vaal for g in gems)}；另译 {sum(1 for g in gems if g.name_zh_alt)} 颗")
     print(f"缺中文标签：{no_tags} 颗")
+    bridged = [g for g in gems if g.poedb_slug in detail.served]
+    print(f"详情页兜底：查了 {len(detail.served) + len(detail.empty)} 页，"
+          f"桥接 {len(bridged)} 颗（{'、'.join(g.name_zh for g in bridged) or '无'}）"
+          + (f"；无页面 {len(detail.empty)}（{'、'.join(detail.empty)}）" if detail.empty else ""))
     print(f"跳过 {len(skipped)} 条：{dict(sorted(by_reason.items()))}")
     if args.dry_run:
         print("（--dry-run，未写库）")

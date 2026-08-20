@@ -41,11 +41,14 @@ def _record_gap(conn, question: str, missing_point: str, category: str) -> None:
     """
     # 与 orchestrator/loop._record_gaps 用同一种 upsert：两处写同一张表，
     # 语义分叉会让 hit_count 的含义取决于是谁写的。
+    # `source='verify'`：核对脚本的写入不是用户流量。`GAP_SOURCES` 早就声明了这一档，
+    # 却一直没人写——于是 `COALESCE(source,'chat')` 把脚本自己的发现算成了用户在问
+    # （第三十一轮补，和四个导入脚本的 `source='import'` 是同一处漏）。
     conn.execute(
         """
         INSERT INTO knowledge_gap(question, missing_point, guessed_category,
-                                  hit_count, first_seen, last_seen)
-        VALUES (?,?,?,1,datetime('now'),datetime('now'))
+                                  source, hit_count, first_seen, last_seen)
+        VALUES (?,?,?,'verify',1,datetime('now'),datetime('now'))
         ON CONFLICT(question, missing_point) DO UPDATE SET
             hit_count = hit_count + 1,
             last_seen = datetime('now'),
