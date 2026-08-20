@@ -62,6 +62,16 @@ MODULE_MISC_WHITELIST: tuple[str, ...] = (
     "EnergyShieldRechargeBase",
     "EnergyShieldRechargeDelay",
     "LeechRateBase",
+    # 持续伤害三兄弟（第二十五轮）。注意**单位不统一**：流血写成 70（百分数），
+    # 中毒 0.30 与点燃 0.9 写成小数——PoB 对流血除 100、对另两个不除。
+    # 这条差异由 `tests/unit/test_ailment.py` 钉住，照抄成同一种单位就会差 100 倍。
+    "BleedPercentBase",
+    "BleedDurationBase",
+    "PoisonPercentBase",
+    "PoisonDurationBase",
+    "IgnitePercentBase",
+    "IgniteDurationBase",
+    "DotDpsCap",
 )
 
 #: 出处注释：`-- From GameConstants.dat`

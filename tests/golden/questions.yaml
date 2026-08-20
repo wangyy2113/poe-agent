@@ -550,6 +550,39 @@ cases:
       这条是「已入库 ≠ 被问的那一维已入库」的又一例：宝石早就入库了，
       缺的是它保留资源的**那一种写法**。实测 PoB 侧有 400 条 manaReservationFlat。
 
+  # ── 持续伤害（2026-08-20 第二十五轮）───────────────────────────
+  - id: num_ignite_per_second
+    query: 一击造成 10000 火焰伤害的点燃，每秒打多少、总共打多少
+    kind: numeric
+    expect_values: ["9000", "4", "36000"]
+    note: >-
+      点燃是**每秒** 90% 火焰伤害、持续 4 秒 → 每秒 9000、总共 36000。
+      「每秒」这个口径的出处是 PoB 自己的说明字符串（`ignite deals 90% per second`）
+    lesson: >-
+      把「每秒 90%」记成「总共 90%」，结论差 4 倍。所以证据里每秒、持续、总共三段都写。
+
+  - id: desc_bleed_not_mitigated_by_armour
+    query: 流血伤害会被护甲减免吗
+    kind: description
+    expect_any_hit: true
+    expect_in_answer: ["感电"]
+    note: >-
+      **不会**：物理持续伤害只被目标的物理伤害减免削（上限 75%），护甲只作用于击中。
+      判据是 PoB 流血那段 effMult 只取 `PhysicalDamageReduction`、完全没有 Armour
+    lesson: >-
+      `expect_in_answer` 只断言**代码附注**的边界声明（里面写着不含感电与冰冻），
+      不断言模型措辞。
+
+  - id: num_poison_stacks
+    query: 中毒能叠几层
+    kind: numeric
+    expect_values: ["30", "2"]
+    note: >-
+      中毒**没有层数上限**（点燃与流血默认 1 层），每秒 30%、持续 2 秒；
+      真实 DPS 取决于攻速
+    lesson: >-
+      三种异常的叠加规则不同，合并成一句「异常默认 1 层」就会把中毒答错。
+
   - id: route_reservation_calc
     query: 坚定和优雅一共保留多少魔力
     kind: tool_route
