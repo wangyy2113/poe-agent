@@ -150,6 +150,42 @@ def _provenance_map(text: str) -> dict[str, tuple[str, int, bool]]:
     return out
 
 
+#: `Modules/Data.lua` 里的**嵌套**表，按白名单取数值字段。
+#: `nonDamagingAilment` 是六种非伤害异常的默认值 / 上下限 / 持续时间——
+#: 门槛型异常的计算离不开它（感电最多 50%、冰缓最多 30% 都在这张表里）。
+#: `associatedType`（"Cold"/"Lightning"…）与 `alt` 是字符串与布尔，不入常量表；
+#: 那两项由 `calc/threshold.py` 硬编码并用原文钉住（与剧情惩罚同一处理）。
+MODULE_TABLE_WHITELIST: tuple[str, ...] = ("nonDamagingAilment",)
+
+
+def extract_module_tables(pob_root: Path) -> tuple[dict[str, float], list[str]]:
+    """从 `Modules/Data.lua` 取白名单里的**嵌套表**，展平成 `表.键.字段` 标量。
+
+    只收数值字段：字符串（关联伤害类型）与布尔（是否为「替代」异常）不进常量表，
+    因为 `game_constant.value_num` 是 REAL——硬塞会变成又一批取不出来的死数据
+    （那正是这一轮修掉的问题）。
+    """
+    path = pob_root / "src" / MODULE_DATA_FILE
+    problems: list[str] = []
+    if not path.is_file():
+        return {}, [f"{MODULE_DATA_FILE}：文件不存在"]
+    table = parse_assignments(load_lua_file(path))
+    out: dict[str, float] = {}
+    for name in MODULE_TABLE_WHITELIST:
+        nested = table.get(name)
+        if not isinstance(nested, dict) or not nested:
+            problems.append(f"{MODULE_DATA_FILE}：没有 {name} 表或它不是表")
+            continue
+        for entry, fields in nested.items():
+            if not isinstance(fields, dict):
+                continue
+            for field, value in fields.items():
+                if isinstance(value, bool) or not isinstance(value, (int, float)):
+                    continue
+                out[f"{name}.{entry}.{field}"] = float(value)
+    return out, problems
+
+
 def extract_module_misc(pob_root: Path) -> tuple[dict[str, tuple[float, int | None]], list[str]]:
     """从 `Modules/Data.lua` 的 `misc` 表里按白名单取数值常量。
 
@@ -281,14 +317,20 @@ def flatten(groups: list[ConstantGroup]) -> list[dict[str, Any]]:
                 "line": g.line,
             })
         for key, val in g.other.items():
+            # **数值型的 other 也要落 value_num**（第二十六轮修）。
+            # 先前一律塞进 value_json，于是 `mapLevelLifeMult.66` 这类
+            # 稀疏表条目在库里有值、却**取不出来**：`constants.get()` 见
+            # value_num 为 NULL 直接抛 ConstantTypeError，`table()` 又不是数组。
+            # 46 行常量因此是死数据——而抗性/异常门槛的计算正好需要它们。
+            numeric = isinstance(val, (int, float)) and not isinstance(val, bool)
             rows.append({
                 "key": f"{g.name}.{key}",
                 "group_name": g.name,
                 "dat_source": g.dat_source,
                 "dat_source_direct": g.dat_source_direct,
-                "kind": "other",
-                "value_num": None,
-                "value_json": val,
+                "kind": "scalar" if numeric else "other",
+                "value_num": float(val) if numeric else None,
+                "value_json": None if numeric else val,
                 "line": g.line,
             })
     return rows

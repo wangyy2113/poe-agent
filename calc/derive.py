@@ -17,6 +17,20 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 
+def fmt(value: float) -> str:
+    """给用户看的数字写法。
+
+    大数用千分位而不是科学计数法：`%g` 会把 1086003 写成 `1.086e+06`，
+    那种写法既没法照着核对，也会让出口闸门的数值回填对不上
+    （模型会写 1,086,003 或 1086003，两者都不等于 `1.086e+06`）。
+    """
+    if abs(value) >= 10_000 and float(value).is_integer():
+        return f"{value:,.0f}"
+    if abs(value) >= 10_000:
+        return f"{value:,.2f}"
+    return f"{value:g}"
+
+
 @dataclass(frozen=True)
 class Step:
     """推导的一步。`expr` 是可照着核对的算式，不是说明文字。"""
@@ -26,8 +40,7 @@ class Step:
     value: float
 
     def render(self) -> str:
-        shown = f"{self.value:g}"
-        return f"| {self.label} | {self.expr} | {shown} |"
+        return f"| {self.label} | {self.expr} | {fmt(self.value)} |"
 
 
 def render_steps(steps: tuple[Step, ...] | list[Step]) -> list[str]:
