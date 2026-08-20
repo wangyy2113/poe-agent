@@ -119,7 +119,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 813 项，秒级
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 853 项，秒级
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选
@@ -136,7 +136,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 .venv/bin/python scripts/eval_run.py --record        # 重录真实响应（**要凭证、烧 token**）
 ```
 
-黄金问答集是 `tests/golden/questions.yaml`（96 条，六类），基线与全部结论在
+黄金问答集是 `tests/golden/questions.yaml`（99 条，六类），基线与全部结论在
 `tests/golden/BASELINE.md`——**动闸门前先读它**，里面记了多个已修缺陷与三条已知未修边界，
 以及两次「测量本身写错」的教训。
 
@@ -177,7 +177,7 @@ POST /chat[/stream]  api/chat.py（只做校验与编排调用）
 | `kb/` | `pipeline.py` 采集管线、`sources/` 各来源抽取器、`coverage.py` 知识库自描述层、`stat_channels.py` 属性来源渠道注册表、`render*.py` 卡片切片 |
 | `parsers/` | `item_text.py`（纯文本，不连库）→ `item_mods.py` T 级匹配 → `mod_bridge.py` 英文桥接 → `item_report.py` 报告 |
 | `craft/` | `feasibility.py` 词缀组合三态可行性、`pool.py` 胸甲普通词缀有效池与条件概率 |
-| `calc/` | `constants.py` 常量访问层，**缺失即抛异常，绝不给默认值**；`derive.py` 两个计算器共用的推导件（`Step` / 引用推导）；`resistance.py` 抗性结算；`mitigation.py` 受击结算（闪避/命中、格挡、法术压制、护甲）；`recovery.py` 回复（护盾回充、偷取、魔力再生）。暴击 / 保留 / Max Hit / 持续伤害未实现 |
+| `calc/` | `constants.py` 常量访问层，**缺失即抛异常，绝不给默认值**；`derive.py` 两个计算器共用的推导件（`Step` / 引用推导）；`resistance.py` 抗性结算；`mitigation.py` 受击结算（闪避/命中、格挡、法术压制、护甲）；`recovery.py` 回复（护盾回充、偷取、魔力再生）；`reservation.py` 保留（取整是难点）。暴击 / Max Hit / 持续伤害未实现 |
 | `static/` | 单页前端三个文件，无构建步骤、无 Node、无第三方 JS（Markdown 渲染器自写，为了强制先转义再解析） |
 | `tests/golden/` | 评测资产：`questions.yaml` 黄金问答集、`loader.py` 严格校验、`recording.py` 录制回放、`recordings/` 真实响应、`audit.yaml` 人工结论、`BASELINE.md` 指标基线 |
 
@@ -194,6 +194,7 @@ POST /chat[/stream]  api/chat.py（只做校验与编排调用）
 `resistance_calc`（按 PoB 原式复算抗性，给逐步推导）→
 `mitigation_calc`（受击前几段：闪避/命中、格挡上限、法术压制、护甲减伤）→
 `recovery_calc`（护盾回充 / 偷取两层上限 / 魔力再生）→
+`reservation_calc`（光环保留合计与剩余魔力，按名字查库）→
 `stat_sources`（某属性能从哪来）→
 `entity_lookup` → `kb_coverage` → `kb_search`（兜底）
 
@@ -224,6 +225,20 @@ POST /chat[/stream]  api/chat.py（只做校验与编排调用）
 `craft_bench_recipe` 783、`pob_base_item` **1022**（18 个装备类别，PoB × POEDB 逐条桥接，
 覆盖 PoB 侧 96.1%；未桥接的 41 条已按类别登记在台账）、`source_conflict` **515**（`mod_review` 254 + `unique_review` 207 + `spectre_review` 43
 + `spectre` **8** + `tree_review` 3）。
+
+`pob_skill_level` 第二十四轮补上 **`reservation_flat`**（400 行）：先前只收
+`manaReservationPercent`，于是清晰（279 点）、精准（186 点）、活力（233 点）这类
+**定值保留**的技能在库里看起来「不保留任何魔力」。把「保留 279 点」答成「不保留」
+比查不到更糟。**没有生命保留列**——上游 `lifeReservationPercent` 只出现在 3 个
+**未桥接**技能上（BoneArmour / TentacleSmash / ThirstForBlood），
+加一列当前管线永远填不上的空列正是那张表注释警告的坑（判据在表注释与单测里）。
+
+保留计算器（`calc/reservation.py` + `reservation_calc`）的全部难点是**取整**：
+百分比各自 round 到 2 位 → **求和** → 对总量**只向上取整一次**
+（不是每个光环各自取整再相加，那会多算几点）；**保留效率是除法**
+（提高 25% 让 50% 变 40%，不是 25%）；`更多 <= 0` 或 `增加 <= -100` 时保留为 0。
+基础保留**查库**而不是让用户报数，并把用了哪一级写进推导；名字有歧义
+（「净化」对应 6 个技能）时列候选而不猜。
 
 `pob_skill_gem` **810** 颗宝石（548 技能石 + 262 辅助）+ `pob_skill_level` **30422** 行
 每级数值。桥接键是 PoB 的 `grantedEffectId`（它也出现在 POEDB 清单页的 `data-hover` 里），
@@ -421,6 +436,12 @@ Lua 后者覆盖前者，解析器同样取后者——**行号锚点也因此�
   而被拦的是有据的话。放宽的是**写法**不是**判据**——数值回填照旧跑。
   这条改了一个此前刻意的决定（`test_malformed_markers_still_rejected` 曾把 `[E1]`
   列进残缺写法），依据是新测出来的数字：**放宽依据要有新证据，这次有。**
+- **判据也不能是「很多计算题的共同问法」。** 实测（第二十四轮）：给
+  `reservation_calc` 加了意图词「还剩多少」，它立刻把
+  「地图 −60% 元素抗性之后我还剩多少火抗」从抗性计算器抢走——**现有成对用例当场拦下**。
+  这类问法要靠**问题里有没有那个领域的实体名**来判：保留题的判据是
+  「库里认得的技能名 + 保留信号（保留/光环/还剩/开得起）」，
+  而且**光环名 + 魔力还不够**（「20 级憎恨的魔力消耗」是 `skill_gem_levels` 的活）。
 - **偏好工具的判据不能是「属性名」，只能是「问法」。** 实测（第二十一轮）：
   `mitigation_calc` 的意图词里放了裸的「法术压制」，于是「法术压制能从哪些渠道获得」
   被从 `stat_sources` 抢走——那是一道枚举题。修法不是逐个绕开裸属性名（想漏一个就

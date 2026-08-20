@@ -44,6 +44,7 @@ def _level_dict(row: sqlite3.Row) -> dict[str, Any]:
         "mana_multiplier": row["mana_multiplier"],
         "attack_speed_multiplier": row["attack_speed_multiplier"],
         "reservation_percent": row["reservation_percent"],
+        "reservation_flat": row["reservation_flat"],
     }
 
 

@@ -85,6 +85,9 @@ def level_line(level: dict) -> str:
         bits.append(f"消耗与保留倍率 {level['mana_multiplier'] + 100:g}%")
     if level.get("reservation_percent") is not None:
         bits.append(f"保留 {level['reservation_percent']:g}% 魔力")
+    # 定值保留（清晰 / 精准 / 活力）。漏了它，这些技能在卡片上看起来「不保留」
+    if level.get("reservation_flat") is not None:
+        bits.append(f"保留 {level['reservation_flat']:g} 点魔力")
     if level.get("cooldown") is not None:
         text = f"冷却 {level['cooldown']:g} 秒"
         stored = level.get("stored_uses")

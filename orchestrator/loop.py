@@ -776,7 +776,7 @@ _ENUMERATION_INTENTS = (
 #: 写成集合而不是在词表里逐个绕开裸属性名：后者要为每个新词想一遍「它是不是属性名」，
 #: 想漏一个就是一条被抢走的枚举题。
 _YIELDS_TO_ENUMERATION = frozenset(
-    {"resistance_calc", "mitigation_calc", "recovery_calc"}
+    {"resistance_calc", "mitigation_calc", "recovery_calc", "reservation_calc"}
 )
 
 
@@ -834,6 +834,15 @@ _PREFERRED_TOOL_INTENTS: tuple[tuple[str, tuple[str, ...]], ...] = (
         "回充", "多久回满", "回满", "偷取上限", "偷取速度", "偷取速率",
         "每秒回复", "再生速度", "再生怎么算", "魔力再生", "回复速度",
     )),
+    # 保留：光环开几个、还剩多少魔力。判据同样专指**结算**——
+    # 裸的「保留」会把「哪些词缀减少保留」这类枚举/档位题抢过来。
+    ("reservation_calc", (
+        "还剩多少魔力", "魔力够不够", "开得起", "开不起", "保留多少",
+        "保留了多少", "保留合计", "总共保留", "几个光环", "光环保留",
+        # **不收「还剩多少」**：它是很多计算题的共同问法，实测会把
+        # 「地图 -60% 元素抗性之后我还剩多少火抗」从抗性计算器抢走
+        # （现有成对用例当场拦下）。带光环名的那类问法由数字通道兜。
+    )),
     # 「某属性能从哪来」是枚举问题：不完整的枚举被当成完整的呈现就是错误答案
     ("stat_sources", _ENUMERATION_INTENTS),
     # 关于知识库**覆盖范围**自身的元问题，答案不在 chunk 里。
@@ -872,7 +881,14 @@ _RESIST_NUMBER_RE = re.compile(r"[-+]?\d")
 #: 所以「护甲词缀有几档」仍归 `mod_tiers`、「护甲能从哪来」仍归 `stat_sources`。
 _MITIGATION_WORDS = ("护甲", "闪避", "格挡", "法术压制")
 #: 回复侧的数字通道。「护盾」不收——它同时是底材属性名（「哪些底材护盾最高」）。
-_RECOVERY_WORDS = ("回充", "偷取", "魔力再生", "回满")
+_RECOVERY_WORDS = ("回充", "偷取", "魔力再生", "回满", "每秒再生", "每秒回")
+#: 保留侧的数字通道：「4000 魔力开坚定和优雅」这种问法列不全意图词。
+#: 收「魔力」是因为保留题几乎总会提到它；真正的判据是**问题里有库里的技能名**。
+_RESERVATION_WORDS = ("保留", "光环", "魔力")
+#: 「这是一道保留题」的信号词。与技能名**同时**命中才算。
+_RESERVATION_SIGNALS = (
+    "保留", "光环", "还剩", "够不够", "开得起", "开不起", "能开", "开几个", "同时开",
+)
 
 
 def _resistance_numeric_route(question: str) -> str:
@@ -885,7 +901,13 @@ def _resistance_numeric_route(question: str) -> str:
         return "resistance_calc"
     if any(word in question for word in _MITIGATION_WORDS):
         return "mitigation_calc"
-    return "recovery_calc" if any(w in question for w in _RECOVERY_WORDS) else ""
+    if any(word in question for word in _RECOVERY_WORDS):
+        return "recovery_calc"
+    if any(word in question for word in _RESERVATION_WORDS):
+        # 只有真的能从问题里认出**技能名**时才算保留题：否则「哪些词缀减少保留」
+        # 这类枚举题会被抢走，而工具拿不到 auras 只能空手而归
+        return "reservation_calc" if _reservation_args(question) else ""
+    return ""
 
 
 def _preferred_tool_route(question: str) -> str:
@@ -1044,6 +1066,49 @@ def _recovery_args(question: str) -> dict[str, Any] | None:
     return args or None
 
 
+def _reservation_args(question: str) -> dict[str, Any] | None:
+    """`reservation_calc` 的参数：从问题里认出**库里有保留数据的技能名**与池大小。
+
+    只认库里那 40 个有保留数据的技能（`pob_skill_level` 的 `reservation_percent`
+    或 `reservation_flat` 非空），逐字包含即命中——这是「名字必须真的在库里」的
+    同一条纪律（见 `_ENTITY_LOOKUP_INTENTS` 那段）。一个都认不出就返回 None：
+    工具拿不到 `auras` 只能空手而归，不如把这一轮交回模型。
+    """
+    try:
+        rows = dbmod.get_conn().execute(
+            "SELECT DISTINCT g.name_zh, g.name_en FROM pob_skill_gem g "
+            "JOIN pob_skill_level l ON l.gem_id = g.gem_id "
+            "WHERE l.reservation_percent IS NOT NULL OR l.reservation_flat IS NOT NULL"
+        ).fetchall()
+    except Exception as exc:  # noqa: BLE001  库不可用不该影响主流程
+        logger.debug("保留数据不可用，reservation_calc 不走代码路由：%s", exc)
+        return None
+
+    # 光环名 + 数字还不够：**必须有保留这件事的信号**，否则
+    # 「20 级憎恨的魔力消耗是多少」会被抢走（那是 skill_gem_levels 的活）。
+    # 不收裸的「开」——「开图的时候憎恨还有用吗」也会命中它。
+    if not any(signal in question for signal in _RESERVATION_SIGNALS):
+        return None
+    hits: list[str] = []
+    lowered = question.lower()
+    for row in rows:
+        zh, en = row["name_zh"], row["name_en"]
+        if zh and zh in question:
+            if zh not in hits:
+                hits.append(zh)
+            continue
+        # 英文名大小写不敏感：问题里写 `Determination` 或 `determination` 都要认
+        if en and en.lower() in lowered and en not in hits:
+            hits.append(en)
+    if not hits:
+        return None
+    args: dict[str, Any] = {"auras": hits}
+    pool = _slot_values(question, ("魔力", "蓝量", "最大魔力"))
+    if len(pool) == 1:
+        args["pool"] = pool.pop()
+    return args
+
+
 def _resistance_args(question: str) -> dict[str, Any] | None:
     """`resistance_calc` 的参数。
 
@@ -1074,6 +1139,7 @@ _CODE_INVOKED_TOOLS: dict[str, Any] = {
     "mitigation_calc": _mitigation_args,
     "resistance_calc": _resistance_args,
     "recovery_calc": _recovery_args,
+    "reservation_calc": _reservation_args,
 }
 
 #: 这些工具按设计**不产出引用**（覆盖声明是元信息不是游戏事实）。

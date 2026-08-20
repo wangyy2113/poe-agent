@@ -423,7 +423,17 @@ CREATE TABLE IF NOT EXISTS pob_skill_level (
     crit_chance     REAL,
     mana_multiplier REAL,              -- 辅助宝石的魔力消耗乘数
     attack_speed_multiplier REAL,
-    reservation_percent REAL,
+    -- 保留：百分比与定值都是**字面值**，两列都收。
+    -- 第二十四轮补上 `reservation_flat`：先前只有 `reservation_percent`，于是
+    -- 清晰 / 精准 / 活力这类**定值保留**的技能在库里看起来「不保留任何魔力」——
+    -- 实测 PoB 侧有 400 条 `manaReservationFlat`，漏收它等于把「保留 279 点魔力」
+    -- 答成「不保留」。
+    -- **没有生命保留列**：上游 `lifeReservationPercent` 只出现在 3 个**未桥接**的
+    -- 技能上（BoneArmour / TentacleSmash / ThirstForBlood，POEDB 清单页没有它们），
+    -- `sup_str.lua` 里那两处是辅助宝石的 mod 声明、不是每级数值。
+    -- 加一列当前管线永远填不上的空列，正是本表注释开头警告的那种坑。
+    reservation_percent REAL,          -- 保留最大魔力的百分比（光环大多数）
+    reservation_flat REAL,             -- 保留定值魔力（清晰 279 / 活力 233 / 精准 186）
     -- 伤害有效度。PoB 存 2.3，游戏里显示「伤害效果 230%」，
     -- 换算只在渲染层做一次（工具与卡片共用同一个函数），DB 存原值。
     damage_effectiveness REAL,
@@ -936,6 +946,7 @@ def _migrate(conn: sqlite3.Connection) -> None:
         _migrate_gap_kind(conn)
         _migrate_base_item_all_categories(conn)
         _migrate_conflict_cause(conn)
+        _migrate_reservation_columns(conn)
         conn.commit()
     except sqlite3.Error as exc:
         # 迁移失败不能让启动失败——但必须告警，否则台账会继续悄悄积累重复
@@ -948,6 +959,27 @@ def _migrate(conn: sqlite3.Connection) -> None:
 #:   binding_block  出口闸门拦下一句无据断言 → 该看是漏出还是错误拒答
 #: 只有前两类构成「采集优先级」，第三类是闸门行为的观测量。
 GAP_KINDS = ("retrieval_gap", "tool_gap", "binding_block", "binding_block_legacy")
+
+
+def _migrate_reservation_columns(conn: sqlite3.Connection) -> None:
+    """给 `pob_skill_level` 补 `reservation_flat` 列（第二十四轮）。
+
+    为什么需要：先前只收了 `manaReservationPercent`，于是**定值保留**的技能
+    （清晰 / 精准 / 活力）在库里看起来「不保留任何魔力」——而 PoB 侧有 402 条
+    `manaReservationFlat`。把「保留 28 点魔力」答成「不保留」，比查不到更糟。
+
+    补列之后要**重跑 `scripts/import_pob_skills.py`** 才有值：这里只改结构，
+    不伪造数据。列留空的那一段时间里，工具读到 NULL 就是「未采集」。
+    """
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(pob_skill_level)")}
+    added = []
+    for column in ("reservation_flat",):
+        if column not in cols:
+            conn.execute(f"ALTER TABLE pob_skill_level ADD COLUMN {column} REAL")
+            added.append(column)
+    if added:
+        conn.commit()
+        logger.info("pob_skill_level 补列完成：%s（需重跑技能石导入才有值）", added)
 
 
 def _migrate_conflict_cause(conn: sqlite3.Connection) -> None:

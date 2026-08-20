@@ -146,6 +146,7 @@ class GemLevel:
     mana_multiplier: float | None = None
     attack_speed_multiplier: float | None = None
     reservation_percent: float | None = None
+    reservation_flat: float | None = None
     damage_effectiveness: float | None = None
 
 
@@ -206,6 +207,7 @@ class SkillGem:
                     lv.gem_level, lv.level_requirement, sorted(lv.cost.items()),
                     lv.cooldown, lv.stored_uses, lv.crit_chance, lv.mana_multiplier,
                     lv.attack_speed_multiplier, lv.reservation_percent,
+                    lv.reservation_flat,
                     lv.damage_effectiveness,
                 ]
                 for lv in self.levels
@@ -438,6 +440,9 @@ def _extract_levels(
                 ),
                 reservation_percent=_number(
                     row.get("manaReservationPercent"), path=f"{path}.manaReservationPercent"
+                ),
+                reservation_flat=_number(
+                    row.get("manaReservationFlat"), path=f"{path}.manaReservationFlat"
                 ),
                 damage_effectiveness=_number(
                     row.get("damageEffectiveness"), path=f"{path}.damageEffectiveness"
