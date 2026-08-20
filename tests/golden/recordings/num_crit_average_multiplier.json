@@ -1,0 +1,42 @@
+{
+  "format_version": 1,
+  "case_id": "num_crit_average_multiplier",
+  "query": "我 40% 暴击率、350% 暴击伤害，平均伤害相当于提升多少",
+  "recorded_at": "2026-08-20T16:20:33+08:00",
+  "model": "glm-5.2",
+  "tokens": {
+    "prompt": 11078,
+    "output": 372,
+    "reasoning": 158,
+    "total": 11450
+  },
+  "tool_calls": [
+    "kb_search",
+    "crit_calc"
+  ],
+  "evidence_gap": false,
+  "out_of_scope": false,
+  "precision_route": "",
+  "gap_answer": "",
+  "final_answer": "根据证据 [E1]，你的暴击参数计算如下：\n\n| 步骤 | 算式 | 结果 |\n| --- | --- | --- |\n| 基础暴击率 | 40% | 40 |\n| 暴击率 | 40.00% | 40 |\n| 暴击加成 | 350% | 350 |\n| 平均伤害倍率 | (1 − 0.4000) + 0.4000 × 3.5 | **2.000** |\n\n**暴击率 40%、暴击加成 350% 时，平均伤害倍率为 2.000**，相当于比完全不暴击高出 **100.0%**[[E1]]。\n\n〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕补充说明：这个倍率只涉及暴击率与平均伤害倍率，不含幸运暴击、命中判定，也不含暴击对异常状态的加成[[E1]]。\n\n> 只算暴击率与**平均伤害倍率**（不需要伤害数值），不算 DPS——这一击有多大要 PoB 的 effectiveness 公式与整条攻击链，本库刻意没有伤害列；也不含幸运暴击、命中判定与暴击对异常的加成\n\n> 检索以降级通道完成（fts）：向量检索与重排未启用（网关无 embedding 模型），当前走 BM25 + 实体精确匹配",
+  "blocked_claims": 1,
+  "elapsed_ms": 8456,
+  "evidence_fingerprint": "sha256:6e6aada2485a7118e8f0e0fb6698836f",
+  "_warning": "raw_answer 是未过出口闸门的模型原文，含可能无据的断言，不得当作事实引用",
+  "raw_answer": "根据证据 [E1]，你的暴击参数计算如下：\n\n| 步骤 | 算式 | 结果 |\n| --- | --- | --- |\n| 基础暴击率 | 40% | 40 |\n| 暴击率 | 40.00% | 40 |\n| 暴击加成 | 350% | 350 |\n| 平均伤害倍率 | (1 − 0.4000) + 0.4000 × 3.5 | **2.000** |\n\n**暴击率 40%、暴击加成 350% 时，平均伤害倍率为 2.000**，相当于比完全不暴击高出 **100.0%**[[E1]]。\n\n换句话说，你的平均伤害是不考虑暴击时的 **2 倍**。\n\n补充说明：这个倍率只涉及暴击率与平均伤害倍率，不含幸运暴击、命中判定，也不含暴击对异常状态的加成[[E1]]。",
+  "evidence": [
+    {
+      "label": "E1",
+      "chunk_id": "crit_calc:暴击 40% × 加成 350% ⇒ 平均 2.000 倍",
+      "entity_id": null,
+      "title": "暴击 40% × 加成 350% ⇒ 平均 2.000 倍",
+      "url": "https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Modules/CalcOffence.lua#L2926-L2940",
+      "source": "Path of Building",
+      "source_priority": 2,
+      "text": "### 暴击结算\n\n| 步骤 | 算式 | 结果 |\n| --- | --- | --- |\n| 基础暴击率 | 40% | 40 |\n| 暴击率 | 40.00% | 40 |\n| 暴击加成 | 350% | 350 |\n| 平均伤害倍率 | (1 - 0.4000) + 0.4000 × 3.5 | 2 |\n\n**暴击率 40%、暴击加成 350% ⇒ 平均伤害倍率 2.000**（相当于比完全不暴击高 100.0%）。\n\n只算暴击率与**平均伤害倍率**（不需要伤害数值），不算 DPS——这一击有多大要 PoB 的 effectiveness 公式与整条攻击链，本库刻意没有伤害列；也不含幸运暴击、命中判定与暴击对异常的加成。\n\n来源：\n- 暴击率公式（基础 + 定值）×(1 + 增加)× 更多、以及上限：https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Modules/CalcOffence.lua#L2926-L2940\n- 平均伤害倍率 `CritEffect`：https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Modules/CalcOffence.lua#L3090\n- 暴击率上限 100%（硬编码，不在常量表）：https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Modules/CalcSetup.lua#L110\n- 基础暴击加成 150%：characterConstants.base_critical_strike_multiplier（GGG 原始表 Metadata/Characters/Character.ot）https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Misc.lua#L62；PoB 内部存成 +50 的那一行：https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Modules/CalcSetup.lua#L501\n- 技能每级基础暴击：`pob_skill_level.crit_chance`；武器底材：`pob_base_item.stats.CritChanceBase`",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    }
+  ]
+}

@@ -46,6 +46,10 @@ class ConstantTypeError(TypeError):
 MAX_ALL_RESISTANCES = "characterConstants.base_maximum_all_resistances_%"
 MAX_PHYS_DAMAGE_REDUCTION = "characterConstants.maximum_physical_damage_reduction_%"
 MAX_BLOCK = "characterConstants.maximum_block_%"
+#: 暴击。**上限是 100% 而不是社区常说的 95%**——PoB 给 `CritChanceCap`
+#: 播的基础值就是 100（`CalcSetup.lua:110`），这一条不在常量表，由单测钉住原文。
+#: 基础暴击加成 150%：PoB 内部存成 `+50`（减了 100），显示时才是 150%。
+BASE_CRIT_MULTIPLIER = "characterConstants.base_critical_strike_multiplier"
 MAX_SPELL_BLOCK = "characterConstants.base_maximum_spell_block_%"
 ES_RECHARGE_RATE_PER_MINUTE = "characterConstants.energy_shield_recharge_rate_per_minute_%"
 MANA_REGEN_RATE_PER_MINUTE = "characterConstants.mana_regeneration_rate_per_minute_%"
@@ -121,7 +125,7 @@ REQUIRED = (
     ES_RECHARGE_RATE_PER_MINUTE, MANA_REGEN_RATE_PER_MINUTE,
     PHYS_DR_PER_ENDURANCE_CHARGE, CRIT_CHANCE_PER_POWER_CHARGE,
     ATTACK_SPEED_PER_FRENZY_CHARGE,
-    MAX_RESIST_CAP, RESIST_FLOOR,
+    MAX_RESIST_CAP, RESIST_FLOOR, BASE_CRIT_MULTIPLIER,
     EVADE_CHANCE_CAP, BLOCK_CHANCE_CAP, SUPPRESSION_CHANCE_CAP, SUPPRESSION_EFFECT,
     ES_RECHARGE_BASE, ES_RECHARGE_DELAY, LEECH_RATE_BASE,
     BLEED_PERCENT, BLEED_DURATION, POISON_PERCENT, POISON_DURATION,
