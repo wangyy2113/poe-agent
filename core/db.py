@@ -407,12 +407,15 @@ CREATE TABLE IF NOT EXISTS pob_skill_gem (
 CREATE INDEX IF NOT EXISTS idx_gem_zh ON pob_skill_gem(name_zh);
 CREATE INDEX IF NOT EXISTS idx_gem_kind ON pob_skill_gem(gem_kind, attr_color);
 
--- ── 宝石每级数值：只放**字面值** ──
--- 为什么没有伤害列：PoB 存的每级伤害是**乘数**（冰霜新星 1 级存 0.8 / 1.2），
--- 要配 baseEffectiveness、incrementalEffectiveness 与 statInterpolation 按 PoB 的
--- 公式算出来才是游戏里显示的数字。那是计算器的事（calc/ 未实现），算错就等于
--- 输出一个带着引用的错数字——比查不到更糟。**也不留空列**：留了下一个人会以为
--- 它待填，然后拿乘数当伤害写进去。
+-- ── 宝石每级数值：字面值 + **算出来的基础伤害** ──
+-- 伤害那三列是第二十九轮才加的，而它等了很久：PoB 存的每级伤害是**乘数**
+-- （冰霜新星 1 级存 0.8 / 1.2），要按 effectiveness 公式算出来才是游戏里显示的数字，
+-- 而「算错就是带着引用的错数字」。所以先补对账口径再入库——
+-- POEDB 技能页把区间写成「造成 (25 — 1122) - (38 — 1683) 冰霜伤害」，
+-- 括号里正好是宝石 1 级 → 自然最高级，20 个技能逐个对账 20/20 一致
+-- （`scripts/verify_gem_damage.py`，公式在 `calc/skill_damage.py`）。
+-- 存**算好的显示值**而不是乘数：乘数放进来就会被下一个人当伤害读走。
+-- 没有伤害数据的技能（光环、辅助、纯效果类）这三列留 NULL，那是「本来就没有」。
 CREATE TABLE IF NOT EXISTS pob_skill_level (
     gem_id          TEXT NOT NULL REFERENCES pob_skill_gem(gem_id) ON DELETE CASCADE,
     gem_level       INTEGER NOT NULL CHECK(gem_level >= 1),
@@ -434,6 +437,10 @@ CREATE TABLE IF NOT EXISTS pob_skill_level (
     -- 加一列当前管线永远填不上的空列，正是本表注释开头警告的那种坑。
     reservation_percent REAL,          -- 保留最大魔力的百分比（光环大多数）
     reservation_flat REAL,             -- 保留定值魔力（清晰 279 / 活力 233 / 精准 186）
+    -- 基础伤害：按 PoB 的 effectiveness 公式算出来的**显示值**（不是乘数）
+    base_damage_min REAL,
+    base_damage_max REAL,
+    damage_type     TEXT,              -- cold / fire / lightning / chaos / physical
     -- 伤害有效度。PoB 存 2.3，游戏里显示「伤害效果 230%」，
     -- 换算只在渲染层做一次（工具与卡片共用同一个函数），DB 存原值。
     damage_effectiveness REAL,
@@ -962,7 +969,7 @@ GAP_KINDS = ("retrieval_gap", "tool_gap", "binding_block", "binding_block_legacy
 
 
 def _migrate_reservation_columns(conn: sqlite3.Connection) -> None:
-    """给 `pob_skill_level` 补 `reservation_flat` 列（第二十四轮）。
+    """给 `pob_skill_level` 补 `reservation_flat`（第二十四轮）与基础伤害三列（第二十九轮）。
 
     为什么需要：先前只收了 `manaReservationPercent`，于是**定值保留**的技能
     （清晰 / 精准 / 活力）在库里看起来「不保留任何魔力」——而 PoB 侧有 402 条
@@ -973,10 +980,13 @@ def _migrate_reservation_columns(conn: sqlite3.Connection) -> None:
     """
     cols = {r[1] for r in conn.execute("PRAGMA table_info(pob_skill_level)")}
     added = []
-    for column in ("reservation_flat",):
+    for column in ("reservation_flat", "base_damage_min", "base_damage_max"):
         if column not in cols:
             conn.execute(f"ALTER TABLE pob_skill_level ADD COLUMN {column} REAL")
             added.append(column)
+    if "damage_type" not in cols:
+        conn.execute("ALTER TABLE pob_skill_level ADD COLUMN damage_type TEXT")
+        added.append("damage_type")
     if added:
         conn.commit()
         logger.info("pob_skill_level 补列完成：%s（需重跑技能石导入才有值）", added)

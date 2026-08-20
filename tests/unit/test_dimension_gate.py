@@ -218,9 +218,13 @@ class SkillGemIntentTest(DimensionGapTest):
     ## 机制换了一层，用例也跟着换
 
     PR #12 时技能石整个领域未采集，于是「识别出这是技能石问题」等于拒答，伤害类问法
-    （`级时的基础伤害` 等）就放在 `hints` 里。这一轮 810 颗宝石入库、领域转 `partial`，
-    同一批问法必须改由 `missing_dimension_hints` 拦——领域是「问到了」，缺的是伤害那一面。
-    两处说的是同一件事，所以只能同时改（规约第 5 条的成对点）。
+    （`级时的基础伤害` 等）就放在 `hints` 里。第十二轮 810 颗宝石入库、领域转 `partial`，
+    同一批问法改由 `missing_dimension_hints` 拦——领域是「问到了」，缺的是伤害那一面。
+
+    **第二十九轮基础伤害入库，那批问法从 `missing_dimension_hints` 里移除了。**
+    现在这个类同时钉两件事：伤害要放行、DPS / 属性需求 / 获取途径照旧拦。
+    一个领域的 `partial_note` 与 `missing_dimension_hints` 是成对的，
+    每次有新维度入库都要同时改这两处再改用例（规约第 5 条）。
 
     ## 领域识别多了一条通道：别名精确命中
 
@@ -232,17 +236,27 @@ class SkillGemIntentTest(DimensionGapTest):
     #: 别名精确命中的宝石实体（真实链路里由 `orchestrator/loop._exact_entity_ids` 传入）
     GEM_HIT = ("skill:FreezingPulse",)
 
-    def test_伤害维度被拦_靠意图词(self) -> None:
-        for q in ("技能石的伤害数值在哪查", "宝石等级提升后伤害是多少"):
-            with self.subTest(q=q):
-                self.assertTrue(self._verdict(q).is_gap, q)
+    def test_基础伤害第二十九轮起放行(self) -> None:
+        """**这条边界往前挪了一格。**
 
-    def test_伤害维度被拦_靠别名命中(self) -> None:
-        """点名了一颗库里的宝石 + 问的是伤害 → 仍然拒答（本轮不入库伤害数值）。"""
+        第十二轮到第二十八轮，伤害类问法一律拒答——理由是 PoB 存的是乘数、
+        算错就是「带着引用的错数字」。第二十九轮补上了缺的那一半（与 POEDB 技能页
+        逐个对账 20/20），基础伤害入库 175 颗技能 7000 行，所以同一批问法**必须答**。
+        留着不放等于让闸门把答得出来的问题声明成缺口——第十四轮在幽魂抗性、
+        第二十四轮在定值保留上都做过同样的移除。
+        """
         for q in ("冰霜脉冲在 20 级时的基础伤害是多少",
                   "冰霜脉冲 20 级的基础伤害",
-                  "冰霜脉冲的伤害是多少",
-                  "冰霜脉冲要多少智力需求"):
+                  "冰霜脉冲的伤害是多少"):
+            with self.subTest(q=q):
+                self.assertFalse(self._verdict(q, self.GEM_HIT).is_gap, q)
+
+    def test_仍然缺的那几维照旧拦(self) -> None:
+        """DPS 要攻速与整条加成链（基础伤害只是其中一个乘数）；
+        属性需求与获取途径确实还没采集。"""
+        for q in ("冰霜脉冲的 dps 是多少",
+                  "冰霜脉冲要多少智力需求",
+                  "冰霜脉冲怎么获得"):
             with self.subTest(q=q):
                 self.assertTrue(self._verdict(q, self.GEM_HIT).is_gap, q)
 

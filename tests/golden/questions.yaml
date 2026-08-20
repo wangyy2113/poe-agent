@@ -230,9 +230,9 @@ cases:
     expect_values: ["23"]
     note: 宝石每级消耗，pob_skill_level 表里 IceNova 的 20 级 = 23 魔力
     lesson: >-
-      与 `gap_skill_gem_numbers` 成对：同一颗宝石、同一个等级，问消耗要答得出来，
-      问伤害必须拒答。只压一头就会退化成「宝石入库了但什么都不敢说」
-      或者「拿加成系数当伤害答出去」。
+      与 `num_skill_gem_base_damage` 成对：同一颗宝石、同一个等级，消耗与伤害都要答得出来
+      （第二十九轮伤害入库前，这一对是「消耗要答、伤害要拒」）。
+      现在仍然要拒的是 DPS 与属性需求——那两维确实还没有。
 
   - id: num_ice_nova_char_level_at_20
     query: 冰霜新星 20 级需要角色多少级
@@ -842,30 +842,31 @@ cases:
     expect_gap: true
     note: craft_rule 未结构化，game_constant 里查无此键·不得硬编码 3/3
 
-  - id: gap_skill_gem_numbers
+  - id: num_skill_gem_base_damage
     query: 冰霜脉冲在 20 级时的基础伤害是多少
-    kind: gap
-    expect_gap: true
+    kind: numeric
+    expect_slug: Freezing_Pulse
+    expect_values: ["1659", "2488"]
     note: >-
-      2026-08-19 起 skill_gem = partial：宝石本身入库了（冰霜脉冲是库里的实体），
-      但**伤害数值仍未采集**——PoB 存的是乘数，要按它的公式算才是显示值
+      1659–2488 冰霜伤害。**这条用例第二十九轮从 `kind: gap` 翻成了数值类**：
+      基础伤害按 PoB 的 effectiveness 公式算出来入库（175 颗技能 7000 行），
+      并与 POEDB 技能页逐个对账（20/20 一致）
     lesson: >-
-      这条哨兵考的东西**换了一层**：入库前它验的是「领域未采集就别答」，
-      入库后验的是第二道闸门——实体在库里不等于被问的那一面有数据。
-      两条路都必须走得通，所以用例不动、note 改掉。
+      它记录的是一条**边界往前挪**：第十二轮到第二十八轮这句必须拒答，
+      理由是「PoB 存的是乘数，算错就是带着引用的错数字」——缺的不是数据，是**对账口径**。
+      口径补上之后，同一句话必须答得出来；留着不放就变成了「把答得出来的问题声明成缺口」。
 
-  - id: gap_skill_gem_damage_no_level_wording
+  - id: num_skill_gem_damage_no_level_wording
     query: 冰霜脉冲的伤害是多少
-    kind: gap
-    expect_gap: true
+    kind: numeric
+    expect_slug: Freezing_Pulse
+    expect_values: ["1659"]
     note: >-
-      同一个边界，但句子里**没有任何宝石意图词**——领域靠别名精确命中识别
-      （810 颗宝石名不可能进词表）
+      同一件事，但句子里没有任何宝石意图词——领域靠别名精确命中识别。
+      现在它该答（20 级 1659–2488），而不是拒答
     lesson: >-
-      加这条是因为 `gap_skill_gem_numbers` 只覆盖了带「20 级」的问法。
-      去掉等级说法后，靠 hints 的那条路就断了；补上「别名命中的实体类型也算问到该领域」
-      之后才拦得住。只收别名通道、不收 BM25：检索前几条里夹一张宝石卡是常事，
-      拿它当领域信号会让含「伤害」的装备问题被误拦。
+      与上一条成对：两条路（意图词、别名命中）都要能通到**答案**，
+      而不是都能通到拒答。别名通道那条判据本身没变，变的是那一维有没有数据。
 
   - id: gap_skill_gem_attribute_req
     query: 冰霜脉冲需要多少智力需求

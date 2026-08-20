@@ -45,6 +45,9 @@ def _level_dict(row: sqlite3.Row) -> dict[str, Any]:
         "attack_speed_multiplier": row["attack_speed_multiplier"],
         "reservation_percent": row["reservation_percent"],
         "reservation_flat": row["reservation_flat"],
+        "base_damage_min": row["base_damage_min"],
+        "base_damage_max": row["base_damage_max"],
+        "damage_type": row["damage_type"],
     }
 
 

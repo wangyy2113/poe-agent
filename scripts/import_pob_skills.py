@@ -23,6 +23,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from calc import constants  # noqa: E402
 from core import db as dbmod  # noqa: E402
 from core.config import get_config  # noqa: E402
 from core.logging_setup import setup_logging  # noqa: E402
@@ -92,6 +93,9 @@ def gem_rows(gem: SkillGem, repo: PoBRepo, priority: int) -> tuple[tuple, list[t
             lv.attack_speed_multiplier,
             lv.reservation_percent,
             lv.reservation_flat,
+            lv.base_damage_min,
+            lv.base_damage_max,
+            lv.damage_type,
             lv.damage_effectiveness,
         )
         for lv in gem.levels
@@ -145,6 +149,9 @@ def to_entity(gem: SkillGem, repo: PoBRepo, priority: int) -> Entity:
                     "attack_speed_multiplier": lv.attack_speed_multiplier,
                     "reservation_percent": lv.reservation_percent,
                     "reservation_flat": lv.reservation_flat,
+                    "base_damage_min": lv.base_damage_min,
+                    "base_damage_max": lv.base_damage_max,
+                    "damage_type": lv.damage_type,
                     # 卡片刻意不渲染它（见 render_skills 模块说明），
                     # 但结构化字段留着——工具要按等级给完整数据
                     "damage_effectiveness": lv.damage_effectiveness,
@@ -206,8 +213,9 @@ def replace_snapshot(
         INSERT INTO pob_skill_level(
             gem_id,gem_level,level_requirement,cost,cooldown,stored_uses,crit_chance,
             mana_multiplier,attack_speed_multiplier,reservation_percent,
-            reservation_flat,damage_effectiveness
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+            reservation_flat,base_damage_min,base_damage_max,damage_type,
+            damage_effectiveness
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """,
         levels,
     )
@@ -290,6 +298,8 @@ def main() -> int:
     args = parser.parse_args()
     cfg = get_config()
     setup_logging(cfg.logs_dir, "WARNING")
+    # 先开库：基础伤害要从常量表取两个 gameConstants（见下）
+    dbmod.init_db(cfg.db_path, vector_dim=int(cfg.get("retrieval.vector.dim", 0) or 0))
 
     fetcher = None
     if args.fetch:
@@ -306,7 +316,22 @@ def main() -> int:
         if not repo.reproducible or len(repo.commit) != 40:
             raise GemStructureError("PoB commit 未钉住，拒绝导入不可复现引用")
         started = time.monotonic()
-        gems, skipped = extract_gems(repo.root, _poedb_html(fetcher=fetcher))
+        # 基础伤害要两个 gameConstants；常量表还没导入时就不算那三列（留 NULL），
+        # 而不是拿默认值凑一个数字出来
+        try:
+            game_constants = {
+                "base": constants.get("gameConstants.SkillDamageBaseEffectiveness"),
+                "incremental": constants.get(
+                    "gameConstants.SkillDamageIncrementalEffectiveness"
+                ),
+            }
+        except constants.MissingConstant:
+            game_constants = None
+            print("  [提示] 常量表缺 SkillDamage*Effectiveness，基础伤害三列将留空"
+                  "（先跑 scripts/import_pob_constants.py）")
+        gems, skipped = extract_gems(
+            repo.root, _poedb_html(fetcher=fetcher), game_constants=game_constants
+        )
         elapsed_ms = int((time.monotonic() - started) * 1000)
     except (PoBNotFound, GemStructureError, OSError) as exc:
         print(f"[中止] {exc}")
@@ -328,7 +353,6 @@ def main() -> int:
         print("（--dry-run，未写库）")
         return 0
 
-    dbmod.init_db(cfg.db_path, vector_dim=int(cfg.get("retrieval.vector.dim", 0) or 0))
     conn = dbmod.get_conn()
     priority = repo.priority(cfg)
     entities = [to_entity(gem, repo, priority) for gem in gems]

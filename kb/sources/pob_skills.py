@@ -55,6 +55,7 @@ from urllib.parse import unquote
 
 from selectolax.parser import HTMLParser
 
+from calc import skill_damage
 from kb.sources.pob_lua import LuaOpaque, load_lua_file, parse_assignments, parse_return_table
 
 #: POEDB 清单页。**只需要这一页**：实测 861 条已完整覆盖 `Skill_Gems`（554）与
@@ -147,6 +148,10 @@ class GemLevel:
     attack_speed_multiplier: float | None = None
     reservation_percent: float | None = None
     reservation_flat: float | None = None
+    #: 按 effectiveness 公式算出来的**显示值**（判据见 `calc/skill_damage.py`）
+    base_damage_min: float | None = None
+    base_damage_max: float | None = None
+    damage_type: str | None = None
     damage_effectiveness: float | None = None
 
 
@@ -207,7 +212,8 @@ class SkillGem:
                     lv.gem_level, lv.level_requirement, sorted(lv.cost.items()),
                     lv.cooldown, lv.stored_uses, lv.crit_chance, lv.mana_multiplier,
                     lv.attack_speed_multiplier, lv.reservation_percent,
-                    lv.reservation_flat,
+                    lv.reservation_flat, lv.base_damage_min, lv.base_damage_max,
+                    lv.damage_type,
                     lv.damage_effectiveness,
                 ]
                 for lv in self.levels
@@ -414,9 +420,60 @@ def _level_costs(raw: Any, divisors: dict[str, float], *, path: str) -> dict[str
     return out
 
 
+def _damage_ctx(skill: dict, game_constants: dict[str, float] | None) -> dict[str, Any] | None:
+    """从 granted effect 里凑出算伤害要的那几项。缺 `stats` 或常量就返回 None。"""
+    stats = skill.get("stats")
+    if not game_constants or not isinstance(stats, dict):
+        return None
+    return {
+        "stat_names": {i: str(n) for i, n in stats.items() if isinstance(i, int)},
+        "base_effectiveness": float(skill.get("baseEffectiveness") or 1),
+        "incremental_effectiveness": float(skill.get("incrementalEffectiveness") or 0),
+        "game_base": game_constants["base"],
+        "game_incremental": game_constants["incremental"],
+    }
+
+
+def _damage_fields(row: dict, ctx: dict[str, Any] | None) -> dict[str, Any]:
+    """按 effectiveness 公式算这一级的基础伤害。算不出来就三项全 None。
+
+    公式与两个坑（同名 stat 累加、先 round 再相加）都在 `calc/skill_damage.py`，
+    这里只调用——`scripts/verify_gem_damage.py` 对账的正是那一份代码。
+    """
+    empty = {"base_damage_min": None, "base_damage_max": None, "damage_type": None}
+    if not ctx:
+        return empty
+    interp = row.get("statInterpolation")
+    if not isinstance(interp, dict):
+        return empty
+    result = skill_damage.base_damage(
+        ctx["stat_names"],
+        {k: v for k, v in row.items() if isinstance(k, int) and isinstance(v, (int, float))},
+        {k: v for k, v in interp.items() if isinstance(k, int)},
+        actor_level=int(row.get("levelRequirement") or 1),
+        base_effectiveness=ctx["base_effectiveness"],
+        incremental_effectiveness=ctx["incremental_effectiveness"],
+        game_base=ctx["game_base"],
+        game_incremental=ctx["game_incremental"],
+    )
+    if result is None:
+        return empty
+    return {
+        "base_damage_min": float(result.minimum),
+        "base_damage_max": float(result.maximum),
+        "damage_type": result.damage_type,
+    }
+
+
 def _extract_levels(
-    raw_levels: Any, divisors: dict[str, float], *, gem_key: str
+    raw_levels: Any,
+    divisors: dict[str, float],
+    *,
+    gem_key: str,
+    damage_ctx: dict[str, Any] | None = None,
 ) -> tuple[GemLevel, ...]:
+    """`damage_ctx` 给基础伤害用：stat 名、两个宝石系数与两个 gameConstants。
+    缺任何一项就不算伤害（那三列留 NULL），**不猜**。"""
     if not isinstance(raw_levels, dict) or not raw_levels:
         raise GemStructureError(f"{gem_key} 没有 levels 表")
     out: list[GemLevel] = []
@@ -447,6 +504,7 @@ def _extract_levels(
                 damage_effectiveness=_number(
                     row.get("damageEffectiveness"), path=f"{path}.damageEffectiveness"
                 ),
+                **_damage_fields(row, damage_ctx),
             )
         )
     if not out:
@@ -493,9 +551,12 @@ def load_pob_gems(pob_root: Path) -> tuple[dict[str, dict[str, Any]], dict[str, 
 
 
 def extract_gems(
-    pob_root: Path, poedb_html: str
+    pob_root: Path, poedb_html: str, *, game_constants: dict[str, float] | None = None
 ) -> tuple[list[SkillGem], list[SkippedGem]]:
     """抽取宝石并与 POEDB 中文名逐条桥接。返回 ``(入库条目, 跳过条目)``。
+
+    `game_constants` 给基础伤害用（`{"base":…, "incremental":…}`，取自常量表）。
+    不给就不算伤害——那三列留 NULL，而不是拿一个默认值凑出数字。
 
     桥不上**不抛异常**：POEDB 保留了 PoB 已经不发的历史条目，整批拒绝会让 94% 的
     可用数据一起进不来。但跳过的必须逐条带原因返回，由调用方登记进缺口台账。
@@ -576,7 +637,10 @@ def extract_gems(
                 is_transfigured=bool(_TRANSFIGURED_RE.search(granted)),
                 description_en=description,
                 source_file=str(skill.get("__source_file") or ""),
-                levels=_extract_levels(skill.get("levels"), divisors, gem_key=granted),
+                levels=_extract_levels(
+                    skill.get("levels"), divisors, gem_key=granted,
+                    damage_ctx=_damage_ctx(skill, game_constants),
+                ),
             )
         )
         matched_meta.add(granted.lower())
