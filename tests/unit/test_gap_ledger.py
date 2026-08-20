@@ -33,8 +33,10 @@ CREATE TABLE knowledge_gap (
 );
 """
 
+#: 现行结构：`kind`（第十一轮补）+ `source`（第三十轮补）。
+#: 两个 schema 并存是为了钉住**迁移**——旧库不能因为少列就写不进台账。
 _NEW_SCHEMA = _OLD_SCHEMA.replace(
-    "guessed_category TEXT,", "guessed_category TEXT,\n    kind TEXT,"
+    "guessed_category TEXT,", "guessed_category TEXT,\n    kind TEXT,\n    source TEXT,"
 )
 
 
@@ -184,6 +186,114 @@ class RecordGapsKindTest(unittest.TestCase):
         rows = list(self.conn.execute("SELECT hit_count FROM knowledge_gap"))
         self.assertEqual(1, len(rows))
         self.assertEqual(3, rows[0]["hit_count"])
+
+
+
+
+class PriorityIsNotContaminatedTest(unittest.TestCase):
+    """采集优先级要排除两类噪声（2026-08-20 第三十轮）。
+
+    实测：台账按 `hit_count` 排序的前两名是
+
+        20 次  流放之路2 的升华机制是什么          → 永久越界，没有待办
+        14 次  请你猜一下下个赛季会加什么新机制    → 本来就该拒答
+
+    两条都来自黄金问答集（评测每跑一次加一次），而且第一条还被归到了
+    `not_recalled/ascendancy`——照着它去补升华数据是纯浪费。
+    需求 2.12 说「按频次排序即采集优先级」，那这张表必须先能分清
+    **评测流量 vs 真实流量**、**该采集 vs 永不采集**。
+    """
+
+    def setUp(self) -> None:
+        self.conn = _conn(_NEW_SCHEMA)
+        # `_record_gaps` 用 `ON CONFLICT(question, missing_point)`，没有这个唯一索引
+        # 就会抛「no matching constraint」并被那层 except 吞掉（一行都写不进去）
+        self.conn.execute(
+            "CREATE UNIQUE INDEX idx_gap_unique ON knowledge_gap(question, missing_point)"
+        )
+        self.patch = patch.object(dbmod, "get_conn", return_value=self.conn)
+        self.patch.start()
+        looplib.GAP_SOURCE.set("chat")
+
+    def tearDown(self) -> None:
+        self.patch.stop()
+        looplib.GAP_SOURCE.set("chat")
+        self.conn.close()
+
+    def _priority(self) -> list[sqlite3.Row]:
+        from core.db import COLLECTION_GAP_KINDS
+
+        marks = ",".join("?" for _ in COLLECTION_GAP_KINDS)
+        return self.conn.execute(
+            f"SELECT question, kind, source FROM knowledge_gap "  # noqa: S608
+            f"WHERE COALESCE(kind,'retrieval_gap') IN ({marks}) "
+            "AND COALESCE(source,'chat') <> 'eval' ORDER BY hit_count DESC",
+            COLLECTION_GAP_KINDS,
+        ).fetchall()
+
+    def test_poe2越界不进采集优先级(self) -> None:
+        looplib._record_gaps(  # noqa: SLF001
+            "流放之路2 的升华机制是什么", ["越界：《流放之路 2》问题"],
+            category="out_of_scope/poe2", kind="out_of_scope",
+        )
+        row = self.conn.execute("SELECT kind FROM knowledge_gap").fetchone()
+        self.assertEqual("out_of_scope", row["kind"])
+        self.assertEqual([], self._priority())
+
+    def test_评测流量不进采集优先级(self) -> None:
+        looplib.GAP_SOURCE.set("eval")
+        looplib._record_gaps("黄金集里的问题", ["缺据"], kind="retrieval_gap")  # noqa: SLF001
+        self.assertEqual("eval", self.conn.execute(
+            "SELECT source FROM knowledge_gap").fetchone()["source"])
+        self.assertEqual([], self._priority())
+
+    def test_真实流量的缺口照旧进优先级(self) -> None:
+        """成对点：排除噪声不能把真实需求一起排掉。"""
+        looplib._record_gaps("某个真实问题", ["缺据"], kind="retrieval_gap")  # noqa: SLF001
+        self.assertEqual(["某个真实问题"], [r["question"] for r in self._priority()])
+
+    def test_导入脚本写的ingest_gap也算待办(self) -> None:
+        """它在用、却一直没在 `/admin/stats` 的优先级视图里露出来，
+        而「这 51 条 POEDB 有而 PoB 没有」恰恰是最可执行的一类。"""
+        from core.db import COLLECTION_GAP_KINDS
+
+        self.assertIn("ingest_gap", COLLECTION_GAP_KINDS)
+        looplib._record_gaps("底材清单", ["未桥接 7 条"], kind="ingest_gap")  # noqa: SLF001
+        self.assertEqual(["底材清单"], [r["question"] for r in self._priority()])
+
+    def test_同一问题既被评测又被真实问过时按真实记(self) -> None:
+        """宁可高估真实需求，也不要把它藏进 eval。"""
+        looplib.GAP_SOURCE.set("eval")
+        looplib._record_gaps("两边都问过", ["缺据"], kind="retrieval_gap")  # noqa: SLF001
+        looplib.GAP_SOURCE.set("chat")
+        looplib._record_gaps("两边都问过", ["缺据"], kind="retrieval_gap")  # noqa: SLF001
+        row = self.conn.execute("SELECT source, hit_count FROM knowledge_gap").fetchone()
+        self.assertEqual(("chat", 2), (row["source"], row["hit_count"]))
+
+
+class GapSourceMigrationTest(unittest.TestCase):
+    """迁移只重新归类、不删行——台账是审计记录。"""
+
+    def test_迁移把poe2条目移出优先级并标记评测流量(self) -> None:
+        from core.db import _migrate_gap_source  # noqa: PLC0415
+
+        conn = _conn(_OLD_SCHEMA.replace(
+            "guessed_category TEXT,", "guessed_category TEXT,\n    kind TEXT,"
+        ))
+        _insert(conn, "流放之路2 的升华机制是什么", "缺据",
+                category="not_recalled/ascendancy", hit_count=20)
+        _insert(conn, "某个真实问题", "缺据", hit_count=1)
+        conn.execute("UPDATE knowledge_gap SET kind='retrieval_gap'")
+        _migrate_gap_source(conn)
+        rows = {
+            r["question"]: (r["kind"], r["source"])
+            for r in conn.execute("SELECT question, kind, source FROM knowledge_gap")
+        }
+        self.assertEqual("out_of_scope", rows["流放之路2 的升华机制是什么"][0])
+        self.assertEqual(("retrieval_gap", "chat"), rows["某个真实问题"])
+        self.assertEqual(2, conn.execute(
+            "SELECT count(*) FROM knowledge_gap").fetchone()[0], "不许删行")
+        conn.close()
 
 
 if __name__ == "__main__":

@@ -28,15 +28,35 @@ def stats() -> dict[str, Any]:
     # 采集优先级只看 retrieval_gap 与 tool_gap。出口闸门的拦截（binding_block）
     # 是闸门行为的观测量，混进这张表会让频次排序失真：一次回答里被拦的每句话
     # 都会占一行，而它们大多不是「该去采集什么」。
+    # 采集优先级排除两类噪声（第三十轮实测，台账 93% 是评测流量）：
+    #   source='eval'  评测把同一批问题反复跑，hit_count 量的是「跑了几次」
+    #   kind='out_of_scope'  POE2 永远不会被采集，它没有待办
+    # `ingest_gap` 反过来要**加进来**：它在用、却一直没在这张视图里露出来，
+    # 而「这 51 条 POEDB 有而 PoB 没有」恰恰是最可执行的一类。
     gaps = [
         dict(r)
         for r in conn.execute(
-            "SELECT gap_id, question, missing_point, guessed_category, kind, hit_count, "
-            "first_seen, last_seen FROM knowledge_gap "
-            "WHERE COALESCE(kind,'retrieval_gap') IN ('retrieval_gap','tool_gap') "
+            "SELECT gap_id, question, missing_point, guessed_category, kind, "
+            "COALESCE(source,'chat') AS source, hit_count, first_seen, last_seen "
+            "FROM knowledge_gap "
+            "WHERE COALESCE(kind,'retrieval_gap') IN ('retrieval_gap','tool_gap','ingest_gap') "
+            "AND COALESCE(source,'chat') <> 'eval' "
             "ORDER BY hit_count DESC LIMIT 50"
         )
     ]
+    #: 被排除掉的条目数——藏起来就等于又给自己一个失真的信号
+    excluded = {
+        str(r["why"]): r["n"]
+        for r in conn.execute(
+            "SELECT CASE WHEN COALESCE(kind,'retrieval_gap')='out_of_scope' "
+            "THEN 'out_of_scope' ELSE 'eval_traffic' END AS why, count(*) AS n "
+            "FROM knowledge_gap "
+            "WHERE COALESCE(kind,'retrieval_gap') IN "
+            "('retrieval_gap','tool_gap','ingest_gap','out_of_scope') "
+            "AND (COALESCE(source,'chat')='eval' "
+            "OR COALESCE(kind,'retrieval_gap')='out_of_scope') GROUP BY 1"
+        )
+    }
     by_kind = {
         str(r["kind"] or "retrieval_gap"): r["n"]
         for r in conn.execute(
@@ -59,8 +79,10 @@ def stats() -> dict[str, Any]:
     return {
         "tables": sizes,
         "ingest_runs": runs,
-        #: 采集优先级：按频次排序即下一步该补哪类数据
+        #: 采集优先级：按频次排序即下一步该补哪类数据（已排除评测流量与永久越界）
         "knowledge_gaps": gaps,
+        #: 从优先级里排除掉的条目数，按原因分。不列出来就等于换一个失真信号
+        "gaps_excluded": excluded,
         #: 台账各来源的条目数。`binding_block_legacy` 是迁移前混入的闸门噪声
         "gap_counts_by_kind": by_kind,
         #: 出口闸门拦下的无据断言，按归一化后的句子聚合。这是闸门观测量，不是采集待办
