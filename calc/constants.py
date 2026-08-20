@@ -73,6 +73,19 @@ ES_RECHARGE_BASE = "pobMisc.EnergyShieldRechargeBase"
 ES_RECHARGE_DELAY = "pobMisc.EnergyShieldRechargeDelay"
 LEECH_RATE_BASE = "pobMisc.LeechRateBase"
 
+#: 持续伤害（点燃 / 中毒 / 流血）。**单位不统一**：`BLEED_PERCENT` 是百分数 70，
+#: `POISON_PERCENT` 0.30 与 `IGNITE_PERCENT` 0.9 是小数——上游就是这么写的，
+#: PoB 对流血除 100、对另两个不除。`calc/ailment.py` 逐个按上游口径处理。
+#: 三者都是「每秒占这一击伤害的比例」，不是「总共」。
+BLEED_PERCENT = "pobMisc.BleedPercentBase"
+BLEED_DURATION = "pobMisc.BleedDurationBase"
+POISON_PERCENT = "pobMisc.PoisonPercentBase"
+POISON_DURATION = "pobMisc.PoisonDurationBase"
+IGNITE_PERCENT = "pobMisc.IgnitePercentBase"
+IGNITE_DURATION = "pobMisc.IgniteDurationBase"
+#: 持续伤害每秒上限 =(2^31 − 1)/ 60，PoB 的注释就写着这个来历。
+DOT_DPS_CAP = "pobMisc.DotDpsCap"
+
 #: 偷取的两类上限：**速率**（每秒最多回复池的百分之几）与**单次实例**
 #: （一次偷取最多回复池的百分之几）。三种池各一套，值不同——合并成一个数就是错。
 MAX_LIFE_LEECH_RATE = "characterConstants.maximum_life_leech_rate_%_per_minute"
@@ -89,6 +102,8 @@ MAX_ES_LEECH_INSTANCE = (
 )
 
 ES_RATIO_OF_LIFE = "gameConstants.EnergyShieldRatioOfLife"
+#: 怪物侧的物理减伤上限（75%）。流血这类物理持续伤害只被它削——护甲不参与。
+MONSTER_MAX_PHYS_DR = "monsterConstants.maximum_physical_damage_reduction_%"
 MONSTER_DR_IMPROVEMENT = "gameConstants.MonsterDamageReductionImprovement"
 MONSTER_ACCURACY_IMPROVEMENT = "gameConstants.MonsterAccuracyImprovement"
 MONSTER_EVASION_IMPROVEMENT = "gameConstants.MonsterEvasionImprovement"
@@ -109,6 +124,8 @@ REQUIRED = (
     MAX_RESIST_CAP, RESIST_FLOOR,
     EVADE_CHANCE_CAP, BLOCK_CHANCE_CAP, SUPPRESSION_CHANCE_CAP, SUPPRESSION_EFFECT,
     ES_RECHARGE_BASE, ES_RECHARGE_DELAY, LEECH_RATE_BASE,
+    BLEED_PERCENT, BLEED_DURATION, POISON_PERCENT, POISON_DURATION,
+    IGNITE_PERCENT, IGNITE_DURATION, DOT_DPS_CAP, MONSTER_MAX_PHYS_DR,
     MAX_LIFE_LEECH_RATE, MAX_MANA_LEECH_RATE, MAX_ES_LEECH_RATE,
     MAX_LIFE_LEECH_INSTANCE, MAX_MANA_LEECH_INSTANCE, MAX_ES_LEECH_INSTANCE,
     ES_RATIO_OF_LIFE, MONSTER_DR_IMPROVEMENT,

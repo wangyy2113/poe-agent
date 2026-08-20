@@ -776,7 +776,10 @@ _ENUMERATION_INTENTS = (
 #: 写成集合而不是在词表里逐个绕开裸属性名：后者要为每个新词想一遍「它是不是属性名」，
 #: 想漏一个就是一条被抢走的枚举题。
 _YIELDS_TO_ENUMERATION = frozenset(
-    {"resistance_calc", "mitigation_calc", "recovery_calc", "reservation_calc"}
+    {
+        "resistance_calc", "mitigation_calc", "recovery_calc", "reservation_calc",
+        "ailment_dot_calc",
+    }
 )
 
 
@@ -843,6 +846,13 @@ _PREFERRED_TOOL_INTENTS: tuple[tuple[str, tuple[str, ...]], ...] = (
         # 「地图 -60% 元素抗性之后我还剩多少火抗」从抗性计算器抢走
         # （现有成对用例当场拦下）。带光环名的那类问法由数字通道兜。
     )),
+    # 持续伤害：点燃 / 中毒 / 流血的每秒与总伤害。判据要**同时**看异常名与「算」的问法——
+    # 裸的「点燃」会把「哪些词缀能点燃」「点燃能从哪来」抢过来（后者已由让路规则兜）。
+    ("ailment_dot_calc", (
+        "点燃伤害", "点燃打多少", "点燃每秒", "点燃持续", "中毒伤害", "中毒每秒",
+        "中毒持续", "中毒叠加", "流血伤害", "流血每秒", "流血持续",
+        "持续伤害怎么算", "灼烧伤害", "叠几层", "叠加上限",
+    )),
     # 「某属性能从哪来」是枚举问题：不完整的枚举被当成完整的呈现就是错误答案
     ("stat_sources", _ENUMERATION_INTENTS),
     # 关于知识库**覆盖范围**自身的元问题，答案不在 chunk 里。
@@ -882,6 +892,9 @@ _RESIST_NUMBER_RE = re.compile(r"[-+]?\d")
 _MITIGATION_WORDS = ("护甲", "闪避", "格挡", "法术压制")
 #: 回复侧的数字通道。「护盾」不收——它同时是底材属性名（「哪些底材护盾最高」）。
 _RECOVERY_WORDS = ("回充", "偷取", "魔力再生", "回满", "每秒再生", "每秒回")
+#: 持续伤害的数字通道：「一击 10000 火焰伤害点燃打多少」这类问法。
+#: 与保留同一条纪律——异常名 + 数字 + 「算」的信号。
+_AILMENT_WORDS = ("点燃", "中毒", "流血", "灼烧")
 #: 保留侧的数字通道：「4000 魔力开坚定和优雅」这种问法列不全意图词。
 #: 收「魔力」是因为保留题几乎总会提到它；真正的判据是**问题里有库里的技能名**。
 _RESERVATION_WORDS = ("保留", "光环", "魔力")
@@ -907,6 +920,11 @@ def _resistance_numeric_route(question: str) -> str:
         # 只有真的能从问题里认出**技能名**时才算保留题：否则「哪些词缀减少保留」
         # 这类枚举题会被抢走，而工具拿不到 auras 只能空手而归
         return "reservation_calc" if _reservation_args(question) else ""
+    if any(word in question for word in _AILMENT_WORDS) and any(
+        signal in question
+        for signal in ("打多少", "每秒", "多少伤害", "持续", "总共", "叠", "几层")
+    ):
+        return "ailment_dot_calc"
     return ""
 
 
@@ -1066,6 +1084,30 @@ def _recovery_args(question: str) -> dict[str, Any] | None:
     return args or None
 
 
+def _ailment_args(question: str) -> dict[str, Any] | None:
+    """`ailment_dot_calc` 的参数：认出异常名与「这一击的伤害」。
+
+    没有数字 → `{}`（讲规则）。有数字则只认与「伤害」紧邻的那个——
+    「点燃持续几秒」里的秒数不是伤害。
+    """
+    ailment = next((w for w in _AILMENT_WORDS if w in question), "")
+    if not _RESIST_NUMBER_RE.search(question):
+        return {"ailment": ailment} if ailment else {}
+    args: dict[str, Any] = {}
+    if ailment:
+        args["ailment"] = ailment
+    damage = _slot_values(question, ("伤害", "一击", "点火焰", "打了"))
+    if len(damage) > 1:
+        logger.info("ailment_dot_calc 的伤害抽到多个值 %s，交回模型自选", damage)
+        return None
+    if damage:
+        args["hit_damage"] = damage.pop()
+    stacks = _slot_values(question, ("层", "叠"))
+    if len(stacks) == 1:
+        args["stacks"] = int(stacks.pop())
+    return args or None
+
+
 def _reservation_args(question: str) -> dict[str, Any] | None:
     """`reservation_calc` 的参数：从问题里认出**库里有保留数据的技能名**与池大小。
 
@@ -1140,6 +1182,7 @@ _CODE_INVOKED_TOOLS: dict[str, Any] = {
     "resistance_calc": _resistance_args,
     "recovery_calc": _recovery_args,
     "reservation_calc": _reservation_args,
+    "ailment_dot_calc": _ailment_args,
 }
 
 #: 这些工具按设计**不产出引用**（覆盖声明是元信息不是游戏事实）。

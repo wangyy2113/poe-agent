@@ -119,7 +119,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 853 项，秒级
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 890 项，秒级
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选
@@ -136,7 +136,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 .venv/bin/python scripts/eval_run.py --record        # 重录真实响应（**要凭证、烧 token**）
 ```
 
-黄金问答集是 `tests/golden/questions.yaml`（99 条，六类），基线与全部结论在
+黄金问答集是 `tests/golden/questions.yaml`（102 条，六类），基线与全部结论在
 `tests/golden/BASELINE.md`——**动闸门前先读它**，里面记了多个已修缺陷与三条已知未修边界，
 以及两次「测量本身写错」的教训。
 
@@ -177,7 +177,7 @@ POST /chat[/stream]  api/chat.py（只做校验与编排调用）
 | `kb/` | `pipeline.py` 采集管线、`sources/` 各来源抽取器、`coverage.py` 知识库自描述层、`stat_channels.py` 属性来源渠道注册表、`render*.py` 卡片切片 |
 | `parsers/` | `item_text.py`（纯文本，不连库）→ `item_mods.py` T 级匹配 → `mod_bridge.py` 英文桥接 → `item_report.py` 报告 |
 | `craft/` | `feasibility.py` 词缀组合三态可行性、`pool.py` 胸甲普通词缀有效池与条件概率 |
-| `calc/` | `constants.py` 常量访问层，**缺失即抛异常，绝不给默认值**；`derive.py` 两个计算器共用的推导件（`Step` / 引用推导）；`resistance.py` 抗性结算；`mitigation.py` 受击结算（闪避/命中、格挡、法术压制、护甲）；`recovery.py` 回复（护盾回充、偷取、魔力再生）；`reservation.py` 保留（取整是难点）。暴击 / Max Hit / 持续伤害未实现 |
+| `calc/` | `constants.py` 常量访问层，**缺失即抛异常，绝不给默认值**；`derive.py` 两个计算器共用的推导件（`Step` / 引用推导）；`resistance.py` 抗性结算；`mitigation.py` 受击结算（闪避/命中、格挡、法术压制、护甲）；`recovery.py` 回复（护盾回充、偷取、魔力再生）；`reservation.py` 保留（取整是难点）；`ailment.py` 持续伤害。暴击 / Max Hit / 门槛型异常（感电、冰冻）未实现 |
 | `static/` | 单页前端三个文件，无构建步骤、无 Node、无第三方 JS（Markdown 渲染器自写，为了强制先转义再解析） |
 | `tests/golden/` | 评测资产：`questions.yaml` 黄金问答集、`loader.py` 严格校验、`recording.py` 录制回放、`recordings/` 真实响应、`audit.yaml` 人工结论、`BASELINE.md` 指标基线 |
 
@@ -195,6 +195,7 @@ POST /chat[/stream]  api/chat.py（只做校验与编排调用）
 `mitigation_calc`（受击前几段：闪避/命中、格挡上限、法术压制、护甲减伤）→
 `recovery_calc`（护盾回充 / 偷取两层上限 / 魔力再生）→
 `reservation_calc`（光环保留合计与剩余魔力，按名字查库）→
+`ailment_dot_calc`（点燃/中毒/流血：每秒 / 持续 / 总共 + 叠加与减伤口径）→
 `stat_sources`（某属性能从哪来）→
 `entity_lookup` → `kb_coverage` → `kb_search`（兜底）
 
@@ -221,7 +222,7 @@ POST /chat[/stream]  api/chat.py（只做校验与编排调用）
   会以为它待填，然后把乘数当伤害写进去。这两维明确划进 `partial_note` 的未采集部分。
 
 本机 `data/poe.db` 现状（`GET /healthz` 与 `/admin/stats` 可查）：`entity` 5197、
-`mod_affix` 93897、`pob_mod` 25487、`chunk` 18447、`alias` 8106、`game_constant` 508、
+`mod_affix` 93897、`pob_mod` 25487、`chunk` 18447、`alias` 8106、`game_constant` 515、
 `craft_bench_recipe` 783、`pob_base_item` **1022**（18 个装备类别，PoB × POEDB 逐条桥接，
 覆盖 PoB 侧 96.1%；未桥接的 41 条已按类别登记在台账）、`source_conflict` **515**（`mod_review` 254 + `unique_review` 207 + `spectre_review` 43
 + `spectre` **8** + `tree_review` 3）。
@@ -360,6 +361,21 @@ Lua 后者覆盖前者，解析器同样取后者——**行号锚点也因此�
 我们复算的是 PoB，就照它取 0.33，但**把这条差异写进证据**，
 不让用户以为 33% 是游戏的精确值。这类「同一个数两处不一致」要证明而不是相信
 （判据在 `tests/unit/test_recovery.py`）。
+
+`pobMisc` 组现有 **16** 条（第二十五轮加了点燃/中毒/流血的百分比与持续、`DotDpsCap`）。
+持续伤害计算器（`calc/ailment.py` + `ailment_dot_calc`）有两条实测出来的坑：
+
+- **百分比是「每秒」不是「总共」**：点燃每秒 90% 火焰伤害、持续 4 秒 ⇒ 总共 **360%**。
+  这个口径的出处是 PoB 自己的说明字符串（`x 0.9 (ignite deals 90% per second)`，
+  `CalcOffence.lua:5045`），单测把那句原文钉住了。记成「总共 90%」结论差 4 倍。
+- **上游单位不统一**：`BleedPercentBase = 70`（百分数），而 `PoisonPercentBase = 0.30`、
+  `IgnitePercentBase = 0.9`（小数）——PoB 对流血 `/ 100`、对另两个不除。
+  照抄成同一种单位会差 100 倍。三条各自钉住。
+
+另外三条容易记错的都写进证据：**中毒没有层数上限**（点燃与流血默认 1 层，
+`CalcSetup.lua:50` 的 `BleedStacksMax` 基础值就是 1）；**流血不吃护甲**
+（物理持续伤害只被物理伤害减免削，上限 75%，护甲只作用于击中——PoB 流血那段
+`effMult` 里完全没有 Armour）；**感电与冰冻是门槛型异常**、公式不同，工具直接拒绝而不硬算。
 
 一处数据缺口会直接影响判断：
 

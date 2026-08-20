@@ -31,6 +31,7 @@ ALLOWED_TOOLS = [
     "mitigation_calc",  # 精确：受击前几段——闪避/命中、格挡上限、法术压制、护甲减伤
     "recovery_calc",  # 精确：护盾回充 / 偷取两层上限 / 魔力再生
     "reservation_calc",  # 精确：光环保留合计与剩余魔力（按名字查库 + PoB 取整）
+    "ailment_dot_calc",  # 精确：点燃/中毒/流血的每秒与总伤害（每秒口径 + 叠加规则）
     "stat_sources",   # 精确：某属性能从哪些渠道获得（逐渠道 + 未采集声明）
     "entity_lookup",  # 精确：按名查实体
     "kb_coverage",    # 元信息：本库覆盖了什么

@@ -221,7 +221,10 @@ DOMAINS: tuple[DomainSpec, ...] = (
         authority_url="https://github.com/PathOfBuildingCommunity/PathOfBuilding",
         count_sql="SELECT count(*) FROM game_constant",
         channel_sql="SELECT DISTINCT group_name FROM game_constant",
-        tools=("resistance_calc", "mitigation_calc", "recovery_calc"),
+        tools=(
+            "resistance_calc", "mitigation_calc", "recovery_calc",
+            "reservation_calc", "ailment_dot_calc",
+        ),
         hints=("抗性上限", "减伤上限", "格挡上限", "怪物生命", "常量"),
         question_hints=(
             "抗性 / 物理减伤 / 格挡的上限是多少",
@@ -229,6 +232,7 @@ DOMAINS: tuple[DomainSpec, ...] = (
             "抗性怎么算、超抗有什么用、地图减抗之后还剩多少",
             "护甲能减多少伤害、多少闪避躲得开某等级怪物、格挡上限与法术压制",
             "护盾多久回满、偷取的速率与单次上限、魔力再生每秒多少",
+            "开几个光环还剩多少魔力、点燃/中毒/流血每秒打多少",
         ),
         # `Modules/Data.lua` 是 PoB 自己的 magic numbers 表，按白名单取（当前只取
         # 抗性上下限两项）——判据见 `kb/sources/pob_misc.MODULE_MISC_WHITELIST`
@@ -237,7 +241,7 @@ DOMAINS: tuple[DomainSpec, ...] = (
             "不含前后缀数量上限与影响力规则——Misc.lua 里没有，需另找来源；"
             "抗性、受击结算（闪避/命中、格挡、法术压制、护甲）与回复"
             "（护盾回充、偷取、魔力再生）已有计算器（复算 PoB 原式）；"
-            "暴击 / 保留 / Max Hit / 持续伤害等维度只有常量、还没有计算器"
+            "暴击 / Max Hit / 感电与冰冻（门槛型异常）等维度只有常量、还没有计算器"
         ),
     ),
     DomainSpec(

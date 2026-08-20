@@ -1,6 +1,7 @@
 """工具实现。导入本包即完成注册（副作用在各模块的装饰器里）。"""
 from __future__ import annotations
 
+from tools.impl import ailments as _ailments  # noqa: F401  注册副作用
 from tools.impl import bench as _bench  # noqa: F401  注册副作用
 from tools.impl import craft as _craft  # noqa: F401  注册副作用
 from tools.impl import cluster as _cluster  # noqa: F401  注册副作用
@@ -15,4 +16,4 @@ from tools.impl import passives as _passives  # noqa: F401  注册副作用
 from tools.impl import recovery as _recovery  # noqa: F401  注册副作用
 from tools.impl import reservation as _reservation  # noqa: F401  注册副作用
 
-__all__ = ["_bench", "_craft", "_craft_pool", "_defence", "_gems", "_kb_search", "_cluster", "_metamods", "_monsters", "_mods", "_passives", "_recovery", "_reservation"]
+__all__ = ["_ailments", "_bench", "_craft", "_craft_pool", "_defence", "_gems", "_kb_search", "_cluster", "_metamods", "_monsters", "_mods", "_passives", "_recovery", "_reservation"]
