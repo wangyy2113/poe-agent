@@ -13,7 +13,8 @@ from tools.impl import metamods as _metamods  # noqa: F401  注册副作用
 from tools.impl import monsters as _monsters  # noqa: F401  注册副作用
 from tools.impl import mods as _mods  # noqa: F401  注册副作用
 from tools.impl import passives as _passives  # noqa: F401  注册副作用
+from tools.impl import thresholds as _thresholds  # noqa: F401  注册副作用
 from tools.impl import recovery as _recovery  # noqa: F401  注册副作用
 from tools.impl import reservation as _reservation  # noqa: F401  注册副作用
 
-__all__ = ["_ailments", "_bench", "_craft", "_craft_pool", "_defence", "_gems", "_kb_search", "_cluster", "_metamods", "_monsters", "_mods", "_passives", "_recovery", "_reservation"]
+__all__ = ["_ailments", "_bench", "_craft", "_craft_pool", "_defence", "_gems", "_kb_search", "_cluster", "_metamods", "_monsters", "_mods", "_passives", "_recovery", "_reservation", "_thresholds"]

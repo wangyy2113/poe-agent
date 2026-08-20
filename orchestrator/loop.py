@@ -778,7 +778,7 @@ _ENUMERATION_INTENTS = (
 _YIELDS_TO_ENUMERATION = frozenset(
     {
         "resistance_calc", "mitigation_calc", "recovery_calc", "reservation_calc",
-        "ailment_dot_calc",
+        "ailment_dot_calc", "ailment_threshold_calc",
     }
 )
 
@@ -853,6 +853,13 @@ _PREFERRED_TOOL_INTENTS: tuple[tuple[str, tuple[str, ...]], ...] = (
         "中毒持续", "中毒叠加", "流血伤害", "流血每秒", "流血持续",
         "持续伤害怎么算", "灼烧伤害", "叠几层", "叠加上限",
     )),
+    # 门槛型异常（感电/冰缓/焦灼/脆弱/干枯）：强度取决于伤害 ÷ 异常门槛。
+    # 判据要专指**强度/门槛**，裸的「感电」会把「哪些词缀能感电」抢过来。
+    ("ailment_threshold_calc", (
+        "感电多少", "感电上限", "感电强度", "能感电", "异常门槛", "冰缓多少",
+        "冰缓上限", "冰缓强度", "焦灼多少", "脆弱多少", "干枯多少",
+        "冻住", "冰冻门槛", "多少伤害能冻",
+    )),
     # 「某属性能从哪来」是枚举问题：不完整的枚举被当成完整的呈现就是错误答案
     ("stat_sources", _ENUMERATION_INTENTS),
     # 关于知识库**覆盖范围**自身的元问题，答案不在 chunk 里。
@@ -895,6 +902,9 @@ _RECOVERY_WORDS = ("回充", "偷取", "魔力再生", "回满", "每秒再生",
 #: 持续伤害的数字通道：「一击 10000 火焰伤害点燃打多少」这类问法。
 #: 与保留同一条纪律——异常名 + 数字 + 「算」的信号。
 _AILMENT_WORDS = ("点燃", "中毒", "流血", "灼烧")
+#: 门槛型异常的数字通道。与伤害性异常分开——两者公式完全不同，
+#: 混在一起就会用「每秒百分比」去答「强度」那类问题。
+_THRESHOLD_AILMENT_WORDS = ("感电", "冰缓", "冰冻", "焦灼", "脆弱", "干枯")
 #: 保留侧的数字通道：「4000 魔力开坚定和优雅」这种问法列不全意图词。
 #: 收「魔力」是因为保留题几乎总会提到它；真正的判据是**问题里有库里的技能名**。
 _RESERVATION_WORDS = ("保留", "光环", "魔力")
@@ -925,6 +935,10 @@ def _resistance_numeric_route(question: str) -> str:
         for signal in ("打多少", "每秒", "多少伤害", "持续", "总共", "叠", "几层")
     ):
         return "ailment_dot_calc"
+    if any(word in question for word in _THRESHOLD_AILMENT_WORDS) and any(
+        signal in question for signal in ("多少", "强度", "门槛", "上限", "冻住")
+    ):
+        return "ailment_threshold_calc"
     return ""
 
 
@@ -1108,6 +1122,31 @@ def _ailment_args(question: str) -> dict[str, Any] | None:
     return args or None
 
 
+def _threshold_args(question: str) -> dict[str, Any] | None:
+    """`ailment_threshold_calc` 的参数：异常名、这一击的伤害、目标等级与是否头目。
+
+    **不替用户假定等级**：问题没说打谁就不填 `monster_level`，工具会说清缺什么。
+    「头目 / boss / 守护者」这类词出现才算头目。
+    """
+    ailment = next((w for w in _THRESHOLD_AILMENT_WORDS if w in question), "")
+    if not ailment:
+        return None
+    args: dict[str, Any] = {"ailment": ailment}
+    if any(word in question for word in ("头目", "boss", "BOSS", "Boss", "守护者", "终局")):
+        args["is_boss"] = True
+    if not _RESIST_NUMBER_RE.search(question):
+        return args
+    damage = _slot_values(question, ("伤害", "一击", "打了"))
+    if len(damage) > 1:
+        return None
+    if damage:
+        args["hit_damage"] = damage.pop()
+    levels = _slot_values(question, ("级怪物", "级的怪物", "级头目", "级 boss", "级"))
+    if len(levels) == 1:
+        args["monster_level"] = int(levels.pop())
+    return args
+
+
 def _reservation_args(question: str) -> dict[str, Any] | None:
     """`reservation_calc` 的参数：从问题里认出**库里有保留数据的技能名**与池大小。
 
@@ -1183,6 +1222,7 @@ _CODE_INVOKED_TOOLS: dict[str, Any] = {
     "recovery_calc": _recovery_args,
     "reservation_calc": _reservation_args,
     "ailment_dot_calc": _ailment_args,
+    "ailment_threshold_calc": _threshold_args,
 }
 
 #: 这些工具按设计**不产出引用**（覆盖声明是元信息不是游戏事实）。

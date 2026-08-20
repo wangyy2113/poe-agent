@@ -119,7 +119,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 890 项，秒级
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 934 项，秒级
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选
@@ -136,7 +136,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 .venv/bin/python scripts/eval_run.py --record        # 重录真实响应（**要凭证、烧 token**）
 ```
 
-黄金问答集是 `tests/golden/questions.yaml`（102 条，六类），基线与全部结论在
+黄金问答集是 `tests/golden/questions.yaml`（105 条，六类），基线与全部结论在
 `tests/golden/BASELINE.md`——**动闸门前先读它**，里面记了多个已修缺陷与三条已知未修边界，
 以及两次「测量本身写错」的教训。
 
@@ -177,7 +177,7 @@ POST /chat[/stream]  api/chat.py（只做校验与编排调用）
 | `kb/` | `pipeline.py` 采集管线、`sources/` 各来源抽取器、`coverage.py` 知识库自描述层、`stat_channels.py` 属性来源渠道注册表、`render*.py` 卡片切片 |
 | `parsers/` | `item_text.py`（纯文本，不连库）→ `item_mods.py` T 级匹配 → `mod_bridge.py` 英文桥接 → `item_report.py` 报告 |
 | `craft/` | `feasibility.py` 词缀组合三态可行性、`pool.py` 胸甲普通词缀有效池与条件概率 |
-| `calc/` | `constants.py` 常量访问层，**缺失即抛异常，绝不给默认值**；`derive.py` 两个计算器共用的推导件（`Step` / 引用推导）；`resistance.py` 抗性结算；`mitigation.py` 受击结算（闪避/命中、格挡、法术压制、护甲）；`recovery.py` 回复（护盾回充、偷取、魔力再生）；`reservation.py` 保留（取整是难点）；`ailment.py` 持续伤害。暴击 / Max Hit / 门槛型异常（感电、冰冻）未实现 |
+| `calc/` | `constants.py` 常量访问层，**缺失即抛异常，绝不给默认值**；`derive.py` 两个计算器共用的推导件（`Step` / 引用推导）；`resistance.py` 抗性结算；`mitigation.py` 受击结算（闪避/命中、格挡、法术压制、护甲）；`recovery.py` 回复（护盾回充、偷取、魔力再生）；`reservation.py` 保留（取整是难点）；`ailment.py` 持续伤害；`threshold.py` 门槛型异常。暴击 / Max Hit / 冰冻时长曲线未实现 |
 | `static/` | 单页前端三个文件，无构建步骤、无 Node、无第三方 JS（Markdown 渲染器自写，为了强制先转义再解析） |
 | `tests/golden/` | 评测资产：`questions.yaml` 黄金问答集、`loader.py` 严格校验、`recording.py` 录制回放、`recordings/` 真实响应、`audit.yaml` 人工结论、`BASELINE.md` 指标基线 |
 
@@ -196,6 +196,7 @@ POST /chat[/stream]  api/chat.py（只做校验与编排调用）
 `recovery_calc`（护盾回充 / 偷取两层上限 / 魔力再生）→
 `reservation_calc`（光环保留合计与剩余魔力，按名字查库）→
 `ailment_dot_calc`（点燃/中毒/流血：每秒 / 持续 / 总共 + 叠加与减伤口径）→
+`ailment_threshold_calc`（感电/冰缓等：伤害 ÷ 异常门槛 → 强度；含反问）→
 `stat_sources`（某属性能从哪来）→
 `entity_lookup` → `kb_coverage` → `kb_search`（兜底）
 
@@ -222,7 +223,7 @@ POST /chat[/stream]  api/chat.py（只做校验与编排调用）
   会以为它待填，然后把乘数当伤害写进去。这两维明确划进 `partial_note` 的未采集部分。
 
 本机 `data/poe.db` 现状（`GET /healthz` 与 `/admin/stats` 可查）：`entity` 5197、
-`mod_affix` 93897、`pob_mod` 25487、`chunk` 18447、`alias` 8106、`game_constant` 515、
+`mod_affix` 93897、`pob_mod` 25487、`chunk` 18447、`alias` 8106、`game_constant` 543、
 `craft_bench_recipe` 783、`pob_base_item` **1022**（18 个装备类别，PoB × POEDB 逐条桥接，
 覆盖 PoB 侧 96.1%；未桥接的 41 条已按类别登记在台账）、`source_conflict` **515**（`mod_review` 254 + `unique_review` 207 + `spectre_review` 43
 + `spectre` **8** + `tree_review` 3）。
@@ -376,6 +377,31 @@ Lua 后者覆盖前者，解析器同样取后者——**行号锚点也因此�
 `CalcSetup.lua:50` 的 `BleedStacksMax` 基础值就是 1）；**流血不吃护甲**
 （物理持续伤害只被物理伤害减免削，上限 75%，护甲只作用于击中——PoB 流血那段
 `effMult` 里完全没有 Armour）；**感电与冰冻是门槛型异常**、公式不同，工具直接拒绝而不硬算。
+
+门槛型异常（`calc/threshold.py` + `ailment_threshold_calc`）与持续伤害**不是一套公式**：
+强度 = 基数 ×(这一击的伤害 ÷ 目标异常门槛)^0.4，夹在各自上下限之间
+（感电 5–50%、冰缓 5–30%、焦灼 0–30%、脆弱 0–6%、干枯 0–20%，基数 50/50/50/10/33.3）。
+一条能记住的标尺：**比值为 1 时正好 50%**——要顶到感电上限，这一击得打出目标一整条门槛。
+
+- **门槛 = 等级表 ×（头目 7.68）×（66 级起的地图倍率）**。那个 7.68 是
+  `CalcOffence.lua` 里的**硬编码字面量**、不在常量表，由单测对着原文钉住。
+  实测 83 级：小怪 32,017、头目 1,086,003（差 34 倍）——所以「能感电多少」
+  必须先问「打谁」，不能替用户假定 83 级。
+- **反函数容易写反**：PoB 的 `thresh` 返回「某伤害下达到 X 所需的**门槛**」，
+  而用户问的是「要达到 X 需要多大**伤害**」。照抄会得到「需要的伤害 = 当前伤害」
+  这种自证式废话（实测踩过，用例把方向钉住了）。
+- **冰冻只给能钉住的那条**：它的强度是持续时间、走另一条分支，上游那段只算了
+  `FreezeDurationMod`，完整曲线没有可引用的原式。所以工具**拒绝算时长**，
+  只给 PoB 自己写下的门槛判据（要冻住最短 0.3 秒，门槛不超过这一击伤害的 20 倍）。
+  「差不多能推出来」不是可引用的依据。
+
+**同一轮修掉一个「入库了却取不出来」的常量类**：`mapLevelLifeMult.66..90`
+这类稀疏表条目原先落成 `kind='other'` + `value_num=NULL` + 数字塞在 `value_json` 里，
+于是 `constants.get()` 抛 `ConstantTypeError`、`table()` 又不是数组——**46 行死数据**，
+而门槛计算正好需要它们。`flatten()` 改成「数值型 other 也落 `value_num`」，
+常量表因此从 515 条增到 543 条（同时把 `nonDamagingAilment` 的 28 个字段按嵌套表白名单入库）。
+**「入库」不等于「取得出来」**，这是同一句话的第三种形态（前两种是「已入库 ≠ 那一维已入库」、
+「数据入库但没有出口」）。
 
 一处数据缺口会直接影响判断：
 

@@ -28,6 +28,7 @@ from kb.sources.pob_misc import (  # noqa: E402
     MODULE_DATA_FILE,
     extract,
     extract_module_misc,
+    extract_module_tables,
     flatten,
 )
 
@@ -68,6 +69,11 @@ def main() -> int:
     # 这条区别要在数据里看得见（判据见 kb/sources/pob_misc.MODULE_MISC_WHITELIST）。
     module_misc, module_problems = extract_module_misc(repo.root)
     problems.extend(module_problems)
+    # 嵌套表（当前只有 `nonDamagingAilment`）：展平成 `表.键.字段` 标量，
+    # 与上面那些 magic numbers 同组、同样没有 dat 出处
+    table_consts, table_problems = extract_module_tables(repo.root)
+    problems.extend(table_problems)
+    module_misc.update({key: (value, None) for key, value in table_consts.items()})
     rows.extend(
         {
             "key": f"pobMisc.{key}",
