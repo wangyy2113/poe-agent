@@ -41,6 +41,7 @@ from core import db as dbmod  # noqa: E402
 from core.config import get_config  # noqa: E402
 from core.logging_setup import setup_logging  # noqa: E402
 from kb.coverage import dimension_gap  # noqa: E402
+from orchestrator.loop import GAP_SOURCE  # noqa: E402
 from orchestrator.loop import _precision_tool_route, _preferred_tool_route  # noqa: E402
 from orchestrator.loop import poe2_marker  # noqa: E402
 from retrieval import alias as alias_mod  # noqa: E402
@@ -452,6 +453,7 @@ def replay_case(conn, case: Case, rec: Recording, params: dict) -> GateOutcome:
     from orchestrator.loop import _domain_terms  # noqa: PLC0415  与线上同一份词表
 
     out = GateOutcome(case=case, rec=rec)
+    _mark_eval_traffic()
     cfg = get_config()
     factual_terms = list(cfg.get("retrieval.factual_terms", []) or [])
     domain_terms = _domain_terms()
@@ -864,6 +866,15 @@ def print_sweep(conn, cases: list[Case], base_params: dict, values: list[float])
               f"{_pct(s['recall']['recall@20']['rate']):>11}  {', '.join(ids)}")
     print("\n  覆盖率判据只影响「无实体精确命中」的那部分查询：别名表命中是最强证据，"
           "不受该阈值影响。")
+
+
+def _mark_eval_traffic() -> None:
+    """把这一轮写进缺口台账的条目标成评测流量。
+
+    不标的话，`hit_count` 量的是「评测跑了几次」——实测台账 93% 是评测流量，
+    而排在采集优先级第一位的两条（20 次、14 次）都是**本来就该拒答**的黄金用例。
+    """
+    GAP_SOURCE.set("eval")
 
 
 def main() -> int:

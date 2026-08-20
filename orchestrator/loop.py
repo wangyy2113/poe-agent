@@ -18,6 +18,7 @@ import logging
 import re
 import time
 import uuid
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Any, Iterator
 
@@ -1876,9 +1877,12 @@ def _prepare_turn(question: str, result: TurnResult) -> _TurnSetup:
         # 放在检索**之前**：越界问题不该消耗检索，更不该产生任何可能被当作依据的证据
         result.evidence_gap = True
         result.retrieval_meta["out_of_scope"] = marker
+        # kind 必须是 `out_of_scope` 而不是 `retrieval_gap`：POE2 **永远不会被采集**，
+        # 记成检索缺口会让它坐在采集优先级第一位（实测 20 次命中、排第一，
+        # 而且还被归到了 not_recalled/ascendancy）。台账是用来定优先级的。
         _record_gaps(
             question, [f"越界：《流放之路 2》问题（标记「{marker}」），本库只覆盖 POE1"],
-            category="out_of_scope/poe2", kind="retrieval_gap",
+            category="out_of_scope/poe2", kind="out_of_scope",
         )
         return _TurnSetup(gap=_out_of_scope_answer(question, marker))
 
@@ -2558,6 +2562,12 @@ def _record_tool_result_gaps(
         _record_gaps(question, points, category=category, kind="tool_gap")
 
 
+#: 这一轮的缺口算哪种**流量**。评测把同一批问题反复跑，不区分的话
+#: `hit_count` 量的是「评测跑了几次」而不是「用户问了几次」——实测台账 93% 是评测流量。
+#: `scripts/eval_run.py` 在跑之前把它设成 `eval`。
+GAP_SOURCE: ContextVar[str] = ContextVar("gap_source", default="chat")
+
+
 def _record_gaps(
     question: str,
     gaps: list[str],
@@ -2584,16 +2594,20 @@ def _record_gaps(
             conn.execute(
                 """
                 INSERT INTO knowledge_gap(question, missing_point, guessed_category,
-                                          kind, hit_count, first_seen, last_seen)
-                VALUES (?,?,?,?,1,datetime('now'),datetime('now'))
+                                          kind, source, hit_count, first_seen, last_seen)
+                VALUES (?,?,?,?,?,1,datetime('now'),datetime('now'))
                 ON CONFLICT(question, missing_point) DO UPDATE SET
                     hit_count = hit_count + 1,
                     last_seen = datetime('now'),
                     kind = COALESCE(excluded.kind, knowledge_gap.kind),
+                    -- 同一问题被评测与真实流量都问过时按 `chat` 记：
+                    -- 采集优先级要的是真实需求，宁可高估也不要把它藏进 eval
+                    source = CASE WHEN knowledge_gap.source = 'chat' OR excluded.source = 'chat'
+                                  THEN 'chat' ELSE excluded.source END,
                     guessed_category = COALESCE(excluded.guessed_category,
                                                 knowledge_gap.guessed_category)
                 """,
-                (question, point[:500], category or None, kind or None),
+                (question, point[:500], category or None, kind or None, GAP_SOURCE.get()),
             )
         conn.commit()
     except Exception as exc:  # noqa: BLE001  台账失败不该让整轮失败

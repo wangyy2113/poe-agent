@@ -823,9 +823,14 @@ CREATE TABLE IF NOT EXISTS knowledge_gap (
     question     TEXT NOT NULL,
     missing_point TEXT NOT NULL,
     guessed_category TEXT,
-    -- 条目来源，见 GAP_KINDS。**只有 retrieval_gap 与 tool_gap 构成采集优先级**：
-    -- binding_block 是闸门行为的观测量，混进来会让频次排序失真。
+    -- 条目类型，见 GAP_KINDS。**只有 COLLECTION_GAP_KINDS 那三类构成采集优先级**：
+    -- binding_block 是闸门行为的观测量、out_of_scope 永远不会被采集，
+    -- 混进来都会让频次排序失真。
     kind         TEXT,
+    -- **流量来源**，见 GAP_SOURCES。评测把同一批问题反复跑，不区分的话
+    -- hit_count 量的是「评测跑了几次」而不是「用户问了几次」——
+    -- 第三十轮实测：台账 93% 是评测流量，而采集优先级前两名都是本该拒答的黄金用例。
+    source       TEXT,
     hit_count    INTEGER DEFAULT 1,
     first_seen   TEXT NOT NULL,
     last_seen    TEXT NOT NULL
@@ -954,18 +959,103 @@ def _migrate(conn: sqlite3.Connection) -> None:
         _migrate_base_item_all_categories(conn)
         _migrate_conflict_cause(conn)
         _migrate_reservation_columns(conn)
+        _migrate_gap_source(conn)
         conn.commit()
     except sqlite3.Error as exc:
         # 迁移失败不能让启动失败——但必须告警，否则台账会继续悄悄积累重复
         logger.warning("缺口台账迁移未完成：%s", exc)
 
 
-#: 台账条目的来源。三者要分开，因为对应的待办完全不同：
+#: 台账条目的来源。分开是因为对应的待办完全不同：
 #:   retrieval_gap  检索判定依据不足        → 该去采集，或该改检索
 #:   tool_gap       结构化工具自报缺据      → 该去补那份结构化数据
 #:   binding_block  出口闸门拦下一句无据断言 → 该看是漏出还是错误拒答
-#: 只有前两类构成「采集优先级」，第三类是闸门行为的观测量。
-GAP_KINDS = ("retrieval_gap", "tool_gap", "binding_block", "binding_block_legacy")
+#:   out_of_scope   永久不在服务范围（POE2）→ **没有待办**
+#: 只有前两类构成「采集优先级」。
+#:
+#: `out_of_scope` 是第三十轮加的：POE2 越界原先记成 `retrieval_gap`，于是
+#: 「流放之路2 的升华机制是什么」以 20 次命中**坐在采集优先级第一位**——
+#: 而那个问题永远不会被采集。台账是用来定优先级的，头部塞着一条永不执行的待办，
+#: 整张表就失去了作用。
+#: `ingest_gap` 是导入脚本写的（「这 51 条 POEDB 有而 PoB 没有」这类），
+#: 第三十轮才补进这份清单——它在用、却既没被声明也没在 `/admin/stats` 里露出来，
+#: 而它恰恰是**最可执行**的一类采集待办。
+GAP_KINDS = (
+    "retrieval_gap", "tool_gap", "ingest_gap",
+    "binding_block", "binding_block_legacy", "out_of_scope",
+)
+
+#: 构成「采集优先级」的三类。其余是观测量或永久不在范围内。
+COLLECTION_GAP_KINDS = ("retrieval_gap", "tool_gap", "ingest_gap")
+
+#: 台账条目的**流量来源**。评测会把同一批问题反复跑，命中次数因此变成
+#: 「评测跑了几次」而不是「用户问了几次」——第三十轮实测：台账前两名
+#: （20 次、14 次）全是黄金问答集里的用例，而它们本来就该拒答。
+GAP_SOURCES = ("chat", "eval", "import", "verify")
+
+
+def _migrate_gap_source(conn: sqlite3.Connection) -> None:
+    """给 `knowledge_gap` 补 `source` 列，并把两类噪声条目就地重新归类（第三十轮）。
+
+    为什么必须做：需求 2.12 说「按频次排序即采集优先级」，而实测台账前两名是
+
+        20 次  流放之路2 的升华机制是什么          → 永久越界，没有待办
+        14 次  请你猜一下下个赛季会加什么新机制    → 本来就该拒答
+
+    两条都来自黄金问答集（评测每跑一次就加一次），而且第一条还被归到了
+    `not_recalled/ascendancy`——照着它去补升华数据是纯浪费。所以：
+
+    1. 问题里带 POE2 标记的行改判 `kind='out_of_scope'`（那不是采集待办）；
+    2. 问题出现在黄金问答集里的行标 `source='eval'`，采集优先级里排除；
+    3. 其余保持 `source='chat'`。
+
+    **只重新归类、不删行**：台账是审计记录，删掉就无法回溯当初为什么排错了优先级。
+    """
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(knowledge_gap)")}
+    if "source" not in cols:
+        conn.execute("ALTER TABLE knowledge_gap ADD COLUMN source TEXT")
+        logger.info("缺口台账迁移：已补 source 列")
+    conn.execute("UPDATE knowledge_gap SET source='chat' WHERE source IS NULL")
+
+    # 1) POE2 越界改判。判据与 `orchestrator.loop.poe2_marker` 同一套标记，
+    #    在这里重新实现会两处不一致，所以直接引它。
+    try:
+        from orchestrator.loop import poe2_marker  # noqa: PLC0415  避免模块级循环依赖
+
+        rows = conn.execute(
+            "SELECT gap_id, question FROM knowledge_gap "
+            "WHERE COALESCE(kind,'retrieval_gap') <> 'out_of_scope'"
+        ).fetchall()
+        moved = [(r[0],) for r in rows if poe2_marker(str(r[1]))]
+        if moved:
+            conn.executemany(
+                "UPDATE knowledge_gap SET kind='out_of_scope', "
+                "guessed_category='out_of_scope/poe2' WHERE gap_id=?",
+                moved,
+            )
+            logger.info("缺口台账迁移：%d 条 POE2 越界条目移出采集优先级", len(moved))
+    except Exception as exc:  # noqa: BLE001  迁移失败不该让启动失败
+        logger.warning("缺口台账 POE2 改判未完成：%s", exc)
+
+    # 2) 黄金问答集里的问题标成评测流量
+    try:
+        from tests.golden.loader import load_cases  # noqa: PLC0415
+
+        questions = [(c.query,) for c in load_cases()]
+        if questions:
+            conn.execute("CREATE TEMP TABLE IF NOT EXISTS _eval_q(q TEXT PRIMARY KEY)")
+            conn.execute("DELETE FROM _eval_q")
+            conn.executemany("INSERT OR IGNORE INTO _eval_q(q) VALUES (?)", questions)
+            marked = conn.execute(
+                "UPDATE knowledge_gap SET source='eval' "
+                "WHERE question IN (SELECT q FROM _eval_q) AND source <> 'eval'"
+            ).rowcount
+            if marked:
+                logger.info("缺口台账迁移：%d 条评测流量已标记（不计入采集优先级）", marked)
+    except Exception as exc:  # noqa: BLE001  测试资产不可用时跳过即可
+        logger.debug("黄金问答集不可用，跳过评测流量标记：%s", exc)
+    conn.commit()
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_gap_source ON knowledge_gap(source)")
 
 
 def _migrate_reservation_columns(conn: sqlite3.Connection) -> None:
