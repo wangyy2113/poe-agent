@@ -496,21 +496,19 @@ def verify(
     result = BindingResult()
     used: list[str] = []
 
-    previous: SentenceVerdict | None = None
     for raw in split_sentences(answer):
         if not raw.strip():
             result.verdicts.append(
                 SentenceVerdict(raw, "narrative", (), True, "空白")
             )
             continue
-        # 表格块可继承紧邻前一句的绑定（见 `inheritable_labels`）。
-        # 空白片段跳过不算「紧邻」被打断——`档位如下[[E1]]：\n\n| 表 |` 中间那个空行
-        # 是排版，不该让表格失去可继承的上文。
+        # 续写结构（表格块 / 引导句后的列表项）可继承绑定（见 `inheritable_labels`）。
+        # 判据只看**已产出的判定序列**，批量与流式因此天然一致：
+        # 空白片段不打断「紧邻」——`档位如下[[E1]]：\n\n| 表 |` 中间那个空行是排版。
         verdict = _check_sentence(
             raw, by_label, terms, domain,
-            inherited=inheritable_labels(previous, raw),
+            inherited=inheritable_labels(result.verdicts, raw),
         )
-        previous = verdict
         result.verdicts.append(verdict)
         if verdict.ok:
             for lb in verdict.labels:
@@ -625,13 +623,10 @@ class StreamingGate:
             if piece is None:
                 break
             self._buffer = rest
-            # 与批量同一套继承判据：上一条**非空**判定即「紧邻前一句」
-            previous = next(
-                (v for v in reversed(self.verdicts) if v.text.strip()), None
-            )
+            # 与批量同一套继承判据：两边都把**已产出的判定序列**交给它
             verdict = _check_sentence(
                 piece, self._by_label, self._terms, self._domain,
-                inherited=inheritable_labels(previous, piece),
+                inherited=inheritable_labels(self.verdicts, piece),
             )
             self.verdicts.append(verdict)
             if not verdict.ok:
@@ -668,6 +663,18 @@ class StreamingGate:
         #                              流式与批量的一致率从 32/32 打到 18/32 的。
         tail_line = buf.rsplit("\n", 1)[-1].lstrip()
         if _is_table_line(parts[0]) and (len(parts) == 1 or tail_line.startswith("|")):
+            return None, buf
+        rest = "".join(parts[1:])
+        if (
+            _is_table_line(parts[0])
+            and not _BINDING_RE.search(parts[0])
+            and "\n" not in rest
+            and rest.lstrip().startswith("[")
+        ):
+            # 表后可能跟着**只有标记的一行**（`_merge_table_blocks` 会把它并进表）。
+            # 那一行没写完就放行，流式会把表单独判掉、批量会把标记并进去——判定分叉。
+            # 实测（第二十二轮）：缓冲区刚写到 `|\n\n[` 时就放行，一致率掉到 64/66。
+            # 只等一行：newline 一到，两边看到的片段就完全一样了。
             return None, buf
         if len(parts) == 1 and not _ends_sentence(buf):
             # 只有一段且没说完，继续等
@@ -769,6 +776,14 @@ def _merge_table_blocks(pieces: list[str]) -> list[str]:
     单看一行既判不出类型也校不准数值。整块看之后，绑定标记出现在表内任何位置
     （表头、某一行、末行）都对整张表生效，数值仍然逐个回填校验——**该校的没放过**。
 
+    表后单独一行的标记也并进来（第二十二轮）：模型的自然写法是贴出表、
+    把 `[[E1]]` 写在表后一行，而表格继承只看**前一句**，于是整张表被判未绑定。
+    实测 92 条录制离线重放：137 句拦截里 **6 句**是这一形态，而它们全是有据的话，
+    受影响的正是计算器的推导表——最该给用户看的那一段。
+
+    并的判据很紧：那一行**除了标记什么都没有**（去掉标记只剩空白与标点）。
+    「以上数据来自 [[E1]]。」不并——它本身就是一句话，自己带着标记就能过。
+
     拼回去与原文等价（只是把相邻片段连起来），所以下发内容不变。
     """
     if not pieces:
@@ -779,6 +794,12 @@ def _merge_table_blocks(pieces: list[str]) -> list[str]:
         if _is_table_line(piece):
             buf.append(piece)
             continue
+        if buf and _is_marker_only(piece):
+            # 表刚结束、紧跟一行只有标记 → 它是这张表的引用
+            buf.append(piece)
+            out.append("".join(buf))
+            buf = []
+            continue
         if buf:
             out.append("".join(buf))
             buf = []
@@ -786,6 +807,16 @@ def _merge_table_blocks(pieces: list[str]) -> list[str]:
     if buf:
         out.append("".join(buf))
     return out
+
+
+#: 去掉绑定标记之后只剩空白与标点 → 这一片段只是引用，不是一句话。
+_MARKER_ONLY_RE = re.compile(r"^[\s>*＊·\-—。．.,，；;：:、！？!?()（）]*$")
+
+
+def _is_marker_only(piece: str) -> bool:
+    if not _BINDING_RE.search(piece):
+        return False
+    return bool(_MARKER_ONLY_RE.match(_BINDING_RE.sub("", piece)))
 
 
 def _table_rows(block: str) -> list[list[str]]:
@@ -1151,33 +1182,94 @@ def _affix_pool_scope_error(
     return "条件权重工具未明确覆盖的事实语义"
 
 
-def inheritable_labels(
-    previous: SentenceVerdict | None, sentence: str
-) -> tuple[str, ...]:
-    """表格块可以继承**紧邻前一句**的绑定编号。返回空元组表示不继承。
+#: 无序 / 有序列表项。`+ ` 不收：它在中文答案里几乎只出现在「+40% 火焰抗性」这种
+#: 词缀文本开头，收了会把一整句词缀描述当成列表项。
+_LIST_ITEM_RE = re.compile(r"^[\s>]*(?:[-*•]\s|\d{1,2}\s*[.、)）]\s)")
 
-    为什么只给表格开这个口子：模型的自然写法是「腰带上的力量词缀档位如下[[E1]]：」
-    紧跟一张表。引导句绑定了证据、表格是它的续写，但分句之后表格成了独立单位、
-    自己没有标记，于是**整张表被判「事实句未绑定引用」**。实测 104 句拦截里有 17 句
-    是这种形态，其中 13 句紧邻前一句有绑定可继承。
 
-    为什么这样做仍然安全：继承只提供**编号**，数值回填校验照旧跑——表里出现的每个
-    数值仍必须能在继承来的证据原文里找到。实测那 13 句继承后**全部通过**数值校验
-    （0 句需要继续拦），说明它们的数字本来就在证据里，拦它们是错误拒答。
-    反过来，若模型在表里编造数字，继承编号也救不了它。
+def _is_list_item(piece: str) -> bool:
+    first = piece.strip("\n").splitlines()[0] if piece.strip() else ""
+    return bool(_LIST_ITEM_RE.match(first))
 
-    三条限制：
-      只有表格块能继承（表格是引导句的续写，普通句子不是）
-      只继承**紧邻**且**已通过校验**的那一句（被拦的句子不能当依据来源）
-      表格自己有标记时不继承（以它自己写的为准）
+
+def _is_list_lead_in(verdict: SentenceVerdict) -> bool:
+    """这一句是不是「引导句」——它宣告后面跟着一份清单。
+
+    两种形态（实测录制里就这两种）：
+
+        共 **1 条**，固定值词缀，无生成权重数据[[E11]]：      以冒号结尾
+        **隐式词缀**[[E1]]                                   只有一个加粗小标题
+
+    判据要紧：**普通陈述句不算引导句**。「超出的 45% 是一个缓冲池……[[E1]]」后面
+    跟一条「- 比如地图词缀减 30% 火抗……」时不继承——那一条是模型自己举的例子，
+    不是证据的续写。
     """
-    if previous is None or not previous.ok or not previous.labels:
-        return ()
-    if not _is_table_line(sentence):
-        return ()
+    text = _BINDING_RE.sub("", verdict.text).strip()
+    if not text:
+        # 标记独占一行：`[[E1]]` 自己就不是引导句（它已经被并进表格块了）
+        return False
+    if text.endswith(("：", ":")):
+        return True
+    stripped = text.strip("*＊ 　")
+    return bool(stripped) and text.startswith("**") and text.endswith("**") and len(stripped) <= 12
+
+
+def _list_lead_in(history: list[SentenceVerdict]) -> SentenceVerdict | None:
+    """向前找这份清单的引导句：跳过空白与**同级列表项**。
+
+    刻意**不做链式继承**：不允许「上一个列表项带标记 → 这一项跟着继承」。
+    实测那种形态里被拦的多是模型自己加的说明与另一种通货的描述
+    （`- **古灵混沌石**：……` 的依据是另一条证据，不是上一项那条），
+    继承过去等于把 A 的引用贴到 B 的断言上，而这类断言常常没有数值可校。
+    """
+    for verdict in reversed(history):
+        if not verdict.text.strip():
+            continue
+        if _is_list_item(verdict.text):
+            continue
+        if verdict.ok and verdict.labels and _is_list_lead_in(verdict):
+            return verdict
+        return None
+    return None
+
+
+def inheritable_labels(
+    history: list[SentenceVerdict], sentence: str
+) -> tuple[str, ...]:
+    """**续写结构**可以继承绑定编号。返回空元组表示不继承。
+
+    两种续写结构：
+
+    * **表格块**——继承紧邻前一句。模型的自然写法是「腰带上的力量词缀档位如下[[E1]]：」
+      紧跟一张表。引导句绑定了证据、表格是它的续写，但分句之后表格成了独立单位、
+      自己没有标记，于是整张表被判「事实句未绑定引用」。实测 104 句拦截里有 17 句
+      是这种形态，其中 13 句紧邻前一句有绑定可继承。
+    * **列表项**——只继承**引导句**（第二十二轮加）。实测 92 条录制离线重放，
+      135 句拦截里 127 句是「未绑定引用」，其中 42 句紧邻上句有可继承的标记；
+      逐条看完之后只有「引导句 + 清单」这一种是真正的续写结构，
+      而链式继承（跟着上一个列表项继承）与引用块（`>` 里多是模型自己的覆盖说明）
+      不是——那些拦得对，判据见 `_list_lead_in` 与 `_is_list_lead_in`。
+
+    为什么这样做仍然安全：继承只提供**编号**，数值回填校验照旧跑——表里/项里出现的
+    每个数值仍必须能在继承来的证据原文里找到。实测表格那 13 句继承后全部通过数值校验，
+    列表那一批也只有个别句因数值仍被拦。反过来，若模型编造数字，继承编号救不了它。
+
+    三条限制对两种结构都成立：
+      只有续写结构能继承（普通句子不算——那等于「开头标一个引用就license整篇」）
+      只继承**已通过校验**的那一句（被拦的句子不能当依据来源）
+      自己有标记时不继承（以它自己写的为准）
+    """
     if extract_labels(sentence):
         return ()
-    return previous.labels
+    if _is_table_line(sentence):
+        previous = next((v for v in reversed(history) if v.text.strip()), None)
+        if previous is None or not previous.ok or not previous.labels:
+            return ()
+        return previous.labels
+    if _is_list_item(sentence):
+        lead = _list_lead_in(history)
+        return lead.labels if lead is not None else ()
+    return ()
 
 
 def _check_sentence(

@@ -266,6 +266,153 @@ class TableInheritsPrecedingBindingTest(unittest.TestCase):
                 )
 
 
+class TableTrailingMarkerTest(unittest.TestCase):
+    """表后**单独一行**的标记属于那张表（2026-08-22 第二十二轮）。
+
+    模型的自然写法之一是贴出表、把 `[[E1]]` 写在表后一行。表格继承只看前一句，
+    于是整张表被判未绑定——而它是有据的。判据很紧：那一行**除了标记什么都没有**。
+    """
+
+    def test_marker_only_line_after_table_binds_it(self) -> None:
+        text = (
+            "| T 级 | 词缀文本 | 物品等级 |\n|---|---|---|\n"
+            "| T1/10 | +(56-60) 力量 | 85 |\n\n[[E1]]\n"
+        )
+        res = verify(text, EVIDENCE)
+        self.assertEqual(0, res.blocked, [v.reason for v in res.verdicts if not v.ok])
+
+    def test_single_bracket_marker_line_also_counts(self) -> None:
+        text = "| T 级 | 物品等级 |\n|---|---|\n| T1/10 | 85 |\n\n[E1]\n"
+        self.assertEqual(0, verify(text, EVIDENCE).blocked)
+
+    def test_prose_line_with_marker_is_not_merged(self) -> None:
+        """「以上来自 [[E1]]。」是一句话，自己带标记就能过；表格不该跟着一起过。
+
+        这条守住的是判据的紧：如果把「后面任何带标记的句子」都算进表，
+        表就能从一句无关的话里借到编号。
+        """
+        text = (
+            "| T 级 | 物品等级 |\n|---|---|\n| T1/10 | 999 |\n\n以上来自 [[E1]]。\n"
+        )
+        res = verify(text, EVIDENCE)
+        self.assertEqual(1, res.blocked)
+        self.assertTrue(
+            next(v for v in res.verdicts if not v.ok).text.lstrip().startswith("|")
+        )
+
+    def test_numbers_still_checked_after_merge(self) -> None:
+        """并进来只是给编号，编造的数字照旧拦。"""
+        text = "| T 级 | 物品等级 |\n|---|---|\n| T1/10 | 999 |\n\n[[E1]]\n"
+        res = verify(text, EVIDENCE)
+        self.assertEqual(1, res.blocked)
+        self.assertIn("999", next(v.reason for v in res.verdicts if not v.ok))
+
+    def test_streaming_waits_for_the_trailing_line(self) -> None:
+        """流式必须等那一行写完再放行整块，否则两边判定分叉（实测一致率 64/66）。"""
+        text = (
+            "| T 级 | 词缀文本 | 物品等级 |\n|---|---|---|\n"
+            "| T1/10 | +(56-60) 力量 | 85 |\n\n[[E1]]\n\n后续说明[[E1]]。\n"
+        )
+        batch = verify(text, EVIDENCE)
+        for chunk in (1, 2, 5, 200):
+            with self.subTest(chunk=chunk):
+                streamed = stream(text, EVIDENCE, chunk)
+                self.assertEqual(batch.blocked, streamed.blocked)
+                self.assertEqual(
+                    [(v.ok, v.labels) for v in batch.verdicts if v.text.strip()],
+                    [(v.ok, v.labels) for v in streamed.verdicts if v.text.strip()],
+                )
+
+
+class ListInheritsLeadInTest(unittest.TestCase):
+    """引导句后的**列表项**继承引导句的绑定（第二十二轮）。
+
+    实测 92 条录制离线重放：135 句拦截里 127 句是「未绑定引用」，其中 42 句紧邻上句
+    有可继承的标记。逐条看完之后**只有「引导句 + 清单」是真正的续写结构**——
+    链式继承（跟着上一个列表项）与引用块（`>` 里多是模型自己的覆盖说明）不是，
+    那些拦得对。所以放宽只覆盖这一种，且判据写死在 `_is_list_lead_in`。
+    """
+
+    def test_list_items_inherit_lead_in(self) -> None:
+        text = "力量词缀如下[[E1]]：\n\n- +(56-60) 力量\n- 物品等级 85\n"
+        res = verify(text, EVIDENCE)
+        self.assertEqual(0, res.blocked, [v.reason for v in res.verdicts if not v.ok])
+
+    def test_bold_label_lead_in_counts(self) -> None:
+        """`**隐式词缀**[[E1]]` 后面跟一份清单，也是引导句。"""
+        text = "**显式词缀**[[E1]]\n\n- +(56-60) 力量\n"
+        self.assertEqual(0, verify(text, EVIDENCE).blocked)
+
+    def test_ordered_list_items_inherit(self) -> None:
+        text = "以下 2 条[[E1]]：\n\n1. +(56-60) 力量\n2. 物品等级 85\n"
+        self.assertEqual(0, verify(text, EVIDENCE).blocked)
+
+    def test_plain_sentence_is_not_a_lead_in(self) -> None:
+        """普通陈述句后面的列表项不继承——那多是模型自己举的例子。
+
+        实测形态：「超出的 45% 是一个缓冲池……[[E1]]」后面跟
+        「- 比如地图词缀减 30% 火抗……」，那一条不是证据的续写。
+        """
+        text = "该词缀最高档是 T1，物品等级 85[[E1]]。\n\n- 弓上则是 T5 档。\n"
+        res = verify(text, EVIDENCE)
+        self.assertEqual(1, res.blocked)
+
+    def test_no_chained_inheritance_between_items(self) -> None:
+        """不做链式继承：上一项带标记，不代表下一项说的是同一条证据。
+
+        实测形态：`- **污秽混沌石**：……[[E2]]` 后面跟 `- **古灵混沌石**：……`，
+        后者的依据是另一条证据。继承过去等于把 A 的引用贴到 B 的断言上，
+        而这类断言常常没有数值可校。
+        """
+        text = "- 甲词缀提供 +(56-60) 力量[[E1]]。\n- 乙词缀提供别的东西。\n"
+        res = verify(text, EVIDENCE)
+        self.assertEqual(1, res.blocked)
+
+    def test_quote_block_does_not_inherit(self) -> None:
+        """`>` 块里多是模型自己的覆盖说明，不是证据的续写。"""
+        text = "力量词缀如下[[E1]]：\n\n> 注意：以上仅基于已检索到的证据。\n"
+        res = verify(text, EVIDENCE)
+        self.assertEqual(1, res.blocked)
+
+    def test_fabricated_number_in_inherited_item_still_blocked(self) -> None:
+        """继承编号救不了编造的数字——与表格同一条安全前提。"""
+        text = "力量词缀如下[[E1]]：\n\n- +(56-60) 力量，物品等级 999\n"
+        res = verify(text, EVIDENCE)
+        self.assertEqual(1, res.blocked)
+        self.assertIn("999", next(v.reason for v in res.verdicts if not v.ok))
+
+    def test_unbound_lead_in_gives_nothing_to_inherit(self) -> None:
+        text = "力量词缀如下：\n\n- +(56-60) 力量\n"
+        self.assertEqual(1, verify(text, EVIDENCE).blocked)
+
+    def test_own_marker_wins(self) -> None:
+        text = "力量词缀如下[[E1]]：\n\n- +(56-60) 力量[[E99]]\n"
+        res = verify(text, EVIDENCE)
+        self.assertEqual(1, res.blocked)
+        self.assertIn("E99", next(v.reason for v in res.verdicts if not v.ok))
+
+    def test_lead_in_only_reaches_its_own_list(self) -> None:
+        """隔了一个小节标题之后的列表项不再继承：那已经不是同一份清单。"""
+        text = (
+            "力量词缀如下[[E1]]：\n\n- +(56-60) 力量\n\n"
+            "## 另一节\n\n- 这里说的是别的东西。\n"
+        )
+        res = verify(text, EVIDENCE)
+        self.assertEqual(1, res.blocked)
+
+    def test_streaming_matches_batch(self) -> None:
+        text = "力量词缀如下[[E1]]：\n\n- +(56-60) 力量\n- 物品等级 85\n\n完[[E1]]。\n"
+        batch = verify(text, EVIDENCE)
+        for chunk in (1, 3, 9, 200):
+            with self.subTest(chunk=chunk):
+                streamed = stream(text, EVIDENCE, chunk)
+                self.assertEqual(batch.blocked, streamed.blocked)
+                self.assertEqual(
+                    [(v.ok, v.labels) for v in batch.verdicts if v.text.strip()],
+                    [(v.ok, v.labels) for v in streamed.verdicts if v.text.strip()],
+                )
+
+
 if __name__ == "__main__":
     unittest.main()
 

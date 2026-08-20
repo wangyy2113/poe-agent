@@ -64,11 +64,29 @@ class TestParityWithBatch(unittest.TestCase):
         "（本次证据中未包含猎首的掉落来源。）",
         "没有终止标点的尾句[[E1]]",
         "",
+        # 表后单独一行的标记（第二十二轮）：批量把它并进表，流式必须**等这一行写完**
+        # 才放行整块，否则流式判表未绑定、批量判已绑定——实测一致率掉到 64/66。
+        "力量档位如下：\n\n| T 级 | 力量 |\n| --- | --- |\n| T1 | +40 |\n\n[[E1]]\n\n后续说明。",
+        "| T 级 | 力量 |\n| --- | --- |\n| T1 | +40 |\n\n[[E1]]",
+        # 表后跟的是**正文**（不是只有标记）：不并，两边都判表格未绑定
+        "| T 级 | 力量 |\n| --- | --- |\n| T1 | +40 |\n\n[注] 见上表。",
+        # 引导句 + 列表项：列表项继承引导句的标记
+        "力量词缀如下[[E1]]：\n\n- +40 力量\n- +55 力量\n",
     )
+
+    @staticmethod
+    def _kinds(result: binding.BindingResult) -> list[str]:
+        """判定序列，**跳过纯空白片段**。
+
+        空行归到哪一段是排版差异（`档位如下：\n\n` 一段 vs 两段），
+        评测口径也只把它算作「仅空白字符不同」。拿它当不一致会挡住真正的一致性用例。
+        """
+        return [v.kind for v in result.verdicts if v.text.strip()]
 
     def test_逐句判定与批量一致(self):
         e = [
-            ev("E1", "猎首（Headhunter）：+(40-55) 力量，需求等级 40，基础抗性上限为 75%"),
+            ev("E1", "猎首（Headhunter）：+(40-55) 力量，需求等级 40，基础抗性上限为 75%；"
+                     "T1 档为 +40 力量"),
             ev("E2", "+(40-55) 敏捷"),
         ]
         for text in self.CASES:
@@ -82,8 +100,7 @@ class TestParityWithBatch(unittest.TestCase):
                     f"切片={chunk} 文本={text[:34]!r} 拦截数不一致",
                 )
                 self.assertEqual(
-                    [v.kind for v in got.verdicts],
-                    [v.kind for v in batch.verdicts],
+                    self._kinds(got), self._kinds(batch),
                     f"切片={chunk} 文本={text[:34]!r} 分类不一致",
                 )
                 self.assertEqual(
