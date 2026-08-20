@@ -253,12 +253,29 @@ class SkillGemIntentTest(DimensionGapTest):
 
     def test_仍然缺的那几维照旧拦(self) -> None:
         """DPS 要攻速与整条加成链（基础伤害只是其中一个乘数）；
-        属性需求与获取途径确实还没采集。"""
+        获取途径（任务奖励 / 掉落）不在任何已缓存页上。"""
         for q in ("冰霜脉冲的 dps 是多少",
-                  "冰霜脉冲要多少智力需求",
-                  "冰霜脉冲怎么获得"):
+                  "冰霜脉冲怎么获得",
+                  "冰霜脉冲哪里买"):
             with self.subTest(q=q):
                 self.assertTrue(self._verdict(q, self.GEM_HIT).is_gap, q)
+
+    def test_属性需求与效果文本这两维放行(self) -> None:
+        """**边界又往前挪了一格（第三十二轮）。**
+
+        从第十二轮起属性需求一律拒答，理由是 `Gems.lua` 的 `reqInt` 是换算系数
+        不是显示值——那句话是对的，但它说的是**PoB 侧**取不到。POEDB 详情页的
+        逐级表把力/敏/智按等级列着（中文、可引用），819 颗逐级与 PoB 的
+        需求等级/消耗/基础伤害对过账才入库。所以这批问法现在必须答。
+
+        这是「缺的是数据还是缺的是口径」这条教训的第三例
+        （前两例：技能伤害第二十九轮、怪物词缀的清单页 vs 详情页第三十一轮）。
+        """
+        for q in ("冰霜脉冲要多少智力需求",
+                  "冰霜脉冲 20 级的属性需求是多少",
+                  "冰霜脉冲的效果是什么"):
+            with self.subTest(q=q):
+                self.assertFalse(self._verdict(q, self.GEM_HIT).is_gap, q)
 
     def test_已入库维度放行(self) -> None:
         """同一颗宝石，问的是已入库的那一面 —— 必须答得出来。"""
@@ -292,12 +309,27 @@ class SkillGemIntentTest(DimensionGapTest):
         self.assertFalse(v.is_gap)
         self.assertFalse(any(s.key in {"skill_gem", "support_gem"} for s in v.uncovered))
 
-    def test_辅助宝石的加成维度被拦(self) -> None:
-        """辅助宝石给出的加成数值同样未入库（要靠 PoB 的 stat 插值算）。"""
-        v = self._verdict("受伤时施放能提升多少伤害",
-                          ("support_gem:SupportCastWhenDamageTaken",))
-        self.assertTrue(v.is_gap)
-        self.assertIn("辅助宝石", v.reason())
+    SUPPORT_HIT = ("support_gem:SupportCastWhenDamageTaken",)
+
+    def test_辅助宝石的加成维度现在放行(self) -> None:
+        """辅助宝石「给多少加成」是这个域最常被问、又长期答不了的一块。
+
+        POEDB 详情页把它按等级写着（「被辅助技能附加 4 - 6 基础冰霜伤害」，
+        1 级 4,6 → 20 级 152,228），所以第三十二轮把这批问法从
+        `missing_dimension_hints` 里删掉了。留着不删等于让闸门把答得出来的问题
+        声明成缺口。
+        """
+        for q in ("受伤时施放能提升多少伤害", "增伤辅助加多少伤害"):
+            with self.subTest(q=q):
+                self.assertFalse(self._verdict(q, self.SUPPORT_HIT).is_gap, q)
+
+    def test_辅助宝石仍然缺的那两维照旧拦(self) -> None:
+        """成对点：放行「加成多少」不等于放行一切——DPS 与获取途径确实没有。"""
+        for q in ("受伤时施放的 dps 是多少", "受伤时施放怎么获得"):
+            with self.subTest(q=q):
+                v = self._verdict(q, self.SUPPORT_HIT)
+                self.assertTrue(v.is_gap, q)
+                self.assertIn("辅助宝石", v.reason())
 
 
 class MonsterDomainTest(DimensionGapTest):

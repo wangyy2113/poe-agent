@@ -448,6 +448,59 @@ CREATE TABLE IF NOT EXISTS pob_skill_level (
     PRIMARY KEY(gem_id, gem_level)
 );
 
+-- ── 宝石的效果文本与属性需求（POEDB 详情页的逐级表，第三十二轮）──
+-- 这两张表补的是**从第十二轮起就写在「未采集」里的两维**：效果描述文本与属性需求。
+-- 它们为什么直到现在才敢入库，理由不是「没有数据」而是「没有口径」——
+-- PoB 侧的 stat 是 id + 乘数（要按 `Modules/StatDescriber.lua` 渲染，而且渲出来是英文），
+-- `reqStr/reqDex/reqInt` 是换算系数不是显示值。POEDB 详情页把两者都按等级列成了表，
+-- **中文的、可引用的**，而且同一张表里的 `需求等级` 与 `魔力` 两列本库早就有 PoB 侧的值，
+-- 于是每颗宝石每一级都能逐格对账（判据见 `kb/sources/poedb_gem_page.reconcile`）。
+--
+-- **两侧数值分开存**：这里只放 POEDB 独有的两维（效果文本、属性需求），
+-- 对账用的 `需求等级`/`消耗` 不再存第二份——同一个数存两处就是两份会分叉的真源
+-- （`pob_mod` 与 `mod_affix` 分表是因为两侧粒度不同，这里不是）。
+--
+-- 外键跟着 `pob_skill_gem` 级联：PoB 侧重跑快照时这两张表会被清空，
+-- **必须紧接着重跑 `scripts/import_gem_stats.py`**（导入脚本会提醒）。
+-- 让它悄悄留着旧行更糟：宝石重命名或改版之后，效果文本会挂到另一颗宝石上。
+CREATE TABLE IF NOT EXISTS poedb_gem_stat (
+    gem_id          TEXT NOT NULL,
+    -- 列序。页面上效果文本的**顺序是有意义的**（技能自己的效果在前、
+    -- 通用加成在后），乱序展示会让用户以为是两颗宝石。
+    stat_index      INTEGER NOT NULL,
+    -- 列头原文，**带着 1 级的数值**（「造成 21 - 31 物理伤害」）。
+    -- 不改写成 `#` 占位：那等于自己重写上游文本，而每一级的实际值在
+    -- `poedb_gem_stat_level.values_json` 里。
+    text_zh         TEXT NOT NULL CHECK(text_zh <> ''),
+    source          TEXT NOT NULL,
+    source_priority INTEGER NOT NULL,
+    url             TEXT NOT NULL CHECK(url <> ''),
+    fetched_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL,
+    PRIMARY KEY(gem_id, stat_index),
+    FOREIGN KEY(gem_id) REFERENCES pob_skill_gem(gem_id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS poedb_gem_stat_level (
+    gem_id          TEXT NOT NULL,
+    gem_level       INTEGER NOT NULL,
+    -- 属性需求：**页面给了才有值**。补 0 会让「这颗宝石不需要智力」与
+    -- 「这一列页面上没有」变成同一件事（`pob_skill_level` 的注释是同一条规则）。
+    req_str         INTEGER,
+    req_dex         INTEGER,
+    req_int         INTEGER,
+    -- 效果文本各列在这一级的值：`{"0": "4", "1": "16"}`（键是 stat_index 的字符串）。
+    -- 存 JSON 而不是每列一行：列数随宝石变（实测 0–6 列），
+    -- 而这一维**只按等级整块取用**，没有单列查询的场景。
+    values_json     TEXT NOT NULL CHECK(json_valid(values_json)),
+    source          TEXT NOT NULL,
+    source_priority INTEGER NOT NULL,
+    url             TEXT NOT NULL CHECK(url <> ''),
+    updated_at      TEXT NOT NULL,
+    PRIMARY KEY(gem_id, gem_level),
+    FOREIGN KEY(gem_id) REFERENCES pob_skill_gem(gem_id) ON DELETE CASCADE
+);
+
 -- ── 怪物词缀（POEDB `/cn/Monsters` 的「怪物」表）──
 -- 只收**有中文文本**的行。实测 501 行里：190 行有中文（127 只有中文 + 63 中文与未翻译
 -- 原始 stat id 并存），63 行只有未翻译的内部 stat id（`maven map boss buffed [50]`），

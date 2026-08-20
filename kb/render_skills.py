@@ -80,11 +80,30 @@ _DAMAGE_TYPE_ZH = {
 }
 
 
+#: 属性需求列 → 中文。第三十二轮从 POEDB 详情页的逐级表入库
+#: （PoB 侧的 `reqStr/reqDex/reqInt` 是换算系数，不能当显示值用）。
+_ATTR_LABEL = {"req_str": "力量", "req_dex": "敏捷", "req_int": "智慧"}
+
+
+def requirement_text(level: dict) -> str:
+    """属性需求。**页面给了才写**：白色宝石三项都是 0，而超过自然最高级的那些
+    等级页面根本没给这一列——写成 0 会让「不需要」和「没有数据」变成同一句话。"""
+    parts = [
+        f"{label} {int(level[key])}"
+        for key, label in _ATTR_LABEL.items()
+        if level.get(key) is not None
+    ]
+    return "、".join(parts)
+
+
 def level_line(level: dict) -> str:
     """一个等级渲染成一行。缺的字段不写——补 0 会把「没有」说成「是 0」。"""
     bits: list[str] = []
     if level.get("level_requirement") is not None:
         bits.append(f"需角色 {level['level_requirement']} 级")
+    requirement = requirement_text(level)
+    if requirement:
+        bits.append(f"属性需求 {requirement}")
     cost = cost_text(level.get("cost") or {})
     if cost:
         bits.append(f"消耗 {cost}")
@@ -133,6 +152,43 @@ def _key_levels(levels: list[dict], natural_max: int) -> list[tuple[str, dict]]:
     return picks
 
 
+#: 卡片上最多列几条效果文本。实测 820 颗里最多 6 条、平均 1.7 条，
+#: 所以这个上限几乎不触发；留着是因为**静默截断等同于漏答**，超了必须写出还剩多少
+#: （与 `tools/impl/mods.py` 同一条约定）。
+MAX_CARD_STAT_LINES = 6
+
+
+def stat_lines_block(attrs: dict) -> list[str]:
+    """效果文本区块：每条一行，带 1 级与自然最高级的取值。
+
+    文本原文来自 POEDB 详情页的列头（「造成 25 - 38 冰霜伤害」——里面本来就带着
+    1 级的数值），每级的值来自同一张表。**不改写原文**：把它规整成 `#` 占位
+    等于自己重写上游文本，而这一段正是要给用户看的那句话。
+    """
+    lines = [dict(line) for line in (attrs.get("stat_lines") or [])]
+    if not lines:
+        return []
+    levels = {int(lv["gem_level"]): lv for lv in (attrs.get("levels") or [])}
+    natural_max = int(attrs.get("natural_max_level") or 0)
+    low = levels.get(min(levels), {}) if levels else {}
+    high = levels.get(natural_max, {})
+    out = ["**效果文本（POEDB 逐级表）**"]
+    for line in lines[:MAX_CARD_STAT_LINES]:
+        key = str(line.get("index"))
+        marks: list[str] = []
+        for label, level in ((f"{min(levels)} 级" if levels else "", low),
+                             (f"{natural_max} 级", high)):
+            value = (level.get("stat_values") or {}).get(key)
+            if label and value:
+                marks.append(f"{label} {value}")
+        text = str(line.get("text_zh") or "")
+        out.append(f"- {text}（{'｜'.join(marks)}）" if marks else f"- {text}")
+    if len(lines) > MAX_CARD_STAT_LINES:
+        out.append(f"（另有 {len(lines) - MAX_CARD_STAT_LINES} 条效果文本，"
+                   "用 skill_gem_levels 查完整逐级数据）")
+    return out
+
+
 def render_card(entity: Entity) -> str:
     """渲染宝石卡。数值取自 `entity.attributes`（导入时写入的结构化字段）。"""
     attrs = entity.attributes
@@ -175,6 +231,11 @@ def render_card(entity: Entity) -> str:
         for label, level in picks:
             line = level_line(level)
             parts.append(f"- {label}：{line}" if line else f"- {label}")
+
+    stat_block = stat_lines_block(attrs)
+    if stat_block:
+        parts.append("")
+        parts.extend(stat_block)
 
     if attrs.get("description_en"):
         parts.append(f"\nPoB 英文说明：{attrs['description_en']}")
