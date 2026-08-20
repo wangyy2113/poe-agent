@@ -241,6 +241,30 @@ cases:
     expect_values: ["70"]
     note: pob_skill_level 表里 IceNova 的 20 级 levelRequirement = 70
 
+  # ── 详情页兜底桥接进来的宝石（2026-08-20 第三十一轮）─────────────────
+  # 这两颗**只因为「多看了一页」才在库里**：POEDB 宝石清单页没收录它们，
+  # 中文名写在各自详情页的 <title> 里。它们同时是那条兜底的哨兵——
+  # 判据一旦坏掉（页面结构变了、或有人退回「取不到就跳过」），这两条立刻红。
+  - id: num_portal_gem_char_level
+    query: 时空之门这个技能石需要角色多少级
+    kind: numeric
+    expect_slug: Portal
+    expect_values: ["10"]
+    note: pob_skill_level 里 Portal 1 级 levelRequirement = 10，自然最高 1 级
+    lesson: >-
+      「时空之门」这个中文名不在 POEDB 清单页上，只在 poedb.tw/cn/Portal 的标题里。
+      名字仍然来自 POEDB——**不许用英文名或 slug 顶替**那条纪律没有放宽。
+
+  - id: name_pact_of_beidat_mana
+    query: 贝达特契约 1 级消耗多少魔力
+    kind: numeric
+    expect_slug: Pact_of_Beidat
+    expect_values: ["16"]
+    note: 四个契约（贝达特/咕尔/科塔席/莉西娅）都是详情页兜底进来的
+    lesson: >-
+      成对的另一面在 `gap_skill_gem_attribute_req`：宝石在库里 ≠ 被问的那一维在库里。
+      消耗答得出，属性需求仍然拒答。
+
   - id: num_cwdt_cost_multiplier
     query: 受伤时施放的消耗与保留倍率是多少
     kind: numeric

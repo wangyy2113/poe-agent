@@ -61,6 +61,19 @@ def _count(table: str) -> Callable[[sqlite3.Connection], int]:
     return inner
 
 
+def _gap_magnitude(question: str) -> Callable[[sqlite3.Connection], int]:
+    """某个采集类缺口在台账里合计还缺多少条。"""
+    def inner(conn: sqlite3.Connection) -> int:
+        row = conn.execute(
+            "SELECT COALESCE(sum(hit_count),0) FROM knowledge_gap "
+            "WHERE question=? AND kind='ingest_gap' AND source='import'",
+            (question,),
+        ).fetchone()
+        return int(row[0])
+
+    return inner
+
+
 def _count_where(table: str, where: str) -> Callable[[sqlite3.Connection], int]:
     def inner(conn: sqlite3.Connection) -> int:
         return int(
@@ -198,6 +211,11 @@ FACTS: tuple[Fact, ...] = (
          _count_where("pob_skill_gem", "gem_kind='active'")),
     Fact("CLAUDE.md 辅助宝石颗数", "CLAUDE.md", r"技能石 \+ ([\d,]+) 辅助）",
          _count_where("pob_skill_gem", "gem_kind='support'")),
+    #: 文档里写的「未桥接 N 条」直接对着**台账**核：那句话的出处就是台账，
+    #: 而台账的 `hit_count` 这一类量的正是缺多少条（见 `core.db.record_ingest_gaps`）。
+    #: 第三十一轮实测过反面——文档与台账都写着 11 条，而实际只剩 1 条。
+    Fact("CLAUDE.md 宝石未桥接条数", "CLAUDE.md", r"未桥接的 ([\d,]+) 条按成因登记在台账",
+         _gap_magnitude("技能石与辅助宝石的完整清单")),
 )
 
 

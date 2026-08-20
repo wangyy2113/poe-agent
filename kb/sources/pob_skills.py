@@ -12,13 +12,25 @@ POEDB 清单页每颗宝石的链接上带 ``data-hover="?s=Data\\GemEffects/<id
 **不能按名字配对**：中文名正是要从 POEDB 取的东西，用它配对就成了循环依赖；而英文名
 在蜕变宝石上大量重复（「怒火之劈砍」与「劈砍」的 baseTypeName 都是 Cleave）。
 
-未桥接的 51 条分两族，都要登记而不是静默丢弃：
+未桥接的分两族，都要登记而不是静默丢弃：
 
 ``pob_missing``   POEDB 有、PoB 未发。多为历史与未上线条目（``[UNUSED]``、``[DNT]``、
                   「新惩戒」「瓦尔：横扫」）。POEDB 保留历史页面，PoB 只发当前版本。
-``no_zh_name``    PoB 有、清单页没有对应条目（实测 19 条，如 ``Portal``、
-                  ``SupportColdToFire``）。``entity.name_zh`` 不得为空，也**不许由英文名
-                  或 slug 顶替**，所以只能跳过并登记。
+``no_zh_name``    PoB 有、**清单页**没有对应条目。``entity.name_zh`` 不得为空，
+                  也**不许由英文名或 slug 顶替**。
+
+## 清单页之外还有详情页（第三十一轮）
+
+上一条纪律没错，错的是止步于清单页：那 11 颗里有 10 颗在 POEDB 上**有自己的详情页**，
+中文名就写在页面 ``<title>`` 里（``时空之门 - 流亡编年史…``；``<h1>`` 反而是英文）。
+所以 ``extract_gems`` 收一个 ``detail_html(slug)`` 回调做兜底，判据见
+``parse_poedb_detail_name``——名字依旧来自 POEDB，规矩没有放宽，只是多看了一页。
+实测 11 → **1**（只剩 ``Eclipse``：``poedb.tw/cn/Eclipse`` 不存在，取回 0 字节）。
+
+**被否掉的另一条路**：给桥接加第二把键（``variantId`` 或 ``gameId`` 尾段）。
+实测它只能救回 11 条里的 1 条（``VaalLightningWarpInstant`` → 清单页的
+``VaalLightningWarp``），而那一条详情页兜底同样救得回来；多一条匹配路径就多一类
+「两个 PoB 条目抢同一个 POEDB 条目」的歧义要处理。用一条判据换 10 条，不用两条换 1 条。
 
 ## 只取字面值，数值口径以 PoB 自己的 tooltip 为准
 
@@ -50,7 +62,7 @@ import json
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 from urllib.parse import unquote
 
 from selectolax.parser import HTMLParser
@@ -61,7 +73,14 @@ from kb.sources.pob_lua import LuaOpaque, load_lua_file, parse_assignments, pars
 #: POEDB 清单页。**只需要这一页**：实测 861 条已完整覆盖 `Skill_Gems`（554）与
 #: `Transfigured_Gems`（215），两者都是它的子集，多读一页只会重复解析。
 POEDB_GEM_PAGE = "Gem"
-POEDB_GEM_URL = f"https://poedb.tw/cn/{POEDB_GEM_PAGE}"
+POEDB_CN_BASE = "https://poedb.tw/cn/"
+POEDB_GEM_URL = f"{POEDB_CN_BASE}{POEDB_GEM_PAGE}"
+
+
+def poedb_url(slug: str) -> str:
+    """POEDB 中文站的条目地址。只此一处拼，别的地方引用它。"""
+    return f"{POEDB_CN_BASE}{slug}"
+
 
 GEM_META_FILE = "Data/Gems.lua"
 COSTS_FILE = "Data/Costs.lua"
@@ -126,7 +145,7 @@ class PoedbGem:
 
     @property
     def poedb_url(self) -> str:
-        return f"https://poedb.tw/cn/{self.poedb_slug}"
+        return poedb_url(self.poedb_slug)
 
 
 @dataclass(frozen=True)
@@ -182,7 +201,7 @@ class SkillGem:
 
     @property
     def poedb_url(self) -> str:
-        return f"https://poedb.tw/cn/{self.poedb_slug}"
+        return poedb_url(self.poedb_slug)
 
     @property
     def max_level(self) -> int:
@@ -550,13 +569,140 @@ def load_pob_gems(pob_root: Path) -> tuple[dict[str, dict[str, Any]], dict[str, 
     return by_key, skills
 
 
+#: 详情页标题形如 `时空之门 - 流亡编年史, Path of Exile Wiki cn`。
+_DETAIL_TITLE_RE = re.compile(r"<title>\s*(.*?)\s*</title>", re.S)
+_TITLE_SUFFIX = " - "
+
+
+def poedb_detail_slug(name_en: str) -> str:
+    """英文名 → POEDB 详情页 slug（`Pact of Beidat` → `Pact_of_Beidat`）。"""
+    return re.sub(r"\s+", "_", name_en.strip())
+
+
+def parse_poedb_detail_name(html: str, *, name_en: str) -> str | None:
+    """从详情页取中文名。取不到或页面不是这颗宝石就返回 None。
+
+    两道校验，缺一条都可能把**别的东西**的名字装到这颗宝石上：
+
+    1. 标题必须是 `<中文名> - <站名>` 形状，且中文名不为空、不等于英文名
+       （英文名说明这一页没有中文译名）。
+    2. 页面正文里必须出现**这颗宝石的英文名**——slug 猜错时 POEDB 会给一个
+       别的条目或搜索页，那时英文名不会出现。
+
+    为什么要这条兜底：清单页漏了 10 颗真实存在的宝石（时空之门、号召、
+    引爆地雷、四个契约……），而它们的中文名就在自己的详情页标题里。
+    先前的处理是「取不到中文名就跳过，不许用英文名顶替」——那条纪律没错，
+    错的是没去看详情页（第二十八轮同一个教训：判断做不了之前先确认卡点）。
+    """
+    if name_en not in html:
+        return None
+    found = _DETAIL_TITLE_RE.search(html)
+    if not found:
+        return None
+    title = found.group(1)
+    if _TITLE_SUFFIX not in title:
+        return None
+    name_zh = title.split(_TITLE_SUFFIX, 1)[0].strip()
+    if not name_zh or name_zh == name_en:
+        return None
+    return name_zh
+
+
+def _build_gem(
+    entry: PoedbGem,
+    meta: dict[str, Any],
+    skill: dict[str, Any],
+    *,
+    granted: str,
+    divisors: dict[str, float],
+    game_constants: dict[str, float] | None,
+) -> SkillGem:
+    """把 POEDB 那一侧（中文名/slug/颜色）与 PoB 那一侧拼成一颗宝石。
+
+    清单页与详情页两条路都走这里——两处各写一份构造就是两份会分叉的口径
+    （比如哪天加了字段只补了一处，另一条路上的宝石就少一列）。
+    """
+    name_en = meta.get("name") or skill.get("name")
+    if not isinstance(name_en, str) or not name_en:
+        raise GemStructureError(f"{granted!r} 两侧都没有英文名")
+    natural_max = meta.get("naturalMaxLevel")
+    if not isinstance(natural_max, int) or natural_max <= 0:
+        raise GemStructureError(f"{granted!r}.naturalMaxLevel 非法：{natural_max!r}")
+    description = skill.get("description")
+    if description is not None and not isinstance(description, str):
+        raise GemStructureError(f"{granted!r}.description 不是字符串")
+    is_support = bool(skill.get("support")) or bool((meta.get("tags") or {}).get("support"))
+    return SkillGem(
+        gem_id=granted,
+        name_en=name_en,
+        name_zh=entry.name_zh,
+        name_zh_alt=entry.name_zh_alt,
+        poedb_slug=entry.poedb_slug,
+        gem_kind="support" if is_support else "active",
+        attr_color=entry.attr_color,
+        tags=_tag_names(meta.get("tags") or {}, path=f"{granted}.tags"),
+        tag_string=str(meta.get("tagString") or ""),
+        tags_zh=entry.tags_zh,
+        natural_max_level=natural_max,
+        cast_time=_number(skill.get("castTime"), path=f"{granted}.castTime"),
+        skill_types=_skill_type_names(skill.get("skillTypes")),
+        is_vaal=meta.get("vaalGem") is True,
+        is_transfigured=bool(_TRANSFIGURED_RE.search(granted)),
+        description_en=description,
+        source_file=str(skill.get("__source_file") or ""),
+        levels=_extract_levels(
+            skill.get("levels"), divisors, gem_key=granted,
+            damage_ctx=_damage_ctx(skill, game_constants),
+        ),
+    )
+
+
+def _detail_entry(
+    meta: dict[str, Any],
+    skill: dict[str, Any],
+    *,
+    name_en: str,
+    detail_html: Callable[[str], str | None],
+) -> PoedbGem | None:
+    """详情页兜底：取回中文名就凑出一条 `PoedbGem`，取不到返回 None。
+
+    **颜色只能取 PoB 这一侧**：详情页上 `gem_red/green/blue` 三个 class 都在
+    （那是「相关宝石」的链接，不是本页宝石的颜色），拿它判色会随机取错一个。
+    清单页那条路上两侧颜色实测 810 条零分歧，所以 PoB 的 `color` 是可信的一侧；
+    而 `tags_zh` 详情页给不出，留空——导入脚本本来就会报「缺中文标签」的颗数。
+    """
+    html = detail_html(poedb_detail_slug(name_en))
+    if not html:
+        return None
+    name_zh = parse_poedb_detail_name(html, name_en=name_en)
+    if name_zh is None:
+        return None
+    raw_color = skill.get("color")
+    color = _POB_COLOR.get(raw_color) if isinstance(raw_color, int) else None
+    if color is None:
+        return None
+    return PoedbGem(
+        gem_key=str(meta.get("grantedEffectId") or name_en),
+        name_zh=name_zh,
+        poedb_slug=poedb_detail_slug(name_en),
+        attr_color=color,
+    )
+
+
 def extract_gems(
-    pob_root: Path, poedb_html: str, *, game_constants: dict[str, float] | None = None
+    pob_root: Path,
+    poedb_html: str,
+    *,
+    game_constants: dict[str, float] | None = None,
+    detail_html: Callable[[str], str | None] | None = None,
 ) -> tuple[list[SkillGem], list[SkippedGem]]:
     """抽取宝石并与 POEDB 中文名逐条桥接。返回 ``(入库条目, 跳过条目)``。
 
     `game_constants` 给基础伤害用（`{"base":…, "incremental":…}`，取自常量表）。
     不给就不算伤害——那三列留 NULL，而不是拿一个默认值凑出数字。
+
+    `detail_html(slug)` 是**详情页兜底**：清单页上没有的宝石，用它的详情页标题取中文名
+    （判据见 `parse_poedb_detail_name`）。不给就退回原来的行为——跳过并登记台账。
 
     桥不上**不抛异常**：POEDB 保留了 PoB 已经不发的历史条目，整批拒绝会让 94% 的
     可用数据一起进不来。但跳过的必须逐条带原因返回，由调用方登记进缺口台账。
@@ -604,43 +750,10 @@ def extract_gems(
             )
             continue
 
-        name_en = meta.get("name") or skill.get("name")
-        if not isinstance(name_en, str) or not name_en:
-            raise GemStructureError(f"{granted!r} 两侧都没有英文名")
-        natural_max = meta.get("naturalMaxLevel")
-        if not isinstance(natural_max, int) or natural_max <= 0:
-            raise GemStructureError(f"{granted!r}.naturalMaxLevel 非法：{natural_max!r}")
-
-        is_support = bool(skill.get("support")) or bool(
-            (meta.get("tags") or {}).get("support")
-        )
-        description = skill.get("description")
-        if description is not None and not isinstance(description, str):
-            raise GemStructureError(f"{granted!r}.description 不是字符串")
-
         out.append(
-            SkillGem(
-                gem_id=granted,
-                name_en=name_en,
-                name_zh=entry.name_zh,
-                name_zh_alt=entry.name_zh_alt,
-                poedb_slug=entry.poedb_slug,
-                gem_kind="support" if is_support else "active",
-                attr_color=entry.attr_color,
-                tags=_tag_names(meta.get("tags") or {}, path=f"{granted}.tags"),
-                tag_string=str(meta.get("tagString") or ""),
-                tags_zh=entry.tags_zh,
-                natural_max_level=natural_max,
-                cast_time=_number(skill.get("castTime"), path=f"{granted}.castTime"),
-                skill_types=_skill_type_names(skill.get("skillTypes")),
-                is_vaal=meta.get("vaalGem") is True,
-                is_transfigured=bool(_TRANSFIGURED_RE.search(granted)),
-                description_en=description,
-                source_file=str(skill.get("__source_file") or ""),
-                levels=_extract_levels(
-                    skill.get("levels"), divisors, gem_key=granted,
-                    damage_ctx=_damage_ctx(skill, game_constants),
-                ),
+            _build_gem(
+                entry, meta, skill, granted=granted,
+                divisors=divisors, game_constants=game_constants,
             )
         )
         matched_meta.add(granted.lower())
@@ -650,16 +763,66 @@ def extract_gems(
             SkippedGem(gem_key, "", SKIP_NO_ZH, "POEDB 清单页上该宝石有多个不同中文名，无法唯一命名")
         )
 
+    # ── 清单页之外：PoB 有、清单页没收录的，去它自己的详情页取中文名 ──────────
+    detail_slugs: set[str] = set()
     for key, meta in sorted(meta_by_key.items()):
         if key in matched_meta:
             continue
+        granted = str(meta.get("grantedEffectId") or key)
         name_en = str(meta.get("name") or key)
-        skipped.append(
-            SkippedGem(
-                str(meta.get("grantedEffectId") or key), name_en, SKIP_NO_ZH,
-                "POEDB 清单页上没有对应条目，取不到中文名（不许用英文名或 slug 顶替）",
+        skill = skills.get(granted)
+        entry = (
+            _detail_entry(meta, skill, name_en=name_en, detail_html=detail_html)
+            if skill is not None and detail_html is not None
+            else None
+        )
+        if entry is None:
+            # 三种成因写清楚，别混成一句「取不到中文名」：**没去查**与**查了没有**
+            # 指向完全不同的动作（前者补一次采集，后者是 POEDB 真的没有这一条）。
+            if skill is None:
+                detail = f"Gems.lua 有元数据但 Data/Skills 里没有 {granted!r} 的技能定义"
+            elif detail_html is None:
+                detail = (
+                    "POEDB 清单页上没有对应条目，且本次未查详情页"
+                    f"（缓存里没有 {poedb_url(poedb_detail_slug(name_en))}，加 --fetch 可补抓）"
+                )
+            else:
+                detail = (
+                    f"清单页与详情页 {poedb_url(poedb_detail_slug(name_en))} 都取不到中文名"
+                    "（不许用英文名或 slug 顶替）"
+                )
+            skipped.append(SkippedGem(granted, name_en, SKIP_NO_ZH, detail))
+            continue
+        if any(gem.poedb_slug == entry.poedb_slug for gem in out):
+            # 同一张详情页已经属于另一颗入库的宝石（实测 PoB 的 `*Instant` 变体
+            # 与本体共用页面）。硬写会撞 `UNIQUE(poedb_slug)`，而选一个留下就是
+            # 替用户断言「这两个 granted effect 是同一颗宝石」。
+            skipped.append(
+                SkippedGem(
+                    granted, name_en, SKIP_NO_ZH,
+                    f"详情页 {entry.poedb_slug} 已属于另一颗已入库的宝石，不重复占用",
+                )
+            )
+            continue
+        out.append(
+            _build_gem(
+                entry, meta, skill, granted=granted,
+                divisors=divisors, game_constants=game_constants,
             )
         )
+        detail_slugs.add(entry.poedb_slug)
+
+    if detail_slugs:
+        # 详情页兜上来的宝石，清单页那一侧的同一条就不再是缺口了
+        # （实测 1 条：清单页的 `VaalLightningWarp` 对上 PoB 的 `*Instant`）。
+        # 留着它会让台账把一颗已入库的宝石继续算成「PoB 未发布」。
+        slug_of = {key: item.poedb_slug for key, item in poedb_gems.items()}
+        skipped = [
+            item for item in skipped
+            if not (
+                item.reason == SKIP_POB_MISSING and slug_of.get(item.gem_key) in detail_slugs
+            )
+        ]
 
     out.sort(key=lambda gem: (gem.gem_kind, gem.name_en))
     return out, skipped

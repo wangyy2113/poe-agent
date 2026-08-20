@@ -146,24 +146,32 @@ def record_skipped(conn, skipped: list[SkippedBase]) -> int:  # noqa: ANN001
         if item.reason == SKIP_PSEUDO:
             continue
         groups.setdefault((item.category, item.reason), []).append(item)
-    for (category, reason), items in sorted(groups.items()):
-        sample = "、".join(i.name_en for i in items[:3])
-        point = (
-            f"[{reason}] {category} 类别有 {len(items)} 条 PoB 底材无法与 POEDB 桥接："
-            f"{sample}{' 等' if len(items) > 3 else ''}（{items[0].detail}）"
+    written = 0
+    for category, by_reason in sorted(_by_category(groups).items()):
+        points = [
+            (
+                f"[{reason}] {category} 类别有 {len(items)} 条 PoB 底材无法与 POEDB 桥接："
+                f"{'、'.join(i.name_en for i in items[:3])}"
+                f"{' 等' if len(items) > 3 else ''}（{items[0].detail}）",
+                len(items),
+            )
+            for reason, items in sorted(by_reason.items())
+        ]
+        written += dbmod.record_ingest_gaps(
+            conn, question=f"{category} 底材的完整清单",
+            category="not_collected/base_item", points=points,
         )
-        conn.execute(
-            """
-            INSERT INTO knowledge_gap(question, missing_point, guessed_category,
-                                      kind, hit_count, first_seen, last_seen)
-            VALUES (?,?,?,?,1,datetime('now'),datetime('now'))
-            ON CONFLICT(question, missing_point) DO UPDATE SET
-                hit_count = hit_count + 1, last_seen = datetime('now')
-            """,
-            (f"{category} 底材的完整清单", point[:500],
-             "not_collected/base_item", "ingest_gap"),
-        )
-    return len(groups)
+    return written
+
+
+def _by_category(
+    groups: dict[tuple[str, str], list[SkippedBase]],
+) -> dict[str, dict[str, list[SkippedBase]]]:
+    """`(类别, 原因)` → 按类别分组：台账整组替换的单位是 question，也就是类别。"""
+    out: dict[str, dict[str, list[SkippedBase]]] = {}
+    for (category, reason), items in groups.items():
+        out.setdefault(category, {})[reason] = items
+    return out
 
 
 def _page_html(category: BaseCategory, *, fetcher: Fetcher | None) -> dict[str, tuple[str, str]]:

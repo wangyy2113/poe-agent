@@ -111,7 +111,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 .venv/bin/python scripts/import_pob_mods.py       # 词缀（--dry-run 只体检）
 .venv/bin/python scripts/import_pob_uniques.py    # 唯一装备（自动过滤历史变体）
 .venv/bin/python scripts/import_pob_bases.py      # 底材，18 个装备类别（--dry-run 先清点）
-.venv/bin/python scripts/import_pob_skills.py     # 技能石与辅助宝石（中文名取自已缓存的 POEDB 清单页）
+.venv/bin/python scripts/import_pob_skills.py     # 技能石与辅助宝石（中文名取自 POEDB 清单页，缺的再查详情页）
 .venv/bin/python scripts/import_pob_spectres.py   # 幽魂抗性与建模系数，并与 POEDB 侧对账
 .venv/bin/python scripts/verify_pob_mods.py       # 与 POEDB 对账
 ```
@@ -119,7 +119,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 1014 项，秒级
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 1038 项，秒级
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选
@@ -136,7 +136,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 .venv/bin/python scripts/eval_run.py --record        # 重录真实响应（**要凭证、烧 token**）
 ```
 
-黄金问答集是 `tests/golden/questions.yaml`（109 条，六类），基线与全部结论在
+黄金问答集是 `tests/golden/questions.yaml`（111 条，六类），基线与全部结论在
 `tests/golden/BASELINE.md`——**动闸门前先读它**，里面记了多个已修缺陷与三条已知未修边界，
 以及两次「测量本身写错」的教训。
 
@@ -218,14 +218,16 @@ POST /chat[/stream]  api/chat.py（只做校验与编排调用）
 - `pob_mod` 单独建表而不是塞进 `mod_affix`：两源粒度不同，且交叉校验要求各自独立保存，
   混表会让 UPSERT 在冲突被发现前就互相覆盖。对账结果落 `source_conflict`，其中
   `kind=mod` 是已确认冲突（并列展示给用户），`mod_review` 只是待人工核对，**不得当作冲突呈现**。
-- `pob_skill_level` **只放字面值，没有伤害列也没有属性需求列**。PoB 存的每级伤害是乘数
-  （冰霜新星 1 级存 `0.8 / 1.2`），`reqStr/reqDex/reqInt` 是换算系数（真需求要按
+- `pob_skill_level` **没有属性需求列**，伤害列直到第二十九轮才敢加。PoB 存的每级伤害是
+  乘数（冰霜新星 1 级存 `0.8 / 1.2`），`reqStr/reqDex/reqInt` 是换算系数（真需求要按
   `round((20+(等级需求-3)×3)×(系数/100)^0.9×statType)` 算）。两者都得按 PoB 的公式算才是
-  游戏里的显示值，算错就是「带着引用的错数字」——比查不到更糟。也**不留空列**：留了下一个人
-  会以为它待填，然后把乘数当伤害写进去。这两维明确划进 `partial_note` 的未采集部分。
+  游戏里的显示值，算错就是「带着引用的错数字」——比查不到更糟。伤害列**放行的条件是
+  有了对账口径**（POEDB 技能页逐个核对，见下），且入库存的是**算好的显示值不是乘数**；
+  属性需求至今没有可核对的真值来源，所以整维仍未采集，并明确划进 `partial_note`。
+  也**不留空列**：留了下一个人会以为它待填，然后把乘数当伤害写进去。
 
-本机 `data/poe.db` 现状（`GET /healthz` 与 `/admin/stats` 可查）：`entity` 5197、
-`mod_affix` 93897、`pob_mod` 25487、`chunk` 18447、`alias` 8106、`game_constant` 543、
+本机 `data/poe.db` 现状（`GET /healthz` 与 `/admin/stats` 可查）：`entity` 5207、
+`mod_affix` 93897、`pob_mod` 25487、`chunk` 18457、`alias` 8126、`game_constant` 543、
 `craft_bench_recipe` 783、`pob_base_item` **1022**（18 个装备类别，PoB × POEDB 逐条桥接，
 覆盖 PoB 侧 96.1%；未桥接的 41 条已按类别登记在台账）、`source_conflict` **515**（`mod_review` 254 + `unique_review` 207 + `spectre_review` 43
 + `spectre` **8** + `tree_review` 3）。
@@ -268,12 +270,27 @@ POST /chat[/stream]  api/chat.py（只做校验与编排调用）
 它们现在记录的是「边界往前挪」这件事本身。**DPS 仍然拒答**——它要攻速与整条加成链，
 基础伤害只是其中一个乘数；属性需求与获取途径也照旧未采集。
 
-`pob_skill_gem` **810** 颗宝石（548 技能石 + 262 辅助）+ `pob_skill_level` **30422** 行
+`pob_skill_gem` **820** 颗宝石（558 技能石 + 262 辅助）+ `pob_skill_level` **30672** 行
 每级数值。桥接键是 PoB 的 `grantedEffectId`（它也出现在 POEDB 清单页的 `data-hover` 里），
-不分大小写配对命中 810/861、零多解；未桥接的 62 条按成因登记在台账
-（`pob_missing` 51 = POEDB 保留的历史/未上线条目，`no_zh_name` 11 = 取不到中文名）。
-**这两张表刻意没有伤害列，也没有属性需求列**——理由见 `core/db.py` 的表注释，
-那是本轮最重要的一条边界。
+不分大小写配对、零多解；未桥接的 51 条按成因登记在台账
+（`pob_missing` 50 = POEDB 保留的历史/未上线条目，`no_zh_name` 1 = 取不到中文名）。
+
+**第三十一轮把「清单页取不到中文名」这一族从 11 颗压到 1 颗**，方式是加一条
+**详情页兜底**：清单页没收录的宝石去 `poedb.tw/cn/<slug>` 取名，中文名在页面
+`<title>` 里（`时空之门 - 流亡编年史…`，而 `<h1>` 反而是英文）。规矩没放宽——
+名字仍然来自 POEDB，只是先前止步于清单页。补进来的是时空之门、号召、引爆地雷、
+疾步、瓦尔：裂隙、瓦尔：闪电传送与四个契约。判据两道：页面正文必须出现这颗宝石的
+**英文名**（slug 猜错时 POEDB 会给别的条目），标题必须是「中文名 - 站名」的形状。
+剩下的 1 颗是 `Eclipse`——那一页在 POEDB 上不存在（取回 0 字节），不是我们没去看。
+**颜色在这条路上只能取 PoB 那一侧**：详情页上 `gem_red/green/blue` 三个 class 都在
+（那是相关宝石的链接），拿它判色会随机取错一个。
+
+被否掉的另一条路：给桥接加**第二把键**（`variantId` 或 `gameId` 尾段）。
+实测它只救得回 11 条里的 1 条，而那一条详情页同样救得回来；多一条匹配路径
+就多一类「两个 PoB 条目抢同一个 POEDB 条目」的歧义。**用一条判据换 10 条，
+不用两条换 1 条。** 同名共用一张详情页的情形（PoB 的 `*Instant` 变体）由代码显式跳过：
+硬写会撞 `UNIQUE(poedb_slug)`，挑一个留下就是替用户断言两者是同一颗宝石。
+**这两张表仍然没有属性需求列**（理由见 `core/db.py` 的表注释）。
 
 `poedb_currency` **113** 条通货（中英文名、堆叠上限、效果原文；其中 **15** 条在 POEDB 上
 没有效果文本——碎片与命能类，留空而不是自己补一句）。那一页 `<table>` 计数为 **0**，
@@ -489,8 +506,21 @@ Lua 后者覆盖前者，解析器同样取后者——**行号锚点也因此�
 `/admin/stats` 另加 `gaps_excluded`，把排除掉的条目数按原因列出来——藏起来就等于
 换一个失真信号。迁移**只重新归类、不删行**：台账是审计记录，删掉就无法回溯当初为什么排错了。
 
-修完之后的真实优先级头部是：技能石清单（62 条未桥接）、怪物词缀清单、
+修完之后的真实优先级头部是：技能石清单（当时 62 条未桥接）、怪物词缀清单、
 唯一装备的「详情页有而列表页没有的词条」、各类底材未桥接项——**每一条都真的可执行**。
+
+**第三十一轮照着这个头部去干活，又在同一张表上撞到三个失真点**（这一次是采集类条目
+自己的口径，`core.db.record_ingest_gaps` 现在是四个导入脚本唯一的写入口）：
+
+| 失真 | 实测 | 修法 |
+| --- | --- | --- |
+| 旧快照不退场 | 头部那条写着「11 颗未桥接」，实际只剩 1 颗 | 同一 question 下 `source='import'` 的行**整组替换**，`first_seen` 承接 |
+| `hit_count` 量错了东西 | 那个 6 是「导入跑了 6 次」，不是需求也不是缺口大小 | 采集类条目直接写**缺多少条**，排序才是「先补缺得最多的」 |
+| `source` 从来没人写 | 四个导入脚本 + 一个对账脚本全留空 | 分别写 `import` / `verify`；`GAP_SOURCES` 早就声明了这两档 |
+
+第三条正是第三十轮修评测流量时漏掉的另一半——`COALESCE(source,'chat')`
+把脚本自己的写入算成了用户在问。迁移**只改归属不动 `hit_count`**：那些数得由各自的
+导入脚本下次重写时纠正，在迁移里猜条数只会造出第二个失真的数。
 
 一处数据缺口会直接影响判断：
 
@@ -576,6 +606,10 @@ Lua 后者覆盖前者，解析器同样取后者——**行号锚点也因此�
   （第三十轮才发现）。同一类还有：`expect_values` 逐字比对（第二十七轮）、
   「表格被拦」的混合口径（第二十二轮）、`passed` 与 `is_wrong_refusal` 不一致（更早）。
   **先确认测量是对的，再看它指向哪里。**
+  **修完一次不等于修好了**：第三十一轮照着修好的台账去干活，同一张表上又撞到三个
+  失真点（旧快照不退场、`hit_count` 量的是导入次数、`source` 四处都没写）。
+  拿它排出来的第一名，正文写着「11 颗未桥接」而实际只剩 1 颗。
+  信号每次被当作依据使用时，都要顺手核一遍它此刻在说什么。
 - **「缺的是数据」与「缺的是对账口径」是两件事。** 技能伤害那条边界从第十二轮挂到
   第二十九轮，期间一直写着「PoB 存的是乘数、算错就是带着引用的错数字」——那句话是对的，
   但**它描述的不是数据缺口，是验证缺口**。第二十八轮我以为「POEDB 逐宝石详情页从未抓过」
@@ -616,7 +650,7 @@ Lua 后者覆盖前者，解析器同样取后者——**行号锚点也因此�
    越靠上越可预测。**能在上层解决的绝不放到下层。**
 3. **大胆重构、拒绝补丁**：同一概念多处各写一份判据、白名单加语义重叠的新项、
    按用例名特判的 `if`、排序层反复加权 —— 见到就停下来重构，不要再加分支。
-   安全网是 450 项秒级单测 + `--gate` 离线重放 + 流式批量一致性，重构前后必须持平或变好。
+   安全网是千余项秒级单测 + `--gate` 离线重放 + 流式批量一致性，重构前后必须持平或变好。
 4. **该删就删**：不留「以后可能有用」的函数，不为自己刚写的旧行为留兼容分支；
    约束本身是错的就删约束（`UNIQUE(name_zh)`），别绕开它。删除要证明没丢能力。
 5. **防漏改**：成对点清单在规约第 5 条。最高频的是批量 vs 流式、提示词 vs 闸门。

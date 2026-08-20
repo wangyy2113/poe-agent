@@ -16,6 +16,7 @@ from __future__ import annotations
 import logging
 import sqlite3
 import threading
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -994,6 +995,54 @@ COLLECTION_GAP_KINDS = ("retrieval_gap", "tool_gap", "ingest_gap")
 GAP_SOURCES = ("chat", "eval", "import", "verify")
 
 
+def record_ingest_gaps(
+    conn: sqlite3.Connection,
+    *,
+    question: str,
+    category: str,
+    points: Sequence[tuple[str, int]],
+) -> int:
+    """登记一次采集的未入库项（`kind='ingest_gap'`、`source='import'`）。
+
+    四个导入/采集脚本原先各写一份同样的 UPSERT，三个缺陷也就各犯了一遍
+    （第三十一轮实测，起因是照着台账排序去干活时发现头部那条已经过期）：
+
+    1. **旧快照不会退场**。`missing_point` 里带着条数，条数一变就是新的一行，
+       上一行仍以更高的 `hit_count` 留在优先级头部。实测：技能石那条写着
+       「11 颗未能桥接」而当时实际只剩 1 颗，它还是第一名。所以这里**整组替换**
+       同一 question 下 `source='import'` 的行，并把 `first_seen` 承接过来
+       ——「这个缺口最早什么时候记下的」是审计信息，不能因为重写而丢。
+    2. **`hit_count` 量错了东西**。它原先每跑一次导入 +1，也就是量「脚本跑了几次」。
+       采集类缺口的量级是**缺多少条**，所以这一类直接把条数写进去：优先级按它排序
+       才是「先补缺得最多的」。用户问了几次那层含义只对 `chat`/`eval` 成立。
+    3. **`source` 从来没人写**。四处都留空，于是 `COALESCE(source,'chat')`
+       把脚本自己的写入算成用户流量——第三十轮修掉评测流量时漏了这一半。
+    """
+    previous = {
+        str(row["missing_point"]): str(row["first_seen"])
+        for row in conn.execute(
+            "SELECT missing_point, first_seen FROM knowledge_gap "
+            "WHERE question=? AND kind='ingest_gap' AND source='import'",
+            (question,),
+        )
+    }
+    oldest = min(previous.values(), default=None)
+    conn.execute(
+        "DELETE FROM knowledge_gap "
+        "WHERE question=? AND kind='ingest_gap' AND source='import'",
+        (question,),
+    )
+    for missing_point, magnitude in points:
+        text = missing_point[:500]
+        conn.execute(
+            "INSERT INTO knowledge_gap(question, missing_point, guessed_category, kind, "
+            "source, hit_count, first_seen, last_seen) "
+            "VALUES (?,?,?,'ingest_gap','import',?,COALESCE(?,datetime('now')),datetime('now'))",
+            (question, text, category, max(int(magnitude), 1), previous.get(text, oldest)),
+        )
+    return len(points)
+
+
 def _migrate_gap_source(conn: sqlite3.Connection) -> None:
     """给 `knowledge_gap` 补 `source` 列，并把两类噪声条目就地重新归类（第三十轮）。
 
@@ -1054,6 +1103,19 @@ def _migrate_gap_source(conn: sqlite3.Connection) -> None:
                 logger.info("缺口台账迁移：%d 条评测流量已标记（不计入采集优先级）", marked)
     except Exception as exc:  # noqa: BLE001  测试资产不可用时跳过即可
         logger.debug("黄金问答集不可用，跳过评测流量标记：%s", exc)
+
+    # 3) 导入脚本写的行归到 `source='import'`（第三十一轮）。
+    #    `ingest_gap` 只有采集/导入脚本会写，所以这个判据是充分的。原先四处都留空，
+    #    `COALESCE(source,'chat')` 于是把脚本自己的写入算成用户流量——第三十轮修评测
+    #    流量时漏掉的正是这一半。**只改归属不改 hit_count**：那些行的命中次数是
+    #    「导入跑了几次」，含义得由各自的导入脚本下次重写时纠正
+    #    （见 `record_ingest_gaps`），在迁移里猜条数只会造出第二个失真的数。
+    marked = conn.execute(
+        "UPDATE knowledge_gap SET source='import' "
+        "WHERE kind='ingest_gap' AND COALESCE(source,'') <> 'import'"
+    ).rowcount
+    if marked:
+        logger.info("缺口台账迁移：%d 条导入脚本写的条目归到 source='import'", marked)
     conn.commit()
     conn.execute("CREATE INDEX IF NOT EXISTS idx_gap_source ON knowledge_gap(source)")
 

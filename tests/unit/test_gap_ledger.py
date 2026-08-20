@@ -295,6 +295,166 @@ class GapSourceMigrationTest(unittest.TestCase):
             "SELECT count(*) FROM knowledge_gap").fetchone()[0], "不许删行")
         conn.close()
 
+    def test_迁移把导入脚本写的行归到import但不动命中次数(self) -> None:
+        """第三十一轮：四个导入脚本都没写 `source`，于是 `COALESCE(source,'chat')`
+        把脚本自己的写入算成用户流量。命中次数**不在迁移里猜**——那些数是
+        「导入跑了几次」，得由导入脚本下次重写时纠正。"""
+        from core.db import _migrate_gap_source  # noqa: PLC0415
+
+        conn = _conn(_NEW_SCHEMA)
+        _insert(conn, "技能石与辅助宝石的完整清单", "[no_zh_name] 11 颗未桥接", hit_count=6)
+        conn.execute("UPDATE knowledge_gap SET kind='ingest_gap'")
+        _migrate_gap_source(conn)
+        row = conn.execute("SELECT source, hit_count FROM knowledge_gap").fetchone()
+        self.assertEqual(("import", 6), (row["source"], row["hit_count"]))
+        conn.close()
+
+
+class IngestGapTest(unittest.TestCase):
+    """采集类缺口：整组替换、`hit_count` 量条数、来源标 `import`（第三十一轮）。
+
+    起因是照着台账排序去干活时发现头部那条**已经过期**：写着「11 颗未能桥接」，
+    实际只剩 1 颗，而它仍以 6 次命中排第一（那 6 次是导入跑了 6 次）。
+    这是本项目第六次撞上「测量工具本身失真」。
+    """
+
+    def setUp(self) -> None:
+        self.conn = _conn(_NEW_SCHEMA)
+
+    def tearDown(self) -> None:
+        self.conn.close()
+
+    def _rows(self) -> list[sqlite3.Row]:
+        return self.conn.execute(
+            "SELECT missing_point, kind, source, hit_count, first_seen "
+            "FROM knowledge_gap ORDER BY missing_point"
+        ).fetchall()
+
+    def _write(self, points: list[tuple[str, int]]) -> int:
+        return dbmod.record_ingest_gaps(
+            self.conn, question="技能石与辅助宝石的完整清单",
+            category="partial/skill_gem", points=points,
+        )
+
+    def test_旧快照整组退场(self) -> None:
+        """条数一变就是新的一行，旧行留着会继续以更高的命中次数占住优先级头部。"""
+        self._write([("[no_zh_name] 11 颗未桥接", 11)])
+        self._write([("[no_zh_name] 1 颗未桥接", 1)])
+        self.assertEqual(["[no_zh_name] 1 颗未桥接"], [r["missing_point"] for r in self._rows()])
+
+    def test_命中次数量的是缺多少条而不是跑了几次(self) -> None:
+        for _ in range(3):
+            self._write([("[pob_missing] 50 颗未桥接", 50)])
+        row = self._rows()[0]
+        self.assertEqual(50, row["hit_count"])
+
+    def test_来源标import(self) -> None:
+        self._write([("[pob_missing] 50 颗未桥接", 50)])
+        self.assertEqual(("ingest_gap", "import"), (self._rows()[0]["kind"], self._rows()[0]["source"]))
+
+    def test_首次记录时间承接下来(self) -> None:
+        """「这个缺口最早什么时候记下的」是审计信息，不能因为重写而丢。"""
+        self._write([("[no_zh_name] 11 颗未桥接", 11)])
+        self.conn.execute("UPDATE knowledge_gap SET first_seen='2026-08-18 00:00:00'")
+        self._write([("[no_zh_name] 1 颗未桥接", 1)])
+        self.assertEqual("2026-08-18 00:00:00", self._rows()[0]["first_seen"])
+
+    def test_别的问题下的行不受影响(self) -> None:
+        """成对点：整组替换的单位是 question，不能顺手清掉别的采集脚本写的行。"""
+        dbmod.record_ingest_gaps(
+            self.conn, question="怪物词缀的完整清单", category="partial/monster_mod",
+            points=[("[no_mod_text] 248 条未入库", 248)],
+        )
+        self._write([("[no_zh_name] 1 颗未桥接", 1)])
+        self.assertEqual(2, len(self._rows()))
+
+    def test_真实流量的行不受影响(self) -> None:
+        """同一 question 下用户问过的记录（source='chat'）不许被导入清掉。"""
+        _insert(self.conn, "技能石与辅助宝石的完整清单", "用户问过的缺据", hit_count=4)
+        self.conn.execute("UPDATE knowledge_gap SET kind='retrieval_gap', source='chat'")
+        self._write([("[no_zh_name] 1 颗未桥接", 1)])
+        self.assertEqual(
+            {("retrieval_gap", "chat", 4), ("ingest_gap", "import", 1)},
+            {(r["kind"], r["source"], r["hit_count"]) for r in self._rows()},
+        )
+
+    def test_全部桥接上时台账清空(self) -> None:
+        """缺口补完就该消失——留着一行「0 条未桥接」等于给自己一个假待办。"""
+        self._write([("[no_zh_name] 11 颗未桥接", 11)])
+        self.assertEqual(0, self._write([]))
+        self.assertEqual([], self._rows())
+
+
+class IngestGapWriterTest(unittest.TestCase):
+    """四个采集脚本都走同一个写入口（第三十一轮把四份重复的 UPSERT 收成一份）。
+
+    这四处此前**一条单测都没有**，而它们正是「该采集什么」这个信号的唯一来源。
+    每个写入口都钉三件事：`kind='ingest_gap'`、`source='import'`、
+    `hit_count` = 缺多少条。
+    """
+
+    def setUp(self) -> None:
+        from core.db import SCHEMA  # noqa: PLC0415
+
+        self.conn = sqlite3.connect(":memory:")
+        self.conn.row_factory = sqlite3.Row
+        self.conn.executescript(SCHEMA)
+
+    def tearDown(self) -> None:
+        self.conn.close()
+
+    def _rows(self) -> list[sqlite3.Row]:
+        return self.conn.execute(
+            "SELECT question, missing_point, kind, source, hit_count FROM knowledge_gap"
+        ).fetchall()
+
+    def _assert_shape(self, *, magnitude: int) -> sqlite3.Row:
+        row = self._rows()[0]
+        self.assertEqual(("ingest_gap", "import"), (row["kind"], row["source"]))
+        self.assertEqual(magnitude, row["hit_count"])
+        return row
+
+    def test_技能石导入(self) -> None:
+        from kb.sources.pob_skills import SKIP_NO_ZH, SkippedGem  # noqa: PLC0415
+        from scripts.import_pob_skills import record_skipped  # noqa: PLC0415
+
+        record_skipped(self.conn, [SkippedGem("SupportEclipse", "Eclipse", SKIP_NO_ZH, "页面不存在")])
+        row = self._assert_shape(magnitude=1)
+        self.assertIn("Eclipse", row["missing_point"])
+
+    def test_底材导入按类别分组(self) -> None:
+        """底材的 question 是**类别**，所以两个类别是两行，替换互不影响。"""
+        from kb.sources.pob_bases import SkippedBase  # noqa: PLC0415
+        from scripts.import_pob_bases import record_skipped  # noqa: PLC0415
+
+        record_skipped(self.conn, [
+            SkippedBase("Hedron Bow", "bow", "no_poedb_page", "实验底材"),
+            SkippedBase("Flare Mace", "mace", "no_poedb_page", "实验底材"),
+            SkippedBase("Blunt Force Condenser", "mace", "no_poedb_page", "实验底材"),
+        ])
+        rows = {r["question"]: r["hit_count"] for r in self._rows()}
+        self.assertEqual({"bow 底材的完整清单": 1, "mace 底材的完整清单": 2}, rows)
+
+    def test_圣甲虫采集(self) -> None:
+        from kb.pipeline import _record_scarab_gaps  # noqa: PLC0415
+        from kb.sources.poedb_cards import ItemCard  # noqa: PLC0415
+
+        _record_scarab_gaps(self.conn, [
+            ItemCard("k1", "迷踪孕育石", "s1", "IncubatorStackable"),
+        ])
+        row = self._assert_shape(magnitude=1)
+        self.assertIn("迷踪孕育石", row["missing_point"])
+
+    def test_怪物词缀采集(self) -> None:
+        from kb.pipeline import _record_monster_gaps  # noqa: PLC0415
+        from kb.sources.poedb_monsters import MonsterExtract  # noqa: PLC0415
+
+        _record_monster_gaps(self.conn, MonsterExtract(
+            skipped=[("no_mod_text", "法瑞尔的狂野之灵"), ("no_mod_text", "法瑞尔的丰沃之灵")],
+        ))
+        row = self._assert_shape(magnitude=2)
+        self.assertIn("2 条怪物词缀未入库", row["missing_point"])
+
 
 if __name__ == "__main__":
     unittest.main()
