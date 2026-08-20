@@ -775,7 +775,9 @@ _ENUMERATION_INTENTS = (
 #: 判据：**枚举问句永远不是计算题**，所以这两个工具遇到枚举意图词就让路。
 #: 写成集合而不是在词表里逐个绕开裸属性名：后者要为每个新词想一遍「它是不是属性名」，
 #: 想漏一个就是一条被抢走的枚举题。
-_YIELDS_TO_ENUMERATION = frozenset({"resistance_calc", "mitigation_calc"})
+_YIELDS_TO_ENUMERATION = frozenset(
+    {"resistance_calc", "mitigation_calc", "recovery_calc"}
+)
 
 
 _PREFERRED_TOOL_INTENTS: tuple[tuple[str, tuple[str, ...]], ...] = (
@@ -825,6 +827,13 @@ _PREFERRED_TOOL_INTENTS: tuple[tuple[str, tuple[str, ...]], ...] = (
         "法术压制",
         "减伤上限", "受击结算",
     )),
+    # 回复三段（护盾回充 / 偷取 / 魔力再生）同样是按公式算，证据不在 chunk 里。
+    # 判据同样专指**结算**：裸的「偷取」「回充」「再生」是属性名，
+    # 「生命偷取能从哪来」那类枚举题由 `_YIELDS_TO_ENUMERATION` 让路兜住。
+    ("recovery_calc", (
+        "回充", "多久回满", "回满", "偷取上限", "偷取速度", "偷取速率",
+        "每秒回复", "再生速度", "再生怎么算", "魔力再生", "回复速度",
+    )),
     # 「某属性能从哪来」是枚举问题：不完整的枚举被当成完整的呈现就是错误答案
     ("stat_sources", _ENUMERATION_INTENTS),
     # 关于知识库**覆盖范围**自身的元问题，答案不在 chunk 里。
@@ -862,6 +871,8 @@ _RESIST_NUMBER_RE = re.compile(r"[-+]?\d")
 #: 与抗性同理：「带着具体数字问护甲 / 闪避」= 要算。同样判在意图词表之后，
 #: 所以「护甲词缀有几档」仍归 `mod_tiers`、「护甲能从哪来」仍归 `stat_sources`。
 _MITIGATION_WORDS = ("护甲", "闪避", "格挡", "法术压制")
+#: 回复侧的数字通道。「护盾」不收——它同时是底材属性名（「哪些底材护盾最高」）。
+_RECOVERY_WORDS = ("回充", "偷取", "魔力再生", "回满")
 
 
 def _resistance_numeric_route(question: str) -> str:
@@ -872,7 +883,9 @@ def _resistance_numeric_route(question: str) -> str:
         return ""
     if any(word in question for word in _RESIST_WORDS):
         return "resistance_calc"
-    return "mitigation_calc" if any(w in question for w in _MITIGATION_WORDS) else ""
+    if any(word in question for word in _MITIGATION_WORDS):
+        return "mitigation_calc"
+    return "recovery_calc" if any(w in question for w in _RECOVERY_WORDS) else ""
 
 
 def _preferred_tool_route(question: str) -> str:
@@ -997,6 +1010,40 @@ def _mitigation_args(question: str) -> dict[str, Any] | None:
     return args or None
 
 
+#: 回复的参数槽。与受击同一条纪律：数字与单位词紧邻才取，同槽两个值就整体放弃。
+_RECOVERY_SLOTS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("energy_shield", ("护盾", "能量护盾", "es")),
+    ("mana", ("魔力", "蓝")),
+    ("hit_damage", ("伤害", "一击")),
+    ("leech_pct", ("偷取", "偷血")),
+    ("instances", ("个实例", "层偷取", "个偷取")),
+)
+
+
+def _recovery_args(question: str) -> dict[str, Any] | None:
+    """`recovery_calc` 的参数。没有数字 → 讲规则（无参数）。
+
+    偷取那一段还要**池大小**，而「池」在问法里可能是生命/魔力/护盾三者之一：
+    只有当问题里出现「偷取」且能抽到生命值时才填 `pool`，否则交给工具说缺什么。
+    """
+    if not _RESIST_NUMBER_RE.search(question):
+        return {}
+    args: dict[str, Any] = {}
+    for slot, keywords in _RECOVERY_SLOTS:
+        values = _slot_values(question, keywords)
+        if len(values) > 1:
+            logger.info("recovery_calc 的 %s 抽到多个值 %s，交回模型自选", slot, values)
+            return None
+        if values:
+            value = values.pop()
+            args[slot] = int(value) if slot == "instances" else value
+    life = _slot_values(question, ("生命", "血量", "最大生命"))
+    if len(life) == 1 and ("偷取" in question or "偷血" in question):
+        args["pool"] = life.pop()
+        args["pool_name"] = "生命"
+    return args or None
+
+
 def _resistance_args(question: str) -> dict[str, Any] | None:
     """`resistance_calc` 的参数。
 
@@ -1026,6 +1073,7 @@ _CODE_INVOKED_TOOLS: dict[str, Any] = {
     # 计算器：没有数字就是讲规则（无参数），有数字则只认单位词紧邻的那些
     "mitigation_calc": _mitigation_args,
     "resistance_calc": _resistance_args,
+    "recovery_calc": _recovery_args,
 }
 
 #: 这些工具按设计**不产出引用**（覆盖声明是元信息不是游戏事实）。

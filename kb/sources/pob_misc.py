@@ -54,6 +54,14 @@ MODULE_MISC_WHITELIST: tuple[str, ...] = (
     "BlockChanceCap",
     "SuppressionChanceCap",
     "SuppressionEffect",
+    # 回复（第二十三轮）。`EnergyShieldRechargeBase` 在那张表里**出现两次**：
+    # 先是 `characterConstants["energy_shield_recharge_rate_per_minute_%"] / 60 / 100`
+    # （表达式），紧接着又写了一遍字面量 `0.33`。Lua 后者覆盖前者，
+    # 解析器同样取后者——两者相差 1% 以内，`tests/unit/test_recovery.py` 拿库里的
+    # 那条 characterConstants 反算来证明这一点。这是白名单里唯一一个重复键。
+    "EnergyShieldRechargeBase",
+    "EnergyShieldRechargeDelay",
+    "LeechRateBase",
 )
 
 #: 出处注释：`-- From GameConstants.dat`
@@ -163,12 +171,18 @@ def extract_module_misc(pob_root: Path) -> tuple[dict[str, tuple[float, int | No
 
 
 def _line_of(source: str, key: str) -> int | None:
-    """`key = ` 所在行号（1-based）。找不到返回 None——引用宁可没有锚点，不要错的锚点。"""
+    """`key = ` 所在行号（1-based）。找不到返回 None——引用宁可没有锚点，不要错的锚点。
+
+    **取最后一次出现**：Lua 里后写的赋值覆盖先写的，解析器拿到的也是后者
+    （`EnergyShieldRechargeBase` 在那张表里就写了两次，先表达式后字面量）。
+    锚点指向第一次出现的话，点开看到的是一行**没有被采用**的代码——
+    比没有锚点更误导人。
+    """
     pattern = re.compile(rf"^\s*{re.escape(key)}\s*=", re.MULTILINE)
-    match = pattern.search(source)
-    if match is None:
-        return None
-    return source.count("\n", 0, match.start()) + 1
+    line: int | None = None
+    for match in pattern.finditer(source):
+        line = source.count("\n", 0, match.start()) + 1
+    return line
 
 
 def extract(pob_root: Path) -> tuple[list[ConstantGroup], list[str]]:

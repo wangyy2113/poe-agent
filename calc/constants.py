@@ -67,6 +67,27 @@ BLOCK_CHANCE_CAP = "pobMisc.BlockChanceCap"
 SUPPRESSION_CHANCE_CAP = "pobMisc.SuppressionChanceCap"
 SUPPRESSION_EFFECT = "pobMisc.SuppressionEffect"
 
+#: 回复。`ES_RECHARGE_BASE` 是「每秒回充最大护盾的多少」（0.33 → 33%/秒，约 3 秒回满），
+#: `LEECH_RATE_BASE` 是「一次偷取每秒回复最大池的多少」（0.02 → 2%/秒）。
+ES_RECHARGE_BASE = "pobMisc.EnergyShieldRechargeBase"
+ES_RECHARGE_DELAY = "pobMisc.EnergyShieldRechargeDelay"
+LEECH_RATE_BASE = "pobMisc.LeechRateBase"
+
+#: 偷取的两类上限：**速率**（每秒最多回复池的百分之几）与**单次实例**
+#: （一次偷取最多回复池的百分之几）。三种池各一套，值不同——合并成一个数就是错。
+MAX_LIFE_LEECH_RATE = "characterConstants.maximum_life_leech_rate_%_per_minute"
+MAX_MANA_LEECH_RATE = "characterConstants.maximum_mana_leech_rate_%_per_minute"
+MAX_ES_LEECH_RATE = "characterConstants.maximum_energy_shield_leech_rate_%_per_minute"
+MAX_LIFE_LEECH_INSTANCE = (
+    "characterConstants.maximum_life_leech_amount_per_leech_%_max_life"
+)
+MAX_MANA_LEECH_INSTANCE = (
+    "characterConstants.maximum_mana_leech_amount_per_leech_%_max_mana"
+)
+MAX_ES_LEECH_INSTANCE = (
+    "characterConstants.maximum_energy_shield_leech_amount_per_leech_%_max_energy_shield"
+)
+
 ES_RATIO_OF_LIFE = "gameConstants.EnergyShieldRatioOfLife"
 MONSTER_DR_IMPROVEMENT = "gameConstants.MonsterDamageReductionImprovement"
 MONSTER_ACCURACY_IMPROVEMENT = "gameConstants.MonsterAccuracyImprovement"
@@ -87,6 +108,9 @@ REQUIRED = (
     ATTACK_SPEED_PER_FRENZY_CHARGE,
     MAX_RESIST_CAP, RESIST_FLOOR,
     EVADE_CHANCE_CAP, BLOCK_CHANCE_CAP, SUPPRESSION_CHANCE_CAP, SUPPRESSION_EFFECT,
+    ES_RECHARGE_BASE, ES_RECHARGE_DELAY, LEECH_RATE_BASE,
+    MAX_LIFE_LEECH_RATE, MAX_MANA_LEECH_RATE, MAX_ES_LEECH_RATE,
+    MAX_LIFE_LEECH_INSTANCE, MAX_MANA_LEECH_INSTANCE, MAX_ES_LEECH_INSTANCE,
     ES_RATIO_OF_LIFE, MONSTER_DR_IMPROVEMENT,
     MONSTER_LIFE_TABLE, MONSTER_ARMOUR_TABLE, MONSTER_EVASION_TABLE,
     MONSTER_ACCURACY_TABLE, MONSTER_DAMAGE_TABLE,
