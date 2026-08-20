@@ -119,7 +119,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 965 项，秒级
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 997 项，秒级
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选
@@ -136,7 +136,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 .venv/bin/python scripts/eval_run.py --record        # 重录真实响应（**要凭证、烧 token**）
 ```
 
-黄金问答集是 `tests/golden/questions.yaml`（107 条，六类），基线与全部结论在
+黄金问答集是 `tests/golden/questions.yaml`（109 条，六类），基线与全部结论在
 `tests/golden/BASELINE.md`——**动闸门前先读它**，里面记了多个已修缺陷与三条已知未修边界，
 以及两次「测量本身写错」的教训。
 
@@ -177,7 +177,7 @@ POST /chat[/stream]  api/chat.py（只做校验与编排调用）
 | `kb/` | `pipeline.py` 采集管线、`sources/` 各来源抽取器、`coverage.py` 知识库自描述层、`stat_channels.py` 属性来源渠道注册表、`render*.py` 卡片切片 |
 | `parsers/` | `item_text.py`（纯文本，不连库）→ `item_mods.py` T 级匹配 → `mod_bridge.py` 英文桥接 → `item_report.py` 报告 |
 | `craft/` | `feasibility.py` 词缀组合三态可行性、`pool.py` 胸甲普通词缀有效池与条件概率 |
-| `calc/` | `constants.py` 常量访问层，**缺失即抛异常，绝不给默认值**；`derive.py` 两个计算器共用的推导件（`Step` / 引用推导）；`resistance.py` 抗性结算；`mitigation.py` 受击结算（闪避/命中、格挡、法术压制、护甲）；`recovery.py` 回复（护盾回充、偷取、魔力再生）；`reservation.py` 保留（取整是难点）；`ailment.py` 持续伤害；`threshold.py` 门槛型异常；`maxhit.py` 一发最大承受伤害。暴击 / 伤害转化下的 Max Hit / 冰冻时长曲线未实现 |
+| `calc/` | `constants.py` 常量访问层，**缺失即抛异常，绝不给默认值**；`derive.py` 两个计算器共用的推导件（`Step` / 引用推导）；`resistance.py` 抗性结算；`mitigation.py` 受击结算（闪避/命中、格挡、法术压制、护甲）；`recovery.py` 回复（护盾回充、偷取、魔力再生）；`reservation.py` 保留（取整是难点）；`ailment.py` 持续伤害；`threshold.py` 门槛型异常；`maxhit.py` 一发最大承受伤害；`crit.py` 暴击。命中 / DPS（要先有 effectiveness 公式）、伤害转化下的 Max Hit、冰冻时长曲线未实现 |
 | `static/` | 单页前端三个文件，无构建步骤、无 Node、无第三方 JS（Markdown 渲染器自写，为了强制先转义再解析） |
 | `tests/golden/` | 评测资产：`questions.yaml` 黄金问答集、`loader.py` 严格校验、`recording.py` 录制回放、`recordings/` 真实响应、`audit.yaml` 人工结论、`BASELINE.md` 指标基线 |
 
@@ -198,6 +198,7 @@ POST /chat[/stream]  api/chat.py（只做校验与编排调用）
 `ailment_dot_calc`（点燃/中毒/流血：每秒 / 持续 / 总共 + 叠加与减伤口径）→
 `ailment_threshold_calc`（感电/冰缓等：伤害 ÷ 异常门槛 → 强度；含反问）→
 `max_hit_calc`（一发最多能挨多少：抗性 → 护甲 → 池 的反解）→
+`crit_calc`（暴击率与平均伤害倍率；基础暴击查库，**只给倍率不给 DPS**）→
 `stat_sources`（某属性能从哪来）→
 `entity_lookup` → `kb_coverage` → `kb_search`（兜底）
 
@@ -419,6 +420,30 @@ Lua 后者覆盖前者，解析器同样取后者——**行号锚点也因此�
 伤害转化、守护技能、Ward、灵体、Mind over Matter 都不算——依据是 PoB 自己的注释
 （完整解「可能要解一个六次多项式」，所以它对多类型用多轮平滑逼近）。
 拿单类型结果去冒充那些情形，是一个带着推导表的错数字。
+
+**暴击（`calc/crit.py` + `crit_calc`）是攻击侧第一块**，而它能做的理由很具体：
+**平均伤害倍率 =(1 − 暴击率)+ 暴击率 × 暴击加成 不需要知道这一击有多大**。
+所以在「伤害数值刻意未采集」的前提下，它给的是**倍率**而不是 DPS——
+40% 暴击 + 350% 加成 ⇒ 2.0（平均伤害翻倍）。基础暴击从库里查：技能每级在
+`pob_skill_level.crit_chance`（7,600 行）、武器底材在 `pob_base_item.stats.CritChanceBase`。
+
+三条容易记错的：
+
+- **暴击率上限 100%，不是社区常说的 95%**——PoB 给 `CritChanceCap` 播的基础值就是 100
+  （`CalcSetup.lua:110`）。这个数硬编码在代码里、不在常量表，由单测对着原文钉住。
+- **基础暴击加成 150%**，而 PoB 内部存成 `+50`（`CalcSetup.lua:501` 减了 100）。
+  照抄内部值会少一整倍。
+- **「增加的暴击率」乘在基础暴击上**：6% 基础配 +300% 只有 24%，7.5% 基础有 30%。
+  这是「哪种武器适合暴击流」的算术来源。
+
+**DPS 仍然做不了，而这一轮把原因量清楚了**：它要 PoB 的 effectiveness 公式
+（`availableEffectiveness =(SkillDamageBaseEffectiveness + Incremental ×(等级−1))
+× 宝石 baseEffectiveness ×(1 + incrementalEffectiveness)^(等级−1)`，
+`CalcTools.lua:195-206`），两个 `gameConstants` 已在库里、公式也读通了——
+**卡点是没有可离线对账的外部值**：POEDB 的每级伤害表不在 `data/http_cache` 里
+（缓存的是清单页，逐宝石详情页从未抓过），hover 片段也只有 1 个。
+所以那一轮要先补一次采集，再谈计算——**先有对账口径，再上计算器**，
+这是抗性那一轮定下的顺序。
 
 一处数据缺口会直接影响判断：
 

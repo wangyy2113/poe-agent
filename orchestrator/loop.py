@@ -778,7 +778,7 @@ _ENUMERATION_INTENTS = (
 _YIELDS_TO_ENUMERATION = frozenset(
     {
         "resistance_calc", "mitigation_calc", "recovery_calc", "reservation_calc",
-        "ailment_dot_calc", "ailment_threshold_calc", "max_hit_calc",
+        "ailment_dot_calc", "ailment_threshold_calc", "max_hit_calc", "crit_calc",
     }
 )
 
@@ -865,6 +865,13 @@ _PREFERRED_TOOL_INTENTS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("max_hit_calc", (
         "一发最多", "最多能挨", "能挨多少", "会被秒", "会不会秒", "一发秒",
         "最大承受", "max hit", "Max Hit", "挨得住", "秒吗", "秒掉", "会秒",
+    )),
+    # 暴击：暴击率上限、平均伤害倍率。判据专指**算**，裸的「暴击」会把
+    # 「哪些词缀给暴击」「暴击词缀有几档」抢过来。
+    ("crit_calc", (
+        "暴击率上限", "暴击上限", "暴击加成是", "暴击伤害加成是", "平均伤害倍率",
+        "暴击率多少", "暴击多少", "基础暴击", "暴击怎么算", "暴击值不值",
+        "平均伤害", "暴击伤害加成",
     )),
     # 「某属性能从哪来」是枚举问题：不完整的枚举被当成完整的呈现就是错误答案
     ("stat_sources", _ENUMERATION_INTENTS),
@@ -1149,6 +1156,27 @@ _MAXHIT_SLOTS: tuple[tuple[str, tuple[str, ...]], ...] = (
 )
 
 
+def _crit_args(question: str) -> dict[str, Any] | None:
+    """`crit_calc` 的参数：暴击率 / 加成 / 技能名。没有数字也没有技能名 → 讲规则。"""
+    args: dict[str, Any] = {}
+    multi = _slot_values(question, ("暴击伤害", "暴击加成", "爆伤"))
+    # 先抽加成，再把它的值从暴击率候选里**剔掉**：「350% 暴击伤害」里的 350
+    # 同时也匹配裸的「暴击」，不剔就会让暴击率槽抽到两个值、整条判定作废（实测）。
+    chance = _slot_values(question, ("暴击率", "暴击")) - multi
+    if len(multi) == 1:
+        args["multi_pct"] = multi.pop()
+    if len(chance) == 1:
+        value = chance.pop()
+        # 「暴击率 40%」既可能是基础也可能是最终值。当成**基础**去乘增幅会算大，
+        # 所以按用户报的那个数直接当暴击率用：不填 increased_pct。
+        args["base_chance"] = value
+    elif len(chance) > 1:
+        return None
+    if not args and not _RESIST_NUMBER_RE.search(question):
+        return {}
+    return args or None
+
+
 def _maxhit_args(question: str) -> dict[str, Any] | None:
     """`max_hit_calc` 的参数。没有数字 → 讲规则（无参数）。
 
@@ -1273,6 +1301,7 @@ _CODE_INVOKED_TOOLS: dict[str, Any] = {
     "ailment_dot_calc": _ailment_args,
     "ailment_threshold_calc": _threshold_args,
     "max_hit_calc": _maxhit_args,
+    "crit_calc": _crit_args,
 }
 
 #: 这些工具按设计**不产出引用**（覆盖声明是元信息不是游戏事实）。

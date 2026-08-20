@@ -34,6 +34,7 @@ ALLOWED_TOOLS = [
     "ailment_dot_calc",  # 精确：点燃/中毒/流血的每秒与总伤害（每秒口径 + 叠加规则）
     "ailment_threshold_calc",  # 精确：感电/冰缓等门槛型异常的强度（伤害 ÷ 异常门槛）
     "max_hit_calc",  # 精确：一发最多能挨多少（抗性 → 护甲 → 池 的反解）
+    "crit_calc",  # 精确：暴击率与平均伤害倍率（基础暴击查库；只给倍率不给 DPS）
     "stat_sources",   # 精确：某属性能从哪些渠道获得（逐渠道 + 未采集声明）
     "entity_lookup",  # 精确：按名查实体
     "kb_coverage",    # 元信息：本库覆盖了什么

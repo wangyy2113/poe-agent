@@ -4,6 +4,7 @@ from __future__ import annotations
 from tools.impl import ailments as _ailments  # noqa: F401  注册副作用
 from tools.impl import bench as _bench  # noqa: F401  注册副作用
 from tools.impl import craft as _craft  # noqa: F401  注册副作用
+from tools.impl import crit as _crit  # noqa: F401  注册副作用
 from tools.impl import cluster as _cluster  # noqa: F401  注册副作用
 from tools.impl import craft_pool as _craft_pool  # noqa: F401  注册副作用
 from tools.impl import defence as _defence  # noqa: F401  注册副作用
@@ -18,4 +19,4 @@ from tools.impl import thresholds as _thresholds  # noqa: F401  注册副作用
 from tools.impl import recovery as _recovery  # noqa: F401  注册副作用
 from tools.impl import reservation as _reservation  # noqa: F401  注册副作用
 
-__all__ = ["_ailments", "_bench", "_craft", "_craft_pool", "_defence", "_gems", "_kb_search", "_maxhit", "_cluster", "_metamods", "_monsters", "_mods", "_passives", "_recovery", "_reservation", "_thresholds"]
+__all__ = ["_ailments", "_bench", "_craft", "_crit", "_craft_pool", "_defence", "_gems", "_kb_search", "_maxhit", "_cluster", "_metamods", "_monsters", "_mods", "_passives", "_recovery", "_reservation", "_thresholds"]
