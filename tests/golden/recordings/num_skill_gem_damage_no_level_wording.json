@@ -1,0 +1,132 @@
+{
+  "format_version": 1,
+  "case_id": "num_skill_gem_damage_no_level_wording",
+  "query": "冰霜脉冲的伤害是多少",
+  "recorded_at": "2026-08-20T16:48:30+08:00",
+  "model": "glm-5.2",
+  "tokens": {
+    "prompt": 13943,
+    "output": 418,
+    "reasoning": 127,
+    "total": 14361
+  },
+  "tool_calls": [
+    "kb_search"
+  ],
+  "evidence_gap": false,
+  "out_of_scope": false,
+  "precision_route": "",
+  "gap_answer": "",
+  "final_answer": "## 冰霜脉冲（Freezing Pulse）伤害数据\n\n根据 Path of Building 的数据，冰霜脉冲的基础冰霜伤害如下[[E1]]：\n\n| 等级 | 角色需求 | 消耗魔力 | 基础冰霜伤害 | 暴击率 |\n|------|---------|---------|------------|--------|\n| 1 级 | 1 级 | 5 | **9–14** | 7.5% |\n| 20 级（自然最高） | 70 级 | 21 | **1659–2488** | 7.5% |\n| 40 级（需腐化或 +等级） | 100 级 | 28 | **8799–13198** | 7.5% |\n\n〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕- 冰霜脉冲的施放时间为 **0.65 秒**，标签为法术、投射物、冰霜[[E1]]。\n〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕投射物会迅速消散，消散过程中伤害和冻结几率都会降低[[E1]]。\n- 20 级是该技能的自然最高等级，40 级的数据来自 PoB 的数据上限，需要通过腐化或增加技能等级的方式才能达到[[E1]]。\n\n> **括号内的百分比是该档在同组内的生成权重占比**，不等于任何通货或具体工艺的一次使用成功率，也不等于期望消耗。\n\n> 检索以降级通道完成（alias, fts）：向量检索与重排未启用（网关无 embedding 模型），当前走 BM25 + 实体精确匹配",
+  "blocked_claims": 2,
+  "elapsed_ms": 7054,
+  "evidence_fingerprint": "sha256:c73c8ac97a9573ec8bcdceb6f40289a1",
+  "_warning": "raw_answer 是未过出口闸门的模型原文，含可能无据的断言，不得当作事实引用",
+  "raw_answer": "## 冰霜脉冲（Freezing Pulse）伤害数据\n\n根据 Path of Building 的数据，冰霜脉冲的基础冰霜伤害如下[[E1]]：\n\n| 等级 | 角色需求 | 消耗魔力 | 基础冰霜伤害 | 暴击率 |\n|------|---------|---------|------------|--------|\n| 1 级 | 1 级 | 5 | **9–14** | 7.5% |\n| 20 级（自然最高） | 70 级 | 21 | **1659–2488** | 7.5% |\n| 40 级（需腐化或 +等级） | 100 级 | 28 | **8799–13198** | 7.5% |\n\n补充说明：\n\n- 冰霜脉冲的施放时间为 **0.65 秒**，标签为法术、投射物、冰霜[[E1]]。\n- 其效果为：发射一道冰冷投射物，有几率冻结穿过的敌人；投射物会迅速消散，消散过程中伤害和冻结几率都会降低[[E1]]。\n- 20 级是该技能的自然最高等级，40 级的数据来自 PoB 的数据上限，需要通过腐化或增加技能等级的方式才能达到[[E1]]。",
+  "evidence": [
+    {
+      "label": "E1",
+      "chunk_id": "skill:Freezing_Pulse#0#8242658b7094779f",
+      "entity_id": "skill:Freezing_Pulse",
+      "title": "冰霜脉冲（Freezing Pulse）",
+      "url": "https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/act_int.lua",
+      "source": "Path of Building",
+      "source_priority": 2,
+      "text": "# 冰霜脉冲（Freezing Pulse）\n类型：技能石 ｜ 蓝色（智慧）\n标签：法术、投射物、冰霜\n英文标签：Spell, Projectile, Cold\n施放时间 0.65 秒 ｜ 自然最高 20 级\n\n- 1 级：需角色 1 级，消耗 5 魔力，基础冰霜伤害 9–14，暴击率 7.5%\n- 20 级（自然最高）：需角色 70 级，消耗 21 魔力，基础冰霜伤害 1659–2488，暴击率 7.5%\n- 40 级（PoB 数据上限，需腐化或 +等级）：需角色 100 级，消耗 28 魔力，基础冰霜伤害 8799–13198，暴击率 7.5%\n\nPoB 英文说明：An icy projectile which has a chance to freeze enemies it passes through. The projectile fades quickly, reducing damage and freezing chance until it dissipates.\n\n来源：Path of Building → Data/Skills/act_int.lua\nhttps://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/act_int.lua\n中文名对照：https://poedb.tw/cn/Freezing_Pulse",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E2",
+      "chunk_id": "unique_item:First_Snow#0#a03fc5a578fe6cac",
+      "entity_id": "unique_item:First_Snow",
+      "title": "初雪（First Snow）",
+      "url": "https://poedb.tw/cn/First_Snow",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 初雪（First Snow）\n类型：唯一装备 ｜ 底材：钴蓝珠宝 ｜ 分类：钴蓝珠宝\n\n**需求**：需求 等级 20\n\n**显式词缀**\n- [显式词缀] 投射物伤害提高 (7-10)%\n- [显式词缀] 若范围内含有 40 点智慧，则冰霜脉冲额外发射 2 个投射物\n- [显式词缀] 当范围内含有至少 40 点智慧时，若你近期内粉碎被冰冻的敌人，则冰霜脉冲伤害提高 25%\n\n**附加说明**\n- [说明] ( 近期内意指 4 秒内 )\n\n来源：POEDB → 初雪（First Snow）\nhttps://poedb.tw/cn/First_Snow",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E3",
+      "chunk_id": "passive:Cold_Damage_and_Cold_Ailment_Effect_01cc638fd9#095cbb29f26aea12",
+      "entity_id": "passive:Cold_Damage_and_Cold_Ailment_Effect_01cc638fd9",
+      "title": "普通天赋·冰霜伤害和冰霜异常状态效果（Cold Damage and Cold Ailment Effect）",
+      "url": "https://poedb.tw/cn/passive-skill-tree/",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 普通天赋·冰霜伤害和冰霜异常状态效果（Cold Damage and Cold Ailment Effect）\n普通天赋 ｜ 天赋树 3.29\n\n- 冰霜伤害提高 12%\n- 冰霜异常状态效果提高 10%\n\n> （冰霜元素异常状态指冰缓、冻结、脆弱）\n\n来源：POEDB → 天赋树 · 冰霜伤害和冰霜异常状态效果（Cold Damage and Cold Ailment Effect）\nhttps://poedb.tw/cn/passive-skill-tree/",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E4",
+      "chunk_id": "mod_ladder:Amulets:ColdDamagePercentage#e6e4cf0cef3c7cc2",
+      "entity_id": "mod_ladder:Amulets:ColdDamagePercentage",
+      "title": "项链 · ColdDamagePercentage",
+      "url": "https://poedb.tw/cn/Amulets#ModifiersCalc",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 项链 · ColdDamagePercentage\n底材类别：项链 ｜ 词缀组：ColdDamagePercentage ｜ 类型：后缀/其他 ｜ 来源渠道：5 个\n标签：伤害、元素、冰霜\n\n本词缀组在该底材上共 34 条，来自 5 个来源：Base、工艺工作台、精华、焚界者、虚空忆境。\n互斥规则：与本组（ColdDamagePercentage）有相同词缀组的其他词缀不能同时存在于一件装备上。\n⚠ 同一条词缀文本在本卡的多个来源里都出现 → 仅凭装备上的数值**无法判断**它出自哪个来源，回答时必须并列各种可能。\n\n## Base · 后缀 · 5 档\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/5 | 浮冰之 | 冰霜伤害提高 (23-26)% | 64 | 500（0.3992%） |\n| T2/5 | 雾凇之 | 冰霜伤害提高 (19-22)% | 50 | 500（0.3992%） |\n| T3/5 | 冰之 | 冰霜伤害提高 (16-18)% | 36 | 500（0.3992%） |\n| T4/5 | 雨雪之 | 冰霜伤害提高 (13-15)% | 24 | 500（0.3992%） |\n| T5/5 | 雪之 | 冰霜伤害提高 (10-12)% | 12 | 500（0.3992%） |\n\n## 工艺工作台 · 后缀 · 2 档\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/2 | 工艺之 | 冰霜伤害提高 (13-16)% | 40 | 无数据 |\n| T2/2 | 工艺之 | 冰霜伤害提高 (9-12)% | 20 | 无数据 |\n\n> 本来源无生成权重数据，**不能据此给出成功率或概率**。\n\n## 精华 · 后缀 · 7 档\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/7 | 憎恨之低语精华 | 冰霜伤害提高 (6-10)% | 1 | 无数据 |\n| T2/7 | 憎恨之呢喃精华 | 冰霜伤害提高 (11-14)% | 10 | 无数据 |\n| T3/7 | 憎恨之啼泣精华 | 冰霜伤害提高 (15-18)% | 26 | 无数据 |\n| T4/7 | 憎恨之哀嚎精华 | 冰霜伤害提高 (19-22)% | 42 | 无数据 |\n| T5/7 | 憎恨之咆哮精华 | 冰霜伤害提高 (23-26)% | 58 | 无数据 |\n| T6/7 | 憎恨之尖啸精华 | 冰霜伤害提高 (27-30)% | 74 | 无数据 |\n| T7/7",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E5",
+      "chunk_id": "monster_mod:罪恶枷锁 传奇_冰霜编织者_b3525936#0#a94fdcc762df74f1",
+      "entity_id": "monster_mod:罪恶枷锁 传奇_冰霜编织者_b3525936",
+      "title": "冰霜编织者（怪物词缀）",
+      "url": "https://poedb.tw/cn/Monsters",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 冰霜编织者\n类型：怪物词缀 ｜ 来源：罪恶枷锁 传奇 ｜ 怪物等级 1\n\n- 冰霜伤害提高 50% / +50% 冰霜抗性 / 获得额外冰霜伤害， 其数值等同于物理伤害的 50% / 25% 的物理伤害转换为冰霜伤害 / 击中时施加冰霜曝露\n\n> 该词缀还有 1 项效果在 POEDB 上没有中文文本，仅有内部标识：cold ailment effect on self +% [-50]\n\n来源：POEDB → 怪物词缀\nhttps://poedb.tw/cn/Monsters",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E6",
+      "chunk_id": "mod_ladder:Sceptres:ColdDamagePercentage#e9a49ad796b92cbf",
+      "entity_id": "mod_ladder:Sceptres:ColdDamagePercentage",
+      "title": "短杖 · ColdDamagePercentage",
+      "url": "https://poedb.tw/cn/Sceptres#ModifiersCalc",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 短杖 · ColdDamagePercentage\n底材类别：短杖 ｜ 词缀组：ColdDamagePercentage ｜ 类型：其他 ｜ 来源渠道：3 个\n标签：伤害、元素、冰霜\n\n本词缀组在该底材上共 16 条，来自 3 个来源：异度天灾 有害、异度天灾 有利、虚空忆境。\n互斥规则：与本组（ColdDamagePercentage）有相同词缀组的其他词缀不能同时存在于一件装备上。\n⚠ 同一条词缀文本在本卡的多个来源里都出现 → 仅凭装备上的数值**无法判断**它出自哪个来源，回答时必须并列各种可能。\n\n## 异度天灾 有害 · 其他 · 6 档\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/5 | HellscapeDownsideColdDamage1h3 | 冰霜伤害降低 (82-90)% | 68 | 333（0.6648%） |\n| T2/5 | HellscapeDownsideColdDamage1h2b_______ | 冰霜伤害降低 (72-80)% | 55 | 333（0.6648%） |\n| T3/5 | HellscapeDownsideColdDamage1h2 | 冰霜伤害降低 (62-70)% | 45 | 333（0.6648%） |\n| T4/5 | HellscapeDownsideColdDamage1h1b | 冰霜伤害降低 (52-60)% | 25 | 333（0.6648%） |\n| T5/5 | HellscapeDownsideColdDamage1h0_ | 冰霜伤害降低 (32-40)% | 1 | 333（0.6648%） |\n| T5/5 | HellscapeDownsideColdDamage1h1 | 冰霜伤害降低 (42-50)% | 1 | 333（0.6648%） |\n\n## 异度天灾 有利 · 其他 · 6 档\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/5 | HellscapeUpsideColdDamagePercentage1h3___ | 冰霜伤害提高 (43-45)% | 68 | 1000（0.9091%） |\n| T1/5 | HellscapeUpsideColdDamagePercentage1h4 | 冰霜伤害提高 (48-50)% | 68 | 1000（0.9091%） |\n| T2/5 | HellscapeUpsideColdDamagePercentage1h2b_ | 冰霜伤害提高 (38-40)% | 55 | 1000（0.9091%） |\n",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E7",
+      "chunk_id": "mod_ladder:Staves:ColdDamagePercentage#5f3bfbf23575ead9",
+      "entity_id": "mod_ladder:Staves:ColdDamagePercentage",
+      "title": "长杖 · ColdDamagePercentage",
+      "url": "https://poedb.tw/cn/Staves#ModifiersCalc",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 长杖 · ColdDamagePercentage\n底材类别：长杖 ｜ 词缀组：ColdDamagePercentage ｜ 类型：其他 ｜ 来源渠道：3 个\n标签：伤害、元素、冰霜\n\n本词缀组在该底材上共 16 条，来自 3 个来源：异度天灾 有害、异度天灾 有利、虚空忆境。\n互斥规则：与本组（ColdDamagePercentage）有相同词缀组的其他词缀不能同时存在于一件装备上。\n⚠ 同一条词缀文本在本卡的多个来源里都出现 → 仅凭装备上的数值**无法判断**它出自哪个来源，回答时必须并列各种可能。\n\n## 异度天灾 有害 · 其他 · 6 档\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/5 | HellscapeDownsideColdDamage2h3__ | 冰霜伤害降低 (124-136)% | 68 | 333（0.6582%） |\n| T2/5 | HellscapeDownsideColdDamage2h2b_ | 冰霜伤害降低 (110-122)% | 55 | 333（0.6582%） |\n| T3/5 | HellscapeDownsideColdDamage2h2_ | 冰霜伤害降低 (96-108)% | 45 | 333（0.6582%） |\n| T4/5 | HellscapeDownsideColdDamage2h1b | 冰霜伤害降低 (82-94)% | 25 | 333（0.6582%） |\n| T5/5 | HellscapeDownsideColdDamage2h0__ | 冰霜伤害降低 (54-66)% | 1 | 333（0.6582%） |\n| T5/5 | HellscapeDownsideColdDamage2h1 | 冰霜伤害降低 (68-80)% | 1 | 333（0.6582%） |\n\n## 异度天灾 有利 · 其他 · 6 档\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/5 | HellscapeUpsideColdDamagePercentage2h3___ | 冰霜伤害提高 (62-68)% | 68 | 1000（0.903%） |\n| T1/5 | HellscapeUpsideColdDamagePercentage2h4 | 冰霜伤害提高 (69-75)% | 68 | 1000（0.903%） |\n| T2/5 | HellscapeUpsideColdDamagePercentage2h2b | 冰霜伤害提高 (55-61)% | 55 | 1000（0.903%） |\n|",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E8",
+      "chunk_id": "mod_ladder:Wands:ColdDamagePercentage#7264769177e361a8",
+      "entity_id": "mod_ladder:Wands:ColdDamagePercentage",
+      "title": "法杖 · ColdDamagePercentage",
+      "url": "https://poedb.tw/cn/Wands#ModifiersCalc",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 法杖 · ColdDamagePercentage\n底材类别：法杖 ｜ 词缀组：ColdDamagePercentage ｜ 类型：其他 ｜ 来源渠道：3 个\n标签：伤害、元素、冰霜\n\n本词缀组在该底材上共 16 条，来自 3 个来源：异度天灾 有害、异度天灾 有利、虚空忆境。\n互斥规则：与本组（ColdDamagePercentage）有相同词缀组的其他词缀不能同时存在于一件装备上。\n⚠ 同一条词缀文本在本卡的多个来源里都出现 → 仅凭装备上的数值**无法判断**它出自哪个来源，回答时必须并列各种可能。\n\n## 异度天灾 有害 · 其他 · 6 档\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/5 | HellscapeDownsideColdDamage1h3 | 冰霜伤害降低 (82-90)% | 68 | 333（0.7147%） |\n| T2/5 | HellscapeDownsideColdDamage1h2b_______ | 冰霜伤害降低 (72-80)% | 55 | 333（0.7147%） |\n| T3/5 | HellscapeDownsideColdDamage1h2 | 冰霜伤害降低 (62-70)% | 45 | 333（0.7147%） |\n| T4/5 | HellscapeDownsideColdDamage1h1b | 冰霜伤害降低 (52-60)% | 25 | 333（0.7147%） |\n| T5/5 | HellscapeDownsideColdDamage1h0_ | 冰霜伤害降低 (32-40)% | 1 | 333（0.7147%） |\n| T5/5 | HellscapeDownsideColdDamage1h1 | 冰霜伤害降低 (42-50)% | 1 | 333（0.7147%） |\n\n## 异度天灾 有利 · 其他 · 6 档\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/5 | HellscapeUpsideColdDamagePercentage1h3___ | 冰霜伤害提高 (43-45)% | 68 | 1000（0.9285%） |\n| T1/5 | HellscapeUpsideColdDamagePercentage1h4 | 冰霜伤害提高 (48-50)% | 68 | 1000（0.9285%） |\n| T2/5 | HellscapeUpsideColdDamagePercentage1h2b_ | 冰霜伤害提高 (38-40)% | 55 | 1000（0.9285%） |\n",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    }
+  ]
+}

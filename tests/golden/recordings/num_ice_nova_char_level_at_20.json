@@ -2,24 +2,27 @@
   "format_version": 1,
   "case_id": "num_ice_nova_char_level_at_20",
   "query": "冰霜新星 20 级需要角色多少级",
-  "recorded_at": "2026-08-19T11:43:31+08:00",
+  "recorded_at": "2026-08-20T16:50:36+08:00",
   "model": "glm-5.2",
   "tokens": {
-    "prompt": 8375,
-    "output": 104,
-    "reasoning": 78,
-    "total": 8479
+    "prompt": 13231,
+    "output": 79,
+    "reasoning": 42,
+    "total": 13310
   },
   "tool_calls": [
     "kb_search"
   ],
   "evidence_gap": false,
+  "out_of_scope": false,
+  "precision_route": "",
   "gap_answer": "",
+  "final_answer": "根据证据，冰霜新星（Ice Nova）在 20 级（自然最高级）时需要角色 **70 级**[[E1]]。\n\n> 检索以降级通道完成（alias, fts）：向量检索与重排未启用（网关无 embedding 模型），当前走 BM25 + 实体精确匹配",
   "blocked_claims": 0,
-  "elapsed_ms": 3048,
-  "evidence_fingerprint": "sha256:9aebb7a8379b7edabc26d9968d2b8f7b",
+  "elapsed_ms": 2770,
+  "evidence_fingerprint": "sha256:45f0a4d3f47ae16f58189aa3e7aa63be",
   "_warning": "raw_answer 是未过出口闸门的模型原文，含可能无据的断言，不得当作事实引用",
-  "raw_answer": "冰霜新星（Ice Nova）20 级需要角色 **70 级**[[E1]]。",
+  "raw_answer": "根据证据，冰霜新星（Ice Nova）在 20 级（自然最高级）时需要角色 **70 级**[[E1]]。",
   "evidence": [
     {
       "label": "E1",
@@ -29,7 +32,7 @@
       "url": "https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/act_int.lua",
       "source": "Path of Building",
       "source_priority": 2,
-      "text": "# 冰霜新星（Ice Nova）\n类型：技能石 ｜ 蓝色（智慧）\n标签：法术、效果区域、冰霜、新星\n英文标签：Spell, AoE, Cold, Nova\n施放时间 0.7 秒 ｜ 自然最高 20 级\n\n- 1 级：需角色 12 级，消耗 8 魔力，暴击率 7.5%\n- 20 级（自然最高）：需角色 70 级，消耗 23 魔力，暴击率 7.5%\n- 40 级（PoB 数据上限，需腐化或 +等级）：需角色 100 级，消耗 31 魔力，暴击率 7.5%\n\nPoB 英文说明：A circle of ice expands from the caster.\n\n来源：Path of Building → Data/Skills/act_int.lua\nhttps://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/act_int.lua\n中文名对照：https://poedb.tw/cn/Ice_Nova",
+      "text": "# 冰霜新星（Ice Nova）\n类型：技能石 ｜ 蓝色（智慧）\n标签：法术、效果区域、冰霜、新星\n英文标签：Spell, AoE, Cold, Nova\n施放时间 0.7 秒 ｜ 自然最高 20 级\n\n- 1 级：需角色 12 级，消耗 8 魔力，基础冰霜伤害 25–38，暴击率 7.5%\n- 20 级（自然最高）：需角色 70 级，消耗 23 魔力，基础冰霜伤害 1122–1683，暴击率 7.5%\n- 40 级（PoB 数据上限，需腐化或 +等级）：需角色 100 级，消耗 31 魔力，基础冰霜伤害 5619–8429，暴击率 7.5%\n\nPoB 英文说明：A circle of ice expands from the caster.\n\n来源：Path of Building → Data/Skills/act_int.lua\nhttps://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/act_int.lua\n中文名对照：https://poedb.tw/cn/Ice_Nova",
       "can_support_facts": true,
       "claim_scope": "general",
       "claim_data": {}
@@ -42,7 +45,7 @@
       "url": "https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/act_int.lua",
       "source": "Path of Building",
       "source_priority": 2,
-      "text": "# 深寒之冰霜新星（Ice Nova of Deep Freeze）\n类型：技能石 ｜ 蓝色（智慧） ｜ 蜕变宝石\n标签：法术、效果区域、冰霜、新星\n英文标签：Spell, AoE, Cold, Nova\n施放时间 0.7 秒 ｜ 自然最高 20 级\n\n- 1 级：需角色 12 级，消耗 8 魔力，暴击率 7.5%\n- 20 级（自然最高）：需角色 70 级，消耗 23 魔力，暴击率 7.5%\n- 40 级（PoB 数据上限，需腐化或 +等级）：需角色 100 级，消耗 31 魔力，暴击率 7.5%\n\nPoB 英文说明：A circle of ice expands from the caster.\n\n来源：Path of Building → Data/Skills/act_int.lua\nhttps://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/act_int.lua\n中文名对照：https://poedb.tw/cn/Ice_Nova_of_Deep_Freeze",
+      "text": "# 深寒之冰霜新星（Ice Nova of Deep Freeze）\n类型：技能石 ｜ 蓝色（智慧） ｜ 蜕变宝石\n标签：法术、效果区域、冰霜、新星\n英文标签：Spell, AoE, Cold, Nova\n施放时间 0.7 秒 ｜ 自然最高 20 级\n\n- 1 级：需角色 12 级，消耗 8 魔力，基础冰霜伤害 18–28，暴击率 7.5%\n- 20 级（自然最高）：需角色 70 级，消耗 23 魔力，基础冰霜伤害 817–1225，暴击率 7.5%\n- 40 级（PoB 数据上限，需腐化或 +等级）：需角色 100 级，消耗 31 魔力，基础冰霜伤害 4089–6134，暴击率 7.5%\n\nPoB 英文说明：A circle of ice expands from the caster.\n\n来源：Path of Building → Data/Skills/act_int.lua\nhttps://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/act_int.lua\n中文名对照：https://poedb.tw/cn/Ice_Nova_of_Deep_Freeze",
       "can_support_facts": true,
       "claim_scope": "general",
       "claim_data": {}
@@ -55,7 +58,7 @@
       "url": "https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/act_int.lua",
       "source": "Path of Building",
       "source_priority": 2,
-      "text": "# 瓦尔：冰霜新星（Vaal Ice Nova）\n类型：技能石 ｜ 蓝色（智慧） ｜ 瓦尔宝石\n标签：法术、效果区域、瓦尔、冰霜、新星\n英文标签：Spell, AoE, Vaal, Cold, Nova\n施放时间 0.7 秒 ｜ 自然最高 20 级\n\n- 1 级：需角色 12 级，消耗 25 魂，暴击率 7.5%\n- 20 级（自然最高）：需角色 70 级，消耗 25 魂，暴击率 7.5%\n- 40 级（PoB 数据上限，需腐化或 +等级）：需角色 100 级，消耗 25 魂，暴击率 7.5%\n\nPoB 英文说明：A chilling circle of ice expands from the caster, repeating from every enemy it hits.\n\n来源：Path of Building → Data/Skills/act_int.lua\nhttps://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/act_int.lua\n中文名对照：https://poedb.tw/cn/Vaal_Ice_Nova",
+      "text": "# 瓦尔：冰霜新星（Vaal Ice Nova）\n类型：技能石 ｜ 蓝色（智慧） ｜ 瓦尔宝石\n标签：法术、效果区域、瓦尔、冰霜、新星\n英文标签：Spell, AoE, Vaal, Cold, Nova\n施放时间 0.7 秒 ｜ 自然最高 20 级\n\n- 1 级：需角色 12 级，消耗 25 魂，基础冰霜伤害 20–29，暴击率 7.5%\n- 20 级（自然最高）：需角色 70 级，消耗 25 魂，基础冰霜伤害 834–1227，暴击率 7.5%\n- 40 级（PoB 数据上限，需腐化或 +等级）：需角色 100 级，消耗 25 魂，基础冰霜伤害 4060–5971，暴击率 7.5%\n\nPoB 英文说明：A chilling circle of ice expands from the caster, repeating from every enemy it hits.\n\n来源：Path of Building → Data/Skills/act_int.lua\nhttps://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/act_int.lua\n中文名对照：https://poedb.tw/cn/Vaal_Ice_Nova",
       "can_support_facts": true,
       "claim_scope": "general",
       "claim_data": {}
@@ -68,13 +71,26 @@
       "url": "https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/act_int.lua",
       "source": "Path of Building",
       "source_priority": 2,
-      "text": "# 寒冰弹之冰霜新星（Ice Nova of Frostbolts）\n类型：技能石 ｜ 蓝色（智慧） ｜ 蜕变宝石\n标签：法术、效果区域、冰霜、新星\n英文标签：Spell, AoE, Cold, Nova\n施放时间 0.7 秒 ｜ 自然最高 20 级\n\n- 1 级：需角色 12 级，消耗 8 魔力，暴击率 7.5%\n- 20 级（自然最高）：需角色 70 级，消耗 23 魔力，暴击率 7.5%\n- 40 级（PoB 数据上限，需腐化或 +等级）：需角色 100 级，消耗 31 魔力，暴击率 7.5%\n\nPoB 英文说明：A circle of ice expands from the caster. If the caster targets near their Frostbolt projectiles, it will expand from a number of those projectiles instead. If this skill would repeat when cast this way, it will instead expand again from the same projectiles after a short delay.\n\n来源：Path of Building → Data/Skills/act_int.lua\nhttps://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/act_int.lua\n中文名对照：https://poedb.tw/cn/Ice_Nova_of_Frostbolts",
+      "text": "# 寒冰弹之冰霜新星（Ice Nova of Frostbolts）\n类型：技能石 ｜ 蓝色（智慧） ｜ 蜕变宝石\n标签：法术、效果区域、冰霜、新星\n英文标签：Spell, AoE, Cold, Nova\n施放时间 0.7 秒 ｜ 自然最高 20 级\n\n- 1 级：需角色 12 级，消耗 8 魔力，基础冰霜伤害 14–20，暴击率 7.5%\n- 20 级（自然最高）：需角色 70 级，消耗 23 魔力，基础冰霜伤害 590–885，暴击率 7.5%\n- 40 级（PoB 数据上限，需腐化或 +等级）：需角色 100 级，消耗 31 魔力，基础冰霜伤害 2920–4381，暴击率 7.5%\n\nPoB 英文说明：A circle of ice expands from the caster. If the caster targets near their Frostbolt projectiles, it will expand from a number of those projectiles instead. If this skill would repeat when cast this way, it will instead expand again from the same projectiles after a short delay.\n\n来源：Path of Building → Data/Skills/act_int.lua\nhttps://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/act_int.lua\n中文名对照：https://poedb.tw/cn/Ice_Nova_of_Frostbolts",
       "can_support_facts": true,
       "claim_scope": "general",
       "claim_data": {}
     },
     {
       "label": "E5",
+      "chunk_id": "skill:Vortex#0#392c02a41bb0cdaf",
+      "entity_id": "skill:Vortex",
+      "title": "漩涡（Vortex）",
+      "url": "https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/act_int.lua",
+      "source": "Path of Building",
+      "source_priority": 2,
+      "text": "# 漩涡（Vortex）\n类型：技能石 ｜ 蓝色（智慧）\n标签：法术、效果区域、冰霜、持续时间、新星\n英文标签：Spell, AoE, Cold, Duration, Nova\n施放时间 0.6 秒 ｜ 自然最高 20 级\n\n- 1 级：需角色 28 级，消耗 10 魔力，基础冰霜伤害 48–72，暴击率 7.5%\n- 20 级（自然最高）：需角色 70 级，消耗 19 魔力，基础冰霜伤害 933–1399，暴击率 7.5%\n- 40 级（PoB 数据上限，需腐化或 +等级）：需角色 100 级，消耗 25 魔力，基础冰霜伤害 6236–9354，暴击率 7.5%\n\nPoB 英文说明：An icy blast explodes around the caster, dealing cold damage to enemies, and leaving behind a whirling vortex which deals cold damage over time and chills enemies caught in it.\n\n来源：Path of Building → Data/Skills/act_int.lua\nhttps://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/act_int.lua\n中文名对照：https://poedb.tw/cn/Vortex",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E6",
       "chunk_id": "skill:Discharge_of_Misery#0#e747745d9a16298e",
       "entity_id": "skill:Discharge_of_Misery",
       "title": "苦难之解放（Discharge of Misery）",
@@ -87,7 +103,7 @@
       "claim_data": {}
     },
     {
-      "label": "E6",
+      "label": "E7",
       "chunk_id": "skill:Discharge#0#b5efde5e2bb850f2",
       "entity_id": "skill:Discharge",
       "title": "解放（Discharge）",
@@ -100,19 +116,6 @@
       "claim_data": {}
     },
     {
-      "label": "E7",
-      "chunk_id": "skill:Vortex#0#392c02a41bb0cdaf",
-      "entity_id": "skill:Vortex",
-      "title": "漩涡（Vortex）",
-      "url": "https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/act_int.lua",
-      "source": "Path of Building",
-      "source_priority": 2,
-      "text": "# 漩涡（Vortex）\n类型：技能石 ｜ 蓝色（智慧）\n标签：法术、效果区域、冰霜、持续时间、新星\n英文标签：Spell, AoE, Cold, Duration, Nova\n施放时间 0.6 秒 ｜ 自然最高 20 级\n\n- 1 级：需角色 28 级，消耗 10 魔力，暴击率 7.5%\n- 20 级（自然最高）：需角色 70 级，消耗 19 魔力，暴击率 7.5%\n- 40 级（PoB 数据上限，需腐化或 +等级）：需角色 100 级，消耗 25 魔力，暴击率 7.5%\n\nPoB 英文说明：An icy blast explodes around the caster, dealing cold damage to enemies, and leaving behind a whirling vortex which deals cold damage over time and chills enemies caught in it.\n\n来源：Path of Building → Data/Skills/act_int.lua\nhttps://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/act_int.lua\n中文名对照：https://poedb.tw/cn/Vortex",
-      "can_support_facts": true,
-      "claim_scope": "general",
-      "claim_data": {}
-    },
-    {
       "label": "E8",
       "chunk_id": "skill:Vortex_of_Projection#0#8a0fddc13b57342c",
       "entity_id": "skill:Vortex_of_Projection",
@@ -120,7 +123,7 @@
       "url": "https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/act_int.lua",
       "source": "Path of Building",
       "source_priority": 2,
-      "text": "# 投射之漩涡（Vortex of Projection）\n类型：技能石 ｜ 蓝色（智慧） ｜ 蜕变宝石\n标签：法术、效果区域、冰霜、持续时间、新星\n英文标签：Spell, AoE, Cold, Duration, Nova\n施放时间 0.6 秒 ｜ 自然最高 20 级\n\n- 1 级：需角色 28 级，消耗 10 魔力，暴击率 7.5%\n- 20 级（自然最高）：需角色 70 级，消耗 19 魔力，暴击率 7.5%\n- 40 级（PoB 数据上限，需腐化或 +等级）：需角色 100 级，消耗 25 魔力，暴击率 7.5%\n\nPoB 英文说明：An icy blast explodes around the caster, dealing cold damage to enemies, and leaving behind a whirling vortex which deals cold damage over time and chills enemies caught in it. If the caster targets near their Frostbolt projectiles, it will explode from a number of those projectiles instead, destroying them.\n\n来源：Path of Building → Data/Skills/act_int.lua\nhttps://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/act_int.lua\n中文名对照：https://poedb.tw/cn/Vortex_of_Projection",
+      "text": "# 投射之漩涡（Vortex of Projection）\n类型：技能石 ｜ 蓝色（智慧） ｜ 蜕变宝石\n标签：法术、效果区域、冰霜、持续时间、新星\n英文标签：Spell, AoE, Cold, Duration, Nova\n施放时间 0.6 秒 ｜ 自然最高 20 级\n\n- 1 级：需角色 28 级，消耗 10 魔力，基础冰霜伤害 48–72，暴击率 7.5%\n- 20 级（自然最高）：需角色 70 级，消耗 19 魔力，基础冰霜伤害 933–1399，暴击率 7.5%\n- 40 级（PoB 数据上限，需腐化或 +等级）：需角色 100 级，消耗 25 魔力，基础冰霜伤害 6236–9354，暴击率 7.5%\n\nPoB 英文说明：An icy blast explodes around the caster, dealing cold damage to enemies, and leaving behind a whirling vortex which deals cold damage over time and chills enemies caught in it. If the caster targets near their Frostbolt projectiles, it will explode from a number of those projectiles instead, destroying them.\n\n来源：Path of Building → Data/Skills/act_int.lua\nhttps://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/act_int.lua\n中文名对照：https://poedb.tw/cn/Vortex_of_Projection",
       "can_support_facts": true,
       "claim_scope": "general",
       "claim_data": {}

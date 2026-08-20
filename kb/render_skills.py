@@ -72,6 +72,14 @@ def cost_text(cost: dict[str, float]) -> str:
     return "、".join(parts)
 
 
+#: 伤害类型 → 中文。与 `calc/skill_damage.DAMAGE_TYPE_ZH` 同一份含义，
+#: 这里单列一份是为了让卡片渲染不依赖 calc 层（卡片只做排版）。
+_DAMAGE_TYPE_ZH = {
+    "cold": "冰霜", "fire": "火焰", "lightning": "闪电",
+    "chaos": "混沌", "physical": "物理",
+}
+
+
 def level_line(level: dict) -> str:
     """一个等级渲染成一行。缺的字段不写——补 0 会把「没有」说成「是 0」。"""
     bits: list[str] = []
@@ -83,6 +91,12 @@ def level_line(level: dict) -> str:
     if level.get("mana_multiplier") is not None:
         # PoB 存的是增量，游戏里显示 100 + 增量（见 GemTooltip.lua）
         bits.append(f"消耗与保留倍率 {level['mana_multiplier'] + 100:g}%")
+    # 基础伤害（第二十九轮入库，已与 POEDB 对账）。放在最前面：它是问得最多的一项
+    if level.get("base_damage_min") is not None:
+        type_zh = _DAMAGE_TYPE_ZH.get(str(level.get("damage_type") or ""), "")
+        bits.append(
+            f"基础{type_zh}伤害 {level['base_damage_min']:g}–{level['base_damage_max']:g}"
+        )
     if level.get("reservation_percent") is not None:
         bits.append(f"保留 {level['reservation_percent']:g}% 魔力")
     # 定值保留（清晰 / 精准 / 活力）。漏了它，这些技能在卡片上看起来「不保留」
