@@ -778,7 +778,7 @@ _ENUMERATION_INTENTS = (
 _YIELDS_TO_ENUMERATION = frozenset(
     {
         "resistance_calc", "mitigation_calc", "recovery_calc", "reservation_calc",
-        "ailment_dot_calc", "ailment_threshold_calc",
+        "ailment_dot_calc", "ailment_threshold_calc", "max_hit_calc",
     }
 )
 
@@ -859,6 +859,12 @@ _PREFERRED_TOOL_INTENTS: tuple[tuple[str, tuple[str, ...]], ...] = (
         "感电多少", "感电上限", "感电强度", "能感电", "异常门槛", "冰缓多少",
         "冰缓上限", "冰缓强度", "焦灼多少", "脆弱多少", "干枯多少",
         "冻住", "冰冻门槛", "多少伤害能冻",
+    )),
+    # Max Hit：一发最多能挨多少。判据专指「一发 / 最多挨 / 会不会被秒」，
+    # 不收裸的「有效生命」——那也可能在问「怎么堆生命」。
+    ("max_hit_calc", (
+        "一发最多", "最多能挨", "能挨多少", "会被秒", "会不会秒", "一发秒",
+        "最大承受", "max hit", "Max Hit", "挨得住", "秒吗", "秒掉", "会秒",
     )),
     # 「某属性能从哪来」是枚举问题：不完整的枚举被当成完整的呈现就是错误答案
     ("stat_sources", _ENUMERATION_INTENTS),
@@ -1025,16 +1031,28 @@ _MITIGATION_SLOTS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("suppression_chance", ("法术压制", "压制")),
 )
 def _slot_values(question: str, keywords: tuple[str, ...]) -> set[float]:
-    """问题里与这些单位词紧邻的数字。两种语序都认：`10000 护甲` 与 `护甲 10000`。"""
-    found: set[float] = set()
+    """问题里与这些单位词紧邻的数字。两种语序都认：`10000 护甲` 与 `护甲有 10000`。
+
+    **先只看「数字在前」那一种**，只有它一个都没命中时才回退到「数字在后」。
+    理由是实测踩到的：「10000 护甲 5000 血会被秒吗」里，`护甲 5000` 也能匹配
+    「数字在后」的写法，于是护甲槽同时抽到 10000 与 5000、整条判定作废。
+    中文里「10000 护甲」是主流写法，把它作为首选能消掉这类跨槽误配。
+    """
+    forward: set[float] = set()
+    backward: set[float] = set()
     for keyword in keywords:
         kw = re.escape(keyword)
-        for pattern in (
-            rf"{_CALC_NUMBER}\s*[%％点]?\s*(?:的)?\s*{kw}",
-            rf"{kw}\s*(?:是|有|为|到)?\s*{_CALC_NUMBER}\s*[%％点]?",
-        ):
-            found.update(float(m.group(1)) for m in re.finditer(pattern, question))
-    return found
+        forward.update(
+            float(m.group(1))
+            for m in re.finditer(rf"{_CALC_NUMBER}\s*[%％点]?\s*(?:的)?\s*{kw}", question)
+        )
+        backward.update(
+            float(m.group(1))
+            for m in re.finditer(
+                rf"{kw}\s*(?:是|有|为|到)?\s*{_CALC_NUMBER}\s*[%％点]?", question
+            )
+        )
+    return forward or backward
 
 
 def _mitigation_args(question: str) -> dict[str, Any] | None:
@@ -1119,6 +1137,37 @@ def _ailment_args(question: str) -> dict[str, Any] | None:
     stacks = _slot_values(question, ("层", "叠"))
     if len(stacks) == 1:
         args["stacks"] = int(stacks.pop())
+    return args or None
+
+
+#: Max Hit 的参数槽。抗性那一格只认「抗」字紧邻的数字（火抗 75 / 抗性 75）。
+_MAXHIT_SLOTS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("life", ("生命", "血", "血量")),
+    ("energy_shield", ("护盾", "能量护盾")),
+    ("resist_pct", ("抗性", "火抗", "冰抗", "电抗", "混抗", "抗")),
+    ("armour", ("护甲",)),
+)
+
+
+def _maxhit_args(question: str) -> dict[str, Any] | None:
+    """`max_hit_calc` 的参数。没有数字 → 讲规则（无参数）。
+
+    与其它计算器同一条纪律：同一槽位抽到两个不同的值就整体交回模型。
+    """
+    if not _RESIST_NUMBER_RE.search(question):
+        return {}
+    args: dict[str, Any] = {}
+    for slot, keywords in _MAXHIT_SLOTS:
+        values = _slot_values(question, keywords)
+        if len(values) > 1:
+            logger.info("max_hit_calc 的 %s 抽到多个值 %s，交回模型自选", slot, values)
+            return None
+        if values:
+            args[slot] = values.pop()
+    for damage_type in ("物理", "火焰", "冰霜", "闪电", "混沌"):
+        if damage_type in question:
+            args["damage_type"] = damage_type
+            break
     return args or None
 
 
@@ -1223,6 +1272,7 @@ _CODE_INVOKED_TOOLS: dict[str, Any] = {
     "reservation_calc": _reservation_args,
     "ailment_dot_calc": _ailment_args,
     "ailment_threshold_calc": _threshold_args,
+    "max_hit_calc": _maxhit_args,
 }
 
 #: 这些工具按设计**不产出引用**（覆盖声明是元信息不是游戏事实）。
