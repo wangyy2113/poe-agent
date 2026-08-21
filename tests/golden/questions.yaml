@@ -126,6 +126,20 @@ cases:
     expect_slug: "atlas_passive:Refiner_s_Bargain_*"
     note: Atlas 天赋专名（不得混入角色天赋树）
 
+  - id: desc_unique_cannot_be_modified
+    query: 轮作这件传奇能不能改词缀
+    kind: description
+    expect_slug: Crop_Rotation
+    expect_evidence_text: "不可改变"
+    note: >-
+      「不可改变」这条词条**只在 POEDB 详情页上**，列表页没有；
+      第三十四轮把 1342 张详情页抓齐后逐件比对，51 件补上了它
+    lesson: >-
+      这一维的价值不在「多一行文本」，而在**它正是制作类问题要用的那一行**：
+      不知道这件不能改，就会答成「可以洗」。
+      成对的另一面是那 22 件两侧对不上的物品——它们**不合并**，
+      宁可少一条词缀也不要把另一版本的词条并上去。
+
   # ══ 描述性查询：考察 search_keywords 对向量通道缺失的补偿 ═══════════════
 
   - id: desc_headhunter_effect

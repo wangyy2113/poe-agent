@@ -220,6 +220,15 @@ FACTS: tuple[Fact, ...] = (
              "SELECT count(DISTINCT gem_id) FROM poedb_gem_stat_level").fetchone()[0])),
     Fact("CLAUDE.md 宝石待核对颗数", "CLAUDE.md", r"`gem_review` \*\*([\d,]+)\*\*",
          _count_where("source_conflict", "kind='gem_review'")),
+    Fact("CLAUDE.md 唯一装备待核对条数", "CLAUDE.md",
+         r"`unique_review` \*\*([\d,]+)\*\*",
+         _count_where("source_conflict", "kind='unique_review'")),
+    #: 「补上了不可改变」这句话对着**卡片正文**核：入库没有出口等于没入库，
+    #: 所以断言的是「卡片里真的有这一行」而不是某张表的行数（第三十四轮）。
+    Fact("CLAUDE.md 补词条件数", "CLAUDE.md", r"补上「不可改变」的 ([\d,]+) 件",
+         lambda c: int(c.execute(
+             "SELECT count(*) FROM chunk WHERE entity_id LIKE 'unique_item:%' "
+             "AND text LIKE '%不可改变%'").fetchone()[0])),
     #: 文档里写的「未桥接 N 条」直接对着**台账**核：那句话的出处就是台账，
     #: 而台账的 `hit_count` 这一类量的正是缺多少条（见 `core.db.record_ingest_gaps`）。
     #: 第三十一轮实测过反面——文档与台账都写着 11 条，而实际只剩 1 条。

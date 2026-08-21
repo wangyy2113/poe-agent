@@ -26,7 +26,7 @@ from core import db as dbmod  # noqa: E402
 from core.config import get_config  # noqa: E402
 from core.logging_setup import setup_logging  # noqa: E402
 from kb.fetcher import Fetcher  # noqa: E402
-from kb.sources.poedb_unique import parse_detail_page  # noqa: E402
+from kb.sources.poedb_unique import compare_detail, parse_detail_page  # noqa: E402
 
 #: 固定随机种子，保证抽样可复现
 SAMPLE_SEED = 20260804
@@ -150,37 +150,31 @@ def main() -> int:
             err_count += 1
             continue
 
-        diffs: list[str] = []
-
-        if detail.name_zh and detail.name_zh != ent["name_zh"]:
-            diffs.append(f"中文名不一致：列表={ent['name_zh']} 详情={detail.name_zh}")
-        if detail.base_type and detail.base_type != (ent["base_type"] or ""):
-            diffs.append(f"底材不一致：列表={ent['base_type']} 详情={detail.base_type}")
-
-        detail_mods = detail.factual_mod_texts
-        missing = [m for m in detail_mods if m not in list_mods]
-        extra = [m for m in list_mods if m not in detail_mods]
-        if missing:
-            diffs.append(f"详情页有而列表页缺 {len(missing)} 条: {missing[:3]}")
-            # 详情页有、我们没有 → 真实缺口，记台账驱动后续 L2 采集
-            for m in missing:
+        # 比对判据与 `scripts/import_unique_detail.py` **共用一份**
+        # （`kb.sources.poedb_unique.compare_detail`）：核对与合并如果各写一套判据，
+        # 就会出现「核对说一致、合并说不一致」这种自相矛盾（第三十四轮合的）。
+        diff = compare_detail(
+            detail,
+            name_zh=ent["name_zh"],
+            base_type=ent["base_type"] or "",
+            requirement_raw=list_req,
+            mod_texts=list_mods,
+        )
+        diffs: list[str] = list(diff.blocking)
+        if diff.detail_only:
+            diffs.append(
+                f"详情页有而列表页缺 {len(diff.detail_only)} 条: {list(diff.detail_only[:3])}"
+            )
+            # 详情页有、我们没有 → 真实缺口，记台账驱动后续合并
+            for m in diff.detail_only:
                 _record_gap(
                     conn,
                     f"{ent['name_zh']}（{ent['slug']}）的完整词缀",
                     f"详情页有而列表页没有的词条：{m}",
                     "unique_item/detail_only_mod",
                 )
-        if extra:
-            diffs.append(f"列表页有而详情页缺 {len(extra)} 条: {extra[:3]}")
 
-        if detail.requirement_raw and list_req:
-            # 需求文本可能空白差异，压缩后比
-            a = "".join(detail.requirement_raw.split())
-            b = "".join(list_req.split())
-            if a != b:
-                diffs.append(f"需求不一致：列表={list_req} 详情={detail.requirement_raw}")
-
-        print(f"    词缀：列表 {len(list_mods)} 条 / 详情 {len(detail_mods)} 条")
+        print(f"    词缀：列表 {len(list_mods)} 条 / 详情 {len(detail.factual_mod_texts)} 条")
         print(f"    英文名（详情页权威）：{detail.name_en or '(未取到)'}")
         if detail.name_en and detail.name_en != (ent["name_en"] or ""):
             en_updates.append((ent["entity_id"], detail.name_en))

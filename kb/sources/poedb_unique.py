@@ -419,6 +419,91 @@ class DetailPage:
         return [m.text for m in self.mods if m.is_factual]
 
 
+@dataclass(frozen=True)
+class DetailDiff:
+    """列表页与详情页的差异。**判断合并与否的唯一依据**（第三十四轮）。
+
+    列表页（`/cn/Unique_item`，一页 2.5MB）是入库主源；详情页是每件一页。
+    实测（2026-08-20，55 张缓存页）：48 件两侧词缀完全一致，**7 件详情页多出词条**
+    ——多出来的以「不可改变」为主，那是「这件不能被改造」的事实，
+    正是制作类问题要用的一条，而列表页上没有。
+
+    合并只在**详情页是列表页的超集**时进行：名字/底材/需求任一不一致，
+    或者列表页有而详情页没有的词条，都说明两侧讲的可能不是同一版本的物品
+    ——那时不合并，登记成待人工核对。宁可少一条词缀，也不要把另一版本的词条
+    并到这件物品上（与宝石那一轮拒绝 8 颗对不上的宝石是同一条纪律）。
+    """
+
+    #: (列表页值, 详情页值)，一致时为 None
+    name_mismatch: tuple[str, str] | None = None
+    base_mismatch: tuple[str, str] | None = None
+    requirement_mismatch: tuple[str, str] | None = None
+    #: 详情页有、列表页没有的事实词条（按详情页顺序）
+    detail_only: tuple[str, ...] = ()
+    #: 列表页有、详情页没有的事实词条
+    list_only: tuple[str, ...] = ()
+
+    @property
+    def blocking(self) -> tuple[str, ...]:
+        """阻止合并的理由，逐条可读。空 = 可以合并。"""
+        out: list[str] = []
+        for label, pair in (
+            ("中文名", self.name_mismatch),
+            ("底材", self.base_mismatch),
+            ("需求", self.requirement_mismatch),
+        ):
+            if pair:
+                out.append(f"{label}不一致：列表={pair[0]} 详情={pair[1]}")
+        if self.list_only:
+            out.append(
+                f"列表页有而详情页没有 {len(self.list_only)} 条："
+                f"{'、'.join(self.list_only[:2])}"
+            )
+        return tuple(out)
+
+    @property
+    def mergeable(self) -> bool:
+        return not self.blocking and bool(self.detail_only)
+
+
+def compare_detail(
+    detail: DetailPage,
+    *,
+    name_zh: str,
+    base_type: str,
+    requirement_raw: str,
+    mod_texts: list[str],
+) -> DetailDiff:
+    """逐项比对列表页与详情页。两侧都有值时才比——缺一侧不算不一致。
+
+    `mod_texts` 只传**事实词条**（描述性说明不参与比对：它是括号里的补充说明，
+    两侧换行与截断方式不同，拿它比会造出一堆假差异）。
+    需求文本压缩空白后再比，同样是为了不把排版差异当成数据差异。
+    """
+    detail_texts = detail.factual_mod_texts
+    name_mismatch = (
+        (name_zh, detail.name_zh)
+        if detail.name_zh and name_zh and detail.name_zh != name_zh
+        else None
+    )
+    base_mismatch = (
+        (base_type, detail.base_type)
+        if detail.base_type and base_type and detail.base_type != base_type
+        else None
+    )
+    req_mismatch = None
+    if detail.requirement_raw and requirement_raw:
+        if "".join(detail.requirement_raw.split()) != "".join(requirement_raw.split()):
+            req_mismatch = (requirement_raw, detail.requirement_raw)
+    return DetailDiff(
+        name_mismatch=name_mismatch,
+        base_mismatch=base_mismatch,
+        requirement_mismatch=req_mismatch,
+        detail_only=tuple(t for t in detail_texts if t not in mod_texts),
+        list_only=tuple(t for t in mod_texts if t not in detail_texts),
+    )
+
+
 def parse_detail_page(html: str) -> DetailPage:
     """解析单品详情页。
 
