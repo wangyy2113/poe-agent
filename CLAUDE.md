@@ -119,7 +119,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 1068 项，秒级
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 1125 项，秒级
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选
@@ -136,7 +136,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 .venv/bin/python scripts/eval_run.py --record        # 重录真实响应（**要凭证、烧 token**）
 ```
 
-黄金问答集是 `tests/golden/questions.yaml`（113 条，六类），基线与全部结论在
+黄金问答集是 `tests/golden/questions.yaml`（117 条，六类），基线与全部结论在
 `tests/golden/BASELINE.md`——**动闸门前先读它**，里面记了多个已修缺陷与三条已知未修边界，
 以及两次「测量本身写错」的教训。
 
@@ -177,7 +177,7 @@ POST /chat[/stream]  api/chat.py（只做校验与编排调用）
 | `kb/` | `pipeline.py` 采集管线、`sources/` 各来源抽取器、`coverage.py` 知识库自描述层、`stat_channels.py` 属性来源渠道注册表、`render*.py` 卡片切片 |
 | `parsers/` | `item_text.py`（纯文本，不连库）→ `item_mods.py` T 级匹配 → `mod_bridge.py` 英文桥接 → `item_report.py` 报告 |
 | `craft/` | `feasibility.py` 词缀组合三态可行性、`pool.py` 胸甲普通词缀有效池与条件概率 |
-| `calc/` | `constants.py` 常量访问层，**缺失即抛异常，绝不给默认值**；`derive.py` 两个计算器共用的推导件（`Step` / 引用推导）；`resistance.py` 抗性结算；`mitigation.py` 受击结算（闪避/命中、格挡、法术压制、护甲）；`recovery.py` 回复（护盾回充、偷取、魔力再生）；`reservation.py` 保留（取整是难点）；`ailment.py` 持续伤害；`threshold.py` 门槛型异常；`maxhit.py` 一发最大承受伤害；`crit.py` 暴击。命中 / DPS（要先有 effectiveness 公式）、伤害转化下的 Max Hit、冰冻时长曲线未实现 |
+| `calc/` | `constants.py` 常量访问层，**缺失即抛异常，绝不给默认值**；`derive.py` 各计算器共用的推导件（`Step` / 引用推导）；`resistance.py` 抗性结算；`mitigation.py` 受击结算（闪避/命中、格挡、法术压制、护甲）；`recovery.py` 回复（护盾回充、偷取、魔力再生）；`reservation.py` 保留（取整是难点）；`ailment.py` 持续伤害；`threshold.py` 门槛型异常；`maxhit.py` 一发最大承受伤害；`crit.py` 暴击；`accuracy.py` 命中率（攻击侧，与 `mitigation` 共用同一个 `hitChance`）；`attack_speed.py` 攻击速度。**DPS 仍未实现**——整条加成链（增加/更多/转化/穿透）没有采集，伤害转化下的 Max Hit、冰冻时长曲线同样未实现 |
 | `static/` | 单页前端三个文件，无构建步骤、无 Node、无第三方 JS（Markdown 渲染器自写，为了强制先转义再解析） |
 | `tests/golden/` | 评测资产：`questions.yaml` 黄金问答集、`loader.py` 严格校验、`recording.py` 录制回放、`recordings/` 真实响应、`audit.yaml` 人工结论、`BASELINE.md` 指标基线 |
 
@@ -199,6 +199,8 @@ POST /chat[/stream]  api/chat.py（只做校验与编排调用）
 `ailment_threshold_calc`（感电/冰缓等：伤害 ÷ 异常门槛 → 强度；含反问）→
 `max_hit_calc`（一发最多能挨多少：抗性 → 护甲 → 池 的反解）→
 `crit_calc`（暴击率与平均伤害倍率；基础暴击查库，**只给倍率不给 DPS**）→
+`accuracy_calc`（命中率：我的命中值 vs 怪物闪避，含「要多少命中」的反解）→
+`attack_speed_calc`（每秒攻击次数与攻击间隔；武器攻速与技能倍率查库）→
 `stat_sources`（某属性能从哪来）→
 `entity_lookup` → `kb_coverage` → `kb_search`（兜底）
 
@@ -506,14 +508,57 @@ Lua 后者覆盖前者，解析器同样取后者——**行号锚点也因此�
 - **「增加的暴击率」乘在基础暴击上**：6% 基础配 +300% 只有 24%，7.5% 基础有 30%。
   这是「哪种武器适合暴击流」的算术来源。
 
-**DPS 仍然做不了，而这一轮把原因量清楚了**：它要 PoB 的 effectiveness 公式
-（`availableEffectiveness =(SkillDamageBaseEffectiveness + Incremental ×(等级−1))
-× 宝石 baseEffectiveness ×(1 + incrementalEffectiveness)^(等级−1)`，
-`CalcTools.lua:195-206`），两个 `gameConstants` 已在库里、公式也读通了——
-**卡点是没有可离线对账的外部值**：POEDB 的每级伤害表不在 `data/http_cache` 里
-（缓存的是清单页，逐宝石详情页从未抓过），hover 片段也只有 1 个。
-所以那一轮要先补一次采集，再谈计算——**先有对账口径，再上计算器**，
-这是抗性那一轮定下的顺序。
+**命中率与攻速（`calc/accuracy.py`、`calc/attack_speed.py`）是攻击侧的第二、三块**，
+两者都是「算出来的」，证据不在任何 chunk 里。
+
+命中率**与受击结算是同一个公式的两个方向**，所以代码直接调 `mitigation.hit_chance`
+（`CalcDefence.lua:57`），不另写一份：
+
+    命中率 = 取整(命中值 /(命中值 +(敌方闪避 / 5) ^ 0.9)× 125)，夹在 5%..100%
+    最终命中率 = 精准命中率 ×(1 − 敌方格挡 / 100)      ← `CalcOffence.lua:2181`
+
+1500 命中打 83 级普通怪 = **83%**；要 90% 得堆到 **1,899**（反解，最小达标整数）。
+三条容易记错的：
+
+- **敌方闪避按等级查表**（`monsterEvasionTable`，83 级 7,860），这也是 PoB 配置页的
+  默认值。但**用了哪一级要写进推导**；没给等级也没给闪避时工具说缺什么，
+  不替用户假定「打 83 级」——那是把「打谁」这个前提凭空补上。
+- **命中率下限 5%**：与闪避那一侧的上限 95% 对称，命中值再低也有 5% 打中。
+- **敌方格挡是另一层**，不是「没打中」。两层分开写，合并成一个数会让用户以为
+  堆命中能解决格挡。
+
+攻速的两个坑都由上游写法决定：**技能倍率乘在武器攻速上**（PoB 存的是增量，
+`attackSpeedMultiplier = -50` 表示基础攻速的 50%），以及 **`round(…, 2)` 在分母上**
+（`output.Speed = 1 /(baseTime / round((1 + inc/100)× more, 2))`，`CalcOffence.lua:2337`）。
+1.55 攻速的爪 + 60% 攻速 = **2.48 次/秒**。另外一条值得记的**否定事实**：
+社区常说「攻速有服务器 tick 上限」，而 PoB 的 `output.Speed` **不夹上限**——
+`ServerTickRate` 只出现在创伤叠层的可维持计算里（`:2250`，单测钉住了这一行）。
+
+**「命中率」这个意图词第三十三轮从 `mitigation_calc` 让给了 `accuracy_calc`**：
+那个词在这个游戏里默认指攻击侧（我打得中吗），防守侧的说法是「闪避率」「躲不躲得开」。
+留着它会把「我 1500 命中打 83 级怪多少命中率」抢过去、然后拿**怪物的命中值**去算——
+一个答非所问但看起来很像的数。成对用例在 `tests/unit/test_accuracy.py`
+与 `tests/unit/test_mitigation.py` 两侧都有。
+
+参数抽取这一轮多了一条可复用的判据：**按数字形状分流同一个槽位**
+（`loop._slot_values_by_shape`）。「攻速 1.55 的武器加 60% 攻速」里两个数都贴着「攻速」，
+「1500 命中」与「90% 命中率」也都贴着「命中」——不按 `%` 分开就会在同一槽位抽到两个值、
+整条判定作废。**判据是形状而不是动词表**：动词表漏一个写法就会把目标当成命中值
+（实测「要多少命中才能 90% 命中率」在动词表那一版里就抽错了）。
+
+**DPS 仍然拒答，而卡点已经换过两次了——这段话本身就是「因果结论会过期」的例子。**
+
+* 第二十八轮写的卡点是「没有可离线对账的外部值」（以为 POEDB 逐宝石详情页从未抓过）。
+  **那句判断是错的**：第二十九轮抓了 20 页就对上了账，基础伤害入库。
+* 第三十二轮把 820 张详情页全抓了，效果文本与属性需求也入库，
+  第三十三轮又补上命中率与攻速。
+* **现在的卡点是整条加成链**：增加的伤害 / 更多的伤害 / 伤害转化 / 抗性穿透
+  都要从角色配置来（词缀、天赋、辅助宝石的加成），本库没有采集这一层，
+  也没有可对账的口径。所以 DPS 仍然拒答，黄金集里 `gap_dps_still_refused`
+  钉住「有了几个乘数不等于能给 DPS」。
+
+**「凑几个乘数出个 DPS」正是「带着引用的错数字」最容易发生的地方**，
+所以宁可继续拒答。
 
 **缺口台账（`knowledge_gap`）第三十轮修好之前是一个失真的信号。** 需求 2.12 说
 「按频次排序即采集优先级」，而实测按 `hit_count` 排出来的前两名是：
