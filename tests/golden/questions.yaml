@@ -506,6 +506,52 @@ cases:
       怪物命中值来自库里的等级表，所以「85 级」这个前提是**查出来的**而不是假定的，
       而且用了哪一级要写在推导里。
 
+  # ── 攻击侧：命中率与攻速（2026-08-21 第三十三轮）───────────────────
+  - id: num_hit_chance_vs_83
+    query: 我命中值 1500，打 83 级怪物命中率是多少
+    kind: numeric
+    expect_values: ["83", "7860"]
+    note: >-
+      monsterEvasionTable 第 83 项 = 7860；
+      命中率 = 取整(1500 /(1500 +(7860 / 5) ^ 0.9) × 125) = 83%
+    lesson: >-
+      与 `num_evade_chance_at_85` 成对：那条是「怪物打我」（我的闪避 vs 怪物命中值），
+      这条是「我打怪物」（我的命中值 vs 怪物闪避）。**同一个公式、两个方向**，
+      所以代码复用同一个 `hit_chance`；而「命中率」这个词在这个游戏里默认指这一条，
+      第三十三轮因此把它从 `mitigation_calc` 的意图词里让给了 `accuracy_calc`。
+
+  - id: num_accuracy_needed_for_90
+    query: 打 83 级怪物要多少命中值才能有 90% 命中率
+    kind: numeric
+    expect_values: ["1899"]
+    note: 反解：闪避项 (7860/5)^0.9 → 最小达标命中值 1899（此时正好 90%）
+    lesson: >-
+      反解**方向容易写反**（第二十六轮在异常门槛上踩过：照抄上游会得到
+      「需要的命中值 = 当前命中值」这种自证式废话）。回代用例钉的是
+      「它达标、少 1 就不达标」。
+
+  - id: num_attack_rate_with_increase
+    query: 基础攻速 1.55 的爪加 60% 攻击速度，每秒能攻击几次
+    kind: numeric
+    expect_values: ["2.48"]
+    note: >-
+      1/1.55 = 0.6452 秒 ÷ round(1.6, 2) = 0.4032 秒 → 2.48 次/秒。
+      注意 `round(…, 2)` 在分母上（PoB `CalcOffence.lua:2337`）
+    lesson: >-
+      攻速这一维的坑是取整位置与「技能倍率乘在武器攻速上」，
+      两条都由上游写法决定，单测对着原文钉住。
+
+  - id: gap_dps_still_refused
+    query: 我这套配置的 DPS 是多少
+    kind: gap
+    expect_gap: true
+    note: >-
+      DPS 仍然拒答：命中率、攻速、暴击倍率、基础伤害都有了，但整条加成链
+      （增加的伤害 / 更多的伤害 / 转化 / 抗性穿透）没有采集
+    lesson: >-
+      成对哨兵：这一轮补上了 DPS 的两个乘数，**不等于能给 DPS**。
+      「有了几个乘数就凑一个 DPS」正是「带着引用的错数字」最容易发生的地方。
+
   - id: num_spell_suppression_effect
     query: 法术压制触发时减多少伤害
     kind: numeric

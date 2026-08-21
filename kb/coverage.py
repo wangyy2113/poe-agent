@@ -224,7 +224,7 @@ DOMAINS: tuple[DomainSpec, ...] = (
         tools=(
             "resistance_calc", "mitigation_calc", "recovery_calc",
             "reservation_calc", "ailment_dot_calc", "ailment_threshold_calc",
-            "max_hit_calc", "crit_calc",
+            "max_hit_calc", "crit_calc", "accuracy_calc", "attack_speed_calc",
         ),
         hints=("抗性上限", "减伤上限", "格挡上限", "怪物生命", "常量"),
         question_hints=(
@@ -237,6 +237,8 @@ DOMAINS: tuple[DomainSpec, ...] = (
             "打某等级怪物/头目能感电多少、要感电满需要多大伤害",
             "这套池子一发最多能挨多大的伤害（抗性 + 护甲 + 减伤合起来反解）",
             "暴击率上限与平均伤害倍率（某技能/武器的基础暴击查库）",
+            "我这点命中值打某等级怪物命中率多少、要多少命中才不 miss",
+            "这把武器每秒攻击几次、加了攻速之后攻击间隔多少",
         ),
         # `Modules/Data.lua` 是 PoB 自己的 magic numbers 表，按白名单取（当前只取
         # 抗性上下限两项）——判据见 `kb/sources/pob_misc.MODULE_MISC_WHITELIST`

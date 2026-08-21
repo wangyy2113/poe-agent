@@ -780,6 +780,7 @@ _YIELDS_TO_ENUMERATION = frozenset(
     {
         "resistance_calc", "mitigation_calc", "recovery_calc", "reservation_calc",
         "ailment_dot_calc", "ailment_threshold_calc", "max_hit_calc", "crit_calc",
+        "accuracy_calc", "attack_speed_calc",
     }
 )
 
@@ -814,6 +815,25 @@ _PREFERRED_TOOL_INTENTS: tuple[tuple[str, tuple[str, ...]], ...] = (
         "抗性如何计算", "减抗", "降低抗性", "抗性穿透", "元素穿透", "抗性够不够",
         "抗性满了", "抗性浪费",
     )),
+    # 命中率（**攻击侧**）：我的命中值 vs 怪物闪避。它必须排在 `mitigation_calc`
+    # 之前，因为两者共用同一个公式、话题也挨着，而**「命中率」这个词在这个游戏里
+    # 默认说的是攻击侧**（防守侧的说法是「闪避率」「躲不躲得开」）。
+    # 判据尽量描述问句形式：「要多少命中」「打不中」「会不会 miss」都只可能是攻击侧。
+    ("accuracy_calc", (
+        "命中率", "命中值", "命中够不够", "要多少命中", "多少命中",
+        "打不中", "打空", "miss", "会不会空", "命中几率",
+    )),
+    # 攻击速度：武器基础攻速 × 技能倍率 × 加成，同样是算出来的。
+    # 判据不放裸的「攻速」：那既是词缀名也是属性名（「哪些词缀给攻速」是枚举题）；
+    # 「每秒几次 / 攻击间隔 / 攻速多少」才是结算问法。
+    ("attack_speed_calc", (
+        "每秒攻击", "每秒几次", "每秒几下", "攻击几次", "攻击几下",
+        "攻击间隔", "攻速多少", "攻击速度多少",
+        "攻击速度怎么算", "攻速怎么算", "多快一次",
+        # 「每秒能攻击几次」这种插了字的写法：意图词表按**连续子串**匹配，
+        # 少收一个写法就等于那类问题走不到工具、然后被判缺据（实测黄金用例
+        # `num_attack_rate_with_increase` 第一次跑就是这么红的）。
+    )),
     # 受击结算（闪避/格挡/压制/护甲）同样是「按顺序算」，证据不在 chunk 里。
     #
     # 判据必须专指**结算**，不能是**属性名**。实测（第二十一轮）：先写了「法术压制」，
@@ -823,7 +843,11 @@ _PREFERRED_TOOL_INTENTS: tuple[tuple[str, tuple[str, ...]], ...] = (
     # 带数字的那类问法由 `_resistance_numeric_route` 兜（它判在整张表之后，优先级最低）。
     ("mitigation_calc", (
         "护甲减伤", "护甲能减", "护甲有什么用", "护甲怎么算", "物理减伤上限",
-        "闪避率", "闪避几率", "命中率", "躲开", "被命中",
+        # 「命中率」**第三十三轮让给了 `accuracy_calc`**：那个词默认指攻击侧
+        # （我打得中吗），而这里要的是防守侧说法。留着它会把
+        # 「我 1500 命中打 83 级怪多少命中率」抢过来，然后拿怪物命中值去算——
+        # 一个答非所问但看起来很像的数。
+        "闪避率", "闪避几率", "躲开", "被命中", "躲不开", "被打中的几率",
         "格挡上限", "最大格挡", "压制上限", "压制减", "压制效果",
         # 「法术压制」可以是裸机制名：它只有结算这一种问法，而**枚举问句已由
         # `_YIELDS_TO_ENUMERATION` 让路**。「护甲」「闪避」「格挡」则不行——
@@ -1063,6 +1087,34 @@ def _slot_values(question: str, keywords: tuple[str, ...]) -> set[float]:
     return forward or backward
 
 
+def _slot_values_by_shape(
+    question: str, keywords: tuple[str, ...], *, percent: bool
+) -> set[float]:
+    """与 `_slot_values` 同样的两种语序，但**按数字形状分流**：带 `%` 的与不带的。
+
+    为什么需要它（第三十三轮实测）：攻速那一维同一个词后面既可能跟基础值也可能跟
+    百分比——「攻速 1.55 的武器加 60% 攻速」里两个数都贴着「攻速」，
+    不按形状分开就会在同一个槽位抽到两个值、整条判定作废。命中率那边同理
+    （「1500 命中」是命中值，「90% 命中率」是目标命中率）。
+    """
+    tail = r"\s*[%％]" if percent else r"(?!\s*[%％])"
+    forward: set[float] = set()
+    backward: set[float] = set()
+    for keyword in keywords:
+        kw = re.escape(keyword)
+        forward.update(
+            float(m.group(1))
+            for m in re.finditer(rf"{_CALC_NUMBER}{tail}\s*(?:的)?\s*{kw}", question)
+        )
+        backward.update(
+            float(m.group(1))
+            for m in re.finditer(
+                rf"{kw}\s*(?:是|有|为|到|加|加快|提高)?\s*{_CALC_NUMBER}{tail}", question
+            )
+        )
+    return forward or backward
+
+
 def _mitigation_args(question: str) -> dict[str, Any] | None:
     """从问题里抽 `mitigation_calc` 的参数。
 
@@ -1175,6 +1227,78 @@ def _crit_args(question: str) -> dict[str, Any] | None:
         return None
     if not args and not _RESIST_NUMBER_RE.search(question):
         return {}
+    return args or None
+
+
+#: 命中率的两个槽位共用「命中」这个词，靠**形状**分流：带 % 的是目标命中率，
+#: 不带的是命中值。敌方等级只认「X 级怪 / 敌人 X 级」这种专指敌方的写法
+#: （「我 90 级」不是敌方等级）。
+_ACCURACY_WORDS = ("命中值", "命中率", "命中")
+#: 两种语序都认：「83 级怪物」与「首领 84 级」。少一种就会静默丢掉敌方等级，
+#: 而那时工具只会说「没给敌方等级」——一个看起来像缺据、其实是抽取漏了的答案。
+_ENEMY_WORDS = "怪|怪物|敌人|首领|头目|boss|BOSS"
+_ENEMY_LEVEL_RE = re.compile(
+    rf"(?:(\d{{1,3}})\s*级\s*(?:的\s*)?(?:{_ENEMY_WORDS})"
+    rf"|(?:{_ENEMY_WORDS})\s*(?:是|有|在)?\s*(\d{{1,3}})\s*级)"
+)
+
+
+def _accuracy_args(question: str) -> dict[str, Any] | None:
+    """`accuracy_calc` 的参数。没有任何数字 → 讲规则（无参数）。
+
+    与其它计算器一致的三条：同一槽位两个值就交回模型；敌方等级只认专指敌方的写法；
+    「90% 命中率」抽成反解目标而不是命中值（判据是数字形状，不是动词表——
+    动词表漏一个写法就会把目标当成命中值，实测「要多少命中才能 90% 命中率」
+    在动词表那一版里就抽错了）。
+    """
+    if not _RESIST_NUMBER_RE.search(question):
+        return {}
+    args: dict[str, Any] = {}
+    target = _slot_values_by_shape(question, _ACCURACY_WORDS, percent=True)
+    accuracy = _slot_values_by_shape(question, _ACCURACY_WORDS, percent=False)
+    if len(target) == 1:
+        args["target_chance"] = int(target.pop())
+    elif len(target) > 1:
+        return None
+    if len(accuracy) == 1:
+        args["accuracy"] = accuracy.pop()
+    elif len(accuracy) > 1:
+        logger.info("accuracy_calc 的命中值抽到多个 %s，交回模型自选", accuracy)
+        return None
+    level = _ENEMY_LEVEL_RE.search(question)
+    if level:
+        args["enemy_level"] = int(level.group(1) or level.group(2))
+    for slot, keywords in (("enemy_evasion", ("闪避",)), ("enemy_block_pct", ("格挡",))):
+        values = _slot_values(question, keywords)
+        if len(values) > 1:
+            return None
+        if values:
+            args[slot] = values.pop()
+    if "无法被闪避" in question or "必定命中" in question:
+        args["cannot_be_evaded"] = True
+    return args or None
+
+
+#: 攻速的两个槽位同样共用一个词（「攻速 1.55」vs「攻速加快 60%」），按形状分流。
+_SPEED_WORDS = ("基础攻速", "攻速", "攻击速度")
+
+
+def _attack_speed_args(question: str) -> dict[str, Any] | None:
+    """`attack_speed_calc` 的参数。没有数字 → 讲规则。"""
+    if not _RESIST_NUMBER_RE.search(question):
+        return {}
+    args: dict[str, Any] = {}
+    increased = _slot_values_by_shape(question, _SPEED_WORDS, percent=True)
+    base = _slot_values_by_shape(question, _SPEED_WORDS, percent=False)
+    if len(increased) == 1:
+        args["increased_pct"] = increased.pop()
+    elif len(increased) > 1:
+        return None
+    if len(base) == 1:
+        args["base_rate"] = base.pop()
+    elif len(base) > 1:
+        logger.info("attack_speed_calc 的基础攻速抽到多个 %s，交回模型自选", base)
+        return None
     return args or None
 
 
@@ -1303,6 +1427,8 @@ _CODE_INVOKED_TOOLS: dict[str, Any] = {
     "ailment_threshold_calc": _threshold_args,
     "max_hit_calc": _maxhit_args,
     "crit_calc": _crit_args,
+    "accuracy_calc": _accuracy_args,
+    "attack_speed_calc": _attack_speed_args,
 }
 
 #: 这些工具按设计**不产出引用**（覆盖声明是元信息不是游戏事实）。

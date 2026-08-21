@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from tools.impl import ailments as _ailments  # noqa: F401  注册副作用
+from tools.impl import attack as _attack  # noqa: F401  注册副作用
 from tools.impl import bench as _bench  # noqa: F401  注册副作用
 from tools.impl import craft as _craft  # noqa: F401  注册副作用
 from tools.impl import crit as _crit  # noqa: F401  注册副作用
