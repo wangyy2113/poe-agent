@@ -308,47 +308,32 @@ def rebuild_cards_from_db(conn) -> int:  # noqa: ANN001
     为什么从库里读而不是重新解析 PoB：卡片是 `entity.attributes` 的纯函数，
     而实体行就是本脚本写的。`scripts/import_gem_stats.py` 因此不需要再解析一遍
     PoB（2.4 秒）也不需要第二份 `to_entity`——**同一条渲染路径，两个入口。**
+
+    行 → `Entity` 用 `kb.pipeline._entity_from_row`：第三十二轮这里自己拼了一份
+    （少了 `mods` / `requirement` 两个字段的还原），而管线里那个函数的 docstring
+    写着「供只改个别字段后重新渲染卡片使用」——**正是这件事**。
+    两份还原逻辑迟早分叉，第三十四轮合掉。
     """
+    from kb.pipeline import _entity_from_row, _upsert_entity  # noqa: PLC0415
+
     stats = load_poedb_stats(conn)
-    rows = list(conn.execute(
-        "SELECT entity_id, entity_type, name_zh, name_en, slug, attributes, source, "
-        "source_priority, url, version, content_hash, fetched_at FROM entity "
-        "WHERE entity_type IN (?,?)",
-        (EntityType.SKILL.value, EntityType.SUPPORT_GEM.value),
-    ))
-    entities: list[Entity] = []
-    for row in rows:
-        attrs = json.loads(row["attributes"] or "{}")
-        attrs.pop("mods", None)  # 写库时由 _upsert_entity 拼进去的字段，不是原始属性
-        entity = Entity(
-            entity_id=row["entity_id"],
-            entity_type=EntityType(row["entity_type"]),
-            name_zh=row["name_zh"],
-            name_en=row["name_en"],
-            slug=row["slug"],
-            attributes=attrs,
-            ref=SourceRef(
-                source=row["source"], url=row["url"], priority=int(row["source_priority"]),
-                fetched_at=row["fetched_at"],
-            ),
-            version=row["version"],
-            content_hash=row["content_hash"],
+    entities = [
+        merge_poedb_stats(
+            entity := _entity_from_row(row),
+            stats.get(str(entity.attributes.get("gem_id"))),
         )
-        entities.append(merge_poedb_stats(entity, stats.get(str(attrs.get("gem_id")))))
+        for row in conn.execute(
+            "SELECT * FROM entity WHERE entity_type IN (?,?)",
+            (EntityType.SKILL.value, EntityType.SUPPORT_GEM.value),
+        )
+    ]
     for entity in entities:
-        _upsert_entity_shared(conn, entity)
-    chunks = 0
+        _upsert_entity(conn, entity)
     for entity_type in (EntityType.SKILL, EntityType.SUPPORT_GEM):
         fts_mod.clear_index(conn, entity_prefix=f"{entity_type.value}:")
-    for entity in entities:
-        chunks += fts_mod.index_chunks(conn, render_skills.to_chunks(entity))
-    return chunks
-
-
-def _upsert_entity_shared(conn, entity: Entity) -> None:  # noqa: ANN001
-    from kb.pipeline import _upsert_entity  # noqa: PLC0415  复用同一套写法，避免两份 SQL
-
-    _upsert_entity(conn, entity)
+    return sum(
+        fts_mod.index_chunks(conn, render_skills.to_chunks(entity)) for entity in entities
+    )
 
 
 def record_skipped(conn, skipped: list[SkippedGem]) -> int:  # noqa: ANN001

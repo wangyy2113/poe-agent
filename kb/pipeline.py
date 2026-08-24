@@ -246,6 +246,19 @@ def run_poedb_unique(*, force: bool = False, rebuild: bool = False) -> int:
         logger.info("补回 %d 件无切片的实体（多为 L2 补集，rebuild 时被连带清掉）",
                     len(orphans))
 
+    # 列表页是唯一装备的主源，重新入库会把 `scripts/import_unique_detail.py`
+    # 从**详情页**补进来的词条（实测以「不可改变」为主）覆盖掉。
+    # 提醒而不是静默：悄悄少一条词缀没人看得出来，而那条正是制作类问题要用的。
+    if conn.execute(
+        "SELECT 1 FROM ingest_run WHERE category='unique_detail' LIMIT 1"
+    ).fetchone():
+        logger.warning(
+            "本轮重写了唯一装备快照，详情页补进来的词条已被覆盖——"
+            "请紧接着重跑 scripts/import_unique_detail.py"
+        )
+        print("[注意] 唯一装备快照已重写，详情页补的词条被覆盖，"
+              "请重跑 scripts/import_unique_detail.py")
+
     elapsed_ms = int((time.time() - started) * 1000)
     conn.execute(
         "UPDATE ingest_run SET finished_at=datetime('now'), total=?, succeeded=?, "
@@ -318,6 +331,13 @@ def _entity_from_row(row) -> Entity:  # noqa: ANN001
         },
         league=row["league"],
         version=row["version"],
+        # **必须还原**：它是增量更新的判断依据（「这一行是从哪份源内容建的」）。
+        # 不还原就等于每次重渲染都把它清空——`_upsert_entity` 会照着写回去，
+        # 于是自愈重建过的实体永远显示「内容变了」。第三十四轮实测到这一点：
+        # 唯一装备详情页合并之后 `content_hash` 变成空字符串。
+        # 改了内容的调用方要**显式重算**（见下面那处 `_entity_hash(entity)`），
+        # 只重渲染的调用方保持原值。
+        content_hash=row["content_hash"],
         ref=SourceRef(
             source=row["source"], url=row["url"], priority=row["source_priority"],
             fetched_at=row["fetched_at"],

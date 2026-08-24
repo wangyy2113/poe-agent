@@ -119,7 +119,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 1125 项，秒级
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 1143 项，秒级
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选
@@ -136,7 +136,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 .venv/bin/python scripts/eval_run.py --record        # 重录真实响应（**要凭证、烧 token**）
 ```
 
-黄金问答集是 `tests/golden/questions.yaml`（117 条，六类），基线与全部结论在
+黄金问答集是 `tests/golden/questions.yaml`（118 条，六类），基线与全部结论在
 `tests/golden/BASELINE.md`——**动闸门前先读它**，里面记了多个已修缺陷与三条已知未修边界，
 以及两次「测量本身写错」的教训。
 
@@ -231,7 +231,7 @@ POST /chat[/stream]  api/chat.py（只做校验与编排调用）
 本机 `data/poe.db` 现状（`GET /healthz` 与 `/admin/stats` 可查）：`entity` 5207、
 `mod_affix` 93897、`pob_mod` 25487、`chunk` 18457、`alias` 8126、`game_constant` 543、
 `craft_bench_recipe` 783、`pob_base_item` **1022**（18 个装备类别，PoB × POEDB 逐条桥接，
-覆盖 PoB 侧 96.1%；未桥接的 41 条已按类别登记在台账）、`source_conflict` **523**（`mod_review` 254 + `unique_review` 207 + `spectre_review` 43
+覆盖 PoB 侧 96.1%；未桥接的 41 条已按类别登记在台账）、`source_conflict` **545**（`mod_review` 254 + `unique_review` **229** + `spectre_review` 43
 + `spectre` **8** + `gem_review` **8** + `tree_review` 3）。
 
 `pob_skill_level` 第二十四轮补上 **`reservation_flat`**（400 行）：先前只收
@@ -322,6 +322,37 @@ POEDB 页面仍是旧版」：`号召` PoB 侧是 `ConvocationNew`（各级需�
 已经答得出的问法。宝石域现在只剩两个缺口：**DPS 与获取途径**。
 `poedb_gem_stat*` 挂在 `pob_skill_gem` 的外键上级联删除，所以**重导入宝石快照之后
 必须紧接着重跑 `scripts/import_gem_stats.py`**（导入脚本会提醒）。
+
+**唯一装备的词缀第三十四轮从详情页补齐了一次。** 入库主源是 `/cn/Unique_item`
+（一页 2.5MB、1342 件全在里面，对站点最友好），而 `verify_against_detail.py` 抽样核对时
+反复报同一件事、台账里也记着：**详情页有而列表页没有的词条**。抓齐 1342 张详情页
+（43 分钟、零失败）后逐件比对：
+
+| | 件数 |
+| --- | --- |
+| 两侧词缀完全一致 | **1256** |
+| 详情页更全 → 合并 | 51（全量那一次；补进来的全是「不可改变」） |
+| 两侧对不上 → 拒绝合并并登记 `unique_review` | **22** |
+| 两侧都没有词缀（片段 / 契约类） | 13 |
+
+最终**卡片上补上「不可改变」的 52 件**（全量那一次合了 51 件，另 1 件是先单件试跑的）。
+这条是「这件不能被改造」的事实，**制作类问题正要用它**——不知道这件不能改，
+就会答成「可以洗」。黄金集里 `desc_unique_cannot_be_modified` 钉住这一条。
+
+合并的前提是**详情页是列表页的超集**（判据在 `kb.sources.poedb_unique.compare_detail`，
+核对脚本与导入脚本**共用这一份**）：名字/底材/需求任一不一致，或者列表页有而详情页
+没有的词条，都不合并。那 22 件里 10 件是**底材译名差异**（暗影弓 / 刺客弓、
+暗影护手 / 刺客护手——国服与繁中两套译名，与宝石那边的两译名是同一个现象），
+1 件是真变体（疯狂的象征：异色鞋冰闪 vs 火闪，需求与词缀都不同）。
+
+**被否掉的放宽**：本来想「只有底材译名不一致就放行」。实测那 10 件的
+`detail_only` **全是 0**——放宽能多拿到的词条是 **0 条**，只会多担一份把变体物品
+并错的风险。测一下再决定，比讲道理可靠。
+
+合并时**整份换成详情页的词缀**（详情页给的是权威顺序，而 `entity.url` 本来就指向
+详情页），并**重算 `search_keywords`**——新词条不进关键词就等于「入库了但检索不到」。
+列表页重新入库会覆盖这些合并结果，所以 `kb/pipeline` 在重写唯一装备快照后会提醒
+重跑 `scripts/import_unique_detail.py`（与宝石那两张表的级联提醒同一个道理）。
 
 `poedb_currency` **113** 条通货（中英文名、堆叠上限、效果原文；其中 **15** 条在 POEDB 上
 没有效果文本——碎片与命能类，留空而不是自己补一句）。那一页 `<table>` 计数为 **0**，

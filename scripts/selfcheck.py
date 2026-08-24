@@ -128,6 +128,26 @@ def main() -> int:
         print(f"  !! 常量检查失败: {type(exc).__name__}: {exc}")
         ok = False
 
+    # ── 增量判据：content_hash 为空的实体 ──
+    # 这不是「少一个字段」，而是**增量更新的判断依据失效**：重渲染路径把它写空之后，
+    # 那些行每次都显示「内容变了」。第三十四轮实测 931 行（820 颗宝石 + 111 件
+    # L2 补进来的唯一装备），起因是 `_entity_from_row` 没有还原这个字段。
+    print("\n[增量判据]")
+    blank = conn.execute("SELECT count(*) FROM entity WHERE content_hash = ''").fetchone()[0]
+    if blank:
+        by_type = ", ".join(
+            f"{r[0]} {r[1]}"
+            for r in conn.execute(
+                "SELECT entity_type, count(*) FROM entity WHERE content_hash='' "
+                "GROUP BY 1 ORDER BY 2 DESC LIMIT 5"
+            )
+        )
+        print(f"  !! {blank} 个实体的 content_hash 为空（{by_type}）")
+        print("     → 增量更新会把它们当成「每次都变了」；重跑对应导入脚本可重建")
+        ok = False
+    else:
+        print("  全部实体都有 content_hash")
+
     vs = dbmod.vector_status()
     print(f"  向量扩展     : {vs}")
     if not vs.available:
