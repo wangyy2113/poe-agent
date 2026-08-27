@@ -2296,6 +2296,59 @@ def _preferred_tool_gap(question: str, preferred: str, missing_terms: list[str])
     return answer
 
 
+#: `calc/derive.render_steps()` 渲染的推导表表头。逐字取自那个函数——
+#: 判重与抽取都认它，改了那边这里要跟着改（`test_answer_notes` 钉住两处一致）。
+_STEP_TABLE_HEADER = "| 步骤 | 算式 | 结果 |"
+
+
+def _extract_step_table(text: str) -> str:
+    """从证据原文里切出推导表（表头 + 分隔行 + 连续的表格行）。"""
+    start = text.find(_STEP_TABLE_HEADER)
+    if start < 0:
+        return ""
+    lines = text[start:].splitlines()
+    out: list[str] = []
+    for line in lines:
+        if line.startswith("|"):
+            out.append(line.rstrip())
+        else:
+            break
+    return "\n".join(out) if len(out) >= 3 else ""
+
+
+def _derivation_blocks(evidence: list[Evidence], answer: str) -> list[str]:
+    """计算器的推导表：模型没自己贴出来时，由**代码**逐字附上。
+
+    ## 为什么要代码附
+
+    实测（2026-08-27 第四十一轮，跑在 75 条可比对的录制上）：**31 条带表格的答案里
+    有 12 条（39%）的推导表被出口闸门拦掉**，计算器类 9/21。原因不是闸门错——
+    模型把工具的推导表原样抄下来却**没给它绑定编号**，那就是无据断言，拦得对。
+
+    后果不是答错（12 条里只有 1 条因此真的漏了期望数值，其余结论句都带引用），
+    而是**可核对的算式没了**。而项目自己的规矩是：
+
+        「算出来的数字要连算式一起给」——`resistance_calc` 那一轮定的判据
+
+    所以走与 `boundary` / `conflict_block` 同一条路：代码逐字附上，不经模型、不过闸门。
+    **表格是从证据原文里切出来的**，不是重新渲染的——保证与引用里的那张一字不差，
+    也就不需要每个计算器都改一遍去往 `data` 里塞一份。
+
+    ## 判重
+
+    模型自己贴了就不再附（19/31 会贴）。判据是答案里有没有那张表的表头——
+    精确、便宜，且不会因为模型改了措辞而失效。
+    """
+    if _STEP_TABLE_HEADER in answer:
+        return []
+    for item in evidence:
+        table = _extract_step_table(item.text)
+        if table:
+            # 只附第一张：多工具同轮时全附会刷屏，而用户问的通常是其中一件事
+            return [f"推导（取自证据 [[{item.label}]]，由代码逐字附上）：\n\n{table}"]
+    return []
+
+
 def _apply_notes(result: TurnResult, evidence: list[Evidence]) -> list[str]:
     """把代码生成的附注追加到答案，并返回它们（流式还要逐条发事件）。
 
@@ -2304,6 +2357,12 @@ def _apply_notes(result: TurnResult, evidence: list[Evidence]) -> list[str]:
     notes = _answer_notes(result.tool_calls, evidence)
     for note in notes:
         result.answer += f"\n\n> {note}"
+    # 推导表**不加 `>` 前缀**：Markdown 表格套进引用块会渲染散架。
+    # 放在 notes 里一起返回，流式那边照旧逐条发事件——两侧同一份列表，
+    # 批量与流式的一致性因此是构造出来的，不靠两处各写一遍（规约第 5 条）。
+    for block in _derivation_blocks(evidence, result.answer):
+        result.answer += f"\n\n{block}"
+        notes.append(block)
     return notes
 
 

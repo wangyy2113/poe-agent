@@ -122,7 +122,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 1223 项，秒级
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 1228 项，秒级
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选
@@ -814,6 +814,13 @@ Lua 后者覆盖前者，解析器同样取后者——**行号锚点也因此�
   于是模型写「20,000」而用例写「20000」时，一个完全正确的答案被判成缺数值
   （实测两次：20000 与 2000000）。**这是测量本身的缺陷，不是用例的**——
   修在 `_strip_thousands`（只去掉数字之间的逗号），而不是逐条改用例迁就模型的写法。
+- **代码附注也管「算式」，不只管边界声明。** 实测（第四十一轮，75 条可比对录制）：
+  **31 条带表格的答案里 12 条（39%）的推导表被闸门拦掉**——模型把工具的推导表
+  原样抄下来却没绑编号，拦得对，但「算出来的数字要连算式一起给」这条就落空了。
+  修法与 `boundary` / `conflict_block` 同一条路：`loop._derivation_blocks()`
+  **从证据原文里切出那张表**逐字附上（不重新渲染，也就不用改九个计算器），
+  模型自己贴了就判重不附。掉表率 39% → **11%**，剩下的 3 条是排名表与目录表，
+  本来就不该由代码补。**它不改善引用有效率**——那是绑定纪律，两回事。
 - **信号存在 ≠ 信号被消费。** `DomainSpec.pob_files` 连着两轮把人引向错的结论
   （万神殿第三十五轮、Boss 第三十八轮，两次都写着「缺的是来源」而 PoB 检出里
   一直有文件），根因是它**零运行时消费者**——写了没人看，写错更没人发现。
