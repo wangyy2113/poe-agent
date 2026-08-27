@@ -509,10 +509,35 @@ DOMAINS: tuple[DomainSpec, ...] = (
         display_zh="收获（古灵庄园）工艺",
         category=Category.CRAFTING,
         authority_url=f"{POEDB_BASE}/Horticrafting",
-        count_sql=None,
-        hints=("收获", "园艺", "古灵庄园", "生命力"),
-        question_hints=("收获有哪些定向工艺选项",),
+        count_sql="SELECT count(*) FROM harvest_craft",
+        channel_sql=(
+            "SELECT DISTINCT currency_name_zh FROM harvest_craft_cost "
+            "WHERE currency_name_zh<>''"
+        ),
+        tools=("harvest_craft_catalog",),
+        hints=("收获", "园艺", "古灵庄园", "生命力", "命能"),
+        question_hints=(
+            "收获有哪些定向工艺选项",
+            "某条收获工艺要多少命能",
+            "某种命能能用来做什么",
+        ),
         poedb_pages=("Horticrafting", "Harvest"),
+        partial_note=(
+            "已入库 **74 条定向工艺**与 **98 条命能费用明细**（效果原文 + 原始费用，"
+            "费用通货按 GGG 元数据路径与 `poedb_currency` 逐条对账，5/5 命中）；"
+            "**未采集**：命能的**获取途径**（同页 51 行作物与掉落来源那张表）、"
+            "成功率与权重、制作步骤、市场成本，以及同页 41 行"
+            "催化/化石/工艺台/花园工艺站混排表"
+        ),
+        missing_dimension_hints=(
+            "怎么获得", "如何获得", "哪里获得", "获取途径", "作物", "种植", "掉落",
+            "成功率", "概率", "几率", "权重", "制作步骤", "步骤", "怎么做",
+        ),
+        note=(
+            "**没有卡片，只有工具**（与工艺台同理）：74 条描述里 16 条只差一个词"
+            "（「重铸……其中包括一个 X 词缀」），做成卡片会让 BM25 在近重复文本里"
+            "互相挤掉。所以 `probe()` 报的 chunk 数是 0，这不是缺陷。"
+        ),
     ),
     # 注意：辛迪加给的是**隐匿**词缀（POEDB category=veiled，中文标签「隐匿」），
     # 与下面「纠缠词缀」（category=haunted，亡者之城机制）是两回事。

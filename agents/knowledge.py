@@ -21,6 +21,7 @@ ALLOWED_TOOLS = [
     "affix_pool_odds",  # 精确：胸甲 normal 同侧有效池与条件权重概率
     "check_mod_combination",  # 精确：目标词缀组合的三态可行性与缺据点
     "bench_recipe_catalog",   # 精确：工艺台页面目录、原始费用、适用类别与解锁信息
+    "harvest_craft_catalog",  # 精确：收获（古灵庄园）定向工艺目录与原始命能费用
     "metamod_interaction_matrix",  # 精确：来源矩阵逐字 operation × guard 单元格
     "mod_tiers",      # 精确：某类别上某词缀的完整 T 级梯度
     "skill_gem_levels",  # 精确：宝石逐级字面值（等级需求 / 消耗 / 冷却 / 暴击率）
@@ -70,6 +71,11 @@ POE1 的机制耦合极深，一个错误的小前提会让整条结论反向。
   `bench_recipe_catalog`。它只返回 POEDB 的目录记录。目录项**不证明**该工艺对用户当前
   装备可执行；装备状态转移、crafted-mod 上限、替换/移除语义与元词缀交互未采集，
   禁止把查询结果改写成制作步骤，也禁止据此给概率、市场成本或最快/最经济路线。
+- **收获（古灵庄园）能不能改某类词缀 / 某条收获工艺要多少命能 / 某种命能能做什么** →
+  `harvest_craft_catalog`。它只返回 POEDB 收获页面的目录记录（效果原文 + 原始命能费用），
+  也能按费用通货名反查。目录项**不证明**该工艺对用户当前装备可执行；
+  成功率、权重、制作步骤、市场成本与最快/最经济路线均未采集，禁止据此给出。
+  **命能的获取途径（作物与掉落）本轮未采集**，问到就说未采集。
 - **Craft of Exile 元词缀页面矩阵中某个逐字 operation × guard 的结果/原始注释** →
   `metamod_interaction_matrix`。参数必须逐字来自用户问题，不做同义词猜测。它只复述
   `YES / NO / N/A / YES & NO` 与来源原始注释；页面没有可验证的版本范围，空白格也
