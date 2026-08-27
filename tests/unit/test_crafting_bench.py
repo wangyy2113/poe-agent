@@ -366,7 +366,13 @@ class TestCraftingBenchStorageAndCoverage(unittest.TestCase):
         self.assertEqual(set(bench.channels), {"改造石", "点金石", "神圣石", "灌顶石", "玻璃弹珠"})
         self.assertIn("bench_recipe_catalog", bench.spec.tools)
         self.assertIn("状态转移", bench.spec.partial_note)
-        self.assertEqual(rules.status, "not_collected")
+        # 断言**不可用**而不是某个具体状态字：第三十九轮起 `probe()` 会消费
+        # `pob_files`，桩库里 craft_rule 没数据但本机若有 PoB 检出就报 harvested。
+        # 这条用例要钉的是「入库工艺台目录不会让 craft_rule 看起来已采集」，
+        # 而 harvested 与 not_collected 都满足这一点；写死状态字会让它随本机
+        # 有没有 PoB 检出而红绿摇摆。
+        self.assertFalse(rules.usable)
+        self.assertEqual(rules.item_count, 0)
 
 
 class TestBenchRecipeCatalogTool(unittest.TestCase):

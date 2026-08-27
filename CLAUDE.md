@@ -122,7 +122,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 1220 项，秒级
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 1223 项，秒级
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选
@@ -814,6 +814,14 @@ Lua 后者覆盖前者，解析器同样取后者——**行号锚点也因此�
   于是模型写「20,000」而用例写「20000」时，一个完全正确的答案被判成缺数值
   （实测两次：20000 与 2000000）。**这是测量本身的缺陷，不是用例的**——
   修在 `_strip_thousands`（只去掉数字之间的逗号），而不是逐条改用例迁就模型的写法。
+- **信号存在 ≠ 信号被消费。** `DomainSpec.pob_files` 连着两轮把人引向错的结论
+  （万神殿第三十五轮、Boss 第三十八轮，两次都写着「缺的是来源」而 PoB 检出里
+  一直有文件），根因是它**零运行时消费者**——写了没人看，写错更没人发现。
+  更值得记的是：`scripts/probe_pob.py` 的 `SPECS` 表里**早就写着**这两个文件
+  与它们对应的知识域，**信号是对的，只是躺在一个没人例行跑的脚本里**。
+  第三十九轮给这个字段接了两个消费者（`probe()` 分辨 harvested/not_collected、
+  单测校验声明），当场抓出两处积压的错声明（一句人话「…共 26 个」混在路径元组里、
+  一个目录当成文件）。**加字段之前先想清楚谁会读它；没有读者的字段迟早说假话。**
 - **测量工具本身也会失真，而且失真得最久。** 缺口台账是「该采集什么」的唯一信号，
   它带着 93% 的评测流量与一条永不执行的 POE2 条目跑了近二十轮
   （第三十轮才发现）。同一类还有：`expect_values` 逐字比对（第二十七轮）、
