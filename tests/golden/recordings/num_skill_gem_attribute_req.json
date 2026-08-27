@@ -1,0 +1,132 @@
+{
+  "format_version": 1,
+  "case_id": "num_skill_gem_attribute_req",
+  "query": "冰霜脉冲需要多少智力需求",
+  "recorded_at": "2026-08-27T19:19:26+08:00",
+  "model": "glm-5.2",
+  "tokens": {
+    "prompt": 14448,
+    "output": 357,
+    "reasoning": 273,
+    "total": 14805
+  },
+  "tool_calls": [
+    "kb_search"
+  ],
+  "evidence_gap": false,
+  "out_of_scope": false,
+  "precision_route": "",
+  "gap_answer": "",
+  "final_answer": "根据 [E1]，冰霜脉冲的智慧（智力）属性需求如下：\n\n- **1 级**：智慧需求 **0**[[E1]]\n- **20 级**（自然最高级）：智慧需求 **155**[[E1]]\n\n40 级（需腐化或 +等级）的数据未列出属性需求项，无法据此给出[[E1]]。\n\n> **括号内的百分比是该档在同组内的生成权重占比**，不等于任何通货或具体工艺的一次使用成功率，也不等于期望消耗。\n\n> 检索以降级通道完成（alias, fts）：向量检索与重排未启用（网关无 embedding 模型），当前走 BM25 + 实体精确匹配",
+  "blocked_claims": 0,
+  "elapsed_ms": 6745,
+  "evidence_fingerprint": "sha256:12c3227172ed7e9e162c129c347c2c08",
+  "_warning": "raw_answer 是未过出口闸门的模型原文，含可能无据的断言，不得当作事实引用",
+  "raw_answer": "根据 [E1]，冰霜脉冲的智慧（智力）属性需求如下：\n\n- **1 级**：智慧需求 **0**[[E1]]\n- **20 级**（自然最高级）：智慧需求 **155**[[E1]]\n\n40 级（需腐化或 +等级）的数据未列出属性需求项，无法据此给出[[E1]]。",
+  "evidence": [
+    {
+      "label": "E1",
+      "chunk_id": "skill:Freezing_Pulse#0#8242658b7094779f",
+      "entity_id": "skill:Freezing_Pulse",
+      "title": "冰霜脉冲（Freezing Pulse）",
+      "url": "https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/act_int.lua",
+      "source": "Path of Building",
+      "source_priority": 2,
+      "text": "# 冰霜脉冲（Freezing Pulse）\n类型：技能石 ｜ 蓝色（智慧）\n标签：法术、投射物、冰霜\n英文标签：Spell, Projectile, Cold\n施放时间 0.65 秒 ｜ 自然最高 20 级\n\n- 1 级：需角色 1 级，属性需求 智慧 0，消耗 5 魔力，基础冰霜伤害 9–14，暴击率 7.5%\n- 20 级（自然最高）：需角色 70 级，属性需求 智慧 155，消耗 21 魔力，基础冰霜伤害 1659–2488，暴击率 7.5%\n- 40 级（PoB 数据上限，需腐化或 +等级）：需角色 100 级，消耗 28 魔力，基础冰霜伤害 8799–13198，暴击率 7.5%\n\n**效果文本（POEDB 逐级表）**\n- 造成 9 - 14 冰霜伤害（1 级 9, 14｜20 级 1659, 2488）\n- 发射 1 个投射物（1 级 1｜20 级 5）\n\nPoB 英文说明：An icy projectile which has a chance to freeze enemies it passes through. The projectile fades quickly, reducing damage and freezing chance until it dissipates.\n\n来源：Path of Building → Data/Skills/act_int.lua\nhttps://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/act_int.lua\n中文名对照：https://poedb.tw/cn/Freezing_Pulse",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E2",
+      "chunk_id": "unique_item:First_Snow#0#a03fc5a578fe6cac",
+      "entity_id": "unique_item:First_Snow",
+      "title": "初雪（First Snow）",
+      "url": "https://poedb.tw/cn/First_Snow",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 初雪（First Snow）\n类型：唯一装备 ｜ 底材：钴蓝珠宝 ｜ 分类：钴蓝珠宝\n\n**需求**：需求 等级 20\n\n**显式词缀**\n- [显式词缀] 投射物伤害提高 (7-10)%\n- [显式词缀] 若范围内含有 40 点智慧，则冰霜脉冲额外发射 2 个投射物\n- [显式词缀] 当范围内含有至少 40 点智慧时，若你近期内粉碎被冰冻的敌人，则冰霜脉冲伤害提高 25%\n\n**附加说明**\n- [说明] ( 近期内意指 4 秒内 )\n\n来源：POEDB → 初雪（First Snow）\nhttps://poedb.tw/cn/First_Snow",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E3",
+      "chunk_id": "ascendancy:Cryogenesis_c4456abbb3#78ac5d0fb2ca05ec",
+      "entity_id": "ascendancy:Cryogenesis_c4456abbb3",
+      "title": "升华核心·寒霜之源（Cryogenesis）",
+      "url": "https://poedb.tw/cn/passive-skill-tree/",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 升华核心·寒霜之源（Cryogenesis）\n升华核心 ｜ 天赋树 3.29\n\n- 如果敏捷高于其他两项属性，你获得的附加其他类型伤害将转为获得附加冰霜伤害\n- 如果智力高于其他两项属性，你获得的附加其他类型伤害将转为获得附加闪电伤害\n- 元素打击的附加伤害无法通过该方式被替换\n\n> （武器上增加该武器伤害的局部词缀，并不会为你提供附加伤害，因此不受此影响。）\n> (属性分为力量，敏捷和智慧三种)\n\n来源：POEDB → 天赋树 · 寒霜之源（Cryogenesis）\nhttps://poedb.tw/cn/passive-skill-tree/",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E4",
+      "chunk_id": "unique_item:Aukunas_Will#0#3c48654d952ab862",
+      "entity_id": "unique_item:Aukunas_Will",
+      "title": "奥库娜的意志（Aukuna's Will）",
+      "url": "https://poedb.tw/cn/Aukunas_Will",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 奥库娜的意志（Aukuna's Will）\n类型：唯一装备 ｜ 底材：环带护手 ｜ 分类：护甲\n\n**需求**：需求 等级 31, 25 敏捷, 25 智慧\n\n**显式词缀**\n- [显式词缀] +(30-40) 敏捷\n- [显式词缀] 施法速度加快 (5-7)%\n- [显式词缀] 该装备的闪避与能量护盾提高 (100-150)%\n- [显式词缀] 魔卫复苏最大生命提高 (80-100)%\n- [显式词缀] 魔卫复苏不再需要灵柩\n- [显式词缀] 你的魔卫复苏视为灵柩\n\n来源：POEDB → 奥库娜的意志（Aukuna's Will）\nhttps://poedb.tw/cn/Aukunas_Will",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E5",
+      "chunk_id": "unique_item:Hateforge#0#dab352c32f8b907b",
+      "entity_id": "unique_item:Hateforge",
+      "title": "仇恨熔炉（Hateforge）",
+      "url": "https://poedb.tw/cn/Hateforge",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 仇恨熔炉（Hateforge）\n类型：唯一装备 ｜ 底材：远古护手 ｜ 分类：护甲\n\n**需求**：需求 等级 72, 68 力量\n\n**显式词缀**\n- [显式词缀] 此物品上的技能石受到 30 级的怒火辅助\n- [显式词缀] 该装备的护甲提高 (120-150)%\n- [显式词缀] 技能的怒火消耗降低 (10-25)%\n- [显式词缀] 对你自己使用的瓦尔攻击技能改为消耗怒火而不需要灵魂\n- [显式词缀] 阻灵术持续期间你无法获得怒火\n\n来源：POEDB → 仇恨熔炉（Hateforge）\nhttps://poedb.tw/cn/Hateforge",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E6",
+      "chunk_id": "passive:Hollow_Effigy_b10c5d5cd7#a900db684805e918",
+      "entity_id": "passive:Hollow_Effigy_b10c5d5cd7",
+      "title": "核心天赋·空洞雕像（Hollow Effigy）",
+      "url": "https://poedb.tw/cn/passive-skill-tree/",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 核心天赋·空洞雕像（Hollow Effigy）\n核心天赋 ｜ 天赋树 3.29\n\n- 你的奉献技能不需要灵柩\n\n来源：POEDB → 天赋树 · 空洞雕像（Hollow Effigy）\nhttps://poedb.tw/cn/passive-skill-tree/",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E7",
+      "chunk_id": "ascendancy:Priest_of_Kopec_a9dcbecf03#394344325d452678",
+      "entity_id": "ascendancy:Priest_of_Kopec_a9dcbecf03",
+      "title": "升华节点·科佩克祭司（Priest of Kopec）",
+      "url": "https://poedb.tw/cn/passive-skill-tree/",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 升华节点·科佩克祭司（Priest of Kopec）\n升华节点 ｜ 天赋树 3.29\n\n- 瓦尔技能每需要一个灵魂，伤害总增 1%\n- 瓦尔技能每次施放所需灵魂提高 40%\n- 瓦尔技能可储存 +1 次使用\n\n来源：POEDB → 天赋树 · 科佩克祭司（Priest of Kopec）\nhttps://poedb.tw/cn/passive-skill-tree/",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E8",
+      "chunk_id": "mod_ladder:Bows:VaalSoulCost#b97a646c8619b7d7",
+      "entity_id": "mod_ladder:Bows:VaalSoulCost",
+      "title": "弓 · VaalSoulCost",
+      "url": "https://poedb.tw/cn/Bows#ModifiersCalc",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 弓 · VaalSoulCost\n底材类别：弓 ｜ 词缀组：VaalSoulCost ｜ 类型：后缀 ｜ 来源渠道：1 个\n\n本词缀组在该底材上共 1 条，来自 1 个来源：地心探索。\n互斥规则：与本组（VaalSoulCost）有相同词缀组的其他词缀不能同时存在于一件装备上。\n\n## 地心探索 · 后缀 · 1 条\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/1 | 地下之 | 非光环瓦尔技能每次施放需要的灵魂量降低 40% | 1 | 2000（8.8106%） |\n\n置信度说明：\n- T 级按 POEDB 的算法推导——在同一来源类别与词缀组内，把物品等级去重后降序排名，物品等级最高者为 T1（算法已复刻并通过不变量校验）\n\n来源：POEDB → 弓 · VaalSoulCost\nhttps://poedb.tw/cn/Bows#ModifiersCalc",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    }
+  ]
+}

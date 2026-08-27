@@ -1,0 +1,132 @@
+{
+  "format_version": 1,
+  "case_id": "desc_unique_cannot_be_modified",
+  "query": "轮作这件传奇能不能改词缀",
+  "recorded_at": "2026-08-27T19:17:12+08:00",
+  "model": "glm-5.2",
+  "tokens": {
+    "prompt": 16966,
+    "output": 790,
+    "reasoning": 551,
+    "total": 17756
+  },
+  "tool_calls": [
+    "kb_search"
+  ],
+  "evidence_gap": false,
+  "out_of_scope": false,
+  "precision_route": "",
+  "gap_answer": "",
+  "final_answer": "## 轮作（Crop Rotation）——词缀不可修改\n\n根据唯一装备轮作的卡片数据[[E1]]，该物品的一条显式词缀为**「不可改变」**[[E1]]。\n\n〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕其词缀构成如下：\n\n- **隐式词缀**：你地图中找到的地图数量提高 2%[[E1]]\n- **显式词缀 1**：你地图中的庄园农作物只包含 1 级植物，在你的地图中收割作物有几率升级与其不同颜色的作物等级[[E1]]\n- **显式词缀 2**：不可改变[[E1]]\n\n〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕如需确认，建议查阅 POEDB 该物品页面或官方补丁说明。\n\n> **括号内的百分比是该档在同组内的生成权重占比**，不等于任何通货或具体工艺的一次使用成功率，也不等于期望消耗。\n\n> 检索以降级通道完成（alias, fts, mod_intent）：向量检索与重排未启用（网关无 embedding 模型），当前走 BM25 + 实体精确匹配",
+  "blocked_claims": 3,
+  "elapsed_ms": 23127,
+  "evidence_fingerprint": "sha256:1df33fee88416d2142da695eac6f8c6e",
+  "_warning": "raw_answer 是未过出口闸门的模型原文，含可能无据的断言，不得当作事实引用",
+  "raw_answer": "## 轮作（Crop Rotation）——词缀不可修改\n\n根据唯一装备轮作的卡片数据[[E1]]，该物品的一条显式词缀为**「不可改变」**[[E1]]。\n\n这意味着该件传奇装备**无法通过常规通货或制作手段修改其词缀**。其词缀构成如下：\n\n- **隐式词缀**：你地图中找到的地图数量提高 2%[[E1]]\n- **显式词缀 1**：你地图中的庄园农作物只包含 1 级植物，在你的地图中收割作物有几率升级与其不同颜色的作物等级[[E1]]\n- **显式词缀 2**：不可改变[[E1]]\n\n其中「不可改变」这条显式词缀正是阻止修改的来源。\n\n**补充说明**：本知识库未采集制作系统中的状态转移规则与具体通货对「不可改变」物品的交互细节，因此无法进一步说明是否存在任何例外途径（如腐化、圣物等）可以绕过这一限制。如需确认，建议查阅 POEDB 该物品页面或官方补丁说明。",
+  "evidence": [
+    {
+      "label": "E1",
+      "chunk_id": "unique_item:Crop_Rotation#0#b680abf0e2f95ef7",
+      "entity_id": "unique_item:Crop_Rotation",
+      "title": "轮作（Crop Rotation）",
+      "url": "https://poedb.tw/cn/Crop_Rotation",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 轮作（Crop Rotation）\n类型：唯一装备 ｜ 底材：小型雕像 ｜ 分类：其他\n\n**需求**：需求 等级 68\n\n**隐式词缀**\n- [隐式词缀] 你地图中找到的地图数量提高 2%\n\n**显式词缀**\n- [显式词缀] 你地图中的庄园农作物只包含 1 级植物在你的地图中收割作物有几率升级与其不同颜色的作物等级\n- [显式词缀] 不可改变\n\n来源：POEDB → 轮作（Crop Rotation）\nhttps://poedb.tw/cn/Crop_Rotation",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E2",
+      "chunk_id": "mod_ladder:Body_Armours_dex:AdditionalCurseOnEnemies#740e81b54ada6bc1",
+      "entity_id": "mod_ladder:Body_Armours_dex:AdditionalCurseOnEnemies",
+      "title": "胸甲（敏捷） · AdditionalCurseOnEnemies",
+      "url": "https://poedb.tw/cn/Body_Armours_dex#ModifiersCalc",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 胸甲（敏捷） · AdditionalCurseOnEnemies\n底材类别：胸甲（敏捷） ｜ 词缀组：AdditionalCurseOnEnemies ｜ 类型：前缀/其他 ｜ 来源渠道：3 个\n标签：施法、诅咒、魔力、光环\n\n本词缀组在该底材上共 4 条，来自 3 个来源：地心探索、异度天灾 有害、狩猎者。\n互斥规则：与本组（AdditionalCurseOnEnemies）有相同词缀组的其他词缀不能同时存在于一件装备上。\n⚠ 同一条词缀文本在本卡的多个来源里都出现 → 仅凭装备上的数值**无法判断**它出自哪个来源，回答时必须并列各种可能。\n\n## 地心探索 · 前缀 · 1 条\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/1 | 地心的 | 你能施加一个额外诅咒 | 60 | 无数据 |\n\n> 本来源无生成权重数据，**不能据此给出成功率或概率**。\n\n## 异度天灾 有害 · 其他 · 1 条\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/1 | HellscapeDownsideAdditionalCurse1__ | 你能施加的诅咒减少一个 | 68 | 500（1.385%） |\n\n## 狩猎者 · 前缀 · 2 档\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/2 | 高阶狩猎者的 | 你能施加一个额外诅咒 / 诅咒光环技能的魔力保留效能提高 20% | 92 | 无数据 |\n| T2/2 | 狩猎者的 | 你能施加一个额外诅咒 | 82 | 250（10.0%） |\n\n置信度说明：\n- T 级按 POEDB 的算法推导——在同一来源类别与词缀组内，把物品等级去重后降序排名，物品等级最高者为 T1（算法已复刻并通过不变量校验）\n- 部分来源没有生成权重数据，那些来源算不出概率\n\n来源：POEDB → 胸甲（敏捷） · AdditionalCurseOnEnemies\nhttps://poedb.tw/cn/Body_Armours_dex#ModifiersCalc",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E3",
+      "chunk_id": "mod_ladder:Body_Armours_int:AdditionalCurseOnEnemies#a5e7d328f6416283",
+      "entity_id": "mod_ladder:Body_Armours_int:AdditionalCurseOnEnemies",
+      "title": "胸甲（智慧） · AdditionalCurseOnEnemies",
+      "url": "https://poedb.tw/cn/Body_Armours_int#ModifiersCalc",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 胸甲（智慧） · AdditionalCurseOnEnemies\n底材类别：胸甲（智慧） ｜ 词缀组：AdditionalCurseOnEnemies ｜ 类型：前缀/其他 ｜ 来源渠道：3 个\n标签：施法、诅咒、魔力、光环\n\n本词缀组在该底材上共 4 条，来自 3 个来源：地心探索、异度天灾 有害、狩猎者。\n互斥规则：与本组（AdditionalCurseOnEnemies）有相同词缀组的其他词缀不能同时存在于一件装备上。\n⚠ 同一条词缀文本在本卡的多个来源里都出现 → 仅凭装备上的数值**无法判断**它出自哪个来源，回答时必须并列各种可能。\n\n## 地心探索 · 前缀 · 1 条\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/1 | 地心的 | 你能施加一个额外诅咒 | 60 | 无数据 |\n\n> 本来源无生成权重数据，**不能据此给出成功率或概率**。\n\n## 异度天灾 有害 · 其他 · 1 条\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/1 | HellscapeDownsideAdditionalCurse1__ | 你能施加的诅咒减少一个 | 68 | 500（1.385%） |\n\n## 狩猎者 · 前缀 · 2 档\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/2 | 高阶狩猎者的 | 你能施加一个额外诅咒 / 诅咒光环技能的魔力保留效能提高 20% | 92 | 无数据 |\n| T2/2 | 狩猎者的 | 你能施加一个额外诅咒 | 82 | 250（10.0%） |\n\n置信度说明：\n- T 级按 POEDB 的算法推导——在同一来源类别与词缀组内，把物品等级去重后降序排名，物品等级最高者为 T1（算法已复刻并通过不变量校验）\n- 部分来源没有生成权重数据，那些来源算不出概率\n\n来源：POEDB → 胸甲（智慧） · AdditionalCurseOnEnemies\nhttps://poedb.tw/cn/Body_Armours_int#ModifiersCalc",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E4",
+      "chunk_id": "mod_ladder:Body_Armours_str:AdditionalCurseOnEnemies#dd7a1ed92e335f6b",
+      "entity_id": "mod_ladder:Body_Armours_str:AdditionalCurseOnEnemies",
+      "title": "胸甲（力量） · AdditionalCurseOnEnemies",
+      "url": "https://poedb.tw/cn/Body_Armours_str#ModifiersCalc",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 胸甲（力量） · AdditionalCurseOnEnemies\n底材类别：胸甲（力量） ｜ 词缀组：AdditionalCurseOnEnemies ｜ 类型：前缀/其他 ｜ 来源渠道：3 个\n标签：施法、诅咒、魔力、光环\n\n本词缀组在该底材上共 4 条，来自 3 个来源：地心探索、异度天灾 有害、狩猎者。\n互斥规则：与本组（AdditionalCurseOnEnemies）有相同词缀组的其他词缀不能同时存在于一件装备上。\n⚠ 同一条词缀文本在本卡的多个来源里都出现 → 仅凭装备上的数值**无法判断**它出自哪个来源，回答时必须并列各种可能。\n\n## 地心探索 · 前缀 · 1 条\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/1 | 地心的 | 你能施加一个额外诅咒 | 60 | 无数据 |\n\n> 本来源无生成权重数据，**不能据此给出成功率或概率**。\n\n## 异度天灾 有害 · 其他 · 1 条\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/1 | HellscapeDownsideAdditionalCurse1__ | 你能施加的诅咒减少一个 | 68 | 500（1.385%） |\n\n## 狩猎者 · 前缀 · 2 档\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/2 | 高阶狩猎者的 | 你能施加一个额外诅咒 / 诅咒光环技能的魔力保留效能提高 20% | 92 | 无数据 |\n| T2/2 | 狩猎者的 | 你能施加一个额外诅咒 | 82 | 250（10.0%） |\n\n置信度说明：\n- T 级按 POEDB 的算法推导——在同一来源类别与词缀组内，把物品等级去重后降序排名，物品等级最高者为 T1（算法已复刻并通过不变量校验）\n- 部分来源没有生成权重数据，那些来源算不出概率\n\n来源：POEDB → 胸甲（力量） · AdditionalCurseOnEnemies\nhttps://poedb.tw/cn/Body_Armours_str#ModifiersCalc",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E5",
+      "chunk_id": "mod_ladder:Body_Armours_dex_int:AdditionalCurseOnEnemies#5251bfb27960e9e9",
+      "entity_id": "mod_ladder:Body_Armours_dex_int:AdditionalCurseOnEnemies",
+      "title": "胸甲（敏智） · AdditionalCurseOnEnemies",
+      "url": "https://poedb.tw/cn/Body_Armours_dex_int#ModifiersCalc",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 胸甲（敏智） · AdditionalCurseOnEnemies\n底材类别：胸甲（敏智） ｜ 词缀组：AdditionalCurseOnEnemies ｜ 类型：前缀/其他 ｜ 来源渠道：3 个\n标签：施法、诅咒、魔力、光环\n\n本词缀组在该底材上共 4 条，来自 3 个来源：地心探索、异度天灾 有害、狩猎者。\n互斥规则：与本组（AdditionalCurseOnEnemies）有相同词缀组的其他词缀不能同时存在于一件装备上。\n⚠ 同一条词缀文本在本卡的多个来源里都出现 → 仅凭装备上的数值**无法判断**它出自哪个来源，回答时必须并列各种可能。\n\n## 地心探索 · 前缀 · 1 条\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/1 | 地心的 | 你能施加一个额外诅咒 | 60 | 无数据 |\n\n> 本来源无生成权重数据，**不能据此给出成功率或概率**。\n\n## 异度天灾 有害 · 其他 · 1 条\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/1 | HellscapeDownsideAdditionalCurse1__ | 你能施加的诅咒减少一个 | 68 | 500（1.2469%） |\n\n## 狩猎者 · 前缀 · 2 档\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/2 | 高阶狩猎者的 | 你能施加一个额外诅咒 / 诅咒光环技能的魔力保留效能提高 20% | 92 | 无数据 |\n| T2/2 | 狩猎者的 | 你能施加一个额外诅咒 | 82 | 250（10.0%） |\n\n置信度说明：\n- T 级按 POEDB 的算法推导——在同一来源类别与词缀组内，把物品等级去重后降序排名，物品等级最高者为 T1（算法已复刻并通过不变量校验）\n- 部分来源没有生成权重数据，那些来源算不出概率\n\n来源：POEDB → 胸甲（敏智） · AdditionalCurseOnEnemies\nhttps://poedb.tw/cn/Body_Armours_dex_int#ModifiersCalc",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E6",
+      "chunk_id": "mod_ladder:Body_Armours_str_dex:AdditionalCurseOnEnemies#edd489b51f61b11a",
+      "entity_id": "mod_ladder:Body_Armours_str_dex:AdditionalCurseOnEnemies",
+      "title": "胸甲（力敏） · AdditionalCurseOnEnemies",
+      "url": "https://poedb.tw/cn/Body_Armours_str_dex#ModifiersCalc",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 胸甲（力敏） · AdditionalCurseOnEnemies\n底材类别：胸甲（力敏） ｜ 词缀组：AdditionalCurseOnEnemies ｜ 类型：前缀/其他 ｜ 来源渠道：3 个\n标签：施法、诅咒、魔力、光环\n\n本词缀组在该底材上共 4 条，来自 3 个来源：地心探索、异度天灾 有害、狩猎者。\n互斥规则：与本组（AdditionalCurseOnEnemies）有相同词缀组的其他词缀不能同时存在于一件装备上。\n⚠ 同一条词缀文本在本卡的多个来源里都出现 → 仅凭装备上的数值**无法判断**它出自哪个来源，回答时必须并列各种可能。\n\n## 地心探索 · 前缀 · 1 条\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/1 | 地心的 | 你能施加一个额外诅咒 | 60 | 无数据 |\n\n> 本来源无生成权重数据，**不能据此给出成功率或概率**。\n\n## 异度天灾 有害 · 其他 · 1 条\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/1 | HellscapeDownsideAdditionalCurse1__ | 你能施加的诅咒减少一个 | 68 | 500（1.2469%） |\n\n## 狩猎者 · 前缀 · 2 档\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/2 | 高阶狩猎者的 | 你能施加一个额外诅咒 / 诅咒光环技能的魔力保留效能提高 20% | 92 | 无数据 |\n| T2/2 | 狩猎者的 | 你能施加一个额外诅咒 | 82 | 250（10.0%） |\n\n置信度说明：\n- T 级按 POEDB 的算法推导——在同一来源类别与词缀组内，把物品等级去重后降序排名，物品等级最高者为 T1（算法已复刻并通过不变量校验）\n- 部分来源没有生成权重数据，那些来源算不出概率\n\n来源：POEDB → 胸甲（力敏） · AdditionalCurseOnEnemies\nhttps://poedb.tw/cn/Body_Armours_str_dex#ModifiersCalc",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E7",
+      "chunk_id": "mod_ladder:Body_Armours_str_int:AdditionalCurseOnEnemies#ce0c9372146ce162",
+      "entity_id": "mod_ladder:Body_Armours_str_int:AdditionalCurseOnEnemies",
+      "title": "胸甲（力智） · AdditionalCurseOnEnemies",
+      "url": "https://poedb.tw/cn/Body_Armours_str_int#ModifiersCalc",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 胸甲（力智） · AdditionalCurseOnEnemies\n底材类别：胸甲（力智） ｜ 词缀组：AdditionalCurseOnEnemies ｜ 类型：前缀/其他 ｜ 来源渠道：3 个\n标签：施法、诅咒、魔力、光环\n\n本词缀组在该底材上共 4 条，来自 3 个来源：地心探索、异度天灾 有害、狩猎者。\n互斥规则：与本组（AdditionalCurseOnEnemies）有相同词缀组的其他词缀不能同时存在于一件装备上。\n⚠ 同一条词缀文本在本卡的多个来源里都出现 → 仅凭装备上的数值**无法判断**它出自哪个来源，回答时必须并列各种可能。\n\n## 地心探索 · 前缀 · 1 条\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/1 | 地心的 | 你能施加一个额外诅咒 | 60 | 无数据 |\n\n> 本来源无生成权重数据，**不能据此给出成功率或概率**。\n\n## 异度天灾 有害 · 其他 · 1 条\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/1 | HellscapeDownsideAdditionalCurse1__ | 你能施加的诅咒减少一个 | 68 | 500（1.2469%） |\n\n## 狩猎者 · 前缀 · 2 档\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/2 | 高阶狩猎者的 | 你能施加一个额外诅咒 / 诅咒光环技能的魔力保留效能提高 20% | 92 | 无数据 |\n| T2/2 | 狩猎者的 | 你能施加一个额外诅咒 | 82 | 250（10.0%） |\n\n置信度说明：\n- T 级按 POEDB 的算法推导——在同一来源类别与词缀组内，把物品等级去重后降序排名，物品等级最高者为 T1（算法已复刻并通过不变量校验）\n- 部分来源没有生成权重数据，那些来源算不出概率\n\n来源：POEDB → 胸甲（力智） · AdditionalCurseOnEnemies\nhttps://poedb.tw/cn/Body_Armours_str_int#ModifiersCalc",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E8",
+      "chunk_id": "mod_ladder:Body_Armours_str_dex_int:AdditionalCurseOnEnemies#bba1ff40431a86c0",
+      "entity_id": "mod_ladder:Body_Armours_str_dex_int:AdditionalCurseOnEnemies",
+      "title": "胸甲（力敏智） · AdditionalCurseOnEnemies",
+      "url": "https://poedb.tw/cn/Body_Armours_str_dex_int#ModifiersCalc",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 胸甲（力敏智） · AdditionalCurseOnEnemies\n底材类别：胸甲（力敏智） ｜ 词缀组：AdditionalCurseOnEnemies ｜ 类型：前缀/其他 ｜ 来源渠道：3 个\n标签：施法、诅咒、魔力、光环\n\n本词缀组在该底材上共 4 条，来自 3 个来源：地心探索、异度天灾 有害、狩猎者。\n互斥规则：与本组（AdditionalCurseOnEnemies）有相同词缀组的其他词缀不能同时存在于一件装备上。\n⚠ 同一条词缀文本在本卡的多个来源里都出现 → 仅凭装备上的数值**无法判断**它出自哪个来源，回答时必须并列各种可能。\n\n## 地心探索 · 前缀 · 1 条\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/1 | 地心的 | 你能施加一个额外诅咒 | 60 | 无数据 |\n\n> 本来源无生成权重数据，**不能据此给出成功率或概率**。\n\n## 异度天灾 有害 · 其他 · 1 条\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/1 | HellscapeDownsideAdditionalCurse1__ | 你能施加的诅咒减少一个 | 68 | 500（1.1338%） |\n\n## 狩猎者 · 前缀 · 2 档\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/2 | 高阶狩猎者的 | 你能施加一个额外诅咒 / 诅咒光环技能的魔力保留效能提高 20% | 92 | 无数据 |\n| T2/2 | 狩猎者的 | 你能施加一个额外诅咒 | 82 | 250（10.0%） |\n\n置信度说明：\n- T 级按 POEDB 的算法推导——在同一来源类别与词缀组内，把物品等级去重后降序排名，物品等级最高者为 T1（算法已复刻并通过不变量校验）\n- 部分来源没有生成权重数据，那些来源算不出概率\n\n来源：POEDB → 胸甲（力敏智） · AdditionalCurseOnEnemies\nhttps://poedb.tw/cn/Body_Armours_str_dex_int#ModifiersCalc",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    }
+  ]
+}

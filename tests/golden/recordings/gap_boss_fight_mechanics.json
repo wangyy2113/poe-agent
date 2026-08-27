@@ -1,0 +1,22 @@
+{
+  "format_version": 1,
+  "case_id": "gap_boss_fight_mechanics",
+  "query": "谢勒怎么打，有什么机制要躲",
+  "recorded_at": "2026-08-27T19:20:02+08:00",
+  "model": "",
+  "tokens": {},
+  "tool_calls": [
+    "kb_search"
+  ],
+  "evidence_gap": true,
+  "out_of_scope": false,
+  "precision_route": "",
+  "gap_answer": "知识库中查不到回答这个问题所需的依据，因此不作答——给一个听起来合理但没有依据的\n答案，代价比说查不到高得多。\n\n**为什么查不到**\n问题涉及的领域（Boss 技能与应对）本知识库**已采集**，但这次没有召回到足够依据——可能是用词与库中表述不一致。换用更具体的专名或词缀原文再试可能有效。\n\n**缺失的信息点**\n- Boss 技能与应对的数据\n\n**判定依据**\n问题所问的维度在知识库中没有数据 —— Boss 技能与应对（部分采集）：该领域只是部分采集，而问题涉及的「怎么打、机制」正落在未采集的部分（已入库 **10 条 Boss 技能的伤害建模**（伤害系数 / 穿透 / Uber 倍率 / 速度 / 暴击）与 **22 个 Boss 的护甲与闪避倍率**，真实伤害按 PoB 原式配 `monsterDamageTable` 算出（`boss_skill_damage` 工具）；**未采集**：技能的**机制说明与应对打法**（PoB 只给建模，POEDB 的 Monsters 页也没有打法）、Boss 的掉落、以及这些终局 Boss 的**中文名**（本地没有译名来源，只有英文））\n\n**建议的查证途径**\n- POEDB 站内搜索：<https://poedb.tw/cn/search?q=Boss 技能与应对的数据>\n- PoE Wiki：<https://www.poewiki.net/index.php?search=Boss 技能与应对的数据>\n- 若属新赛季内容，可查 GGG 官方 Patch Notes\n",
+  "final_answer": "知识库中查不到回答这个问题所需的依据，因此不作答——给一个听起来合理但没有依据的\n答案，代价比说查不到高得多。\n\n**为什么查不到**\n问题涉及的领域（Boss 技能与应对）本知识库**已采集**，但这次没有召回到足够依据——可能是用词与库中表述不一致。换用更具体的专名或词缀原文再试可能有效。\n\n**缺失的信息点**\n- Boss 技能与应对的数据\n\n**判定依据**\n问题所问的维度在知识库中没有数据 —— Boss 技能与应对（部分采集）：该领域只是部分采集，而问题涉及的「怎么打、机制」正落在未采集的部分（已入库 **10 条 Boss 技能的伤害建模**（伤害系数 / 穿透 / Uber 倍率 / 速度 / 暴击）与 **22 个 Boss 的护甲与闪避倍率**，真实伤害按 PoB 原式配 `monsterDamageTable` 算出（`boss_skill_damage` 工具）；**未采集**：技能的**机制说明与应对打法**（PoB 只给建模，POEDB 的 Monsters 页也没有打法）、Boss 的掉落、以及这些终局 Boss 的**中文名**（本地没有译名来源，只有英文））\n\n**建议的查证途径**\n- POEDB 站内搜索：<https://poedb.tw/cn/search?q=Boss 技能与应对的数据>\n- PoE Wiki：<https://www.poewiki.net/index.php?search=Boss 技能与应对的数据>\n- 若属新赛季内容，可查 GGG 官方 Patch Notes\n",
+  "blocked_claims": 0,
+  "elapsed_ms": 11,
+  "evidence_fingerprint": "sha256:e3b0c44298fc1c149afbf4c8996fb924",
+  "_warning": "raw_answer 是未过出口闸门的模型原文，含可能无据的断言，不得当作事实引用",
+  "raw_answer": "",
+  "evidence": []
+}

@@ -1,0 +1,132 @@
+{
+  "format_version": 1,
+  "case_id": "desc_pantheon_major_list",
+  "query": "万神殿的主要神力有哪几位神祇",
+  "recorded_at": "2026-08-27T19:18:59+08:00",
+  "model": "glm-5.2",
+  "tokens": {
+    "prompt": 15018,
+    "output": 836,
+    "reasoning": 536,
+    "total": 15854
+  },
+  "tool_calls": [
+    "kb_search"
+  ],
+  "evidence_gap": false,
+  "out_of_scope": false,
+  "precision_route": "",
+  "gap_answer": "",
+  "final_answer": "## 万神殿主要神力\n\n〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕1. **暗影女皇 阿拉卡力之魂**（Soul of Arakaali）——共 4 层神力[[E1]]\n2. **惊海之王 索亚格斯之魂**（Soul of the Brine King）——共 4 层神力[[E2]]\n3. **月影女神之魂**（Soul of Lunaris）——共 4 层神力[[E3]]\n4. **日耀女神之魂**（Soul of Solaris）——共 4 层神力[[E4]]\n\n〔此处原有一条无据断言，已被拦截：数值 4 未出现在绑定证据 E5, E6, E7, E8 中〕**注意**：本知识库共收录 12 位万神殿神祇，但当前证据仅提供了 8 位。上述 4 位主要神力来自已有证据，但不排除证据未覆盖的神祇中仍有其他主要神力——实际上万神殿系统共有 4 位主要神力，此处已全部覆盖。\n\n> 检索以降级通道完成（fts）：向量检索与重排未启用（网关无 embedding 模型），当前走 BM25 + 实体精确匹配",
+  "blocked_claims": 2,
+  "elapsed_ms": 13806,
+  "evidence_fingerprint": "sha256:733f280fa034c8b5e56b64ac3d81933e",
+  "_warning": "raw_answer 是未过出口闸门的模型原文，含可能无据的断言，不得当作事实引用",
+  "raw_answer": "## 万神殿主要神力\n\n根据所提供的证据，标注为「主要神力」的神祇共 **4 位**：\n\n1. **暗影女皇 阿拉卡力之魂**（Soul of Arakaali）——共 4 层神力[[E1]]\n2. **惊海之王 索亚格斯之魂**（Soul of the Brine King）——共 4 层神力[[E2]]\n3. **月影女神之魂**（Soul of Lunaris）——共 4 层神力[[E3]]\n4. **日耀女神之魂**（Soul of Solaris）——共 4 层神力[[E4]]\n\n其余 4 位证据中出现的神祇均标注为「次要神力」，各有 2 层神力：风暴女神 格鲁坎[[E5]]、割裂者 艾贝拉斯[[E6]]、战争之父 图克哈玛[[E7]]、恐惧之源 尤格尔[[E8]]。\n\n**注意**：本知识库共收录 12 位万神殿神祇，但当前证据仅提供了 8 位。上述 4 位主要神力来自已有证据，但不排除证据未覆盖的神祇中仍有其他主要神力——实际上万神殿系统共有 4 位主要神力，此处已全部覆盖。",
+  "evidence": [
+    {
+      "label": "E1",
+      "chunk_id": "pantheon:Soul_of_Arakaali#0#cffc3114af56aa5d",
+      "entity_id": "pantheon:Soul_of_Arakaali",
+      "title": "暗影女皇 阿拉卡力之魂（Soul of Arakaali）",
+      "url": "https://poedb.tw/cn/Soul_of_Arakaali",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 暗影女皇 阿拉卡力之魂（Soul of Arakaali）\n类型：万神殿神祇 ｜ 主要神力 ｜ 共 4 层神力\n\n**第 1 层（基础神力）** 暗影女皇 阿拉卡力之魂　由第 7 章·任务「阿拉卡力」给予\n- 受到的持续性伤害降低 10%\n\n**第 2 层** 抓获 切断者马雷格罗（地图：密草神殿）\n- 近期内若你停止受到持续伤害，则生命和能量护盾回复速度加快 20%\n\n**第 3 层** 抓获 寡妇制造者阿玛拉（地图：沉沦之城）\n- 你身上的减益效果消失速度加快 20%\n\n**第 4 层** 抓获 旱地恐喙鸟（地图：荒芜湖域）\n- 对持续伤害有 +40% 混沌抗性\n\n英文原文（Path of Building）：\n- 10% reduced Damage taken from Damage Over Time\n- 20% increased Recovery rate of Life and Energy Shield if you've stopped taking Damage Over Time Recently\n- Debuffs on you expire 20% faster\n- +40% Chaos Resistance against Damage Over Time\n\n来源：POEDB → 万神殿\nhttps://poedb.tw/cn/Soul_of_Arakaali",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E2",
+      "chunk_id": "pantheon:Soul_of_the_Brine_King#0#2ca109f73962c15a",
+      "entity_id": "pantheon:Soul_of_the_Brine_King",
+      "title": "惊海之王 索亚格斯之魂（Soul of the Brine King）",
+      "url": "https://poedb.tw/cn/Soul_of_the_Brine_King",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 惊海之王 索亚格斯之魂（Soul of the Brine King）\n类型：万神殿神祇 ｜ 主要神力 ｜ 共 4 层神力\n\n**第 1 层（基础神力）** 惊海之王 索亚格斯之魂　由第 6 章·任务「惊海之王」给予\n- 若过去的 2 秒内你被晕眩或是格挡晕眩，你将无法再被晕眩\n\n**第 2 层** 抓获 海之雄狮娜萨（地图：危机海礁）\n- 晕眩回复和格挡回复提高 30%\n\n**第 3 层** 抓获 幽足坦纳尔队长（地图：珊瑚遗迹）\n- 100% 几率避免被冰冻\n\n**第 4 层** 抓获 恐惧之雷（地图：废弃矿山）\n- 你受到的冰缓效果降低 50%\n\n英文原文（Path of Building）：\n- You cannot be Stunned if you've been Stunned or Blocked a Stunning Hit in the past 2 seconds\n- 30% increased Stun and Block Recovery\n- 100% chance to Avoid being Frozen\n- 50% reduced Effect of Chill on you\n\n来源：POEDB → 万神殿\nhttps://poedb.tw/cn/Soul_of_the_Brine_King",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E3",
+      "chunk_id": "pantheon:Soul_of_Lunaris#0#9bb6d4eec61d8907",
+      "entity_id": "pantheon:Soul_of_Lunaris",
+      "title": "月影女神之魂（Soul of Lunaris）",
+      "url": "https://poedb.tw/cn/Soul_of_Lunaris",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 月影女神之魂（Soul of Lunaris）\n类型：万神殿神祇 ｜ 主要神力 ｜ 共 4 层神力\n\n**第 1 层（基础神力）** 月影女神之魂　由第 8 章·任务「月食」给予\n- 身边每有 1 个敌人，自己的移动速度加快 1%，最多 8%\n- 身边每存在 1 个敌人，受到的物理伤害便降低 1%，最多 8%\n\n**第 2 层** 抓获 被诅咒的克莱奔船长（地图：冻结之舱）\n- 10% 的几率免疫投射物\n\n**第 3 层** 抓获 冬之碎片（地图：危机水道）\n- 近期被击中时受到的元素伤害降低 6%\n\n**第 4 层** 抓获 冻灵（地图：危岩海滩）\n- 避免被连锁弹射的投射物击中\n\n英文原文（Path of Building）：\n- 1% additional Physical Damage Reduction for each nearby Enemy, up to 8%\n- 1% increased Movement Speed for each nearby Enemy, up to 8%\n- 10% chance to avoid Projectiles\n- 6% reduced Elemental Damage taken if you have been Hit Recently\n- Avoid Projectiles that have Chained\n\n来源：POEDB → 万神殿\nhttps://poedb.tw/cn/Soul_of_Lunaris",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E4",
+      "chunk_id": "pantheon:Soul_of_Solaris#0#959371287d83fa04",
+      "entity_id": "pantheon:Soul_of_Solaris",
+      "title": "日耀女神之魂（Soul of Solaris）",
+      "url": "https://poedb.tw/cn/Soul_of_Solaris",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 日耀女神之魂（Soul of Solaris）\n类型：万神殿神祇 ｜ 主要神力 ｜ 共 4 层神力\n\n**第 1 层（基础神力）** 日耀女神之魂　由第 8 章·任务「日食」给予\n- 若附近只有 1 个敌人，则受到的物理伤害降低 6%\n- 有 20% 的几率使受到的范围伤害总降 50%\n\n**第 2 层** 抓获 巨力欧克（地图：赤红山地）\n- 若你近期内没有被击中，则受到的元素伤害降低 8%\n\n**第 3 层** 抓获 毁灭者奇塔弗（地图：熔岩之湖）\n- 近期你若受到过暴击伤害，则不再受到暴击的额外伤害\n\n**第 4 层** 抓获 烈焰之森（地图：火山炎域）\n- 50% 几率避免暴击造成的异常状态\n\n英文原文（Path of Building）：\n- 6% additional Physical Damage Reduction while there is only one nearby Enemy\n- 20% chance to take 50% less Area Damage from Hits\n- 8% reduced Elemental Damage taken if you haven't been Hit Recently\n- Take no Extra Damage from Critical Strikes if you have taken a Critical Strike Recently\n- 50% chance to avoid Ailments from Critical Strikes\n\n来源：POEDB → 万神殿\nhttps://poedb.tw/cn/Soul_of_Solaris",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E5",
+      "chunk_id": "pantheon:Soul_of_Garukhan#0#ba4daf0320748fc3",
+      "entity_id": "pantheon:Soul_of_Garukhan",
+      "title": "风暴女神 格鲁坎之魂（Soul of Garukhan）",
+      "url": "https://poedb.tw/cn/Soul_of_Garukhan",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 风暴女神 格鲁坎之魂（Soul of Garukhan）\n类型：万神殿神祇 ｜ 次要神力 ｜ 共 2 层神力\n\n**第 1 层（基础神力）** 风暴女神 格鲁坎之魂　由第 9 章·任务「海加特山脉的统治者」给予\n- 你受到的感电效果降低 60%\n\n**第 2 层** 抓获 恶灵铁匠（地图：暮色沙丘）\n- 免疫致盲\n- 你无法被瘫痪\n\n英文原文（Path of Building）：\n- 60% reduced Effect of Shock on you\n- Cannot be Blinded\n- You cannot be Maimed\n\n来源：POEDB → 万神殿\nhttps://poedb.tw/cn/Soul_of_Garukhan",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E6",
+      "chunk_id": "pantheon:Soul_of_Abberath#0#2de64a462488ecec",
+      "entity_id": "pantheon:Soul_of_Abberath",
+      "title": "割裂者 艾贝拉斯之魂（Soul of Abberath）",
+      "url": "https://poedb.tw/cn/Soul_of_Abberath",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 割裂者 艾贝拉斯之魂（Soul of Abberath）\n类型：万神殿神祇 ｜ 次要神力 ｜ 共 2 层神力\n\n**第 1 层（基础神力）** 割裂者 艾贝拉斯之魂　由第 6 章·任务「撕裂之神」给予\n- 你身上的点燃持续时间总降 60%\n\n**第 2 层** 抓获 撼地者米福德（地图：寒顶之巅）\n- 在燃烧地面上时，移动速度加快 10%\n- 不受燃烧地面影响\n\n英文原文（Path of Building）：\n- 60% less Duration of Ignite on You\n- Unaffected by Burning Ground\n- 10% increased Movement Speed while on Burning Ground\n\n来源：POEDB → 万神殿\nhttps://poedb.tw/cn/Soul_of_Abberath",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E7",
+      "chunk_id": "pantheon:Soul_of_Tukohama#0#c09efbadce383d06",
+      "entity_id": "pantheon:Soul_of_Tukohama",
+      "title": "战争之父 图克哈玛之魂（Soul of Tukohama）",
+      "url": "https://poedb.tw/cn/Soul_of_Tukohama",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 战争之父 图克哈玛之魂（Soul of Tukohama）\n类型：万神殿神祇 ｜ 次要神力 ｜ 共 2 层神力\n\n**第 1 层（基础神力）** 战争之父 图克哈玛之魂　由第 6 章·任务「战争之父」给予\n- 你每静止一秒，物理伤害减免提高 3%，最多 9%\n\n**第 2 层** 抓获 起乱者塔辛（地图：围城）\n- 静止时每秒再生 2% 生命\n\n英文原文（Path of Building）：\n- 3% additional Physical Damage Reduction per second you've been stationary, up to a maximum of 9%\n- Regenerate 2% of Life per second while stationary\n\n来源：POEDB → 万神殿\nhttps://poedb.tw/cn/Soul_of_Tukohama",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E8",
+      "chunk_id": "pantheon:Soul_of_Yugul#0#32d546ba7e4dac75",
+      "entity_id": "pantheon:Soul_of_Yugul",
+      "title": "恐惧之源 尤格尔之魂（Soul of Yugul）",
+      "url": "https://poedb.tw/cn/Soul_of_Yugul",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 恐惧之源 尤格尔之魂（Soul of Yugul）\n类型：万神殿神祇 ｜ 次要神力 ｜ 共 2 层神力\n\n**第 1 层（基础神力）** 恐惧之源 尤格尔之魂　由第 8 章·任务「恐惧映射」给予\n- 你和你的召唤生物阻挡受到的 +50% 反射伤害\n- 有 50% 的几率反射魔蛊\n\n**第 2 层** 抓获 微光巨侍法赫西（地图：海滨台地）\n- 你受到的诅咒效果降低 30%\n\n英文原文（Path of Building）：\n- You and your Minions prevent +50% of Reflected Damage\n- 50% chance to Reflect Hexes\n- 30% reduced Effect of Curses on you\n\n来源：POEDB → 万神殿\nhttps://poedb.tw/cn/Soul_of_Yugul",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    }
+  ]
+}
