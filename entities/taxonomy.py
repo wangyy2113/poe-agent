@@ -88,6 +88,9 @@ class EntityType(StrEnum):
     #: 圣甲虫。与 CURRENCY 分开：它是地图机制物品（MapFragment），
     #: 归到通货里会让「通货有哪些」把圣甲虫也算进去。
     SCARAB = "scarab"
+    #: 万神殿神祇。与 PASSIVE / ASCENDANCY 分开：神力既不在天赋树上、也不花天赋点，
+    #: 混进去会让「哪些天赋给混沌抗性」把神力算成天赋——那是答非所问且无法验证的。
+    PANTHEON = "pantheon"
 
 
 class ModKind(StrEnum):
@@ -103,6 +106,10 @@ class ModKind(StrEnum):
     #: 天赋节点提供的属性。点了就一直生效。
     #: 不复用 EXPLICIT：那会让「装备上的显式词缀」查询把天赋条目也算进来。
     PASSIVE = "passive"
+    #: 万神殿神力提供的属性。启用了就一直生效，但**同时只能开一主一次**——
+    #: 这条限制正是不复用 PASSIVE 的理由：天赋点了就都在，神力是互斥选择，
+    #: 把 12 位神祇的 41 条词缀当成可同时生效的属性会算出一个不存在的角色。
+    PANTHEON = "pantheon"
     #: 大师天赋（Mastery）的**可选**效果。一个大师节点列出多个效果，
     #: 点它时**只能选其中一个**。与 PASSIVE 分开是为了把「选一」这件事
     #: 固化在类型上而不是只写在卡片文案里——一旦只靠文案，

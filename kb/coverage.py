@@ -416,18 +416,38 @@ DOMAINS: tuple[DomainSpec, ...] = (
         display_zh="万神殿",
         category=Category.BASICS,
         authority_url=f"{POEDB_BASE}/Pantheon",
-        count_sql=None,
-        hints=("万神殿", "神殿加成"),
-        question_hints=("某万神殿加成的效果",),
+        count_sql="SELECT count(*) FROM entity WHERE entity_type='pantheon'",
+        chunk_prefix="pantheon:",
+        tools=("stat_sources",),
+        hints=("万神殿", "神殿加成", "神力", "之魂"),
+        question_hints=(
+            "某神祇之魂的各层效果",
+            "某层神力要抓获哪个头目、在哪张地图",
+            "某效果由哪位神祇提供",
+        ),
         poedb_pages=("Pantheon",),
         pob_files=("Data/Pantheons.lua",),
         provides_stats=True,
+        partial_note=(
+            "已入库 **12 位神祇 / 32 层神力 / 41 条词缀**（PoB `Data/Pantheons.lua` 出结构、"
+            "英文名、数值与 GGG stat id；POEDB 逐神页 `/cn/Soul_of_<英文名>` 出中文名、"
+            "中文词缀、**抓获的头目与地图**、以及基础神力来自哪一章的哪个任务；"
+            "两侧 `(stat_id, value)` 逐条对账 41/41 全对）；"
+            "**未采集**：启用规则与神之容器的机制说明（「同时只能开一主一次」"
+            "「怎么强化」在 `/cn/Pantheon` 的散文里，不在逐神页上）"
+        ),
+        missing_dimension_hints=(
+            "神之容器", "怎么启用", "如何启用", "怎么切换", "怎么更换", "同时能开",
+            "强化", "怎么解锁", "如何解锁",
+        ),
         note=(
-            "2026-08-19 实测：`/cn/Pantheon` 页 26KB、**0 张表**，DOM 里只有 4 张 `div.card`，"
-            "内容是**机制说明散文**（流放小百科：同时只能启用一项主要与一项次要神力、"
-            "在城镇或藏身处免费更换、用神之容器强化）——**各神祇的神力文本不在这一页上**。"
-            "所以这个域缺的是**来源**而不是抽取器；要做得先找到逐神页面。"
-            "别照着「0 张表」下结论：通货页同样 0 张表却抽出了 113 条。"
+            "2026-08-21 第三十五轮：这个域此前挂着一条**错的**结论——"
+            "「缺的是来源而不是抽取器」。`/cn/Pantheon` 确实没有各神祇的神力文本"
+            "（那半句是对的），但逐神页 `/cn/Soul_of_<英文名>` 一直都在，"
+            "而且这条 spec **自己就写着** `pob_files=(\"Data/Pantheons.lua\",)`——"
+            "本机 PoB 检出里那个文件也一直在。`pob_files` 没有任何运行时消费者，"
+            "所以没人回头看它。**停在一页上就下「缺来源」的结论，与第三十二轮"
+            "宝石那次是同一个错。**"
         ),
     ),
     # ── 制作系统 ──

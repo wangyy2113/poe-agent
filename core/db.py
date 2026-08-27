@@ -763,6 +763,51 @@ CREATE TABLE IF NOT EXISTS pob_cluster_notable (
 );
 CREATE INDEX IF NOT EXISTS idx_clusternotable_zh ON pob_cluster_notable(name_zh);
 
+-- ── 万神殿神力（POEDB `/cn/Soul_of_<英文名>` × PoB `Data/Pantheons.lua`）──
+-- 本库**唯一一张双源合成表**，所以两侧的溯源都要留：POEDB 侧 url/content_hash/
+-- fetched_at，PoB 侧 source_commit。少留一侧，就说不清某一列到底是谁说的。
+--
+-- **按「层」建行而不是按「神」**：12 位神祇、32 层神力，而用户问的粒度就是层
+-- （「阿拉卡力之魂第三层要打谁」「格鲁丝克之魂在哪抓」）。按神建行会把 4 层塞进
+-- 一个 JSON，任何按头目、按地图的查询都得先解析再过滤。
+--
+-- **mods_zh 与 mods_pob 不逐项对应，禁止 zip。** 同一层里 POEDB 正文的词缀顺序与
+-- PoB 的顺序不一致（实测艾贝拉斯第二层两侧正好相反）；按数值配也不行——同一层可能
+-- 两条值相同（月影女神第一层两条都是 1、幽格尔第一层两条都是 50），而且 PoB 的
+-- value 是 **stat 原生单位**（图克哈玛第二层存 120 /分钟，页面显示 2%/秒）。
+-- 所以两侧并列存放：中文用于展示与检索，PoB 侧用于英文检索与溯源。
+-- 想「顺手」把它们配起来，就会得到带着引用的错文本。
+--
+-- 对账在 `stats` 这一维上做（`[[stat_id, value], ...]`，Attr 表与 PoB 口径一致，
+-- 实测 41/41 全对）。对不上的整位神祇拒绝入库并登记 source_conflict。
+CREATE TABLE IF NOT EXISTS pantheon_soul (
+    god_key         TEXT NOT NULL,     -- PoB 表键 = POEDB Attr 表的 ID，如 Arakaali
+    tier            INTEGER NOT NULL CHECK(tier BETWEEN 1 AND 4),  -- 1 是基础神力
+    god_name_zh     TEXT NOT NULL CHECK(god_name_zh <> ''),
+    god_name_en     TEXT NOT NULL CHECK(god_name_en <> ''),
+    is_major        INTEGER NOT NULL CHECK(is_major IN (0,1)),
+    -- 这一层的名字：第 1 层是神力名，2..4 层是要打的那个头目。
+    name_zh         TEXT NOT NULL CHECK(name_zh <> ''),
+    -- 第 1 层由任务奖励，没有抓获目标；2..4 层才有。空串表示「这一层没有」。
+    boss_zh         TEXT NOT NULL DEFAULT '',
+    map_zh          TEXT NOT NULL DEFAULT '',   -- 抓获该头目的地图
+    act_zh          TEXT NOT NULL DEFAULT '',   -- 第 1 层：「第 7 章」
+    quest_zh        TEXT NOT NULL DEFAULT '',   -- 第 1 层：给予神力的任务
+    mods_zh         TEXT NOT NULL CHECK(json_valid(mods_zh)),   -- JSON [中文词缀原文]
+    mods_pob        TEXT NOT NULL CHECK(json_valid(mods_pob)),  -- JSON [{stat_id,value,line_en}]
+    stats           TEXT NOT NULL CHECK(json_valid(stats)),     -- JSON [[stat_id, value]]
+    source          TEXT NOT NULL,
+    source_priority INTEGER NOT NULL,
+    url             TEXT NOT NULL CHECK(url <> ''),
+    content_hash    TEXT NOT NULL CHECK(content_hash <> ''),
+    source_commit   TEXT NOT NULL CHECK(length(source_commit) = 40),
+    fetched_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL,
+    PRIMARY KEY (god_key, tier)
+);
+CREATE INDEX IF NOT EXISTS idx_pantheon_zh ON pantheon_soul(god_name_zh);
+CREATE INDEX IF NOT EXISTS idx_pantheon_boss ON pantheon_soul(boss_zh);
+
 -- ── 地图（POEDB `/cn/Atlas_of_Worlds`）──
 -- 三页里只有这一页有实质内容：`Maps` 页的主表是「地图碎片 → 区域」且区域名是未翻译的
 -- 英文 id（`AnyCorruptedSideArea`），`Atlas` 页只有 1 张中文卡片。**结构要一页一页看**。

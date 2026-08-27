@@ -46,7 +46,10 @@ class UncoveredCauseTest(unittest.TestCase):
             _status("skill_gem", "partial", 548),      # 同上
             _status("support_gem", "partial", 262),    # 同上
             _status("cluster_jewel", "not_collected", 0),  # 无数据 → not_collected
-            _status("pantheon", "not_collected", 0),
+            # 有数据 + 有注册渠道 → 与 mod_affix 同类，不该声明。
+            # 第三十五轮入库万神殿时差点漏掉注册渠道：那样 cause 只会从
+            # not_collected 变成 not_enumerable，声明换个措辞、枚举照旧列不出神力。
+            _status("pantheon", "partial", 12),
         ]
         cov.load = lambda conn: self.rows  # type: ignore[assignment]
 
@@ -74,9 +77,11 @@ class UncoveredCauseTest(unittest.TestCase):
         self.assertIn("星团珠宝", missing_part)
 
     def test_已接入渠道的领域不被声明(self) -> None:
-        self.assertNotIn(
-            "装备词缀", [c.display_zh for c in self._scan().uncovered]
-        )
+        declared = [c.display_zh for c in self._scan().uncovered]
+        self.assertNotIn("装备词缀", declared)
+        # 万神殿同样是「有数据 + 有渠道」。漏注册渠道时它会以 not_enumerable
+        # 重新出现在这里——这条断言就是那个漏洞的探针。
+        self.assertNotIn("万神殿", declared)
 
     def test_判据是派生的不是手写开关(self) -> None:
         """注册了渠道之后，同一个领域当场从声明里消失——不需要改任何清单。"""
