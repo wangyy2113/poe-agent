@@ -114,6 +114,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 .venv/bin/python scripts/import_pob_bases.py      # 底材，18 个装备类别（--dry-run 先清点）
 .venv/bin/python scripts/import_pob_skills.py     # 技能石与辅助宝石（中文名取自 POEDB 清单页，缺的再查详情页）
 .venv/bin/python scripts/import_pob_spectres.py   # 幽魂抗性与建模系数，并与 POEDB 侧对账
+.venv/bin/python scripts/import_pob_bosses.py     # Boss 技能的伤害建模（不是打法；--dry-run 只清点与 tooltip 抽验）
 .venv/bin/python scripts/import_pantheon.py       # 万神殿（PoB 出结构 × POEDB 逐神页出中文，--dry-run 只对账）
 .venv/bin/python scripts/verify_pob_mods.py       # 与 POEDB 对账
 ```
@@ -121,7 +122,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 1208 项，秒级
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 1220 项，秒级
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选
@@ -138,7 +139,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 .venv/bin/python scripts/eval_run.py --record        # 重录真实响应（**要凭证、烧 token**）
 ```
 
-黄金问答集是 `tests/golden/questions.yaml`（127 条，六类），基线与全部结论在
+黄金问答集是 `tests/golden/questions.yaml`（130 条，六类），基线与全部结论在
 `tests/golden/BASELINE.md`——**动闸门前先读它**，里面记了多个已修缺陷与三条已知未修边界，
 以及两次「测量本身写错」的教训。
 
@@ -192,7 +193,8 @@ POST /chat[/stream]  api/chat.py（只做校验与编排调用）
 `bench_recipe_catalog`（工艺台目录）→ `harvest_craft_catalog`（收获定向工艺目录与命能费用）→
 `metamod_interaction_matrix`（逐字矩阵单元格）→
 `mod_tiers`（T 级梯度）→ `skill_gem_levels`（宝石逐级字面值）→
-`spectre_stats`（幽魂倍率 / 抗性 / 排名）→ `passive_path`（点到某天赋要几点 + 逐节点路径）→
+`spectre_stats`（幽魂倍率 / 抗性 / 排名）→ `boss_skill_damage`（Boss 技能某等级打多少 / 穿透 / Uber 差异）→
+`passive_path`（点到某天赋要几点 + 逐节点路径）→
 `cluster_jewel_info`（星团珠宝尺寸 / 基石 / 是否在主树外）→
 `resistance_calc`（按 PoB 原式复算抗性，给逐步推导）→
 `mitigation_calc`（受击前几段：闪避/命中、格挡上限、法术压制、护甲减伤）→
@@ -368,6 +370,35 @@ POEDB 页面仍是旧版」：`号召` PoB 侧是 `ConvocationNew`（各级需�
 与堆叠上限是两回事，混一起会把「最多放几个」答成 20）。那一页有三个物品类，
 只收 `MapFragment`；4 条亡者之城包与 1 条孵化器按物品类登记进台账。
 卡片解析与通货共用 `kb/sources/poedb_cards.py`（两页结构逐字相同），分开的只是表与域。
+
+`pob_boss_skill` **10** 条 Boss 技能的伤害建模 + `pob_boss` **22** 个 Boss 的护甲/闪避倍率
+（PoB `Data/BossSkills.lua` / `Data/Bosses.lua`）。**补的是伤害建模，不是打法**——
+技能机制、阶段与应对本地没有来源，这条分界写在 `partial_note` 里。
+
+`boss` 域的 spec 长期写着「缺的不是抽取器而是**来源**」。关于 POEDB 那半句是对的，
+但那条 spec 的 `pob_files` 当时是**空元组**，而这两个文件一直在检出里——
+**同一个空元组骗了第二次**（第一次是万神殿）。`pob_files` 至今没有任何运行时消费者。
+
+三条实测判据：
+
+- **伤害不存表里，存的是系数**：`round(monsterDamageTable[等级] × (基准 + 掷骰区间 ×
+  增量) × Uber 倍率)`（`Modules/ConfigOptions.lua:2258`，算在 `calc/boss_damage.py`）。
+  `monsterDamageTable` 早就在 `game_constant` 里。谢勒的球 84 级 = **9,588–14,382** 冰霜。
+- **默认给区间不给点**：`rollRange` 未指定时返回两端。「打多少伤害」的诚实答案是区间，
+  替用户挑一个点就是把范围偷偷说成确定值。等级越界抛异常不外推。
+- **`FirePen = ""` 是上游真实写法**（`Maven Fireball`），PoB 拿它当「这一栏不填」。
+  按「没有这一项」处理**并报数**，不写成 0——留空与 0 在事后是两件事。
+
+这一维**只有 PoB 一个来源**（GGG 未公布这些系数），但**文件内自带一处抽验**：
+少数 tooltip 复述了穿透数字，可与结构化字段比对（实测 3/3 一致）。
+**是抽验不是全量**——第一版正则只匹配「数字在前」的写法，漏掉了
+「penetration to 40%」，于是 3 条里只查了 2 条却报「全过」；
+一个看起来在把关、实际没查的检查比没有检查更糟。
+
+**没有 `name_zh` 列**：本地找不到这些终局 Boss 的中文名（`poedb_spectre` 只有中文名
+没有英文名，这些 Boss 也不能做幽魂）。加一列永远填不上的空列正是 `pob_skill_level`
+表注释警告过的坑。第一版还写过一个桥接函数，它不但 0/32 全空，
+还用 `except Exception` 吞掉了「没有 name_en 列」这个 schema 错误——已删。
 
 `craft_affix_capacity` **7** 条前后缀名额规则（POEDB `/cn/Modifiers` × PoB
 `Classes/Item.lua`）。这张表是 `check_mod_combination` 能说出 `possible` 的**唯一前提**：

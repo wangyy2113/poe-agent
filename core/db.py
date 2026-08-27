@@ -298,6 +298,58 @@ CREATE TABLE IF NOT EXISTS harvest_craft_cost (
 CREATE INDEX IF NOT EXISTS idx_harvest_cost_currency
     ON harvest_craft_cost(currency_metadata_id);
 
+-- ── Boss 技能的伤害建模（PoB `Data/BossSkills.lua` / `Data/Bosses.lua`）──
+-- **补的是伤害建模，不是打法。** PoB 这两个文件给的是「某技能在某等级打多少、
+-- 穿多少、Uber 乘多少」，不含机制、阶段与应对——后者本地没有来源，
+-- `boss` 域的 partial_note 要逐字写清这条分界。
+--
+-- **伤害不存在这张表里**：存的是系数，真实伤害要按
+-- `round(monsterDamageTable[等级] × (基准 + 掷骰区间 × 增量) × Uber 倍率)` 算
+-- （`Modules/ConfigOptions.lua:2258`，算在 `calc/boss_damage.py`）。
+-- 存算好的值就得为每个等级存一行，而等级表本来就在 game_constant 里。
+--
+-- 这一维**只有 PoB 一个来源**（P2）：GGG 没有公布 Boss 技能的伤害系数。
+-- 所以证据里要写明它是建模值，不能读起来像官方数值。
+CREATE TABLE IF NOT EXISTS pob_boss_skill (
+    name            TEXT PRIMARY KEY,  -- Shaper Ball / Atziri Flameblast
+    -- **没有 name_zh 列**：本地找不到这些终局 Boss 的中文名（`poedb_spectre` 只有
+    -- 中文名没有英文名，且这些 Boss 本来就不能做幽魂；entity 里的「塑界者」只出现在
+    -- 物品名里）。加一列当前管线永远填不上的空列，正是 `pob_skill_level`
+    -- 表注释警告过的坑——下一个人会以为它待填，然后拿别处的名字硬凑。
+    damage_type     TEXT NOT NULL,     -- Spell / SpellProjectile / Melee / DamageOverTime
+    -- JSON {伤害类型: [基准, 每 1% 掷骰增量]}，如 {"Cold": [11.67, 0.0583]}
+    damage_mults    TEXT NOT NULL CHECK(json_valid(damage_mults)),
+    -- JSON {穿透键: 值}。**上游写成空字符串的项不收**（`Maven Fireball` 的 FirePen
+    -- 在 BossSkills.lua 里就是 ""，PoB 拿它当「这一栏不填」）——留空与 0 是两件事。
+    penetrations    TEXT NOT NULL CHECK(json_valid(penetrations)),
+    uber_penetrations TEXT NOT NULL CHECK(json_valid(uber_penetrations)),
+    uber_damage_mult REAL,             -- 没有这一项就是 Uber 不额外乘
+    speed           REAL,
+    uber_speed      REAL,
+    crit_chance     REAL,
+    earlier_uber    INTEGER NOT NULL CHECK(earlier_uber IN (0,1)),
+    tooltip         TEXT,              -- PoB 原文，含少数几条可抽验的穿透数字
+    source          TEXT NOT NULL,
+    source_priority INTEGER NOT NULL,
+    pob_url         TEXT NOT NULL CHECK(pob_url <> ''),
+    source_commit   TEXT NOT NULL CHECK(length(source_commit) = 40),
+    updated_at      TEXT NOT NULL
+);
+
+-- Boss 的受击建模系数。与技能分表：一个 Boss 有多个技能，而护甲/闪避倍率是 Boss 的属性。
+CREATE TABLE IF NOT EXISTS pob_boss (
+    key             TEXT PRIMARY KEY,  -- Shaper / Sirus / Maven
+    -- 同样没有 name_zh，理由见上表注释
+    armour_mult     REAL NOT NULL,
+    evasion_mult    REAL NOT NULL,
+    is_uber         INTEGER NOT NULL CHECK(is_uber IN (0,1)),
+    source          TEXT NOT NULL,
+    source_priority INTEGER NOT NULL,
+    pob_url         TEXT NOT NULL CHECK(pob_url <> ''),
+    source_commit   TEXT NOT NULL CHECK(length(source_commit) = 40),
+    updated_at      TEXT NOT NULL
+);
+
 -- ── 前后缀名额规则（POEDB `/cn/Modifiers` × PoB `Classes/Item.lua`）──
 -- 这张表是 `check_mod_combination` 能说出 `possible` 的**唯一前提**：在它之前，
 -- `craft/feasibility.py` 末尾有一行无条件的 `verdict = "unknown"`，三态里的第三态是死的。

@@ -741,10 +741,26 @@ DOMAINS: tuple[DomainSpec, ...] = (
         display_zh="Boss 技能与应对",
         category=Category.ATLAS,
         authority_url=f"{POEDB_BASE}/Monsters",
-        count_sql="SELECT count(*) FROM entity WHERE entity_type='boss'",
+        count_sql="SELECT count(*) FROM pob_boss_skill",
+        tools=("boss_skill_damage",),
         hints=("boss", "首领", "怪物技能", "怪物机制", "打法", "怎么打", "应对"),
-        question_hints=("某 Boss 的技能与应对",),
+        question_hints=(
+            "某 Boss 技能在某等级打多少伤害、穿多少抗性",
+            "Uber 变体比普通变体多打多少",
+        ),
         poedb_pages=("Monsters",),
+        pob_files=("Data/BossSkills.lua", "Data/Bosses.lua"),
+        partial_note=(
+            "已入库 **10 条 Boss 技能的伤害建模**（伤害系数 / 穿透 / Uber 倍率 / 速度 / 暴击）"
+            "与 **22 个 Boss 的护甲与闪避倍率**，真实伤害按 PoB 原式配 `monsterDamageTable` "
+            "算出（`boss_skill_damage` 工具）；"
+            "**未采集**：技能的**机制说明与应对打法**（PoB 只给建模，POEDB 的 Monsters 页"
+            "也没有打法）、Boss 的掉落、以及这些终局 Boss 的**中文名**"
+            "（本地没有译名来源，只有英文）"
+        ),
+        missing_dimension_hints=(
+            "打法", "怎么打", "应对", "机制", "阶段", "站位", "怎么躲", "掉落",
+        ),
         note=(
             "hints 里刻意**不放单独的「怪物」与「机制」**。这两个词在词缀与唯一装备"
             "文本里到处都是（「当你击败稀有怪物时」），拿它们做领域意图识别会把有据的"
@@ -754,9 +770,15 @@ DOMAINS: tuple[DomainSpec, ...] = (
             " 2026-08-19 从「Boss 与怪物」改名为「Boss 技能与应对」：那张缓存页里"
             "**没有** Boss 技能与打法，只有怪物词缀、幽魂倍率与按等级的基础数值表。"
             "前两者已各自单列成域（monster_mod / spectre），第三类 PoB 侧早在"
-            " game_constant 里。所以本域仍是未采集，且缺的不是抽取器而是**来源**——"
-            "要另找 Boss 详情页或 wiki。原先把三件事挂在一个域名下，"
+            " game_constant 里。原先把三件事挂在一个域名下，"
             "让「已抓取未入库」读起来像是差一个抽取器。"
+            " 2026-08-27 第三十八轮：当时那句「缺的不是抽取器而是**来源**」"
+            "**又一次只对了一半**。POEDB 确实没有 Boss 技能，但这条 spec 的"
+            " `pob_files` 当时是**空元组**，而 PoB 检出里一直有 `Data/BossSkills.lua`"
+            "与 `Data/Bosses.lua`。`pob_files` 至今没有任何运行时消费者（纯文档字段），"
+            "所以又一次没人回头看它——**同一个空元组骗了第二次**（第一次是万神殿）。"
+            "补进来的是**伤害建模**而不是打法：这条分界写在 partial_note 里，"
+            "别因为域从 harvested 变成 partial 就以为打法也有了。"
         ),
     ),
     DomainSpec(
