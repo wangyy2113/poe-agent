@@ -50,6 +50,7 @@ class SubCategory(StrEnum):
     BESTIARY = "野兽"
     INCURSION = "神庙"
     CRAFTING_BENCH = "工艺台"
+    CRAFT_RULE = "制作规则"
 
     # 地图系统
     ATLAS = "Atlas"
@@ -88,6 +89,11 @@ class EntityType(StrEnum):
     #: 圣甲虫。与 CURRENCY 分开：它是地图机制物品（MapFragment），
     #: 归到通货里会让「通货有哪些」把圣甲虫也算进去。
     SCARAB = "scarab"
+    #: 制作规则（目前只有前后缀名额）。做成实体是为了**给规则一个出口**：
+    #: 第三十七轮把名额规则入了库，但它只被 `check_mod_combination` 内部消费，
+    #: 于是「稀有装备最多几个前缀」——这个域自己 question_hints 里就写着的问法——
+    #: 检索一条都命中不了，被判成缺据。**入库不等于取得出来。**
+    CRAFT_RULE = "craft_rule"
     #: 万神殿神祇。与 PASSIVE / ASCENDANCY 分开：神力既不在天赋树上、也不花天赋点，
     #: 混进去会让「哪些天赋给混沌抗性」把神力算成天赋——那是答非所问且无法验证的。
     PANTHEON = "pantheon"

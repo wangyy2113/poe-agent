@@ -24,30 +24,14 @@ from parsers.item_mods import (  # noqa: E402
     analyze_mods,
     resolve_item_class,
 )
+from core.db import SCHEMA as _REAL_SCHEMA  # noqa: E402
 from parsers.item_text import parse_item  # noqa: E402
 
-SCHEMA = """
-CREATE TABLE mod_affix (
-    uid TEXT PRIMARY KEY, mod_code TEXT NOT NULL, item_class_page TEXT NOT NULL,
-    item_class_code TEXT, item_class_zh TEXT, category TEXT NOT NULL,
-    category_label TEXT, name_zh TEXT, gen_type INTEGER, gen_label TEXT,
-    family_list TEXT, correct_group TEXT, ilvl INTEGER, tier INTEGER,
-    tier_count INTEGER, tier_source TEXT, weight INTEGER, weight_pct REAL,
-    text_zh TEXT, text_template TEXT, loose_template TEXT, ranges TEXT,
-    tags TEXT, spawn_tags TEXT, fossil_tags TEXT, variant_id TEXT,
-    source TEXT NOT NULL, source_priority INTEGER NOT NULL, url TEXT NOT NULL,
-    updated_at TEXT NOT NULL
-);
-CREATE TABLE pob_mod (
-    uid TEXT PRIMARY KEY, mod_id TEXT NOT NULL, mod_kind TEXT NOT NULL,
-    source_file TEXT NOT NULL, affix_type TEXT, affix_name TEXT, mod_group TEXT,
-    ilvl INTEGER, text_en TEXT NOT NULL, text_template TEXT, loose_template TEXT,
-    ranges TEXT, weights TEXT, weight_mults TEXT, spawn_tags TEXT, tags TEXT,
-    behaviour_tags TEXT, item_types TEXT, variant_id TEXT, trade_hashes TEXT,
-    stat_order TEXT, source TEXT NOT NULL, source_priority INTEGER NOT NULL,
-    url TEXT NOT NULL, pob_version TEXT, updated_at TEXT NOT NULL
-);
-"""
+#: 桩库直接用 `core.db.SCHEMA`，**不再手抄一份表定义**。
+#: 第三十七轮踩到过：手抄的那份没有 `craft_affix_capacity`，于是前后缀容量判定
+#: 在单测里根本没被执行，而受影响的用例**照旧通过**——测试为错误的理由变绿，
+#: 比测试变红危险得多。用真表就不会再有第二次。
+SCHEMA = _REAL_SCHEMA
 
 #: 真实数据（POEDB，2026-08 抓取）：项链的最大生命阶梯 T1..T4 与火/冰抗、智慧、法伤。
 #: 数值照抄 `mod_affix`，未做改动。
@@ -127,6 +111,33 @@ def _insert_pob(
         )
 
 
+#: 前后缀名额规则。数值照抄库里真实入库的那七条（POEDB 词缀页 × PoB Item.lua）。
+#: **桩库必须有这张表且有数据**：表空时容量判定会退回 unknown，于是「补了容量规则」
+#: 这件事在单测里完全不被执行，而受影响的用例照旧变绿（第三十七轮实测踩到）。
+_AFFIX_CAPACITY = [
+    ("魔法", "default", 1, 1, "both"),
+    ("魔法", "flask", 1, 1, "poedb_only"),
+    ("稀有", "default", 3, 3, "both"),
+    ("稀有", "jewel", 2, 2, "pob_only"),
+    ("稀有", "graft", 2, 2, "pob_only"),
+    # 反直觉的一条：已腐化的深渊珠宝回到 3+3
+    ("稀有", "jewel_abyss_corrupted", 3, 3, "pob_only"),
+    ("传奇", "default", None, None, "poedb_only"),  # None = 不受限制
+]
+
+
+def seed_affix_capacity(conn: sqlite3.Connection) -> None:
+    conn.executemany(
+        "INSERT INTO craft_affix_capacity(rarity, item_kind, prefix_limit, suffix_limit,"
+        " agreement, poedb_text, pob_text, source, source_priority, url, updated_at)"
+        " VALUES (?,?,?,?,?,?,NULL,'POEDB',1,'https://poedb.tw/cn/Modifiers',datetime('now'))",
+        [
+            (rarity, kind, pre, suf, agreement, f"{rarity}物品名额规则")
+            for rarity, kind, pre, suf, agreement in _AFFIX_CAPACITY
+        ],
+    )
+
+
 def fixture_conn() -> sqlite3.Connection:
     conn = sqlite3.connect(":memory:")
     conn.row_factory = sqlite3.Row
@@ -145,6 +156,7 @@ def fixture_conn() -> sqlite3.Connection:
     _insert_affix(conn, page="Gloves_dex", code="Gloves", zh="手套",
                   group="IncreasedLife", gen_label="前缀",
                   ladder=[(t, tc, il, r, txt) for t, tc, il, r, txt in _AMULET_LIFE])
+    seed_affix_capacity(conn)
     # 英文桥用：PoB 侧的同名阶梯
     _insert_pob(conn, group="LocalPhysicalDamage", ladder=_BOW_PHYS,
                 template_en="Adds # to # Physical Damage")

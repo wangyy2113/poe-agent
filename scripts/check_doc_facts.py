@@ -191,6 +191,8 @@ FACTS: tuple[Fact, ...] = (
          _count("poedb_scarab")),
     Fact("圣甲虫条数", "README.md", r"\| 圣甲虫 \| ([\d,]+) 个",
          _count("poedb_scarab")),
+    Fact("CLAUDE.md 名额规则条数", "CLAUDE.md",
+         r"`craft_affix_capacity` \*\*([\d,]+)\*\* 条", _count("craft_affix_capacity")),
     Fact("CLAUDE.md 收获工艺条数", "CLAUDE.md", r"`harvest_craft` \*\*([\d,]+)\*\*",
          _count("harvest_craft")),
     Fact("CLAUDE.md 收获费用条数", "CLAUDE.md",

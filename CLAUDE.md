@@ -121,7 +121,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 1194 项，秒级
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 1208 项，秒级
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选
@@ -138,7 +138,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 .venv/bin/python scripts/eval_run.py --record        # 重录真实响应（**要凭证、烧 token**）
 ```
 
-黄金问答集是 `tests/golden/questions.yaml`（126 条，六类），基线与全部结论在
+黄金问答集是 `tests/golden/questions.yaml`（127 条，六类），基线与全部结论在
 `tests/golden/BASELINE.md`——**动闸门前先读它**，里面记了多个已修缺陷与三条已知未修边界，
 以及两次「测量本身写错」的教训。
 
@@ -231,8 +231,8 @@ POST /chat[/stream]  api/chat.py（只做校验与编排调用）
   属性需求至今没有可核对的真值来源，所以整维仍未采集，并明确划进 `partial_note`。
   也**不留空列**：留了下一个人会以为它待填，然后把乘数当伤害写进去。
 
-本机 `data/poe.db` 现状（`GET /healthz` 与 `/admin/stats` 可查）：`entity` 5219、
-`mod_affix` 93897、`pob_mod` 25487、`chunk` 18469、`alias` 8170、`game_constant` 543、
+本机 `data/poe.db` 现状（`GET /healthz` 与 `/admin/stats` 可查）：`entity` 5220、
+`mod_affix` 93897、`pob_mod` 25487、`chunk` 18470、`alias` 8172、`game_constant` 543、
 `craft_bench_recipe` 783、`pob_base_item` **1022**（18 个装备类别，PoB × POEDB 逐条桥接，
 覆盖 PoB 侧 96.1%；未桥接的 41 条已按类别登记在台账）、`source_conflict` **545**（`mod_review` 254 + `unique_review` **229** + `spectre_review` 43
 + `spectre` **8** + `gem_review` **8** + `tree_review` 3）。
@@ -368,6 +368,27 @@ POEDB 页面仍是旧版」：`号召` PoB 侧是 `ConvocationNew`（各级需�
 与堆叠上限是两回事，混一起会把「最多放几个」答成 20）。那一页有三个物品类，
 只收 `MapFragment`；4 条亡者之城包与 1 条孵化器按物品类登记进台账。
 卡片解析与通货共用 `kb/sources/poedb_cards.py`（两页结构逐字相同），分开的只是表与域。
+
+`craft_affix_capacity` **7** 条前后缀名额规则（POEDB `/cn/Modifiers` × PoB
+`Classes/Item.lua`）。这张表是 `check_mod_combination` 能说出 `possible` 的**唯一前提**：
+在它之前 `craft/feasibility.py` 末尾有一行**无条件**的 `verdict = "unknown"`，
+注释写着「本版至少缺容量规则」——三态里的第三态是死代码。
+
+**这一维不是「只有 PoB 说得清」**：POEDB 词缀页用四条 `<li>` 明说了规则
+（魔法 1+1 / 稀有 3+3 / 传奇不受限制 / 药剂随魔法），而那一页早就在缓存里。
+魔法与稀有两侧都说 → 逐条对账（一致）；珠宝与 Graft 的 2+2 只有 PoB 说，
+按 `agreement='pob_only'` 标注——**单侧来源不是冲突，但读的人有权知道只有一边说过**。
+其中**「已腐化的深渊珠宝回到 3+3」**最容易写反（判据里那个
+`not (subType == "Abyss" and corrupted)` 把这一支排除在 2+2 之外），单测按原文钉住。
+
+判定顺序本身就是安全边界，四种情况一律留在 `unknown`：候选含**其他生成位**
+（腐化 / 附魔 / 灭界者，各有各的槽位规则）、**没给稀有度**（不替用户假定「稀有」）、
+查不到规则、规则说「不受限制」（传奇的词缀是固定的，不由名额决定）。
+而 `possible` 的判据是**「这一页一条缺口都没有」**而不是「容量过了」——
+来源与影响力规则将来补上时，这里一行都不用改。
+
+**`possible` 的含义只是「这些词缀能共存」，不是「能做出来」**，这条区别写在
+工具描述、系统提示词与证据正文三处。超出名额则判 `impossible`——这是新增的真负例。
 
 `harvest_craft` **74** 条收获（古灵庄园）定向工艺 + `harvest_craft_cost` **98** 条命能费用。
 与工艺台同一条边界（只是页面目录，不是可执行步骤），也和它一样**没有卡片、只有工具**：

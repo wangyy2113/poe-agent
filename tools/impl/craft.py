@@ -100,6 +100,17 @@ def _render_solver_evidence(page: PageAnalysis) -> str:
                 "因此该页面上的全部候选分配都发生 family_list 冲突，判定 impossible。",
             ]
         )
+    elif page.verdict == "possible":
+        out.extend(
+            [
+                "",
+                "结论证明：目标全部解析到候选、存在一组无 family_list 冲突的分配、"
+                "占位未超出该稀有度的前后缀名额，且这一页没有任何未解决的缺据，"
+                "因此判定 possible。",
+                "边界：possible 的含义是**这些词缀能共存**，不是「能做出来」——"
+                "不含制作步骤、成功率、通货成本与路线比较。",
+            ]
+        )
     elif page.verdict == "unknown":
         out.extend(
             [
@@ -122,6 +133,11 @@ def _render_solver_evidence(page: PageAnalysis) -> str:
     family = next((check for check in page.checks if check.key == "family_exclusivity"), None)
     if family:
         out.extend(["", f"family_list 检查：{family.status}。{family.summary}"])
+    capacity = next((check for check in page.checks if check.key == "affix_capacity"), None)
+    if capacity:
+        # 名额上限是 possible / impossible 的直接依据，必须逐字进证据原文，
+        # 否则模型复述「上限 3」时数值回填在证据里找不到这个数。
+        out.append(f"前后缀名额检查：{capacity.status}。{capacity.summary}")
     if page.selected_candidate_ids:
         out.append("兼容见证：" + "、".join(page.selected_candidate_ids))
         out.append(
@@ -208,7 +224,9 @@ def _citations(report: FeasibilityReport) -> list[dict[str, Any]]:
     description=(
         "检查指定底材类别上的多个目标词缀能否共存。返回严格的三态结论："
         "`impossible` 只在候选未截断且所有候选分配均被完整 family_list 冲突证明时出现；"
-        "规则齐全才可为 `possible`；其余一律 `unknown` 并逐项列出缺据。"
+        "`possible` 需要目标全部解析、无 family 冲突、占位未超前后缀名额，"
+        "且该页没有任何缺据；其余一律 `unknown` 并逐项列出缺据。"
+        "`possible` 的含义是**这些词缀能共存**，不是「能做出来」。"
         "会列出候选、前后缀类型、来源、占位和独立的求解证据。"
         "本工具**不提供制作步骤、成功率或通货成本**。"
     ),
@@ -245,7 +263,9 @@ def _citations(report: FeasibilityReport) -> list[dict[str, Any]]:
             },
             "rarity": {
                 "type": "string",
-                "description": "可选物品稀有度。容量规则未入库时会作为待验证条件保留。",
+                "description": (
+                    "物品稀有度，如「魔法」「稀有」。**不给就判不了前后缀名额**，结论会停在 unknown——不会替用户假定稀有。"
+                ),
             },
             "influences": {
                 "type": "array",
