@@ -256,6 +256,48 @@ CREATE TABLE IF NOT EXISTS craft_bench_recipe_cost (
 CREATE INDEX IF NOT EXISTS idx_bench_cost_currency
     ON craft_bench_recipe_cost(currency_slug);
 
+-- ── 收获（古灵庄园）定向工艺（POEDB `/cn/Horticrafting`）──
+-- 与工艺台同一条边界：只保存页面明确列出的**效果文本与原始命能费用**，
+-- 不承载「该动作对当前装备可执行」的状态转移语义，也不给成功率与最经济路线。
+--
+-- 那一页有三张表，本表只对应第一张（74 行定向工艺）。另外两张
+-- （51 行作物与掉落来源、41 行催化/化石/工艺台/花园工艺站混排）**有意不取**，
+-- 由采集器按行数登记进 knowledge_gap——静默省略与「页面上就没有」事后分不清。
+--
+-- **刻意没有分类列。** 描述里带 `<span class="craftingfire">` 这类 class，看着像现成的
+-- 分类标签，实测是**配色不是语义**：「召唤生物词缀」与「魔力词缀」都标成
+-- craftingcaster，「元素词缀」则一个 class 都没有。存了它，「哪些收获工艺能改施法词缀」
+-- 就会答出召唤生物与魔力、还漏掉元素。而描述原文里本来就有那个中文词，
+-- 检索与 LIKE 都能匹配——留一个错的分类列，比没有分类列糟得多。
+CREATE TABLE IF NOT EXISTS harvest_craft (
+    craft_id        TEXT PRIMARY KEY,  -- 完整记录 canonical JSON 的 SHA-256
+    effect_text     TEXT NOT NULL CHECK(effect_text <> ''),
+    source          TEXT NOT NULL,
+    source_priority INTEGER NOT NULL,
+    url             TEXT NOT NULL CHECK(url <> ''),
+    content_hash    TEXT NOT NULL,
+    fetched_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_harvest_effect ON harvest_craft(effect_text);
+
+-- 费用。一条工艺 1..2 个组件（实测 74 条里 50 条单组件、24 条双组件，共 98 条）。
+-- `currency_metadata_id` 是与 `poedb_currency` 的桥接键（实测 5/5 命中、中文名逐字一致），
+-- 采集时逐条对账；它比中文名与 slug 都稳——名字会随译名调整，slug 只是 URL 标识。
+CREATE TABLE IF NOT EXISTS harvest_craft_cost (
+    craft_id        TEXT NOT NULL,
+    position        INTEGER NOT NULL CHECK(position >= 0),
+    amount          INTEGER NOT NULL CHECK(amount > 0),
+    currency_metadata_id TEXT NOT NULL CHECK(currency_metadata_id <> ''),
+    currency_slug   TEXT NOT NULL CHECK(currency_slug <> ''),
+    currency_name_zh TEXT NOT NULL CHECK(currency_name_zh <> ''),
+    currency_url    TEXT NOT NULL CHECK(currency_url <> ''),
+    PRIMARY KEY (craft_id, position),
+    FOREIGN KEY (craft_id) REFERENCES harvest_craft(craft_id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_harvest_cost_currency
+    ON harvest_craft_cost(currency_metadata_id);
+
 -- ── 元词缀交互矩阵（Craft of Exile P4，经 POEDB 镜像采集）──
 -- 一行只表示来源页面中一个 operation × guard 单元格的明确值。源页面空白格不入表，
 -- 也绝不推断为 N/A；完整装备状态转移、可执行性、步骤、概率和成本均不在此表范围内。

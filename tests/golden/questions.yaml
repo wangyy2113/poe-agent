@@ -398,6 +398,41 @@ cases:
     expect_gap: true
     note: 掉落来源与获取途径未采集（页面只有效果、堆叠与放置上限）
 
+  # ── 收获（古灵庄园）定向工艺（2026-08-27 第三十六轮入库）──────────
+  - id: num_harvest_reforge_fire_cost
+    query: 收获里重铸一件带火焰词缀的稀有物品要多少命能
+    kind: numeric
+    expect_values: ["50"]
+    note: >-
+      目录原始费用：50x 狂野紫晶命能。这个域**没有卡片**（74 条描述高度雷同），
+      只能靠 harvest_craft_catalog 到达
+
+  - id: route_harvest_catalog
+    query: 收获有哪些能改火焰词缀的定向工艺
+    kind: tool_route
+    expect_tool: harvest_craft_catalog
+
+  - id: desc_lifeforce_usage
+    query: 狂野紫晶命能有什么用
+    kind: description
+    expect_any_hit: true
+    note: >-
+      那 5 种命能在 poedb_currency 里**没有效果文本**（POEDB 通货页本身没给），
+      这 74 条定向工艺正是它们的用途
+    lesson: >-
+      入库前这条只会拿到一张写着「POEDB 页面上没有给这条通货的效果说明」的通货卡——
+      一个诚实但没用的答案。意图词收的是**问法**（「命能有什么用」）而不是裸的
+      「命能」：实测放裸词会把「狂野紫晶命能的堆叠上限是多少」抢到目录工具上，
+      而堆叠上限在通货卡里、目录表根本没有这一列。
+
+  - id: gap_lifeforce_acquisition
+    query: 狂野紫晶命能怎么获得，要种什么作物
+    kind: gap
+    expect_gap: true
+    note: >-
+      命能的获取途径（同页 51 行「作物与掉落来源」表）本轮有意未取，
+      与通货、圣甲虫两个域把「获取途径」划在边界外保持一致
+
   # ── 万神殿（2026-08-21 第三十五轮入库）──────────────────────────
   - id: desc_pantheon_soul_effect
     query: 暗影女皇 阿拉卡力之魂有什么效果

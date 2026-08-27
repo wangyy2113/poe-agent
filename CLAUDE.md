@@ -99,8 +99,9 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 
 # 采集（POEDB）
 .venv/bin/python -m kb.pipeline --category all
-#   category: unique_item | unique_l2 | mods | bench | metamods | tree | monsters
-#             | currency | scarab | maps | coverage | all
+#   category: unique_item | unique_l2 | mods | bench | horticraft | metamods | tree
+#             | monsters | currency | scarab | maps | coverage | all
+#   收获那一类叫 horticraft 不叫 harvest：下面 --harvest 已经是「只抓不抽」的开关
 #   --harvest 只抓缓存不抽取 / --force 忽略缓存 / --rebuild 清空重建
 #   --allow-bench-shrink、--allow-metamod-shrink、--allow-monster-shrink
 #   只在人工核对上游确实删项后使用
@@ -120,7 +121,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 1170 项，秒级
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 1194 项，秒级
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选
@@ -137,7 +138,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 .venv/bin/python scripts/eval_run.py --record        # 重录真实响应（**要凭证、烧 token**）
 ```
 
-黄金问答集是 `tests/golden/questions.yaml`（122 条，六类），基线与全部结论在
+黄金问答集是 `tests/golden/questions.yaml`（126 条，六类），基线与全部结论在
 `tests/golden/BASELINE.md`——**动闸门前先读它**，里面记了多个已修缺陷与三条已知未修边界，
 以及两次「测量本身写错」的教训。
 
@@ -188,7 +189,8 @@ POST /chat[/stream]  api/chat.py（只做校验与编排调用）
 `tools.impl` 即完成注册）：
 
 `affix_pool_odds`（胸甲同侧普通词缀条件概率）→ `check_mod_combination`（三态可行性）→
-`bench_recipe_catalog`（工艺台目录）→ `metamod_interaction_matrix`（逐字矩阵单元格）→
+`bench_recipe_catalog`（工艺台目录）→ `harvest_craft_catalog`（收获定向工艺目录与命能费用）→
+`metamod_interaction_matrix`（逐字矩阵单元格）→
 `mod_tiers`（T 级梯度）→ `skill_gem_levels`（宝石逐级字面值）→
 `spectre_stats`（幽魂倍率 / 抗性 / 排名）→ `passive_path`（点到某天赋要几点 + 逐节点路径）→
 `cluster_jewel_info`（星团珠宝尺寸 / 基石 / 是否在主树外）→
@@ -366,6 +368,32 @@ POEDB 页面仍是旧版」：`号召` PoB 侧是 `ConvocationNew`（各级需�
 与堆叠上限是两回事，混一起会把「最多放几个」答成 20）。那一页有三个物品类，
 只收 `MapFragment`；4 条亡者之城包与 1 条孵化器按物品类登记进台账。
 卡片解析与通货共用 `kb/sources/poedb_cards.py`（两页结构逐字相同），分开的只是表与域。
+
+`harvest_craft` **74** 条收获（古灵庄园）定向工艺 + `harvest_craft_cost` **98** 条命能费用。
+与工艺台同一条边界（只是页面目录，不是可执行步骤），也和它一样**没有卡片、只有工具**：
+74 条描述里 16 条只差一个词（「重铸……其中包括一个 X 词缀」），做成卡会让 BM25
+在近重复文本里互相挤掉。所以覆盖声明里这个域的 chunk 数是 0，那不是缺陷。
+
+三条实测判据：
+
+- **`crafting*` span class 是配色不是语义，不建分类列。** 描述里的
+  `<span class="craftingfire">火焰</span>` 看着像现成标签，实测「召唤生物词缀」与
+  「魔力词缀」都标 `craftingcaster`、「元素词缀」一个 class 都没有。存了它，
+  「哪些收获工艺能改施法词缀」会既错答又漏答；而分类词本来就在描述原文里。
+- **费用的写法与工艺台相反**（这边 `<a>通货</a> x50` 数量在后，工艺台是 `6x <a>通货</a>`），
+  所以另写了解析器。要合并两处请先确认顺序断言。
+- **费用通货自带对账口径**：链接的 `data-hover` 里就是 `poedb_currency.metadata_id`，
+  实测 **5/5** 命中且中文名逐字一致。故意**不加外键**——那会让收获无法在通货表为空时
+  单独导入；改成导入时软校验并把不一致写进 `ingest_run.note`。
+
+顺带补上一处「入库了却答不出来」：那 5 种命能正是 `poedb_currency` 里
+**15 条没有效果文本**（POEDB 通货页本身没给）中的 5 条，所以「狂野紫晶命能有什么用」
+原本只会拿到一张写着「页面没有给这条通货的效果说明」的卡。这 74 条工艺就是它们的用途。
+**意图词收的是问法（「命能有什么用」）而不是裸的「命能」**——实测放裸词会把
+「狂野紫晶命能的堆叠上限是多少」抢到目录工具上，而那一列只在通货卡里有。
+
+同页另外两张表**有意不取**并按行数登记进台账：51 行作物与掉落来源
+（获取途径那一维，与通货、圣甲虫保持一致）、41 行催化/化石/工艺台/花园工艺站混排表。
 
 `pantheon_soul` **32** 层神力（12 位神祇、41 条词缀）——本库**唯一一张双源合成表**：
 PoB `Data/Pantheons.lua` 出结构、英文名、数值与 GGG stat id，POEDB 逐神页

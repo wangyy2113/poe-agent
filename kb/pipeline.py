@@ -39,6 +39,7 @@ from kb.sources import (
     craftofexile_metamods,
     poedb_crafting,
     poedb_currency,
+    poedb_harvest,
     poedb_maps,
     poedb_scarab,
     poedb_index,
@@ -829,6 +830,188 @@ def run_poedb_crafting(*, force: bool = False, allow_shrink: bool = False) -> in
         stats.multi_cost_recipes,
         len(stats.currencies),
         elapsed_ms,
+    )
+    return 0
+
+
+#: 定向工艺条数下限。2026-08-27 实测 74 条。
+MIN_HARVEST_CRAFTS = 60
+
+#: 收获费用引用的通货。与 `poedb_currency` 对账用的问题键。
+HARVEST_GAP_QUESTION = "收获（古灵庄园）页面上未采集的表"
+
+
+def _check_harvest_currencies(conn, crafts) -> list[str]:  # noqa: ANN001
+    """费用通货必须都能对上已入库的 `poedb_currency`。
+
+    这一维**自带对账口径**：费用链接的 `data-hover` 里就是 GGG 元数据路径，
+    而那正是 `poedb_currency` 的主键（实测 5/5 命中、中文名逐字一致）。
+    与工艺台「18 个通货 100% 命中」是同一条检查。
+
+    对不上不阻塞入库——通货表可能还没采集。但**必须报出来**：
+    悄悄写进去会让费用引用指向一个库里不存在的通货。
+    """
+    known = {
+        str(row[0]): str(row[1])
+        for row in conn.execute("SELECT metadata_id, name_zh FROM poedb_currency")
+    }
+    if not known:
+        return ["poedb_currency 为空，本轮跳过费用通货对账"]
+    problems: list[str] = []
+    for craft in crafts:
+        for cost in craft.costs:
+            name = known.get(cost.currency_metadata_id)
+            if name is None:
+                problems.append(
+                    f"费用通货未在 poedb_currency 中：{cost.currency_name_zh}"
+                    f"（{cost.currency_metadata_id}）"
+                )
+            elif name != cost.currency_name_zh:
+                problems.append(
+                    f"费用通货中文名两处不一致：收获页 {cost.currency_name_zh!r} "
+                    f"≠ 通货表 {name!r}（{cost.currency_metadata_id}）"
+                )
+    return sorted(set(problems))
+
+
+def _record_harvest_gaps(conn, not_taken: dict[str, int]) -> int:  # noqa: ANN001
+    """把同页上**有意不取**的两张表按行数登记。
+
+    静默省略与「页面上就没有」事后分不清，所以条数要留下来。
+    """
+    points = [
+        (f"[other_table] 收获页上的「{label}」表有 {rows} 行未入库", rows)
+        for label, rows in sorted(not_taken.items())
+    ]
+    if not points:
+        return 0
+    return dbmod.record_ingest_gaps(
+        conn,
+        question=HARVEST_GAP_QUESTION,
+        category="not_collected/harvest",
+        points=points,
+    )
+
+
+def run_poedb_harvest(*, force: bool = False, allow_shrink: bool = False) -> int:
+    """采集收获（古灵庄园）定向工艺（POEDB `/cn/Horticrafting`）。
+
+    **不建 entity / chunk / alias**，与工艺台一致：74 条描述里有 16 条只差一个词
+    （「……包括一个 X 词缀」），做成 74 张小卡会让 BM25 在一堆近重复文本里挑，
+    把真正该命中的卡挤下去。这个域走 `harvest_craft_catalog` 工具 + 意图路由。
+    """
+    cfg = get_config()
+    conn = dbmod.init_db(cfg.db_path, vector_dim=int(cfg.get("retrieval.vector.dim", 0) or 0))
+    fetcher = _make_fetcher(cfg)
+    started = time.time()
+    cur = conn.execute(
+        "INSERT INTO ingest_run(source, category, started_at) VALUES (?,?,datetime('now'))",
+        (Source.POEDB.value, "harvest"),
+    )
+    run_id = cur.lastrowid
+    conn.commit()
+
+    res = fetcher.fetch(poedb_harvest.HORTICRAFTING_URL, force=force)
+    if not res.ok:
+        conn.execute(
+            "UPDATE ingest_run SET finished_at=datetime('now'), failed=1, note=? WHERE run_id=?",
+            (f"抓取失败 status={res.status_code}", run_id),
+        )
+        conn.commit()
+        return 2
+
+    crafts, stats = poedb_harvest.extract_harvest_crafts(
+        res.text, page_url=poedb_harvest.HORTICRAFTING_URL
+    )
+    existing = int(conn.execute("SELECT count(*) FROM harvest_craft").fetchone()[0])
+    if len(crafts) < MIN_HARVEST_CRAFTS or (existing and len(crafts) < existing * 0.8):
+        if not allow_shrink:
+            conn.execute(
+                "UPDATE ingest_run SET finished_at=datetime('now'), failed=1, note=? "
+                "WHERE run_id=?",
+                (
+                    f"拒绝替换快照：{existing} -> {len(crafts)}"
+                    f"（下限 {MIN_HARVEST_CRAFTS}）",
+                    run_id,
+                ),
+            )
+            conn.commit()
+            logger.error("收获工艺数量护栏触发，已拒绝写入：%d -> %d", existing, len(crafts))
+            return 2
+
+    priority = int(cfg.priority_of(Source.POEDB.value))
+    problems = _check_harvest_currencies(conn, crafts)
+    for problem in problems:
+        logger.warning("收获费用对账：%s", problem)
+
+    conn.execute("SAVEPOINT harvest_snapshot")
+    try:
+        conn.execute("DELETE FROM harvest_craft_cost")
+        conn.execute("DELETE FROM harvest_craft")
+        conn.executemany(
+            """
+            INSERT INTO harvest_craft(
+                craft_id, effect_text, source, source_priority, url,
+                content_hash, fetched_at, updated_at
+            ) VALUES (?,?,?,?,?,?,?,datetime('now'))
+            """,
+            [
+                (
+                    craft.craft_id, craft.effect_text, Source.POEDB.value, priority,
+                    craft.url, craft.content_hash, res.fetched_at,
+                )
+                for craft in crafts
+            ],
+        )
+        conn.executemany(
+            """
+            INSERT INTO harvest_craft_cost(
+                craft_id, position, amount, currency_metadata_id,
+                currency_slug, currency_name_zh, currency_url
+            ) VALUES (?,?,?,?,?,?,?)
+            """,
+            [
+                (
+                    craft.craft_id, cost.position, cost.amount,
+                    cost.currency_metadata_id, cost.currency_slug,
+                    cost.currency_name_zh, cost.currency_url,
+                )
+                for craft in crafts
+                for cost in craft.costs
+            ],
+        )
+        gap_rows = _record_harvest_gaps(conn, stats.not_taken)
+        conn.execute("RELEASE harvest_snapshot")
+    except Exception:
+        conn.execute("ROLLBACK TO harvest_snapshot")
+        conn.execute("RELEASE harvest_snapshot")
+        raise
+
+    elapsed_ms = int((time.time() - started) * 1000)
+    note = json.dumps(
+        {
+            "crafts": len(crafts),
+            "costs": stats.costs,
+            "multi_cost_crafts": stats.multi_cost_crafts,
+            "currencies": len(stats.currencies),
+            "currency_problems": problems,
+            # 同页上有意不取的表，按行数留痕
+            "not_taken": stats.not_taken,
+            "gap_rows": gap_rows,
+        },
+        ensure_ascii=False,
+    )
+    conn.execute(
+        "UPDATE ingest_run SET finished_at=datetime('now'), total=?, succeeded=?, failed=0, "
+        "elapsed_ms=?, note=? WHERE run_id=?",
+        (len(crafts), len(crafts), elapsed_ms, note, run_id),
+    )
+    conn.commit()
+    logger.info(
+        "收获定向工艺入库完成：工艺 %d，费用子项 %d，双费用 %d，通货 %d 种"
+        "（未取：%s），耗时 %dms",
+        len(crafts), stats.costs, stats.multi_cost_crafts, len(stats.currencies),
+        stats.not_taken, elapsed_ms,
     )
     return 0
 
@@ -2315,11 +2498,14 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument(
         "--category", default="unique_item",
         choices=[
-            "unique_item", "unique_l2", "mods", "bench", "metamods", "tree",
-            "monsters", "currency", "scarab", "maps", "coverage", "all",
+            "unique_item", "unique_l2", "mods", "bench", "horticraft", "metamods",
+            "tree", "monsters", "currency", "scarab", "maps", "coverage", "all",
         ],
+        # 收获那一类**刻意不叫 `harvest`**：下面已经有一个 `--harvest` 布尔开关
+        # （只抓不抽），`--category harvest --harvest` 会读成同一件事的两种写法。
         help="unique_item=唯一装备索引页, unique_l2=类别页补集+权威英文名+详情页兜底, "
              "mods=词缀, bench=工艺工作台目录与原始费用, "
+             "horticraft=收获（古灵庄园）定向工艺目录与命能费用, "
              "metamods=Craft of Exile 元词缀交互矩阵（POEDB 镜像）, "
              "tree=天赋树与 Atlas 天赋树, monsters=怪物词缀与幽魂倍率, currency=通货, scarab=圣甲虫, maps=地图, "
              "coverage=只刷新覆盖声明, all=全部",
@@ -2386,6 +2572,10 @@ def main(argv: list[str] | None = None) -> int:
             rc |= run_poedb_maps(force=args.force, allow_shrink=args.allow_currency_shrink)
         if args.category in ("scarab", "all"):
             rc |= run_poedb_scarab(force=args.force, allow_shrink=args.allow_currency_shrink)
+        if args.category in ("horticraft", "all"):
+            rc |= run_poedb_harvest(
+                force=args.force, allow_shrink=args.allow_currency_shrink
+            )
         if args.category in ("monsters", "all"):
             rc |= run_poedb_monsters(
                 force=args.force, allow_shrink=args.allow_monster_shrink
