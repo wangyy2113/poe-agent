@@ -1207,6 +1207,35 @@ cases:
     expect_tool: check_mod_combination
     note: 多目标词缀共存 → check_mod_combination（三态，unknown 要原样说明）
 
+  # ── Boss 技能伤害建模（2026-08-27 第三十八轮入库）────────────────
+  - id: route_boss_skill_damage
+    query: 谢勒的球在 84 级打多少伤害
+    kind: tool_route
+    expect_tool: boss_skill_damage
+    note: >-
+      伤害是**算**出来的（`monsterDamageTable[等级] × (基准 + 掷骰 × 增量)`），
+      证据不在任何 chunk 里，所以只能靠工具到达
+
+  - id: num_boss_shaper_ball
+    query: 谢勒的球在 84 级最高打多少冰霜伤害
+    kind: numeric
+    expect_values: ["14382"]
+    note: >-
+      掷骰区间上界。未指定区间时工具给两端，**不替用户挑一个点**——
+      「打多少伤害」的诚实答案是一个区间
+
+  - id: gap_boss_fight_mechanics
+    query: 谢勒怎么打，有什么机制要躲
+    kind: gap
+    expect_gap: true
+    note: >-
+      PoB 只给**伤害建模**，POEDB 的 Monsters 页也没有打法；
+      技能机制、阶段与应对本地没有来源
+    lesson: >-
+      域从 harvested 变成 partial 只说明**某一维**补上了。这个域补的是伤害建模，
+      partial_note 与 missing_dimension_hints 必须把「打法仍未采集」写死，
+      否则「已采集」会替打法那一维背书。
+
   # ── 制作规则：名额已补，另外两件仍缺（2026-08-27 第三十七轮）──────
   - id: gap_craft_metamod_rule
     query: 觉醒者之石如何约束制作操作
