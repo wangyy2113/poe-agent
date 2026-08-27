@@ -176,7 +176,10 @@ DOMAINS: tuple[DomainSpec, ...] = (
         tools=(),
         hints=(),
         question_hints=("词缀的英文原文", "同一词缀在不同底材标签上的权重差异"),
-        pob_files=("Data/ModExplicit.lua", "Data/ModMaster.lua", "…共 26 个"),
+        # 用通配而不是列举：`Mod*.lua` 实测 26 个，逐个写既冗长又会随上游增删而过期。
+        # 先前这里第三项写的是「…共 26 个」——**一句人话混在路径元组里**，
+        # 而这个字段当时没有任何消费者，所以没人发现（第三十九轮由单测抓出来）。
+        pob_files=("Data/Mod*.lua",),
         note="P2 来源，与 POEDB 交叉校验用；冲突落 source_conflict",
     ),
     DomainSpec(
@@ -338,7 +341,7 @@ DOMAINS: tuple[DomainSpec, ...] = (
         hints=("技能石", "主动技能", "技能宝石", "宝石等级", "技能等级"),
         question_hints=("某技能的等级需求、消耗、冷却与标签", "某宝石是什么颜色"),
         poedb_pages=("Skill_Gems", "Transfigured_Gems", "Gem"),
-        pob_files=("Data/Gems.lua", "Data/Skills/"),
+        pob_files=("Data/Gems.lua", "Data/Skills/*.lua"),
         partial_note=(
             "宝石清单、中英文名、颜色、标签、施放时间、**每级字面值**（等级需求、"
             "消耗、冷却、可存次数、暴击率、消耗与保留倍率）、**每级基础伤害**"
@@ -1011,13 +1014,53 @@ def _confidence_notes(conn: sqlite3.Connection, key: str) -> list[str]:
     return notes
 
 
+def pob_data_root() -> Path | None:
+    """本机 PoB 检出的 `src/` 目录；没有就返回 None（不报错——PoB 是可选依赖）。"""
+    try:
+        from kb.sources.pob import resolve_pob_root  # noqa: PLC0415  避免导入环
+
+        root, _origin = resolve_pob_root()
+    except Exception:  # noqa: BLE001  没有 PoB 检出是正常情况，不该让覆盖探测失败
+        return None
+    return root / "src"
+
+
+def _pob_file_present(spec: DomainSpec) -> bool:
+    """该域声明的 PoB 文件是否真的在本机检出里。
+
+    路径里可能有通配（`Data/Bases/*.lua`）与占位（`TreeData/{ver}/tree.lua`）：
+    含 `{` 的一律跳过（那是写给人看的模板，不是可解析的路径），
+    含 `*` 的走 glob。**匹配不上不报错**——这里只用来分辨
+    harvested 与 not_collected，判错的代价是一个状态字，不是一条事实断言。
+    """
+    root = pob_data_root()
+    if root is None or not spec.pob_files:
+        return False
+    for raw in spec.pob_files:
+        if "{" in raw:
+            continue
+        if "*" in raw:
+            if any(root.glob(raw)):
+                return True
+        elif (root / raw).is_file():
+            return True
+    return False
+
+
 def probe(
     conn: sqlite3.Connection, *, cache_dir: Path | None = None
 ) -> list[DomainStatus]:
     """探测全部领域的实际状态。
 
-    判定顺序：有数据 → ingested / partial；没数据但页面在本地缓存里 →
-    harvested；否则 not_collected。
+    判定顺序：有数据 → ingested / partial；没数据但**页面在本地缓存里、
+    或声明的 PoB 文件在本机检出里** → harvested；否则 not_collected。
+
+    `pob_files` 那一支是第三十九轮补的。在那之前它是**纯文档字段、零运行时消费者**，
+    于是连着两轮被同一种方式坑：万神殿（第三十五轮）与 Boss（第三十八轮）的 spec 上
+    都写着「缺的是来源」，而 PoB 检出里一直有对应文件——一个没有消费者的字段，
+    写了也等于没写，写错更没人发现。现在它至少决定 `harvested` 与 `not_collected`
+    的分野：**PoB 侧有文件而库里没数据，就该报「已抓取未入库」而不是「未采集」**，
+    因为前者的含义正是「拿数据这步已经做完了，缺的是抽取器」。
     """
     from kb.fetcher import cache_path_for  # noqa: PLC0415  避免循环导入
 
@@ -1039,6 +1082,7 @@ def probe(
                     cache_path_for(cache_dir, f"{POEDB_BASE}/{slug}").is_file()
                     for slug in spec.poedb_pages
                 )
+            harvested = harvested or _pob_file_present(spec)
             status = "harvested" if harvested else "not_collected"
 
         out.append(
