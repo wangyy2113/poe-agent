@@ -7,10 +7,25 @@
 * 不同候选的完整 ``family_list`` 是否相交；
 * 选中候选占用多少个**不同**词缀位（同一条混合词缀可满足多个目标）。
 
-前后缀容量、来源适用条件和影响力要求尚未结构化入库。缺这些规则时结论必须是
-``unknown``，不能把「未发现 family 冲突」改写成「可以制作」。只有现有证据已经能
-证明所有候选分配都冲突时，才返回 ``impossible``。模型允许未来补齐规则后返回
-``possible``，但本版不会凭常识产生它。
+**前后缀容量规则第三十七轮已入库**（``craft_affix_capacity``，POEDB 词缀页 ×
+PoB ``Classes/Item.lua`` 两侧对账），所以 ``possible`` 从这一版起真的可达——
+在它之前这个模块末尾有一行无条件的 ``verdict = "unknown"``，三态里的第三态是死的。
+
+来源适用条件与影响力要求**仍未入库**，但它们**只在条件命中时才追加缺口**
+（候选含非常规来源、或底材带影响力）。所以判据不写成「容量过了就 possible」，
+而是 **「这一页一条缺口都没有才 possible」**——将来补上那两条规则时不用再改这里。
+
+容量判定的顺序本身就是安全边界，四种情况一律留在 ``unknown``：
+
+* 候选里有 ``gen_type=0``（其他生成位：腐化 / 附魔 / 灭界者 / 虚空忆境 …），
+  那些槽位各有各的规则，本库没采集；
+* 没给稀有度——**不替用户假定「稀有」**（与「不替用户假定打 83 级」同一条）；
+* 库里查不到该 (稀有度 × 种类) 的规则；
+* 规则说「不受限制」（传奇）——那不代表这些词缀能同时出现在一件传奇上，
+  传奇的词缀是固定的，不由前后缀名额决定。
+
+``possible`` 的含义仍然只是**「这些词缀能共存」**，不是「能做出来」：
+不含制作步骤、成功率、通货成本与路线比较。
 """
 
 from __future__ import annotations
@@ -453,6 +468,129 @@ def _gap(code: str, message: str) -> KnowledgeGap:
     return KnowledgeGap(code=code, message=message, authority_url=CRAFT_RULE_URL)
 
 
+@dataclass(frozen=True)
+class _CapacityOutcome:
+    """容量判定的结果。`gap` 为 None 表示这一维没有拦住结论。"""
+
+    check: ConstraintCheck
+    gap: KnowledgeGap | None
+
+
+#: 稀有度写法归一。复用 `parsers/item_text.Rarity` 的中英文映射，
+#: **不在这里写第四份稀有度解析**——它已经有三处了（装备文本、报告、工具）。
+def _normalize_rarity(raw: str | None) -> str | None:
+    from parsers.item_text import Rarity  # noqa: PLC0415  避免导入环
+
+    text = (raw or "").strip()
+    if not text:
+        return None
+    for member in Rarity:
+        if text == member.value:
+            return member.value
+    lowered = text.lower()
+    for member in Rarity:
+        if lowered == member.name.lower():
+            return member.value
+    return None
+
+
+def _capacity_rule(
+    conn: sqlite3.Connection, rarity: str
+) -> sqlite3.Row | None:
+    """查该稀有度的**默认**名额规则。
+
+    只查 `default`：珠宝 / Graft / 药剂那几档要靠底材种类判定，而本模块拿到的是
+    POEDB 页面 slug，没有可靠的种类映射。**宁可对那些底材保持 unknown**，
+    也不要拿默认的 3+3 去答一个真实上限是 2+2 的珠宝——那是带着引用的错结论。
+    """
+    try:
+        return conn.execute(
+            "SELECT * FROM craft_affix_capacity WHERE rarity=? AND item_kind='default'",
+            (rarity,),
+        ).fetchone()
+    except sqlite3.Error:
+        return None
+
+
+def _check_affix_capacity(
+    conn: sqlite3.Connection,
+    rarity: str | None,
+    analysis: PageAnalysis,
+    occupancy: str,
+    urls: tuple[str, ...],
+) -> _CapacityOutcome:
+    """按名额规则判定占位是否超限。顺序即安全边界，见模块 docstring。"""
+
+    def unknown(message: str) -> _CapacityOutcome:
+        return _CapacityOutcome(
+            check=ConstraintCheck(
+                key="affix_capacity",
+                status="unknown",
+                summary=occupancy,
+                evidence_urls=urls,
+                missing=message,
+            ),
+            gap=_gap("affix_capacity", message),
+        )
+
+    if analysis.occupied_other:
+        return unknown(
+            f"该分配里有 {analysis.occupied_other} 个候选落在**其他生成位**"
+            "（腐化 / 附魔 / 灭界者 / 虚空忆境等），这些槽位的名额规则未采集，"
+            "无法验证是否超限"
+        )
+    normalized = _normalize_rarity(rarity)
+    if normalized is None:
+        return unknown(
+            "问题没有给出物品稀有度，无法确定前后缀名额上限；"
+            "补上「魔法」或「稀有」即可判定"
+        )
+    rule = _capacity_rule(conn, normalized)
+    if rule is None:
+        return unknown(f"库里没有「{normalized}」的前后缀名额规则")
+    if rule["prefix_limit"] is None or rule["suffix_limit"] is None:
+        # 传奇不受名额限制，但传奇的词缀是固定的，不能据此说这些词缀能共存
+        return unknown(
+            f"「{normalized}」不受前后缀数量限制，因此名额不构成约束；"
+            "但传奇物品的词缀是固定的，能否共存不由名额决定"
+        )
+
+    prefix_limit = int(rule["prefix_limit"])
+    suffix_limit = int(rule["suffix_limit"])
+    over = []
+    if (analysis.occupied_prefixes or 0) > prefix_limit:
+        over.append(f"前缀 {analysis.occupied_prefixes} > 上限 {prefix_limit}")
+    if (analysis.occupied_suffixes or 0) > suffix_limit:
+        over.append(f"后缀 {analysis.occupied_suffixes} > 上限 {suffix_limit}")
+    rule_text = str(rule["poedb_text"] or rule["pob_text"] or "")
+    rule_url = str(rule["url"] or CRAFT_RULE_URL)
+    if over:
+        return _CapacityOutcome(
+            check=ConstraintCheck(
+                key="affix_capacity",
+                status="fail",
+                summary=(
+                    f"{occupancy}；超出「{normalized}」的名额上限"
+                    f"（{prefix_limit} 前缀 / {suffix_limit} 后缀）：" + "，".join(over)
+                ),
+                evidence_urls=tuple(dict.fromkeys((*urls, rule_url))),
+            ),
+            gap=None,
+        )
+    return _CapacityOutcome(
+        check=ConstraintCheck(
+            key="affix_capacity",
+            status="pass",
+            summary=(
+                f"{occupancy}；未超出「{normalized}」的名额上限"
+                f"（{prefix_limit} 前缀 / {suffix_limit} 后缀）。规则原文：{rule_text}"
+            ),
+            evidence_urls=tuple(dict.fromkeys((*urls, rule_url))),
+        ),
+        gap=None,
+    )
+
+
 def _dedupe_gaps(gaps: list[KnowledgeGap]) -> list[KnowledgeGap]:
     seen: set[tuple[str, str]] = set()
     out: list[KnowledgeGap] = []
@@ -469,6 +607,7 @@ def _analyze_page(
     page: str,
     targets: list[TargetSpec],
     influences: list[str],
+    rarity: str | None = None,
 ) -> PageAnalysis:
     resolutions = [resolve_target_candidates(conn, page, target) for target in targets]
     analysis = PageAnalysis(page=page, verdict="unknown", targets=resolutions)
@@ -608,22 +747,18 @@ def _analyze_page(
         )
     )
 
-    capacity_message = (
-        "前后缀容量规则尚未结构化入库，无法验证当前占位数是否超过该稀有度的上限"
+    occupancy = (
+        f"该候选分配占 {analysis.occupied_prefixes} 个前缀、"
+        f"{analysis.occupied_suffixes} 个后缀、{analysis.occupied_other} 个其他生成位"
     )
-    analysis.checks.append(
-        ConstraintCheck(
-            key="affix_capacity",
-            status="unknown",
-            summary=(
-                f"该候选分配占 {analysis.occupied_prefixes} 个前缀、"
-                f"{analysis.occupied_suffixes} 个后缀、{analysis.occupied_other} 个其他生成位"
-            ),
-            evidence_urls=urls,
-            missing=capacity_message,
-        )
-    )
-    analysis.gaps.append(_gap("affix_capacity", capacity_message))
+    capacity = _check_affix_capacity(conn, rarity, analysis, occupancy, urls)
+    analysis.checks.append(capacity.check)
+    if capacity.gap is not None:
+        analysis.gaps.append(capacity.gap)
+    if capacity.check.status == "fail":
+        # 超出名额 = 这些词缀不可能同时出现。这是容量规则带来的**新真负例**。
+        analysis.verdict = "impossible"
+        return analysis
 
     special_sources = sorted({c.category for c in unique.values() if c.category != "normal"})
     if special_sources:
@@ -658,8 +793,10 @@ def _analyze_page(
         )
         analysis.gaps.append(_gap("influence_requirement", influence_message))
 
-    # 本版至少缺容量规则，因此兼容分配仍只能是 unknown。
-    analysis.verdict = "unknown"
+    # **判据是「一条缺口都没有」，不是「容量过了」**：来源适用条件与影响力规则
+    # 仍未入库，它们只在条件命中时才追加缺口。这样写，将来补上那两条规则时
+    # 这里一行都不用改；写成「容量 pass 就 possible」则会在那天悄悄放行。
+    analysis.verdict = "possible" if not analysis.gaps else "unknown"
     return analysis
 
 
@@ -708,7 +845,8 @@ def analyze_feasibility(
         )
 
     page_analyses = [
-        _analyze_page(conn, page, target_specs, influence_list) for page in ref.pages
+        _analyze_page(conn, page, target_specs, influence_list, rarity)
+        for page in ref.pages
     ]
     checks: list[ConstraintCheck] = []
     gaps = [gap for page in page_analyses for gap in page.gaps]

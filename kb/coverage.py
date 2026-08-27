@@ -586,15 +586,20 @@ DOMAINS: tuple[DomainSpec, ...] = (
             "目标词缀分别占前缀还是后缀",
         ),
         partial_note=(
-            "已支持候选解析、完整 family_list 互斥与占位见证；"
-            "**前后缀容量、来源适用条件、影响力与元词缀约束规则未采集**，"
-            "因此无 family 冲突的组合只返回 unknown。"
-            "元词缀**页面矩阵**已采集，但矩阵值不能把 unknown 变成 possible"
+            "已支持候选解析、完整 family_list 互斥、占位见证与**前后缀名额判定**"
+            "（第三十七轮入库，因此 `possible` / 超名额的 `impossible` 都已可达）；"
+            "**来源适用条件与影响力规则仍未采集**，候选含非常规来源或底材带影响力时"
+            "仍只能返回 unknown。元词缀**页面矩阵**已采集，"
+            "但矩阵值不能把 unknown 变成 possible"
         ),
         missing_dimension_hints=(
-            "容量", "名额", "几条前缀", "几条后缀", "最多几条", "成功率", "成本", "步骤",
+            "成功率", "成本", "步骤", "影响力", "怎么做", "最快", "最经济",
         ),
-        note="局部兼容不等于整体可制作；工具不提供制作步骤、概率或成本",
+        note=(
+            "`possible` 的含义是**这些词缀能共存**，不是「可以制作」；"
+            "工具不提供制作步骤、概率或成本。"
+            "不给稀有度时判不了名额，结论停在 unknown——不替用户假定「稀有」"
+        ),
     ),
     DomainSpec(
         key="affix_pool_odds",
@@ -656,19 +661,30 @@ DOMAINS: tuple[DomainSpec, ...] = (
         key="craft_rule",
         display_zh="制作规则（前后缀名额 / 影响力 / 元词缀）",
         category=Category.CRAFTING,
-        authority_url=f"{POEDB_BASE}/metamods",
-        count_sql=None,
+        authority_url=f"{POEDB_BASE}/Modifiers",
+        count_sql="SELECT count(*) FROM craft_affix_capacity",
+        tools=("check_mod_combination",),
         hints=("几个前缀", "几个后缀", "名额", "影响力", "元词缀", "觉醒者之石"),
         question_hints=(
             "稀有装备最多几前缀几后缀",
             "影响力词缀需要什么底材",
             "元词缀如何约束制作操作",
         ),
-        poedb_pages=("metamods",),
+        poedb_pages=("metamods", "Modifiers"),
+        pob_files=("Classes/Item.lua",),
+        partial_note=(
+            "**前后缀名额规则已入库**（7 条：魔法 1+1、稀有 3+3、传奇不受限制、"
+            "药剂随魔法，另有 PoB 独有的珠宝与 Graft 2+2 与"
+            "「已腐化的深渊珠宝回到 3+3」这条例外；魔法与稀有两侧对账一致）；"
+            "**影响力底材条件与元词缀操作状态机仍未结构化**——"
+            "元词缀只有页面矩阵，矩阵值不能把 unknown 变成 possible"
+        ),
+        missing_dimension_hints=(
+            "影响力", "元词缀", "觉醒者之石", "状态转移", "制作步骤", "步骤", "怎么做",
+        ),
         note=(
-            "Metamod 页面矩阵已有独立窄表，但不等于完整 craft_rule："
-            "前后缀容量、影响力条件与操作状态机仍未结构化；"
-            "check_mod_combination 仍不能据此判定整体 possible"
+            "这个域是三件事的合称，本轮只补上了第一件（名额）。"
+            "别因为它从 harvested 变成 partial 就以为影响力与元词缀规则也有了"
         ),
     ),
     # ── 地图系统 ──

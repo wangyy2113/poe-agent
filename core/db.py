@@ -298,6 +298,42 @@ CREATE TABLE IF NOT EXISTS harvest_craft_cost (
 CREATE INDEX IF NOT EXISTS idx_harvest_cost_currency
     ON harvest_craft_cost(currency_metadata_id);
 
+-- ── 前后缀名额规则（POEDB `/cn/Modifiers` × PoB `Classes/Item.lua`）──
+-- 这张表是 `check_mod_combination` 能说出 `possible` 的**唯一前提**：在它之前，
+-- `craft/feasibility.py` 末尾有一行无条件的 `verdict = "unknown"`，三态里的第三态是死的。
+--
+-- **不塞进 `game_constant`**：那张表是「键 → 标量」，而这里是
+-- (稀有度 × 物品种类) → 两个上限，还要记「哪一侧说的」。拆成十几个散键会丢掉
+-- 谓词语义（判定时要按种类挑规则），塞进 value_json 又会变成第二类
+-- 「入库了却取不出来」（第二十六轮那 46 行的教训）。
+-- 同一条理由已经写在 `passive_tree_meta` 的表注释里。
+--
+-- **`prefix_limit IS NULL` = 不受限制**（传奇物品），不是「没查到」：
+-- 没查到的规则根本不会有行。判定时必须把这两件事分开，
+-- 否则「传奇不受限制」会被读成「规则缺失 → unknown」。
+--
+-- `agreement` 记这条规则是谁说的：`both` 两侧一致（魔法 1+1、稀有 3+3）、
+-- `poedb_only`（传奇不受限制、药剂只有魔法）、`pob_only`（珠宝与 Graft 2+2，
+-- 以及**已腐化的深渊珠宝回到 3+3** 这条反直觉的例外）。
+-- 单侧来源不是冲突，但呈现时要能看出证据只有一边。
+CREATE TABLE IF NOT EXISTS craft_affix_capacity (
+    rarity          TEXT NOT NULL CHECK(rarity <> ''),      -- 魔法 / 稀有 / 传奇
+    -- default / flask / jewel / graft / jewel_abyss_corrupted
+    item_kind       TEXT NOT NULL CHECK(item_kind <> ''),
+    prefix_limit    INTEGER CHECK(prefix_limit IS NULL OR prefix_limit >= 0),
+    suffix_limit    INTEGER CHECK(suffix_limit IS NULL OR suffix_limit >= 0),
+    agreement       TEXT NOT NULL CHECK(agreement IN ('both','poedb_only','pob_only')),
+    poedb_text      TEXT,              -- POEDB 页面原句，可引用
+    pob_text        TEXT,              -- PoB 原文片段
+    source          TEXT NOT NULL,
+    source_priority INTEGER NOT NULL,
+    url             TEXT NOT NULL CHECK(url <> ''),   -- 推荐引用的那一侧
+    pob_url         TEXT,              -- 钉住 commit 的 blob 地址（带行号锚点）
+    source_commit   TEXT,
+    updated_at      TEXT NOT NULL,
+    PRIMARY KEY (rarity, item_kind)
+);
+
 -- ── 元词缀交互矩阵（Craft of Exile P4，经 POEDB 镜像采集）──
 -- 一行只表示来源页面中一个 operation × guard 单元格的明确值。源页面空白格不入表，
 -- 也绝不推断为 N/A；完整装备状态转移、可执行性、步骤、概率和成本均不在此表范围内。

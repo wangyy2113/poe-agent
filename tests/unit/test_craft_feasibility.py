@@ -69,21 +69,98 @@ class CraftFeasibilityTestCase(unittest.TestCase):
 
 
 class TestThreeStateVerdict(CraftFeasibilityTestCase):
-    def test_无冲突但容量规则缺失必须unknown(self):
+    def test_无冲突且容量够用判possible(self):
+        """第三十七轮之前这条**恒为 unknown**：模块末尾有一行无条件的
+        `verdict = "unknown"`，三态里的第三态是死的。容量规则入库后它才活过来。
+        """
         report = analyze_feasibility(
             self.conn,
             "项链",
             [{"query": "最大生命"}, {"query": "火焰抗性"}],
             rarity="稀有",
         )
-        self.assertEqual(report.verdict, "unknown")
+        self.assertEqual(report.verdict, "possible")
         page = _page(report)
         self.assertEqual(page.occupied_prefixes, 1)
         self.assertEqual(page.occupied_suffixes, 1)
-        self.assertTrue(any(g.code == "affix_capacity" for g in report.gaps))
+        self.assertFalse(report.gaps)
+        capacity = next(c for c in page.checks if c.key == "affix_capacity")
+        self.assertEqual(capacity.status, "pass")
+        self.assertIn("3 前缀 / 3 后缀", capacity.summary)
         family = next(c for c in page.checks if c.key == "family_exclusivity")
         self.assertEqual(family.status, "pass")
         self.assertIn("不等于整体可制作", family.summary)
+
+    def test_没给稀有度仍必须unknown(self):
+        """**不替用户假定「稀有」**——与「不替用户假定打 83 级」同一条。"""
+        report = analyze_feasibility(
+            self.conn, "项链", [{"query": "最大生命"}, {"query": "火焰抗性"}]
+        )
+        self.assertEqual(report.verdict, "unknown")
+        self.assertTrue(any(g.code == "affix_capacity" for g in report.gaps))
+        capacity = next(c for c in _page(report).checks if c.key == "affix_capacity")
+        self.assertEqual(capacity.status, "unknown")
+        self.assertIn("稀有度", capacity.missing)
+
+    def test_超出名额判impossible(self):
+        """容量规则带来的**新真负例**：稀有最多 3 前缀，4 个前缀目标不可能共存。"""
+        for index in range(3):
+            _add_affix(
+                self.conn,
+                group=f"ExtraPrefix{index}",
+                text=f"额外前缀属性 {index}",
+            )
+        report = analyze_feasibility(
+            self.conn,
+            "项链",
+            [{"query": "最大生命"}] + [{"query": f"额外前缀属性 {i}"} for i in range(3)],
+            rarity="稀有",
+        )
+        self.assertEqual(report.verdict, "impossible")
+        page = _page(report)
+        self.assertEqual(page.occupied_prefixes, 4)
+        capacity = next(c for c in page.checks if c.key == "affix_capacity")
+        self.assertEqual(capacity.status, "fail")
+        self.assertIn("前缀 4 > 上限 3", capacity.summary)
+        # 已经证明不可行，不该再挂一条「缺容量规则」的缺口
+        self.assertFalse(any(g.code == "affix_capacity" for g in report.gaps))
+
+    def test_传奇不受名额限制但仍是unknown(self):
+        """「不受限制」≠「这些词缀能共存」：传奇的词缀是固定的，不由名额决定。"""
+        report = analyze_feasibility(
+            self.conn,
+            "项链",
+            [{"query": "最大生命"}, {"query": "火焰抗性"}],
+            rarity="传奇",
+        )
+        self.assertEqual(report.verdict, "unknown")
+        capacity = next(c for c in _page(report).checks if c.key == "affix_capacity")
+        self.assertEqual(capacity.status, "unknown")
+        self.assertIn("不受前后缀数量限制", capacity.missing)
+
+    def test_其他生成位让容量判不了(self):
+        """腐化 / 附魔 / 灭界者等有各自的槽位规则，本库没采集。"""
+        _add_affix(
+            self.conn, group="CorruptedExtra", text="你能施加一个额外诅咒",
+            category="corrupted", category_label="已腐化",
+        )
+        self.conn.execute(
+            "UPDATE mod_affix SET gen_type=0, gen_label='其他' WHERE correct_group=?",
+            ("CorruptedExtra",),
+        )
+        self.conn.commit()
+        report = analyze_feasibility(
+            self.conn,
+            "项链",
+            [{"query": "最大生命"}, {"query": "你能施加一个额外诅咒"}],
+            rarity="稀有",
+        )
+        self.assertEqual(report.verdict, "unknown")
+        page = _page(report)
+        self.assertEqual(page.occupied_other, 1)
+        capacity = next(c for c in page.checks if c.key == "affix_capacity")
+        self.assertEqual(capacity.status, "unknown")
+        self.assertIn("其他生成位", capacity.missing)
 
     def test_所有候选同family才判impossible(self):
         _add_affix(
@@ -321,7 +398,10 @@ class TestToolContract(CraftFeasibilityTestCase):
         self.assertTrue(result.ok)
         self.assertTrue(result.citations)
         self.assertTrue(all(c["url"] and c["text"] for c in result.citations))
-        self.assertTrue(result.data["gaps"])
+        # 容量规则入库后这一问是 possible、没有缺口；「有缺口」改由下面那条
+        # 没给稀有度的调用来钉——把两件事分开，免得再有用例为错误的理由变绿。
+        self.assertEqual(result.data["verdict"], "possible")
+        self.assertFalse(result.data["gaps"])
         page = result.data["page_analyses"][0]
         candidates = [
             candidate
@@ -334,6 +414,17 @@ class TestToolContract(CraftFeasibilityTestCase):
         data_keys = set(self._all_keys(result.data))
         self.assertFalse({"url", "authority_url", "evidence_urls"} & data_keys)
         self.assertFalse({"steps", "probability", "cost"} & data_keys)
+
+        # 同一问法不给稀有度：仍然是 unknown，且缺口要原样列出来
+        with patch("tools.impl.craft.dbmod.get_conn", return_value=self.conn):
+            vague = check_mod_combination(
+                "项链", [{"query": "最大生命"}, {"query": "火焰抗性"}]
+            )
+        self.assertEqual(vague.data["verdict"], "unknown")
+        self.assertTrue(vague.data["gaps"])
+        self.assertTrue(
+            any(g["code"] == "affix_capacity" for g in vague.data["gaps"])
+        )
 
     def test_八个目标的solver证据保留全部输入摘要(self):
         target_names = []
