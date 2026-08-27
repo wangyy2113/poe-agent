@@ -2,13 +2,13 @@
   "format_version": 1,
   "case_id": "gap_leech_without_pool",
   "query": "我 2% 生命偷取，一击打 3000 伤害，每秒能回多少",
-  "recorded_at": "2026-08-20T11:35:31+08:00",
+  "recorded_at": "2026-08-27T20:01:46+08:00",
   "model": "glm-5.2",
   "tokens": {
-    "prompt": 23681,
-    "output": 3817,
-    "reasoning": 3116,
-    "total": 27498
+    "prompt": 32261,
+    "output": 2274,
+    "reasoning": 1675,
+    "total": 34535
   },
   "tool_calls": [
     "kb_search",
@@ -19,12 +19,12 @@
   "out_of_scope": false,
   "precision_route": "",
   "gap_answer": "",
-  "final_answer": "〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕### 缺一个关键输入\n\n你没有给出**最大生命值**，而偷取的每秒回复速率和上限都是按**池的百分比**计算的，所以严格来说每秒回多少算不出来[[E10]]。〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕---\n\n### 逐步推导\n\n**第一步——这一击偷到多少生命（总量）**\n\n〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕〔此处原有一条无据断言，已被拦截：数值 60 未出现在绑定证据 E3, E9 中〕**第二步——一个偷取实例每秒回复多少**\n\n一次偷取实例每秒回复**最大生命的 2%**（偷取基数 0.02）[[E9],[E10]]：\n\n〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕**第三步——速率上限**\n\n生命偷取的速率上限为**每秒 20% 最大生命**[[E10]]。〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕**第四步——这次偷取持续多久**\n\n〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕---\n\n### 举例（假设不同最大生命）\n\n〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕---\n\n### 补充说明\n\n- 以上只计算**单次命中、单个偷取实例**的情况[[E9],[E10]]。\n- 如果连续多次命中，多个偷取实例可同时叠加，但总速率仍受**每秒 20% 最大生命**的上限约束[[E3],[E10]]。\n- 天赋树上有多种提高偷取速率的节点（如\"生命偷取速度\"每处 +60%[[E4]]、\"生命偷取\"每处 +15%[[E8]]、暴徒升华节点 +30%[[E2]] 等），如果你点了这些节点，偷取基数 2% 会被相应提高，每秒回复也会更高。\n- 本计算**不含**击中回复、药剂、生命再生等另有上限的机制[[E9]]。\n\n〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕**\n\n> 只按 PoB 的回复公式复算：输入逐字取自问题，没给的项不算；**不含击中回复 / 药剂 / 生命再生等另有上限的机制**，也不含 Mind over Matter 那种把伤害分流到魔力的池保护；不读取角色档案\n\n> 检索以降级通道完成（alias, fts）：向量检索与重排未启用（网关无 embedding 模型），当前走 BM25 + 实体精确匹配",
-  "blocked_claims": 11,
-  "elapsed_ms": 60360,
-  "evidence_fingerprint": "sha256:64ca9acf94a85c412429492aed06e40a",
+  "final_answer": "## 计算结果\n\n〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕下面把能算的和缺的都列清楚。\n\n---\n\n### 能算的部分\n\n**一击偷到的总量：**\n\n〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕〔此处原有一条无据断言，已被拦截：数值 60 未出现在绑定证据 E9, E10 中〕**单次偷取实例的每秒回复速率：**\n\n〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕这是因为偷取基数为 **0.02**（即每秒回复池的 2%）[[E9,E10]]。\n\n**该实例持续时间：**\n\n〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕**总速率上限**（多个实例叠加时受此约束）：最大生命 × 20% 每秒 [[E10]]。\n\n**单次实例总量上限**：最大生命 × 10% [[E10]]。\n\n---\n\n### 缺的部分\n\n〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕单次实例的每秒速率（2% 池）远低于速率上限（20% 池），所以单实例不会被速率上限截断 [[E9,E10]]。\n\n---\n\n### 总结\n\n〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕**\n\n> 本计算只覆盖 PoB 的偷取公式，不含击中回复、药剂、生命再生等另有上限的机制，也不含 Mind over Matter 等池保护 [[E9,E10]]。\n\n> 只按 PoB 的回复公式复算：输入逐字取自问题，没给的项不算；**不含击中回复 / 药剂 / 生命再生等另有上限的机制**，也不含 Mind over Matter 那种把伤害分流到魔力的池保护；不读取角色档案\n\n推导（取自证据 [[E9]]，由代码逐字附上）：\n\n| 步骤 | 算式 | 结果 |\n| --- | --- | --- |\n| 一个实例每秒回复 | 2 × 0.02（每秒 2% 池） | 0.04 |\n| 速率上限（每秒 20% 生命） | 2 × 20% | 0.4 |\n| 实际每秒回复 | min(0.04, 0.40) | 0.04 |\n\n> 检索以降级通道完成（alias, fts）：向量检索与重排未启用（网关无 embedding 模型），当前走 BM25 + 实体精确匹配",
+  "blocked_claims": 13,
+  "elapsed_ms": 35172,
+  "evidence_fingerprint": "sha256:ac829f05544aefca9beb2ac3f9fc3e1e",
   "_warning": "raw_answer 是未过出口闸门的模型原文，含可能无据的断言，不得当作事实引用",
-  "raw_answer": "## 生命偷取计算：2% 偷取 × 3000 伤害\n\n### 缺一个关键输入\n\n你没有给出**最大生命值**，而偷取的每秒回复速率和上限都是按**池的百分比**计算的，所以严格来说每秒回多少算不出来[[E10]]。不过可以给出完整公式和几个例子。\n\n---\n\n### 逐步推导\n\n**第一步——这一击偷到多少生命（总量）**\n\n$$3000 \\times 2\\% = 60 \\text{ 生命}$$\n\n这一击总共会回复 60 点生命，但这不是瞬间回满，而是**随时间逐渐回复**[[E3],[E9]]。\n\n**第二步——一个偷取实例每秒回复多少**\n\n一次偷取实例每秒回复**最大生命的 2%**（偷取基数 0.02）[[E9],[E10]]：\n\n$$\\text{每秒回复} = \\text{最大生命} \\times 2\\%$$\n\n**第三步——速率上限**\n\n生命偷取的速率上限为**每秒 20% 最大生命**[[E10]]。单个实例的 2% 远低于此上限，所以单次命中不会被截断：\n\n$$\\text{实际每秒} = \\min(\\text{最大生命} \\times 2\\%,\\ \\text{最大生命} \\times 20\\%) = \\text{最大生命} \\times 2\\%$$\n\n**第四步——这次偷取持续多久**\n\n$$\\text{持续时间} = \\frac{60}{\\text{最大生命} \\times 2\\%} \\text{ 秒}$$\n\n---\n\n### 举例（假设不同最大生命）\n\n| 最大生命 | 每秒回复 | 持续时间 | 总量 |\n|---|---|---|---|\n| 3000 | 60/秒 | 1.0 秒 | 60 |\n| 5000 | 100/秒 | 0.6 秒 | 60 |\n| 1000 | 20/秒 | 3.0 秒 | 60 |\n\n无论池多大，**这一击总共回复 60 点生命**，但每秒回复速率和持续时间取决于你的最大生命值。\n\n---\n\n### 补充说明\n\n- 以上只计算**单次命中、单个偷取实例**的情况[[E9],[E10]]。\n- 如果连续多次命中，多个偷取实例可同时叠加，但总速率仍受**每秒 20% 最大生命**的上限约束[[E3],[E10]]。\n- 天赋树上有多种提高偷取速率的节点（如\"生命偷取速度\"每处 +60%[[E4]]、\"生命偷取\"每处 +15%[[E8]]、暴徒升华节点 +30%[[E2]] 等），如果你点了这些节点，偷取基数 2% 会被相应提高，每秒回复也会更高。\n- 本计算**不含**击中回复、药剂、生命再生等另有上限的机制[[E9]]。\n\n**如果你告诉我最大生命值，就能给出精确的每秒回复数字。**",
+  "raw_answer": "## 计算结果\n\n你的问题给出了两个关键输入：**2% 生命偷取**、**一击 3000 伤害**。但缺少一个必要参数——**最大生命（池大小）**，因此无法给出一个确定的「每秒回多少」的数字。下面把能算的和缺的都列清楚。\n\n---\n\n### 能算的部分\n\n**一击偷到的总量：**\n\n$$3000 \\times 2\\% = 60 \\text{ 生命}$$\n\n这 60 点生命不是瞬时回满，而是按 PoB 的偷取公式随时间逐渐回复 [[E9,E10]]。\n\n**单次偷取实例的每秒回复速率：**\n\n$$\\text{最大生命} \\times 2\\%$$\n\n这是因为偷取基数为 **0.02**（即每秒回复池的 2%）[[E9,E10]]。\n\n**该实例持续时间：**\n\n$$\\frac{60}{\\text{最大生命} \\times 0.02} \\text{ 秒}$$\n\n**总速率上限**（多个实例叠加时受此约束）：最大生命 × 20% 每秒 [[E10]]。\n\n**单次实例总量上限**：最大生命 × 10% [[E10]]。\n\n---\n\n### 缺的部分\n\n**每秒回多少取决于你的最大生命**。举几个例子说明差异：\n\n| 最大生命 | 每秒回复（单实例） | 持续时间 | 总量 |\n|---|---|---|---|\n| 1000 | 20/秒 | 3.0 秒 | 60 |\n| 3000 | 60/秒 | 1.0 秒 | 60 |\n| 5000 | 100/秒 | 0.6 秒 | 60 |\n\n可以看到，**无论池多大，总回复量都是 60 生命**，但每秒速率和持续时间随池大小变化。单次实例的每秒速率（2% 池）远低于速率上限（20% 池），所以单实例不会被速率上限截断 [[E9,E10]]。\n\n---\n\n### 总结\n\n- **一击 3000 伤害、2% 生命偷取 → 总共偷取 60 生命**。\n- 这 60 生命以**每秒 2% 最大生命**的速率逐渐回复。\n- **要算出具体的每秒数值，请提供你的最大生命。**\n\n> 本计算只覆盖 PoB 的偷取公式，不含击中回复、药剂、生命再生等另有上限的机制，也不含 Mind over Matter 等池保护 [[E9,E10]]。",
   "evidence": [
     {
       "label": "E1",
@@ -54,19 +54,6 @@
     },
     {
       "label": "E3",
-      "chunk_id": "passive:Vivid_Hues_4d174db056#07921b9db71b1f24",
-      "entity_id": "passive:Vivid_Hues_4d174db056",
-      "title": "核心天赋·多彩之色（Vivid Hues）",
-      "url": "https://poedb.tw/cn/passive-skill-tree/",
-      "source": "POEDB",
-      "source_priority": 1,
-      "text": "# 核心天赋·多彩之色（Vivid Hues）\n核心天赋 ｜ 天赋树 3.29\n\n- 对流血敌人造成的攻击伤害的 2% 转化为生命偷取\n- 生命偷取的每秒总恢复量提高 20%\n- 流血伤害提高 20%\n\n> (吸取的生命会随时间逐渐回复。多个吸取效果可以同时发生, 但有一个上限)\n\n来源：POEDB → 天赋树 · 多彩之色（Vivid Hues）\nhttps://poedb.tw/cn/passive-skill-tree/",
-      "can_support_facts": true,
-      "claim_scope": "general",
-      "claim_data": {}
-    },
-    {
-      "label": "E4",
       "chunk_id": "passive:Life_Leech_Speed_f04507af91#72c16204912f6c57",
       "entity_id": "passive:Life_Leech_Speed_f04507af91",
       "title": "普通天赋·生命偷取速度（Life Leech Speed）",
@@ -79,20 +66,20 @@
       "claim_data": {}
     },
     {
-      "label": "E5",
-      "chunk_id": "passive:Two_Handed_Melee_Damage_and_Life_Leech_Speed_b3e7514571#d981b5101eab2402",
-      "entity_id": "passive:Two_Handed_Melee_Damage_and_Life_Leech_Speed_b3e7514571",
-      "title": "普通天赋·双手武器近战伤害和生命偷取速度（Two Handed Melee Damage and Life Leech Speed）",
+      "label": "E4",
+      "chunk_id": "passive:Life_Leech_Speed_and_Attack_Speed_942082773f#958144fb2ff179da",
+      "entity_id": "passive:Life_Leech_Speed_and_Attack_Speed_942082773f",
+      "title": "普通天赋·生命偷取速度和攻击速度（Life Leech Speed and Attack Speed）",
       "url": "https://poedb.tw/cn/passive-skill-tree/",
       "source": "POEDB",
       "source_priority": 1,
-      "text": "# 普通天赋·双手武器近战伤害和生命偷取速度（Two Handed Melee Damage and Life Leech Speed）\n普通天赋 ｜ 天赋树 3.29 ｜ 树上 2 处（同名同效，可分别点取）\n\n- 物理伤害在使用双手近战武器时提高 12%\n- 双手近战武器攻击造成的异常状态伤害提高 12%\n- 生命偷取的每秒总恢复量提高 60%\n\n> (伤害类异常状态包括流血、点燃和中毒)\n\n来源：POEDB → 天赋树 · 双手武器近战伤害和生命偷取速度（Two Handed Melee Damage and Life Leech Speed）\nhttps://poedb.tw/cn/passive-skill-tree/",
+      "text": "# 普通天赋·生命偷取速度和攻击速度（Life Leech Speed and Attack Speed）\n普通天赋 ｜ 天赋树 3.29\n\n- 攻击速度加快 3%\n- 生命偷取的每秒总恢复量提高 40%\n\n来源：POEDB → 天赋树 · 生命偷取速度和攻击速度（Life Leech Speed and Attack Speed）\nhttps://poedb.tw/cn/passive-skill-tree/",
       "can_support_facts": true,
       "claim_scope": "general",
       "claim_data": {}
     },
     {
-      "label": "E6",
+      "label": "E5",
       "chunk_id": "monster_mod:罪恶枷锁 传奇_吸血鬼_3f15659e#0#2ee58d2d5cd4cf4b",
       "entity_id": "monster_mod:罪恶枷锁 传奇_吸血鬼_3f15659e",
       "title": "吸血鬼（怪物词缀）",
@@ -105,14 +92,27 @@
       "claim_data": {}
     },
     {
-      "label": "E7",
-      "chunk_id": "passive:Life_Leech_Speed_and_Attack_Speed_942082773f#958144fb2ff179da",
-      "entity_id": "passive:Life_Leech_Speed_and_Attack_Speed_942082773f",
-      "title": "普通天赋·生命偷取速度和攻击速度（Life Leech Speed and Attack Speed）",
+      "label": "E6",
+      "chunk_id": "passive:Vivid_Hues_4d174db056#07921b9db71b1f24",
+      "entity_id": "passive:Vivid_Hues_4d174db056",
+      "title": "核心天赋·多彩之色（Vivid Hues）",
       "url": "https://poedb.tw/cn/passive-skill-tree/",
       "source": "POEDB",
       "source_priority": 1,
-      "text": "# 普通天赋·生命偷取速度和攻击速度（Life Leech Speed and Attack Speed）\n普通天赋 ｜ 天赋树 3.29\n\n- 攻击速度加快 3%\n- 生命偷取的每秒总恢复量提高 40%\n\n来源：POEDB → 天赋树 · 生命偷取速度和攻击速度（Life Leech Speed and Attack Speed）\nhttps://poedb.tw/cn/passive-skill-tree/",
+      "text": "# 核心天赋·多彩之色（Vivid Hues）\n核心天赋 ｜ 天赋树 3.29\n\n- 对流血敌人造成的攻击伤害的 2% 转化为生命偷取\n- 生命偷取的每秒总恢复量提高 20%\n- 流血伤害提高 20%\n\n> (吸取的生命会随时间逐渐回复。多个吸取效果可以同时发生, 但有一个上限)\n\n来源：POEDB → 天赋树 · 多彩之色（Vivid Hues）\nhttps://poedb.tw/cn/passive-skill-tree/",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E7",
+      "chunk_id": "passive:Two_Handed_Melee_Damage_and_Life_Leech_Speed_b3e7514571#d981b5101eab2402",
+      "entity_id": "passive:Two_Handed_Melee_Damage_and_Life_Leech_Speed_b3e7514571",
+      "title": "普通天赋·双手武器近战伤害和生命偷取速度（Two Handed Melee Damage and Life Leech Speed）",
+      "url": "https://poedb.tw/cn/passive-skill-tree/",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 普通天赋·双手武器近战伤害和生命偷取速度（Two Handed Melee Damage and Life Leech Speed）\n普通天赋 ｜ 天赋树 3.29 ｜ 树上 2 处（同名同效，可分别点取）\n\n- 物理伤害在使用双手近战武器时提高 12%\n- 双手近战武器攻击造成的异常状态伤害提高 12%\n- 生命偷取的每秒总恢复量提高 60%\n\n> (伤害类异常状态包括流血、点燃和中毒)\n\n来源：POEDB → 天赋树 · 双手武器近战伤害和生命偷取速度（Two Handed Melee Damage and Life Leech Speed）\nhttps://poedb.tw/cn/passive-skill-tree/",
       "can_support_facts": true,
       "claim_scope": "general",
       "claim_data": {}

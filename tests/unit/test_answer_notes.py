@@ -172,3 +172,63 @@ class BoundaryNoteTest(unittest.TestCase):
             [],
         )
         self.assertEqual([boundary], notes)
+
+
+class DerivationBlockTest(unittest.TestCase):
+    """计算器推导表的代码附注（2026-08-27 第四十一轮）。
+
+    实测：31 条带表格的答案里 **12 条（39%）的推导表被出口闸门拦掉**（计算器类 9/21）。
+    闸门没错——模型把工具的推导表原样抄下来却没绑编号，那就是无据断言。
+    丢的不是结论（12 条里只有 1 条因此真的漏了期望数值），是**可核对的算式**，
+    而项目的规矩是「算出来的数字要连算式一起给」。
+    """
+
+    def _ev(self, text: str, label: str = "E9"):  # noqa: ANN202
+        from orchestrator.binding import Evidence  # noqa: PLC0415
+
+        return Evidence(
+            label=label, chunk_id="c", entity_id=None, title="t", url="u",
+            source="s", source_priority=1, text=text,
+        )
+
+    _TABLE = (
+        "| 步骤 | 算式 | 结果 |\n"
+        "| --- | --- | --- |\n"
+        "| 怪物伤害表 | monsterDamageTable[84] | 821.73 |\n"
+        "| 取整 | round(14382) | 14,382 |"
+    )
+
+    def test_模型没贴推导表时由代码附上(self) -> None:
+        from orchestrator.loop import _derivation_blocks  # noqa: PLC0415
+
+        blocks = _derivation_blocks([self._ev(f"### 结算\n{self._TABLE}\n\n> 边界")], "命中率 83%[[E9]]。")
+        self.assertEqual(1, len(blocks))
+        self.assertIn("monsterDamageTable[84]", blocks[0])
+        # 要标出取自哪条证据——代码附注也得说得清出处
+        self.assertIn("[[E9]]", blocks[0])
+
+    def test_模型自己贴了就不重复附(self) -> None:
+        """19/31 的答案里模型是会贴的；无条件附会让它出现两次。"""
+        from orchestrator.loop import _derivation_blocks  # noqa: PLC0415
+
+        answer = f"### 推导\n{self._TABLE}\n"
+        self.assertEqual([], _derivation_blocks([self._ev(self._TABLE)], answer))
+
+    def test_没有推导表的证据不附任何东西(self) -> None:
+        from orchestrator.loop import _derivation_blocks  # noqa: PLC0415
+
+        self.assertEqual([], _derivation_blocks([self._ev("普通卡片正文")], "答案"))
+
+    def test_表头与render_steps保持一致(self) -> None:
+        """判重与抽取都认这个表头；两处分叉就会既判不了重也切不出表。"""
+        from calc.derive import render_steps  # noqa: PLC0415
+        from orchestrator.loop import _STEP_TABLE_HEADER  # noqa: PLC0415
+
+        self.assertEqual(_STEP_TABLE_HEADER, render_steps([])[0])
+
+    def test_只附第一张表(self) -> None:
+        """多工具同轮时全附会刷屏，而用户问的通常是其中一件事。"""
+        from orchestrator.loop import _derivation_blocks  # noqa: PLC0415
+
+        evs = [self._ev(self._TABLE, "E1"), self._ev(self._TABLE, "E2")]
+        self.assertEqual(1, len(_derivation_blocks(evs, "答案")))
