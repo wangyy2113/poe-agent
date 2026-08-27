@@ -268,6 +268,59 @@ def _tree_scanner(
     return scan
 
 
+def _scan_pantheon(conn: sqlite3.Connection, q: str) -> ChannelHit | None:
+    """万神殿神力渠道。
+
+    不套 `_tree_scanner`：那张表的列是「节点 / 种类 / 所属升华 / 树上处数」，
+    对神力全是空的，而神力真正要说清的是**哪一层、抓获谁、在哪张图**——
+    那正是「我要这条属性，得去做什么」的答案。
+    """
+    found = _entity_mod_rows(conn, "pantheon", q)
+    if not found:
+        return None
+
+    rows: list[list[str]] = []
+    for r, attrs, hits in found:
+        texts = {h["text"] for h in hits}
+        for tier in attrs.get("tiers") or []:
+            matched = [t for t in (tier.get("mods_zh") or []) if t in texts]
+            if not matched:
+                continue
+            if tier.get("tier") == 1:
+                where = "基础神力"
+                if tier.get("act_zh"):
+                    where += f"（{tier['act_zh']}）"
+            else:
+                where = f"抓获 {tier.get('name_zh') or '—'}"
+                if tier.get("map_zh"):
+                    where += f"（{tier['map_zh']}）"
+            rows.append([
+                r["name_zh"] + (f"（{r['name_en']}）" if r["name_en"] else ""),
+                "主要" if attrs.get("is_major") else "次要",
+                f"第 {tier.get('tier')} 层",
+                where,
+                " / ".join(matched),
+            ])
+
+    lines = [f"### 万神殿：{len(found)} 位神祇的神力里含「{q}」", ""]
+    lines += _table(
+        ["神祇", "类别", "层", "怎么拿到", "词缀原文"],
+        rows, len(rows),
+        "用 kb_search 查某位神祇的完整各层神力",
+    )
+    lines += [
+        "",
+        "> 万神殿神力分**主要**与**次要**两类。这里列出的是全部命中的神力，"
+        "不代表它们可以同时生效——启用规则本身未采集（见覆盖声明）。",
+    ]
+    return ChannelHit(
+        key="pantheon", label_zh="万神殿神力", total=len(found),
+        title=f"「{q}」的万神殿渠道（{len(found)} 位神祇）",
+        url=found[0][0]["url"] or "https://poedb.tw/cn/Pantheon",
+        text="\n".join(lines),
+    )
+
+
 # ── 注册。顺序即呈现顺序：玩家最常想到的渠道在前 ──────────────────
 
 register(ChannelSpec(
@@ -296,6 +349,10 @@ register(ChannelSpec(
         caveat="Atlas 天赋作用于**地图产出**（掉落、怪物、机制），"
                "不是角色自身属性；不要与角色天赋树混为一谈",
     ),
+))
+register(ChannelSpec(
+    key="pantheon", label_zh="万神殿神力", domain_key="pantheon",
+    scan=_scan_pantheon,
 ))
 
 

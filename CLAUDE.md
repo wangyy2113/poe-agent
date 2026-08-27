@@ -113,13 +113,14 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 .venv/bin/python scripts/import_pob_bases.py      # 底材，18 个装备类别（--dry-run 先清点）
 .venv/bin/python scripts/import_pob_skills.py     # 技能石与辅助宝石（中文名取自 POEDB 清单页，缺的再查详情页）
 .venv/bin/python scripts/import_pob_spectres.py   # 幽魂抗性与建模系数，并与 POEDB 侧对账
+.venv/bin/python scripts/import_pantheon.py       # 万神殿（PoB 出结构 × POEDB 逐神页出中文，--dry-run 只对账）
 .venv/bin/python scripts/verify_pob_mods.py       # 与 POEDB 对账
 ```
 
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 1143 项，秒级
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 1170 项，秒级
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选
@@ -136,7 +137,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 .venv/bin/python scripts/eval_run.py --record        # 重录真实响应（**要凭证、烧 token**）
 ```
 
-黄金问答集是 `tests/golden/questions.yaml`（118 条，六类），基线与全部结论在
+黄金问答集是 `tests/golden/questions.yaml`（122 条，六类），基线与全部结论在
 `tests/golden/BASELINE.md`——**动闸门前先读它**，里面记了多个已修缺陷与三条已知未修边界，
 以及两次「测量本身写错」的教训。
 
@@ -228,8 +229,8 @@ POST /chat[/stream]  api/chat.py（只做校验与编排调用）
   属性需求至今没有可核对的真值来源，所以整维仍未采集，并明确划进 `partial_note`。
   也**不留空列**：留了下一个人会以为它待填，然后把乘数当伤害写进去。
 
-本机 `data/poe.db` 现状（`GET /healthz` 与 `/admin/stats` 可查）：`entity` 5207、
-`mod_affix` 93897、`pob_mod` 25487、`chunk` 18457、`alias` 8126、`game_constant` 543、
+本机 `data/poe.db` 现状（`GET /healthz` 与 `/admin/stats` 可查）：`entity` 5219、
+`mod_affix` 93897、`pob_mod` 25487、`chunk` 18469、`alias` 8170、`game_constant` 543、
 `craft_bench_recipe` 783、`pob_base_item` **1022**（18 个装备类别，PoB × POEDB 逐条桥接，
 覆盖 PoB 侧 96.1%；未桥接的 41 条已按类别登记在台账）、`source_conflict` **545**（`mod_review` 254 + `unique_review` **229** + `spectre_review` 43
 + `spectre` **8** + `gem_review` **8** + `tree_review` 3）。
@@ -365,6 +366,33 @@ POEDB 页面仍是旧版」：`号召` PoB 侧是 `ConvocationNew`（各级需�
 与堆叠上限是两回事，混一起会把「最多放几个」答成 20）。那一页有三个物品类，
 只收 `MapFragment`；4 条亡者之城包与 1 条孵化器按物品类登记进台账。
 卡片解析与通货共用 `kb/sources/poedb_cards.py`（两页结构逐字相同），分开的只是表与域。
+
+`pantheon_soul` **32** 层神力（12 位神祇、41 条词缀）——本库**唯一一张双源合成表**：
+PoB `Data/Pantheons.lua` 出结构、英文名、数值与 GGG stat id，POEDB 逐神页
+`/cn/Soul_of_<英文名>` 出中文名、中文词缀、**抓获的头目与地图**、以及基础神力来自
+哪一章的哪个任务。所以两侧溯源都留（`url`/`content_hash`/`fetched_at` + `source_commit`）。
+
+这个域从第十七轮起挂着一条**错的**结论：「缺的是**来源**而不是抽取器」。
+`/cn/Pantheon` 确实只有机制说明散文（那半句是对的），但逐神页一直都在，
+**而且这条 spec 自己就写着 `pob_files=("Data/Pantheons.lua",)`**——
+`pob_files` 至今没有任何运行时消费者，纯文档字段，所以没人回头看它。
+**停在一页上就下「缺来源」的结论，与第三十二轮宝石那次是同一个错。**
+
+两个必须记住的坑：
+
+- **中文词缀与 stat id 不逐项对应，禁止 zip。** 同一层里页面正文的顺序与 PoB
+  不一致（艾贝拉斯第二层两侧正好相反）；按数值配也不行——同一层可能两条值相同
+  （月影女神第一层两条都是布尔 1、尤格尔第一层两条都是 50），而且 **PoB 的 `value`
+  是 stat 原生单位**（图克哈玛第二层存 `life_regeneration_rate_per_minute_%` = 120，
+  页面显示每秒 2%）。所以两侧并列存放，对账只在 `(stat_id, value)` 这一维上做
+  （两侧口径一致，实测 **41/41** 全对）。
+- **卡片上刻意不写「同时只能开一主一次」。** 那句在 `/cn/Pantheon` 的散文里，
+  不在卡片引用的逐神页上；写上去就是把断言挂到不含它的引用下。
+  该维度明确划进 `partial_note`，`gap_pantheon_switch_rule` 钉住它仍然拒答。
+
+桥接键是 POEDB Attr 表的 `ID`（逐字等于 Lua 表键），零多解。slug 由英文名推出，
+**推错时 POEDB 给的是别的条目而不是 404**，所以必须由页面的 `ID` 与 `Name` 两道判据
+自证（12/12 全过，其中 10 个另有 Quest 页链接独立佐证）。
 
 `poedb_map` **159** 张地图（等阶——只有 110 张有，梦魇/传奇等特殊地图页面未给；头目、
 额外目标、掉落的命运卡、打完头目解锁的工艺台配方，以及**异界图鉴上相邻的地图**，159 张全有）。
