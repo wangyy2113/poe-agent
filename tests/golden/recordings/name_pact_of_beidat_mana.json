@@ -1,0 +1,132 @@
+{
+  "format_version": 1,
+  "case_id": "name_pact_of_beidat_mana",
+  "query": "贝达特契约 1 级消耗多少魔力",
+  "recorded_at": "2026-08-27T19:17:19+08:00",
+  "model": "glm-5.2",
+  "tokens": {
+    "prompt": 15081,
+    "output": 106,
+    "reasoning": 75,
+    "total": 15187
+  },
+  "tool_calls": [
+    "kb_search"
+  ],
+  "evidence_gap": false,
+  "out_of_scope": false,
+  "precision_route": "",
+  "gap_answer": "",
+  "final_answer": "贝达特契约（Pact of Beidat）1 级消耗 **16 魔力**[[E1]]。\n\n> **括号内的百分比是该档在同组内的生成权重占比**，不等于任何通货或具体工艺的一次使用成功率，也不等于期望消耗。\n\n> 检索以降级通道完成（alias, fts）：向量检索与重排未启用（网关无 embedding 模型），当前走 BM25 + 实体精确匹配",
+  "blocked_claims": 0,
+  "elapsed_ms": 3152,
+  "evidence_fingerprint": "sha256:a6b83acb8c2e77134238263f467e8646",
+  "_warning": "raw_answer 是未过出口闸门的模型原文，含可能无据的断言，不得当作事实引用",
+  "raw_answer": "贝达特契约（Pact of Beidat）1 级消耗 **16 魔力**[[E1]]。",
+  "evidence": [
+    {
+      "label": "E1",
+      "chunk_id": "skill:Pact_of_Beidat#0#91fa4d196c47d4b6",
+      "entity_id": "skill:Pact_of_Beidat",
+      "title": "贝达特契约（Pact of Beidat）",
+      "url": "https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/other.lua",
+      "source": "Path of Building",
+      "source_priority": 2,
+      "text": "# 贝达特契约（Pact of Beidat）\n类型：技能石 ｜ 白色（无属性需求）\n英文标签：Exceptional, Projectile, Chaining, AoE, Spell, Pact\n施放时间 0.8 秒 ｜ 自然最高 20 级\n\n- 1 级：需角色 24 级，消耗 16 魔力，冷却 4 秒\n- 20 级（自然最高）：需角色 70 级，消耗 33 魔力，冷却 4 秒\n- 40 级（PoB 数据上限，需腐化或 +等级）：需角色 100 级，消耗 44 魔力，冷却 4 秒\n\n**效果文本（POEDB 逐级表）**\n- 来自强化技能的光束额外连锁 4 次（1 级 4｜20 级 6）\n- 强化技能额外发射 4 枚投射物强化技能以环形发射投射物（1 级 4｜20 级 6）\n- 强化技能还会以螺旋方式影响目标区域周围的 5 个额外区域（1 级 5｜20 级 8）\n- 强化技能的击中与异常状态伤害总增 16%（1 级 16｜20 级 35）\n\nPoB 英文说明：Cast a pact, Empowering non-channelling spells that either fire projectiles, apply an effect to an area around a targeted location or fire chaining beams, causing them to deal more damage and have enhanced coverage. However, using this skill also burdens you with an Affliction.\n\n来源：Path of Building → Data/Skills/other.lua\nhttps://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/other.lua\n中文名对照：https://poedb.tw/cn/Pact_of_Beidat",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E2",
+      "chunk_id": "atlas_passive:Beidat_Follower_Chance_b9ed7f8ed7#9957e5ca6fc4d685",
+      "entity_id": "atlas_passive:Beidat_Follower_Chance_b9ed7f8ed7",
+      "title": "普通天赋·贝达特追随者几率（Beidat Follower Chance）",
+      "url": "https://poedb.tw/cn/atlas-skill-tree/",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 普通天赋·贝达特追随者几率（Beidat Follower Chance）\n普通天赋 ｜ Atlas 天赋树 3.29\n\n- 你地图中的超越恶魔追随贝达特的几率提高 20%\n\n来源：POEDB → Atlas 天赋树 · 贝达特追随者几率（Beidat Follower Chance）\nhttps://poedb.tw/cn/atlas-skill-tree/",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E3",
+      "chunk_id": "atlas_passive:Pale_Clarion_2e68484947#394675db905999e9",
+      "entity_id": "atlas_passive:Pale_Clarion_2e68484947",
+      "title": "核心天赋·苍白呼号（Pale Clarion）",
+      "url": "https://poedb.tw/cn/atlas-skill-tree/",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 核心天赋·苍白呼号（Pale Clarion）\n核心天赋 ｜ Atlas 天赋树 3.29\n\n- 你地图中的超越恶魔追随贝达特的几率提高 100%\n- 从你地图中追随贝达特的超越恶魔处\n  获得的基础通货物品总增 30%\n\n> （所有非赛季内容掉落的通货物品都属于基础通货物品）\n\n来源：POEDB → Atlas 天赋树 · 苍白呼号（Pale Clarion）\nhttps://poedb.tw/cn/atlas-skill-tree/",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E4",
+      "chunk_id": "mod_ladder:Minor_Idol:MapRelicBeyondIncreasedPaleFactionChance#82ef19a0903fd7b7",
+      "entity_id": "mod_ladder:Minor_Idol:MapRelicBeyondIncreasedPaleFactionChance",
+      "title": "小型雕像 · MapRelicBeyondIncreasedPaleFactionChance",
+      "url": "https://poedb.tw/cn/Minor_Idol#ModifiersCalc",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 小型雕像 · MapRelicBeyondIncreasedPaleFactionChance\n底材类别：小型雕像 ｜ 词缀组：MapRelicBeyondIncreasedPaleFactionChance ｜ 类型：后缀 ｜ 来源渠道：1 个\n\n本词缀组在该底材上共 1 条，来自 1 个来源：Base。\n互斥规则：与本组（MapRelicBeyondIncreasedPaleFactionChance）有相同词缀组的其他词缀不能同时存在于一件装备上。\n\n## Base · 后缀 · 1 条\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/1 | 天灾之 | 你地图中的超越恶魔追随贝达特的几率提高 (35-45)% | 68 | 333（0.8992%） |\n\n置信度说明：\n- T 级按 POEDB 的算法推导——在同一来源类别与词缀组内，把物品等级去重后降序排名，物品等级最高者为 T1（算法已复刻并通过不变量校验）\n\n来源：POEDB → 小型雕像 · MapRelicBeyondIncreasedPaleFactionChance\nhttps://poedb.tw/cn/Minor_Idol#ModifiersCalc",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E5",
+      "chunk_id": "mod_ladder:Burial_Idol:MapRelicBeyondMorePaleFactionCurrencyQuantity#492f456ce7e50cc9",
+      "entity_id": "mod_ladder:Burial_Idol:MapRelicBeyondMorePaleFactionCurrencyQuantity",
+      "title": "埋葬雕像 · MapRelicBeyondMorePaleFactionCurrencyQuantity",
+      "url": "https://poedb.tw/cn/Burial_Idol#ModifiersCalc",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 埋葬雕像 · MapRelicBeyondMorePaleFactionCurrencyQuantity\n底材类别：埋葬雕像 ｜ 词缀组：MapRelicBeyondMorePaleFactionCurrencyQuantity ｜ 类型：后缀 ｜ 来源渠道：1 个\n\n本词缀组在该底材上共 1 条，来自 1 个来源：Base。\n互斥规则：与本组（MapRelicBeyondMorePaleFactionCurrencyQuantity）有相同词缀组的其他词缀不能同时存在于一件装备上。\n\n## Base · 后缀 · 1 条\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/1 | 天灾之 | 从你地图中追随贝达特的超越恶魔处 / 获得的基础通货物品总增 (20-25)% | 68 | 150（0.3692%） |\n\n置信度说明：\n- T 级按 POEDB 的算法推导——在同一来源类别与词缀组内，把物品等级去重后降序排名，物品等级最高者为 T1（算法已复刻并通过不变量校验）\n\n来源：POEDB → 埋葬雕像 · MapRelicBeyondMorePaleFactionCurrencyQuantity\nhttps://poedb.tw/cn/Burial_Idol#ModifiersCalc",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E6",
+      "chunk_id": "mod_ladder:Totemic_Idol:MapRelicBeyondMorePaleFactionCurrencyQuantity#37955897c54c8b72",
+      "entity_id": "mod_ladder:Totemic_Idol:MapRelicBeyondMorePaleFactionCurrencyQuantity",
+      "title": "图腾雕像 · MapRelicBeyondMorePaleFactionCurrencyQuantity",
+      "url": "https://poedb.tw/cn/Totemic_Idol#ModifiersCalc",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 图腾雕像 · MapRelicBeyondMorePaleFactionCurrencyQuantity\n底材类别：图腾雕像 ｜ 词缀组：MapRelicBeyondMorePaleFactionCurrencyQuantity ｜ 类型：后缀 ｜ 来源渠道：1 个\n\n本词缀组在该底材上共 1 条，来自 1 个来源：Base。\n互斥规则：与本组（MapRelicBeyondMorePaleFactionCurrencyQuantity）有相同词缀组的其他词缀不能同时存在于一件装备上。\n\n## Base · 后缀 · 1 条\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/1 | 天灾之 | 从你地图中追随贝达特的超越恶魔处 / 获得的基础通货物品总增 (20-25)% | 68 | 150（0.3692%） |\n\n置信度说明：\n- T 级按 POEDB 的算法推导——在同一来源类别与词缀组内，把物品等级去重后降序排名，物品等级最高者为 T1（算法已复刻并通过不变量校验）\n\n来源：POEDB → 图腾雕像 · MapRelicBeyondMorePaleFactionCurrencyQuantity\nhttps://poedb.tw/cn/Totemic_Idol#ModifiersCalc",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E7",
+      "chunk_id": "skill:Pact_of_Lycia#0#5e23b4167fbaf5b0",
+      "entity_id": "skill:Pact_of_Lycia",
+      "title": "莉西娅契约（Pact of Lycia）",
+      "url": "https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/other.lua",
+      "source": "Path of Building",
+      "source_priority": 2,
+      "text": "# 莉西娅契约（Pact of Lycia）\n类型：技能石 ｜ 白色（无属性需求）\n英文标签：Exceptional, Channelling, Spell, Pact, Lightning, AoE, Trigger\n施放时间 0.8 秒 ｜ 自然最高 20 级\n\n- 1 级：需角色 24 级，消耗 16 魔力，冷却 4 秒\n- 20 级（自然最高）：需角色 70 级，消耗 33 魔力，冷却 4 秒\n- 40 级（PoB 数据上限，需腐化或 +等级）：需角色 100 级，消耗 44 魔力，冷却 4 秒\n\n**效果文本（POEDB 逐级表）**\n- 造成 8 - 144 闪电伤害（1 级 8, 144｜20 级 130, 2467）\n\nPoB 英文说明：Cast a pact, Empowering the next channelling spells you cast yourself but burdening you with an Affliction. Empowered spells deal more damage and periodically trigger lightning bolts while channelling.\n\n来源：Path of Building → Data/Skills/other.lua\nhttps://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/other.lua\n中文名对照：https://poedb.tw/cn/Pact_of_Lycia",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E8",
+      "chunk_id": "skill:Pact_of_K'Tash#0#76d8feb4d73497c4",
+      "entity_id": "skill:Pact_of_K'Tash",
+      "title": "科塔席契约（Pact of K'Tash）",
+      "url": "https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/other.lua",
+      "source": "Path of Building",
+      "source_priority": 2,
+      "text": "# 科塔席契约（Pact of K'Tash）\n类型：技能石 ｜ 白色（无属性需求）\n英文标签：Exceptional, Spell, Pact\n施放时间 0.8 秒 ｜ 自然最高 20 级\n\n- 1 级：需角色 24 级，消耗 16 魔力，冷却 6 秒\n- 20 级（自然最高）：需角色 70 级，消耗 33 魔力，冷却 6 秒\n- 40 级（PoB 数据上限，需腐化或 +等级）：需角色 100 级，消耗 44 魔力，冷却 6 秒\n\n**效果文本（POEDB 逐级表）**\n- 强化技能造成的伤害总增 10%（1 级 10｜20 级 29）\n\nPoB 英文说明：Cast a pact, Empowering your damaging Vaal spells but burdening you with an Affliction. Empowered Vaal spells deal more damage, have less soul gain prevention duration and regain consumed souls on use.\n\n来源：Path of Building → Data/Skills/other.lua\nhttps://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/other.lua\n中文名对照：https://poedb.tw/cn/Pact_of_K'Tash",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    }
+  ]
+}

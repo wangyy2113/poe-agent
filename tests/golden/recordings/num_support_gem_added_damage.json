@@ -1,0 +1,132 @@
+{
+  "format_version": 1,
+  "case_id": "num_support_gem_added_damage",
+  "query": "附加冰霜伤害辅助 20 级加多少冰霜伤害",
+  "recorded_at": "2026-08-27T19:19:31+08:00",
+  "model": "glm-5.2",
+  "tokens": {
+    "prompt": 16690,
+    "output": 237,
+    "reasoning": 105,
+    "total": 16927
+  },
+  "tool_calls": [
+    "kb_search"
+  ],
+  "evidence_gap": false,
+  "out_of_scope": false,
+  "precision_route": "",
+  "gap_answer": "",
+  "final_answer": "附加冰霜伤害(辅)（Added Cold Damage）20 级时，被辅助技能附加 **152 - 228** 基础冰霜伤害[[E2]]。\n\n〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕- 20 级是自然最高级，需角色 70 级、敏捷 111，消耗与保留倍率 120%[[E2]]。\n- 对比其强辅版本「附加冰霜伤害（强辅）」，5 级（自然最高）附加 188 - 282 基础冰霜伤害[[E3]]。\n\n> **括号内的百分比是该档在同组内的生成权重占比**，不等于任何通货或具体工艺的一次使用成功率，也不等于期望消耗。\n\n> 检索以降级通道完成（alias, fts）：向量检索与重排未启用（网关无 embedding 模型），当前走 BM25 + 实体精确匹配",
+  "blocked_claims": 1,
+  "elapsed_ms": 5172,
+  "evidence_fingerprint": "sha256:253750e2a7d6ffe624df95ae0058eae9",
+  "_warning": "raw_answer 是未过出口闸门的模型原文，含可能无据的断言，不得当作事实引用",
+  "raw_answer": "附加冰霜伤害(辅)（Added Cold Damage）20 级时，被辅助技能附加 **152 - 228** 基础冰霜伤害[[E2]]。\n\n补充几点同一来源的上下文：\n\n- 20 级是自然最高级，需角色 70 级、敏捷 111，消耗与保留倍率 120%[[E2]]。\n- 对比其强辅版本「附加冰霜伤害（强辅）」，5 级（自然最高）附加 188 - 282 基础冰霜伤害[[E3]]。",
+  "evidence": [
+    {
+      "label": "E1",
+      "chunk_id": "ascendancy:Cold_Damage_0e7824352f#181b282ff2dbbbc3",
+      "entity_id": "ascendancy:Cold_Damage_0e7824352f",
+      "title": "升华节点·冰霜伤害（Cold Damage）",
+      "url": "https://poedb.tw/cn/passive-skill-tree/",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 升华节点·冰霜伤害（Cold Damage）\n升华节点 ｜ 天赋树 3.29 ｜ 树上 2 处（同名同效，可分别点取）\n\n- 冰霜伤害提高 25%\n\n来源：POEDB → 天赋树 · 冰霜伤害（Cold Damage）\nhttps://poedb.tw/cn/passive-skill-tree/",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E2",
+      "chunk_id": "support_gem:Added_Cold_Damage_Support#0#4e0871c75205d8b5",
+      "entity_id": "support_gem:Added_Cold_Damage_Support",
+      "title": "附加冰霜伤害(辅)（Added Cold Damage）",
+      "url": "https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/sup_dex.lua",
+      "source": "Path of Building",
+      "source_priority": 2,
+      "text": "# 附加冰霜伤害(辅)（Added Cold Damage）\n类型：辅助宝石 ｜ 绿色（敏捷）\n标签：冰霜、辅助\n英文标签：Cold, Support\n自然最高 20 级\n\n- 1 级：需角色 8 级，属性需求 敏捷 18，消耗与保留倍率 120%\n- 20 级（自然最高）：需角色 70 级，属性需求 敏捷 111，消耗与保留倍率 120%\n- 40 级（PoB 数据上限，需腐化或 +等级）：需角色 100 级，消耗与保留倍率 120%\n\n**效果文本（POEDB 逐级表）**\n- 被辅助技能附加 4 - 6 基础冰霜伤害（1 级 4, 6｜20 级 152, 228）\n\nPoB 英文说明：Supports any skill that hits enemies.\n\n来源：Path of Building → Data/Skills/sup_dex.lua\nhttps://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/sup_dex.lua\n中文名对照：https://poedb.tw/cn/Added_Cold_Damage_Support",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E3",
+      "chunk_id": "support_gem:Awakened_Added_Cold_Damage_Support#0#f2e9e76d74778c4a",
+      "entity_id": "support_gem:Awakened_Added_Cold_Damage_Support",
+      "title": "附加冰霜伤害（强辅）（Awakened Added Cold Damage）",
+      "url": "https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/sup_dex.lua",
+      "source": "Path of Building",
+      "source_priority": 2,
+      "text": "# 附加冰霜伤害（强辅）（Awakened Added Cold Damage）\n类型：辅助宝石 ｜ 绿色（敏捷）\n标签：冰霜、辅助\n英文标签：Cold, Support\n自然最高 5 级\n\n- 1 级：需角色 72 级，属性需求 敏捷 114，消耗与保留倍率 120%\n- 5 级（自然最高）：需角色 80 级，属性需求 敏捷 126，消耗与保留倍率 120%\n- 20 级（PoB 数据上限，需腐化或 +等级）：需角色 100 级，属性需求 敏捷 156，消耗与保留倍率 120%\n\n**效果文本（POEDB 逐级表）**\n- 被辅助技能附加 165 - 248 基础冰霜伤害（1 级 165, 248｜5 级 188, 282）\n- 被辅助的冰霜主动技能石等级 #（1 级 0｜5 级 1）\n\nPoB 英文说明：Supports any skill that hits enemies.\n\n来源：Path of Building → Data/Skills/sup_dex.lua\nhttps://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/sup_dex.lua\n中文名对照：https://poedb.tw/cn/Awakened_Added_Cold_Damage_Support",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E4",
+      "chunk_id": "support_gem:Ice_Bite_Support#0#c4e39b95450d2289",
+      "entity_id": "support_gem:Ice_Bite_Support",
+      "title": "霜咬(辅)（Ice Bite）",
+      "url": "https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/sup_dex.lua",
+      "source": "Path of Building",
+      "source_priority": 2,
+      "text": "# 霜咬(辅)（Ice Bite）\n类型：辅助宝石 ｜ 绿色（敏捷）\n标签：冰霜、辅助\n英文标签：Cold, Support\n自然最高 20 级\n\n- 1 级：需角色 31 级，属性需求 敏捷 52，消耗与保留倍率 120%\n- 20 级（自然最高）：需角色 70 级，属性需求 敏捷 111，消耗与保留倍率 120%\n- 40 级（PoB 数据上限，需腐化或 +等级）：需角色 100 级，消耗与保留倍率 120%\n\n**效果文本（POEDB 逐级表）**\n- 每个狂怒球会使被辅助技能附加 2 - 3 基础冰霜伤害（1 级 2, 3｜20 级 15, 23）\n- 被辅助技能附加 8 - 12 基础冰霜伤害（1 级 8, 12｜20 级 69, 103）\n- 被辅助技能有 50% 的几率在击败冻结的敌人时获得一个狂怒球（1 级 50｜20 级 69）\n\nPoB 英文说明：Supports any skill you use to hit enemies yourself. Cannot support skills used by totems, traps, or mines.\n\n来源：Path of Building → Data/Skills/sup_dex.lua\nhttps://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/sup_dex.lua\n中文名对照：https://poedb.tw/cn/Ice_Bite_Support",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E5",
+      "chunk_id": "mod_ladder:Runic_Gauntlets:Supported#11ce5365889772f8",
+      "entity_id": "mod_ladder:Runic_Gauntlets:Supported",
+      "title": "符文手甲 · Supported",
+      "url": "https://poedb.tw/cn/Runic_Gauntlets#ModifiersCalc",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 符文手甲 · Supported\n底材类别：符文手甲 ｜ 词缀组：Supported ｜ 类型：后缀/其他/前缀 ｜ 来源渠道：3 个\n标签：伤害、元素、火焰、宝石、攻击、施法、速度、魔力\n\n本词缀组在该底材上共 9 条，来自 3 个来源：精华、异度天灾 有利、塑界者。\n互斥规则：与本组（Supported）有相同词缀组的其他词缀不能同时存在于一件装备上。\n\n## 精华 · 后缀 · 3 条\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T8/1 | 浮夸精华 | 插入的技能石附加 175 到 225 点火焰伤害 | 63 | 无数据 |\n| T8/1 | 错乱精华 | 此物品上的技能石总攻击和施法速度总增 16% | 63 | 无数据 |\n| T8/1 | 谵妄精华 | 此物品上的技能石持续伤害总增 30% | 63 | 无数据 |\n\n> 本来源无生成权重数据，**不能据此给出成功率或概率**。\n\n## 异度天灾 有利 · 其他 · 4 档\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/3 | HellscapeUpsideSocketedGemsAreSupportedByLevel20AddedColdDamage | 此物品上的技能石受到 20 级的 附加冰霜伤害 辅助 | 68 | 200（0.3185%） |\n| T1/3 | HellscapeUpsideSocketedGemsAreSupportedByLevel22AddedColdDamage | 此物品上的技能石受到 22 级的 附加冰霜伤害 辅助 | 68 | 200（0.3185%） |\n| T2/3 | HellscapeUpsideSocketedGemsAreSupportedByLevel10AddedColdDamage | 此物品上的技能石受到 10 级的 附加冰霜伤害 辅助 | 45 | 200（0.3185%） |\n| T3/3 | HellscapeUpsideSocketedGemsAreSupportedByLevel1AddedColdDamage_ | 此物品上的技能石受到 1 级的 附加冰霜伤害 辅助 | 1 | 200（0.3185%） |\n\n## 塑界者 · 前缀 · 2 档\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/2 | 尊崇塑界者的 | 此物品上的技能石受到 20 级的 魔力偷取 辅助 / 偷取的每秒最大魔力总恢复量提高 (20-30)% | 78",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E6",
+      "chunk_id": "mod_ladder:Gloves_dex:Supported#5b53ad2d5a59e6ea",
+      "entity_id": "mod_ladder:Gloves_dex:Supported",
+      "title": "手套（敏捷） · Supported",
+      "url": "https://poedb.tw/cn/Gloves_dex#ModifiersCalc",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 手套（敏捷） · Supported\n底材类别：手套（敏捷） ｜ 词缀组：Supported ｜ 类型：后缀/其他/前缀 ｜ 来源渠道：3 个\n标签：伤害、元素、火焰、宝石、攻击、施法、速度、魔力\n\n本词缀组在该底材上共 9 条，来自 3 个来源：精华、异度天灾 有利、塑界者。\n互斥规则：与本组（Supported）有相同词缀组的其他词缀不能同时存在于一件装备上。\n\n## 精华 · 后缀 · 3 条\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T8/1 | 浮夸精华 | 插入的技能石附加 175 到 225 点火焰伤害 | 63 | 无数据 |\n| T8/1 | 错乱精华 | 此物品上的技能石总攻击和施法速度总增 16% | 63 | 无数据 |\n| T8/1 | 谵妄精华 | 此物品上的技能石持续伤害总增 30% | 63 | 无数据 |\n\n> 本来源无生成权重数据，**不能据此给出成功率或概率**。\n\n## 异度天灾 有利 · 其他 · 4 档\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/3 | HellscapeUpsideSocketedGemsAreSupportedByLevel20AddedColdDamage | 此物品上的技能石受到 20 级的 附加冰霜伤害 辅助 | 68 | 200（0.2994%） |\n| T1/3 | HellscapeUpsideSocketedGemsAreSupportedByLevel22AddedColdDamage | 此物品上的技能石受到 22 级的 附加冰霜伤害 辅助 | 68 | 200（0.2994%） |\n| T2/3 | HellscapeUpsideSocketedGemsAreSupportedByLevel10AddedColdDamage | 此物品上的技能石受到 10 级的 附加冰霜伤害 辅助 | 45 | 200（0.2994%） |\n| T3/3 | HellscapeUpsideSocketedGemsAreSupportedByLevel1AddedColdDamage_ | 此物品上的技能石受到 1 级的 附加冰霜伤害 辅助 | 1 | 200（0.2994%） |\n\n## 塑界者 · 前缀 · 2 档\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/2 | 尊崇塑界者的 | 此物品上的技能石受到 20 级的 魔力偷取 辅助 / 偷取的每秒最大魔力总恢复量提高 (20-30)% ",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E7",
+      "chunk_id": "mod_ladder:Gloves_int:Supported#e904850b7d4864b2",
+      "entity_id": "mod_ladder:Gloves_int:Supported",
+      "title": "手套（智慧） · Supported",
+      "url": "https://poedb.tw/cn/Gloves_int#ModifiersCalc",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 手套（智慧） · Supported\n底材类别：手套（智慧） ｜ 词缀组：Supported ｜ 类型：后缀/其他/前缀 ｜ 来源渠道：3 个\n标签：伤害、元素、火焰、宝石、攻击、施法、速度、魔力\n\n本词缀组在该底材上共 9 条，来自 3 个来源：精华、异度天灾 有利、塑界者。\n互斥规则：与本组（Supported）有相同词缀组的其他词缀不能同时存在于一件装备上。\n\n## 精华 · 后缀 · 3 条\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T8/1 | 浮夸精华 | 插入的技能石附加 175 到 225 点火焰伤害 | 63 | 无数据 |\n| T8/1 | 错乱精华 | 此物品上的技能石总攻击和施法速度总增 16% | 63 | 无数据 |\n| T8/1 | 谵妄精华 | 此物品上的技能石持续伤害总增 30% | 63 | 无数据 |\n\n> 本来源无生成权重数据，**不能据此给出成功率或概率**。\n\n## 异度天灾 有利 · 其他 · 4 档\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/3 | HellscapeUpsideSocketedGemsAreSupportedByLevel20AddedColdDamage | 此物品上的技能石受到 20 级的 附加冰霜伤害 辅助 | 68 | 200（0.2786%） |\n| T1/3 | HellscapeUpsideSocketedGemsAreSupportedByLevel22AddedColdDamage | 此物品上的技能石受到 22 级的 附加冰霜伤害 辅助 | 68 | 200（0.2786%） |\n| T2/3 | HellscapeUpsideSocketedGemsAreSupportedByLevel10AddedColdDamage | 此物品上的技能石受到 10 级的 附加冰霜伤害 辅助 | 45 | 200（0.2786%） |\n| T3/3 | HellscapeUpsideSocketedGemsAreSupportedByLevel1AddedColdDamage_ | 此物品上的技能石受到 1 级的 附加冰霜伤害 辅助 | 1 | 200（0.2786%） |\n\n## 塑界者 · 前缀 · 2 档\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/2 | 尊崇塑界者的 | 此物品上的技能石受到 20 级的 魔力偷取 辅助 / 偷取的每秒最大魔力总恢复量提高 (20-30)% ",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E8",
+      "chunk_id": "mod_ladder:Gloves_str:Supported#328f9b306057e9c6",
+      "entity_id": "mod_ladder:Gloves_str:Supported",
+      "title": "手套（力量） · Supported",
+      "url": "https://poedb.tw/cn/Gloves_str#ModifiersCalc",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 手套（力量） · Supported\n底材类别：手套（力量） ｜ 词缀组：Supported ｜ 类型：后缀/其他/前缀 ｜ 来源渠道：3 个\n标签：伤害、元素、火焰、宝石、攻击、施法、速度、魔力\n\n本词缀组在该底材上共 9 条，来自 3 个来源：精华、异度天灾 有利、塑界者。\n互斥规则：与本组（Supported）有相同词缀组的其他词缀不能同时存在于一件装备上。\n\n## 精华 · 后缀 · 3 条\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T8/1 | 浮夸精华 | 插入的技能石附加 175 到 225 点火焰伤害 | 63 | 无数据 |\n| T8/1 | 错乱精华 | 此物品上的技能石总攻击和施法速度总增 16% | 63 | 无数据 |\n| T8/1 | 谵妄精华 | 此物品上的技能石持续伤害总增 30% | 63 | 无数据 |\n\n> 本来源无生成权重数据，**不能据此给出成功率或概率**。\n\n## 异度天灾 有利 · 其他 · 4 档\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/3 | HellscapeUpsideSocketedGemsAreSupportedByLevel20AddedColdDamage | 此物品上的技能石受到 20 级的 附加冰霜伤害 辅助 | 68 | 200（0.2786%） |\n| T1/3 | HellscapeUpsideSocketedGemsAreSupportedByLevel22AddedColdDamage | 此物品上的技能石受到 22 级的 附加冰霜伤害 辅助 | 68 | 200（0.2786%） |\n| T2/3 | HellscapeUpsideSocketedGemsAreSupportedByLevel10AddedColdDamage | 此物品上的技能石受到 10 级的 附加冰霜伤害 辅助 | 45 | 200（0.2786%） |\n| T3/3 | HellscapeUpsideSocketedGemsAreSupportedByLevel1AddedColdDamage_ | 此物品上的技能石受到 1 级的 附加冰霜伤害 辅助 | 1 | 200（0.2786%） |\n\n## 塑界者 · 前缀 · 2 档\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/2 | 尊崇塑界者的 | 此物品上的技能石受到 20 级的 魔力偷取 辅助 / 偷取的每秒最大魔力总恢复量提高 (20-30)% ",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    }
+  ]
+}
