@@ -590,8 +590,9 @@ CREATE TABLE IF NOT EXISTS pob_skill_level (
 -- 对账用的 `需求等级`/`消耗` 不再存第二份——同一个数存两处就是两份会分叉的真源
 -- （`pob_mod` 与 `mod_affix` 分表是因为两侧粒度不同，这里不是）。
 --
--- 外键跟着 `pob_skill_gem` 级联：PoB 侧重跑快照时这两张表会被清空，
--- **必须紧接着重跑 `scripts/import_gem_stats.py`**（导入脚本会提醒）。
+-- 外键跟着 `pob_skill_gem` 级联：PoB 侧重跑快照时这三张表会被清空，
+-- **必须紧接着重跑 `scripts/import_gem_stats.py` 与 `scripts/import_gem_quests.py`**
+-- （导入脚本会提醒）。
 -- 让它悄悄留着旧行更糟：宝石重命名或改版之后，效果文本会挂到另一颗宝石上。
 CREATE TABLE IF NOT EXISTS poedb_gem_stat (
     gem_id          TEXT NOT NULL,
@@ -628,6 +629,60 @@ CREATE TABLE IF NOT EXISTS poedb_gem_stat_level (
     url             TEXT NOT NULL CHECK(url <> ''),
     updated_at      TEXT NOT NULL,
     PRIMARY KEY(gem_id, gem_level),
+    FOREIGN KEY(gem_id) REFERENCES pob_skill_gem(gem_id) ON DELETE CASCADE
+);
+
+-- ── 技能石的获取途径（POEDB 详情页的「使命」表，第四十三轮）──
+-- 从第十二轮起「获取途径」一直写在宝石域的未采集里，`kb/coverage.py` 的注释还写着
+-- 「任务奖励与掉落不在任何已缓存页上」。**那句是错的**：第三十二轮为取效果文本
+-- 抓的 820 张详情页里就有这张表（章节 ｜ 使命 ｜ NPC ｜ 角色），
+-- 而 `poedb_gem_page` 自己的 docstring 当时就写着页面上还有「任务奖励」表。
+-- 与万神殿、Boss、宝石效果文本是同一个错误的第四次：**停在一页上就下「缺来源」的结论**。
+--
+-- 2026-09-01 实测：820 颗里 668 颗有表、共 1265 行、零解析错误。
+--
+-- **一行一条途径，`act` 是这一行的事实、不是「使命」的属性。** 实测有 2 行
+-- （熔岩护盾 / 黑色入侵者、斩首（辅）/ 永恒梦魇）的章节与同名使命的其余行不同，
+-- 两条都是商人行。所以**不做「使命 → 章节」归一**——那等于替上游改数据。
+-- （最初假设它 1:1 是**建模者的前提**，页面从没这么说过。）
+--
+-- **没有「掉落来源」列**：另外 152 颗（瓦尔 52、觉醒辅助、契约类）页面上根本没有
+-- 这张表，它们靠掉落，而掉落来源本轮明确未采集。加一列当前管线永远填不上的空列，
+-- 正是 `pob_skill_level` 表注释警告过的坑。
+--
+-- 外键与上面两张表同样级联，重导宝石快照后必须重跑 `scripts/import_gem_quests.py`。
+CREATE TABLE IF NOT EXISTS poedb_gem_quest (
+    gem_id          TEXT NOT NULL,
+    act             INTEGER NOT NULL CHECK(act > 0),
+    quest_zh        TEXT NOT NULL CHECK(quest_zh <> ''),
+    quest_slug      TEXT NOT NULL,
+    -- quest_reward（任务奖励）/ vendor（任务商人）/ box（绝望岩滩的起始箱）。
+    -- 取自 NPC 列图标的 title 而不是单元格文本：起始箱那 21 行单元格是**空的**，
+    -- 按文本判会把七个职业的开局技能静默丢掉。
+    source_kind     TEXT NOT NULL CHECK(source_kind IN ('quest_reward','vendor','box')),
+    -- 商人名。**没有 NPC 时存空串而不是 NULL**：SQLite 允许非 rowid 表的复合主键里
+    -- 出现重复的 NULL（实测：`PRIMARY KEY(a,b)` 下 `('x',NULL)` 能插两次），
+    -- 用 NULL 会让这个主键在任务奖励那 576 行上**完全不起作用**——
+    -- 一个看起来在约束、实际没约束的约束，与那个「从来没生效过」的序号列函数同一类坑。
+    npc_zh          TEXT NOT NULL DEFAULT '',
+    -- 展开去重后的职业 JSON 数组（`全职业` → 七个职业）。
+    classes_json    TEXT NOT NULL CHECK(json_valid(classes_json)),
+    -- 角色列原文，`全职业` 原样留着：用户就是拿这个词问的。
+    classes_raw     TEXT NOT NULL,
+    source          TEXT NOT NULL,
+    source_priority INTEGER NOT NULL,
+    url             TEXT NOT NULL CHECK(url <> ''),
+    fetched_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL,
+    -- 同一颗宝石同一个使命可能既是任务奖励又能向商人买（实测很常见），
+    -- 所以主键必须带上 source_kind 与 npc。
+    --
+    -- 页面同一个键下会出现**两行**（1265 行归并成 1261 行，实测 4 处）：
+    -- 三处是同一批职业换了个顺序（元素要害 / 衰弱 / 时空锁链，正是上游漏了图标
+    -- 又重列一遍的那几行），一处（元素扩散(辅)）两行职业**不相交**。
+    -- 所以归并方式是**按职业取并集**而不是丢掉一行——丢掉就会少掉圣堂武僧。
+    -- `act` 不进主键：实测该键下章节恒唯一（章节只在**不同的**使命行之间才会不同）。
+    PRIMARY KEY(gem_id, quest_slug, source_kind, npc_zh),
     FOREIGN KEY(gem_id) REFERENCES pob_skill_gem(gem_id) ON DELETE CASCADE
 );
 

@@ -270,9 +270,32 @@ def load_poedb_stats(conn) -> dict[str, dict]:  # noqa: ANN001
             "req_str": row["req_str"], "req_dex": row["req_dex"], "req_int": row["req_int"],
             "stat_values": json.loads(row["values_json"] or "{}"),
         }
+    quests: dict[str, list[dict]] = {}
+    for row in conn.execute(
+        "SELECT gem_id, act, quest_zh, quest_slug, source_kind, npc_zh, classes_json, "
+        "classes_raw FROM poedb_gem_quest ORDER BY gem_id, act, quest_zh, source_kind"
+    ):
+        quests.setdefault(row["gem_id"], []).append({
+            "act": int(row["act"]),
+            "quest_zh": row["quest_zh"],
+            "quest_slug": row["quest_slug"],
+            "source_kind": row["source_kind"],
+            "npc_zh": row["npc_zh"] or None,
+            "classes": json.loads(row["classes_json"] or "[]"),
+            "classes_raw": row["classes_raw"],
+        })
+    # 「这一维导没导过」与「这颗宝石没有途径」是两件事。整张表是空的说明
+    # `import_gem_quests.py` 还没跑过，这时**不能**在卡上写「POEDB 详情页没给」
+    # ——那是一句假话。只有表里有行、而这一颗没有，才是那 152 颗的情形。
+    quests_loaded = bool(quests)
     out: dict[str, dict] = {}
-    for gem_id in set(lines) | set(per_level):
-        out[gem_id] = {"stat_lines": lines.get(gem_id, []), "levels": per_level.get(gem_id, {})}
+    for gem_id in set(lines) | set(per_level) | set(quests):
+        out[gem_id] = {
+            "stat_lines": lines.get(gem_id, []),
+            "levels": per_level.get(gem_id, {}),
+            "quests": quests.get(gem_id, []),
+            "quests_loaded": quests_loaded,
+        }
     return out
 
 
@@ -286,6 +309,8 @@ def merge_poedb_stats(entity: Entity, stats: dict | None) -> Entity:
         return entity
     attrs = dict(entity.attributes)
     attrs["stat_lines"] = stats["stat_lines"]
+    attrs["quests"] = stats.get("quests") or []
+    attrs["quests_loaded"] = bool(stats.get("quests_loaded"))
     per_level = stats["levels"]
     levels = []
     for level in attrs.get("levels") or []:
@@ -488,6 +513,7 @@ def main() -> int:
     # 悄悄留着旧行更糟（宝石改版后效果文本会挂到另一颗上），而悄悄删掉不说
     # 会让卡片少一整块内容却没人知道——「入库但没有出口」的镜像版本。
     stats_before = int(conn.execute("SELECT count(*) FROM poedb_gem_stat").fetchone()[0])
+    quests_before = int(conn.execute("SELECT count(*) FROM poedb_gem_quest").fetchone()[0])
     priority = repo.priority(cfg)
     entities = [to_entity(gem, repo, priority) for gem in gems]
     try:
@@ -534,6 +560,10 @@ def main() -> int:
         print(f"[注意] 替换快照时级联清掉了 {stats_before} 条 POEDB 效果文本"
               "（外键约束），卡片上的效果文本与属性需求现在是空的——"
               "请紧接着跑 scripts/import_gem_stats.py 补回来")
+    if quests_before:
+        print(f"[注意] 替换快照时级联清掉了 {quests_before} 行 POEDB 获取途径"
+              "（外键约束），卡片上的获取途径现在是空的——"
+              "请紧接着跑 scripts/import_gem_quests.py 补回来")
     return 0
 
 

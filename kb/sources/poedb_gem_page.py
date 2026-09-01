@@ -232,6 +232,135 @@ def parse_gem_page(html: str, *, poedb_slug: str) -> GemPage | None:
     return None
 
 
+#: 「使命」表的定位判据（第四十三轮）。同样按表头定位而不是按下标——
+#: 这一页上「逐级表」「品质变体」「使命」好几张表并存。
+QUEST_TABLE_HEAD = ("章节", "使命", "NPC", "角色")
+
+#: NPC 列图标的 `title` → 归一后的获取途径。
+#: 三个取值都是 2026-09-01 在 820 张缓存页上实测出来的，不是猜的分类。
+QUEST_SOURCE_KINDS = {
+    "任务奖励": "quest_reward",
+    "任务商人": "vendor",
+    "Box": "box",
+}
+
+#: POE1 的七个职业。`全职业` 要展开成它，否则「女巫能不能拿」这类问题
+#: 在 `全职业` 的行上会答不出来。
+CLASSES = ("野蛮人", "决斗者", "游侠", "暗影", "女巫", "圣堂武僧", "贵族")
+ALL_CLASSES_TOKEN = "全职业"
+
+#: 角色列的分隔符（实测只有这一个）。
+_ROLE_SEP = "·"
+
+
+@dataclass(frozen=True)
+class GemQuestRow:
+    """一条获取途径：某颗宝石在第几章、由哪个使命、以什么方式、给哪些职业。
+
+    **`act` 是这一行的事实，不是「使命」的属性。** 实测 1265 行里有 2 行
+    （熔岩护盾 / 黑色入侵者 / 奈莎、斩首（辅）/ 永恒梦魇）的章节与同名使命的
+    其余行不同，两条都是**商人行**。所以不做「使命 → 章节」归一——
+    那等于替上游改数据。（一开始假设它是 1:1 的是**我的前提**，页面从没这么说过。）
+    """
+
+    act: int
+    quest_zh: str
+    quest_slug: str
+    #: `quest_reward` / `vendor` / `box`
+    source_kind: str
+    #: 商人名；任务奖励与起始箱没有 NPC，为 None。
+    npc_zh: str | None
+    #: 展开后的职业（`全职业` → 七个），去重且保持页面顺序。
+    classes: tuple[str, ...]
+    #: 角色列原文（`全职业` 原样留着——用户问「全职业能拿吗」时要能引用到这个词）。
+    classes_raw: str
+
+
+def _quest_classes(cell: str) -> tuple[tuple[str, ...], str]:
+    """角色列 → (展开去重后的职业, 原文)。
+
+    两件实测出来的事：`全职业` 要展开成七个职业；同一格可能把一个职业写两遍
+    （「能量之刃」是 `暗影·暗影`），所以要去重——不去重会让「哪些职业能拿」
+    数出重复项。
+    """
+    raw = _SPACE_RE.sub(" ", cell).strip()
+    if not raw:
+        return (), ""
+    if ALL_CLASSES_TOKEN in raw:
+        return CLASSES, raw
+    seen: list[str] = []
+    for part in raw.split(_ROLE_SEP):
+        name = part.strip()
+        if name and name not in seen:
+            seen.append(name)
+    return tuple(seen), raw
+
+
+def parse_gem_quests(html: str, *, poedb_slug: str) -> tuple[GemQuestRow, ...]:
+    """解析「使命」表。页面上没有这张表就返回空元组。
+
+    返回空而不是抛异常：实测 820 颗里 **152 颗**（瓦尔 52、觉醒辅助、契约类）
+    页面上根本没有这张表——它们本来就不由任务给，是**数据缺口而非结构错误**，
+    由调用方登记进台账。
+
+    `source_kind` 取自 NPC 列图标的 `title` 而不是单元格文本，理由是实测的两个形态：
+
+    * **起始箱那 21 行 NPC 单元格是空的**（章节 1「绝望岩滩」，七个职业的开局技能
+      火球 / 重击 / 灵体投掷…）。按文本判会把这 21 行静默丢掉。
+    * **4 行上游漏了图标**，但单元格文本仍是「任务奖励」——所以没有图标时回退取文本。
+    """
+    tree = HTMLParser(html)
+    for table in tree.css("table"):
+        headers = [_text(th) for th in table.css("thead th")]
+        if tuple(headers) != QUEST_TABLE_HEAD:
+            continue
+        rows: list[GemQuestRow] = []
+        for row in table.css("tbody tr"):
+            cells = row.css("td")
+            if len(cells) != len(QUEST_TABLE_HEAD):
+                raise GemPageError(
+                    f"{poedb_slug} 的使命表某行有 {len(cells)} 格，"
+                    f"应为 {len(QUEST_TABLE_HEAD)} 格"
+                )
+            act = _int_or_none(_text(cells[0]))
+            if act is None:
+                raise GemPageError(f"{poedb_slug} 的使命表某行章节列不是数字")
+            quest_link = cells[1].css_first("a")
+            quest_zh = _text(cells[1])
+            quest_slug = (
+                (quest_link.attributes.get("href") or "").rsplit("/", 1)[-1]
+                if quest_link is not None
+                else ""
+            )
+            icon = cells[2].css_first("i")
+            title = (icon.attributes.get("title") or "") if icon is not None else ""
+            # 没有图标时回退到单元格文本（实测 4 行）。
+            marker = title or _text(cells[2])
+            kind = QUEST_SOURCE_KINDS.get(marker)
+            if kind is None:
+                raise GemPageError(
+                    f"{poedb_slug} 的使命表出现未知的获取途径标记 {marker!r}，"
+                    "先确认它是任务奖励、商人还是箱子，再决定怎么归一"
+                )
+            npc_link = cells[2].css_first("a")
+            classes, classes_raw = _quest_classes(_text(cells[3]))
+            rows.append(
+                GemQuestRow(
+                    act=act,
+                    quest_zh=quest_zh,
+                    quest_slug=quest_slug,
+                    source_kind=kind,
+                    npc_zh=_text(npc_link) or None if npc_link is not None else None,
+                    classes=classes,
+                    classes_raw=classes_raw,
+                )
+            )
+        if not rows:
+            raise GemPageError(f"{poedb_slug} 的使命表定位到了却没有任何行")
+        return tuple(rows)
+    return ()
+
+
 @dataclass(frozen=True)
 class Mismatch:
     """一处跨来源不一致。写清楚是哪一级、哪一项、两边各是什么。"""

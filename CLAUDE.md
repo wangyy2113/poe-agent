@@ -122,7 +122,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 1228 项，秒级
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 1247 项，秒级
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选
@@ -139,7 +139,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 .venv/bin/python scripts/eval_run.py --record        # 重录真实响应（**要凭证、烧 token**）
 ```
 
-黄金问答集是 `tests/golden/questions.yaml`（130 条，六类），基线与全部结论在
+黄金问答集是 `tests/golden/questions.yaml`（131 条，六类），基线与全部结论在
 `tests/golden/BASELINE.md`——**动闸门前先读它**，里面记了多个已修缺陷与三条已知未修边界，
 以及两次「测量本身写错」的教训。
 
@@ -324,9 +324,45 @@ POEDB 页面仍是旧版」：`号召` PoB 侧是 `ConvocationNew`（各级需�
 
 配套三处出口（缺一处就等于没入库）：卡片加「效果文本」区块与每级「属性需求」、
 `skill_gem_levels` 返回这两维、覆盖声明与 `missing_dimension_hints` 同步删掉
-已经答得出的问法。宝石域现在只剩两个缺口：**DPS 与获取途径**。
-`poedb_gem_stat*` 挂在 `pob_skill_gem` 的外键上级联删除，所以**重导入宝石快照之后
-必须紧接着重跑 `scripts/import_gem_stats.py`**（导入脚本会提醒）。
+已经答得出的问法。
+
+`poedb_gem_quest` **1261** 行获取途径（第四十三轮）：**同一张详情页**上的「使命」表
+（章节 ｜ 使命 ｜ NPC ｜ 角色），全部 820 颗中有表的 **668 颗**、零解析错误。
+这一维从第十二轮起写在「未采集」里，`kb/coverage.py` 的注释还写着
+「任务奖励与掉落不在任何已缓存页上」——**那句是错的**，而且
+`poedb_gem_page` 自己的 docstring 当时就写着页面上还有「任务奖励」表：
+**看见了，走过去了**。这是「停在一页/一个字段上就下缺来源结论」的第四次
+（前三次：万神殿第三十五轮、Boss 第三十八轮、宝石效果文本第三十二轮）。
+
+三条实测判据：
+
+- **起始箱靠图标认，不靠单元格文本**：`box` 那 21 行 NPC 单元格**是空的**
+  （章节 1「绝望岩滩」，七个职业的开局技能火球/女巫、重击/野蛮人、灵体投掷/贵族…）。
+  按文本判会把它们静默丢掉，而那正是「新角色一开始拿什么技能」这个最常见的问题。
+  另有 4 行上游漏了图标、文本仍是「任务奖励」，所以没图标时回退取文本。
+- **`act` 是按行的事实，不是「使命」的属性**：实测 2 行商人行的章节与同名使命的
+  其余行不同。**最初假设它 1:1 是建模者的前提，页面从没这么说过**——
+  不做归一，否则等于替上游改数据。
+- **同键两行取职业并集，不能丢一行**：1265 → 1261 行，4 处里三处是同一批职业
+  换了个顺序，一处（元素扩散(辅)）两行职业**不相交**，丢掉就会少掉圣堂武僧。
+
+边界只挪一格：**掉落来源仍未采集**（另外 152 颗瓦尔 52 / 觉醒辅助 / 契约类页面上
+没有使命表）。那 152 颗的卡片写的是**中性事实**「详情页未给出任务/商人表，
+本库未采集该宝石的获取途径」，**不推断「所以靠掉落」**（与通货那 15 条没有效果文本时
+「留空而不自己补一句」同一条规矩）。成对哨兵是 `gap_skill_gem_drop_source`。
+
+`missing_dimension_hints` 里「掉落」**留着**，而它差点没敢加——理由曾是
+「这个词在唯一装备、通货文本里到处都是」。**那个理由是错的，评测当场量出来**：
+不加时哨兵漏出、加了归零且错误拒答仍是 0。这份判据匹配的是**问句**，
+且只在本域**已被识别**（宝石意图词或别名命中一颗宝石）之后才生效——
+「冈姆的壮志哪里掉落」命中唯一装备，压根走不到这里。
+**判据描述的是「问句形式 + 已识别的域」，不是语料里的词频。**
+
+`poedb_gem_stat*` 与 `poedb_gem_quest` 都挂在 `pob_skill_gem` 的外键上级联删除，
+所以**重导入宝石快照之后必须紧接着重跑 `scripts/import_gem_stats.py`
+与 `scripts/import_gem_quests.py`**（导入脚本会提醒）。
+改卡片渲染同样会让依赖它的录制过期——这一轮实测级联到 **16 条**，当轮重录，
+不留给下一轮（第四十二轮的教训就是那 13 条挂了 7 轮）。
 
 **唯一装备的词缀第三十四轮从详情页补齐了一次。** 入库主源是 `/cn/Unique_item`
 （一页 2.5MB、1342 件全在里面，对站点最友好），而 `verify_against_detail.py` 抽样核对时
