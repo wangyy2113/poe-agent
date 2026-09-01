@@ -133,7 +133,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 1291 项，秒级
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 1301 项，秒级
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选
@@ -197,8 +197,31 @@ POST /chat[/stream]  api/chat.py（只做校验与编排调用）
   成因是夹具是 3.13 而本库是 3.29——**版本偏移，不是缺陷**。
 
 **只接受分享码，不接受链接**：`pobb.in`/`pastebin` 要联网，而抓取入口的
-POE1/POE2 护栏要一并考虑，单独一轮做。**本版只解析、不做需求 8.4 的 16 项分析**，
-返回里 `analysis_done=false` 明说这件事。
+POE1/POE2 护栏要一并考虑，单独一轮做。
+
+**Build 体检报告（第四十九轮）**：`parsers/build_report.py` 按需求 8.4 逐项核对，
+`POST /build` 的 `report` 段返回。核心设计是**只判不算**：
+
+- **值**取自 build 自带的 `PlayerStat` / `Items` / `Tree`（用户提供的数据）；
+- **判据**取自 `game_constant`（`MaxResistCap` 90、`BlockChanceCap` 90…，带 GGG 出处）
+  与 `calc/` 的既有规则，每项写明出处；
+- **缺的标「未知」且 `value` 留空**——需求 8.4.7 的原文是「标注为『未知』**而非填入
+  估计值**」。3.13 夹具上法术压制/EHP/MaxHit/保留四项天然缺失，正好是这条路径的样本。
+
+**为什么不重算**：从 build 的词缀反推「你有多少火抗」要把词缀文本聚合成属性，
+那正是卡住 DPS 的**同一个加成链问题**；做一个会与 PoB 悄悄不一致的部分重算，
+就是「带着引用的错数字」。重算留作后续一轮——那时 `PlayerStat` 正好是现成的对账口径。
+**DPS 只复述你 PoB 的数并注明本库不算**（边界是「本库不算」，不是「不许引用你的数」）。
+
+三条实测判据：
+
+- **「不得遗漏」靠代码保证**：`REQUIREMENT_8_4_ITEMS` 逐字抄需求那 16 项，
+  `uncovered_requirements()` 做差集。**第一版写成 `REQUIRED = len(_CHECKS)`**——
+  那等于「要求的项数 = 我实现了几项」，恒等于自己、永远不会失败，实测它报 18 而需求是 16。
+- **珠宝不在装备 Slot 里**，插在天赋树的 `<Spec><Sockets>` 上（实测 OccVortex：
+  Slot 里一颗都没有、树上插着 3 颗）。按 Slot 名找会得出「没有珠宝」这个错结论。
+- **「没开」不等于「未知」**：万神殿 `None` 是一个确定的事实，要与「这份 build 里
+  没有这项数据」分开说。
 
 ## 模块职责
 

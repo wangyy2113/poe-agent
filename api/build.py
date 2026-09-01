@@ -25,6 +25,7 @@ from pydantic import BaseModel, Field
 
 from api.deps import require_user
 from core import db as dbmod
+from parsers.build_report import build_health_report
 from parsers.pob_build import PobParseError, bridge_gems, decode_share_code, parse_build
 
 logger = logging.getLogger(__name__)
@@ -66,6 +67,17 @@ class ItemOut(BaseModel):
     error: str = ""
 
 
+class CheckOut(BaseModel):
+    key: str
+    label: str
+    value: str = ""
+    known: bool = True
+    missing_reason: str = ""
+    verdict: str = ""
+    basis: str = ""
+    source: str = ""
+
+
 class BuildResponse(BaseModel):
     level: int | None = None
     class_name: str = ""
@@ -79,8 +91,10 @@ class BuildResponse(BaseModel):
     #: **PoB 自己算的快照**，见 `player_stats_note`
     player_stats: dict[str, float] = {}
     player_stats_note: str = ""
-    #: 本版只解析、未做需求 8.4 的分析
-    analysis_done: bool = False
+    #: 需求 8.4 的逐项体检。**只判不算**：值取自 build，判据取自本库常量
+    report: list[CheckOut] = []
+    report_notes: list[str] = []
+    analysis_done: bool = True
     analysis_note: str = ""
     warnings: list[str] = []
 
@@ -91,9 +105,9 @@ _STATS_NOTE = (
     "本库的计算器结论不与它混排。"
 )
 _ANALYSIS_NOTE = (
-    "本版只做解析。需求 8.4 的分析项（DPS、Effective HP、Max Hit、抗性、混沌抗性、"
-    "法术压制、护甲、闪避、格挡、药剂、保留、诅咒、万神殿、珠宝、天赋树、升华）"
-    "尚未实现，不要从上面的解析结果推断这些。"
+    "需求 8.4 的 16 项已逐项核对（见 `report`），但**本库没有重算任何一项**："
+    "数值取自你的 build，本库只做判读；缺的一律标「未知」而不填估计值。"
+    "**DPS 只是复述你 PoB 的数**——本库缺整条加成链，算不了 DPS。"
 )
 
 
@@ -109,6 +123,7 @@ def analyze_build(req: BuildRequest, caller: str = Depends(require_user)) -> Bui
             detail={"error": "pob_parse_failed", "reason": str(exc)},
         ) from exc
 
+    report = build_health_report(dbmod.get_conn(), build)
     bridged = sum(1 for g in build.skill_groups for x in g.gems if x.gem_id)
     total_gems = sum(len(g.gems) for g in build.skill_groups)
     logger.info(
@@ -153,7 +168,16 @@ def analyze_build(req: BuildRequest, caller: str = Depends(require_user)) -> Bui
         config={k: str(v) for k, v in build.config.items()},
         player_stats=build.player_stats,
         player_stats_note=_STATS_NOTE if build.player_stats else "",
-        analysis_done=False,
+        report=[
+            CheckOut(
+                key=c.key, label=c.label, value=c.value, known=c.known,
+                missing_reason=c.missing_reason, verdict=c.verdict,
+                basis=c.basis, source=c.source,
+            )
+            for c in report.items
+        ],
+        report_notes=report.notes,
+        analysis_done=True,
         analysis_note=_ANALYSIS_NOTE,
         warnings=build.warnings,
     )
