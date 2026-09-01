@@ -133,7 +133,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 1301 项，秒级
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 1308 项，秒级
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选
@@ -196,8 +196,19 @@ POST /chat[/stream]  api/chat.py（只做校验与编排调用）
 - **桥不上的宝石留英文原文 + 告警，不猜**。实测 111 颗里 8 颗桥不上，
   成因是夹具是 3.13 而本库是 3.29——**版本偏移，不是缺陷**。
 
-**只接受分享码，不接受链接**：`pobb.in`/`pastebin` 要联网，而抓取入口的
-POE1/POE2 护栏要一并考虑，单独一轮做。
+**分享链接（第五十轮）**：`parsers/pob_link.py`，站点表逐条抄自 PoB
+`Modules/BuildSiteTools.lua`（钉 commit `9e6ea223`）。照抄的收益是具体的——
+**pobb.in 的下载地址是 `pobb.in/pob/<id>` 而不是 `<id>/raw`**，按印象写就是错的。
+
+**这里用白名单，不是黑名单**，与 `kb/fetcher.reject_poe2_host()` 相反：
+那边是我们自己挑要抓的站，黑名单够用；**这里 URL 由用户提供、服务端拿着它去发请求**，
+放开等于允许指使本服务访问任意地址（内网、云元数据端点都在射程内）。
+白名单的失败方向是「少支持一个站」，黑名单的失败方向是「多打一个内网」。
+抓取复用 `kb/fetcher.Fetcher`（限速/robots/缓存/UA），它内部还会再过一次
+`reject_poe2_host`——白名单之外的第二道。
+
+POE1/POE2 边界顺带落在同一张表上：poe.ninja 两款游戏都服务，而 PoB 的 POE1 规则
+只匹配 `poe.ninja/poe1/pob/…`，`poe2` 那一段匹配不上，自然被挡在外面。
 
 **Build 体检报告（第四十九轮）**：`parsers/build_report.py` 按需求 8.4 逐项核对，
 `POST /build` 的 `report` 段返回。核心设计是**只判不算**：
