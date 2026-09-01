@@ -232,6 +232,112 @@ def parse_gem_page(html: str, *, poedb_slug: str) -> GemPage | None:
     return None
 
 
+#: 「固定」表的定位判据（第四十四轮）。这张表是**与等级无关**的技能机制
+#: （「有 25% 的几率对敌人造成冻结状态」），与 `LEVEL_TABLE_HEAD` 那张逐级表
+#: 不重叠——后者是「造成 25 - 38 冰霜伤害」这种随等级变的值。
+FIXED_TABLE_HEAD = ("固定",)
+
+#: 固定表里**不是内容**的那些行：`CooldownTime: 5000`、`Mana: 50%`。
+#: 2026-09-01 实测 3607 行里有 515 行是这个形状，键只有两个（Mana 287 / CooldownTime 228）。
+#: 它们不入库（把内部字段当中文答案输出，就是拿调试字段冒充游戏文本），
+#: 但**它们是这一维唯一的对账口径**——两项 PoB 侧都有，见 `reconcile_fixed`。
+_FIXED_KV_RE = re.compile(r"^([A-Za-z][A-Za-z0-9_]*)\s*:\s*(\S+)")
+
+#: 上游在文本里写的是**字面的反斜杠加 n**，不是换行符（实测 126 条含它）。
+_LITERAL_NEWLINE = "\\n"
+
+
+@dataclass(frozen=True)
+class GemFixedStats:
+    """一颗宝石的固定效果，**内容与对账口径在类型上就分开**。
+
+    分开是为了让下游不可能不小心把 `CooldownTime: 5000` 渲染给用户——
+    那是这个项目在怪物词缀那一轮定下的禁忌（63 条只有未翻译 stat id 的行
+    宁可不入库，也不拿调试字段冒充游戏文本）。
+    """
+
+    #: 中文效果文本，按页面顺序。
+    prose: tuple[str, ...] = ()
+    #: `Mana` / `CooldownTime` 这类内部字段，**只用于对账**，不入库。
+    reconcile_kv: dict[str, str] = field(default_factory=dict)
+
+
+def _in_active_tab(node) -> bool | None:  # noqa: ANN001
+    """这个节点在不在**当前选中的**标签页里。不在任何标签页里返回 None。"""
+    parent = node.parent
+    while parent is not None:
+        classes = parent.attributes.get("class") or ""
+        if "tab-pane" in classes:
+            return "active" in classes
+        parent = parent.parent
+    return None
+
+
+def parse_gem_fixed(html: str, *, poedb_slug: str) -> GemFixedStats:
+    """解析「固定」表。页面上没有这张表就返回空的 `GemFixedStats`。
+
+    返回空而不是抛异常：实测 21 颗（幻化守卫、绝望、元素要害…）页面上没有这张表，
+    那是**这个技能没有与等级无关的固定机制**，既不是结构错误、也不是采集缺口。
+
+    ## 为什么不能「取第一张表」
+
+    实测 820 张页里 **280 张有两张「固定」表**，而其中 **98 张两张内容不一样**
+    （静滞之天雷之珠 `基础范围为 2.8 米` vs `1.8 米`；巨镰之飞刃风暴
+    `基础持续时间为 0.8 秒` vs `1.5 秒`）。取第一张就是在两个互相矛盾的说法里
+    **无依据地挑一个**——这正是第一原则要拦的事。
+
+    页面自己给了判据：两张表在**不同的标签页**里，而选中的那个标签标着
+    **这颗宝石的中文名**（`巨镰之飞刃风暴 SkillGemBladeVortex`），
+    另一个是次要视图。所以取**选中标签页**里的那张。
+
+    没有选中态时的退路很窄：只有**恰好一张**表时才用它（没有可挑的，就没有挑错的
+    风险，实测 5 颗如此）；多张且都没选中就抛错——那时确实无从判断。
+
+    两个实测出来的细节：
+
+    * **用 `_text()` 而不是 `text(strip=True)`**：数字在 `<span class="mod-value">`
+      里，`strip=True` 会把两边的空格吃掉得到 `增助攻击的暴击率+25%`，
+      而页面上是 `增助攻击的暴击率 +25%`。
+    * **字面 `\\n` 换成一个空格，不拆行**：它有时夹在句子中间（奋发之赦罪的
+      「对召唤生物伤害的增幅与减益\\n有 250% 也作用于该技能的伤害」），
+      拆开会得到两个都读不通的碎片。一个单元格是上游的一个断言单位。
+    """
+    tree = HTMLParser(html)
+    tables = [
+        table for table in tree.css("table")
+        if tuple(_text(th) for th in table.css("thead th")) == FIXED_TABLE_HEAD
+    ]
+    if not tables:
+        return GemFixedStats()
+    active = [t for t in tables if _in_active_tab(t) is True]
+    if active:
+        chosen = active[0]
+    elif len(tables) == 1:
+        chosen = tables[0]
+    else:
+        raise GemPageError(
+            f"{poedb_slug} 有 {len(tables)} 张固定表且都不在选中的标签页里，"
+            "无法判断哪一张描述的是这颗宝石"
+        )
+    prose: list[str] = []
+    kv: dict[str, str] = {}
+    for row in chosen.css("tbody tr"):
+        cells = row.css("td")
+        if len(cells) != 1:
+            raise GemPageError(
+                f"{poedb_slug} 的固定表某行有 {len(cells)} 格，应为 1 格"
+            )
+        text = _text(cells[0])
+        if not text:
+            continue
+        matched = _FIXED_KV_RE.match(text)
+        if matched:
+            kv[matched.group(1)] = matched.group(2)
+            continue
+        prose.append(text.replace(_LITERAL_NEWLINE, " ").strip())
+    return GemFixedStats(prose=tuple(prose), reconcile_kv=kv)
+
+
 #: 「使命」表的定位判据（第四十三轮）。同样按表头定位而不是按下标——
 #: 这一页上「逐级表」「品质变体」「使命」好几张表并存。
 QUEST_TABLE_HEAD = ("章节", "使命", "NPC", "角色")
@@ -424,4 +530,46 @@ def reconcile(page: GemPage, pob_levels: dict[int, dict[str, object]]) -> list[M
             if len(nums) == 2 and (abs(nums[0] - low) > 1 or abs(nums[1] - high) > 1):
                 out.append(Mismatch(row.gem_level, "基础伤害",
                                     f"{nums[0]:g}–{nums[1]:g}", f"{low:g}–{high:g}"))
+    return out
+
+
+def reconcile_fixed(
+    fixed: GemFixedStats, pob_level_one: dict[str, object] | None
+) -> list[Mismatch]:
+    """用固定表里那些 `Key: value` 行跟 PoB 对账（第四十四轮）。
+
+    **这一维本来没有第二个来源**（固定效果只有 POEDB 给中文），所以对账口径只能
+    从这一页自己身上找。找到的就是那 515 行不入库的内部字段：
+
+    * `CooldownTime: 5000` 是**毫秒**，PoB 的 `cooldown` 是**秒**——差 1000 倍，
+      不换算就会把 8/8 一致报成 8/8 不符。
+    * `Mana: 50%` 是**保留百分比**（愤怒/清晰这类光环），不是定值消耗；
+      带 `%` 的走保留、不带的走消耗，混起来比会把光环全判成分歧。
+
+    与第三十二轮「需求等级/魔力两列本库早就有，所以对账是全量而不是抽样」同一形状：
+    能对的就全对，对不上整颗拒绝。
+    """
+    out: list[Mismatch] = []
+    if not fixed.reconcile_kv or not pob_level_one:
+        return out
+    raw_cd = fixed.reconcile_kv.get("CooldownTime")
+    pob_cd = pob_level_one.get("cooldown")
+    if raw_cd is not None and pob_cd is not None:
+        value = _number(raw_cd)
+        if value is not None and abs(value / 1000.0 - float(pob_cd)) > 0.01:  # type: ignore[arg-type]
+            out.append(Mismatch(1, "冷却时间",
+                                f"{value / 1000:g} 秒", f"{float(pob_cd):g} 秒"))  # type: ignore[arg-type]
+    raw_mana = fixed.reconcile_kv.get("Mana")
+    if raw_mana is not None:
+        value = _number(raw_mana)
+        if value is None:
+            return out
+        if raw_mana.endswith("%"):
+            expected = pob_level_one.get("reservation_percent")
+            label = "魔力保留%"
+        else:
+            expected = (pob_level_one.get("cost") or {}).get("Mana")  # type: ignore[union-attr]
+            label = "魔力消耗"
+        if expected is not None and abs(value - float(expected)) > 0.01:  # type: ignore[arg-type]
+            out.append(Mismatch(1, label, f"{value:g}", f"{float(expected):g}"))  # type: ignore[arg-type]
     return out

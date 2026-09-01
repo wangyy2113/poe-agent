@@ -122,7 +122,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 1247 项，秒级
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 1261 项，秒级
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选
@@ -139,7 +139,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 .venv/bin/python scripts/eval_run.py --record        # 重录真实响应（**要凭证、烧 token**）
 ```
 
-黄金问答集是 `tests/golden/questions.yaml`（131 条，六类），基线与全部结论在
+黄金问答集是 `tests/golden/questions.yaml`（134 条，六类），基线与全部结论在
 `tests/golden/BASELINE.md`——**动闸门前先读它**，里面记了多个已修缺陷与三条已知未修边界，
 以及两次「测量本身写错」的教训。
 
@@ -236,8 +236,8 @@ POST /chat[/stream]  api/chat.py（只做校验与编排调用）
 本机 `data/poe.db` 现状（`GET /healthz` 与 `/admin/stats` 可查）：`entity` 5220、
 `mod_affix` 93897、`pob_mod` 25487、`chunk` 18470、`alias` 8172、`game_constant` 543、
 `craft_bench_recipe` 783、`pob_base_item` **1022**（18 个装备类别，PoB × POEDB 逐条桥接，
-覆盖 PoB 侧 96.1%；未桥接的 41 条已按类别登记在台账）、`source_conflict` **545**（`mod_review` 254 + `unique_review` **229** + `spectre_review` 43
-+ `spectre` **8** + `gem_review` **8** + `tree_review` 3）。
+覆盖 PoB 侧 96.1%；未桥接的 41 条已按类别登记在台账）、`source_conflict` **546**（`mod_review` 254 + `unique_review` **229** + `spectre_review` 43
++ `spectre` **8** + `gem_review` **9** + `tree_review` 3）。
 
 `pob_skill_level` 第二十四轮补上 **`reservation_flat`**（400 行）：先前只收
 `manaReservationPercent`，于是清晰（279 点）、精准（186 点）、活力（233 点）这类
@@ -299,7 +299,7 @@ POST /chat[/stream]  api/chat.py（只做校验与编排调用）
 硬写会撞 `UNIQUE(poedb_slug)`，挑一个留下就是替用户断言两者是同一颗宝石。
 **这两张表仍然没有属性需求列**（理由见 `core/db.py` 的表注释）。
 
-`poedb_gem_stat` **1279** 条宝石效果文本 + `poedb_gem_stat_level` **30382** 行每级取值
+`poedb_gem_stat` **1278** 条宝石效果文本 + `poedb_gem_stat_level` **30342** 行每级取值
 （第三十二轮）：**每级效果文本与属性需求（力/敏/智）**，两维都是从第十二轮起就写在
 「未采集」里的。它们缺的从来不是数据而是**口径**——PoB 侧的 stat 是 id + 乘数
 （要按 `Modules/StatDescriber.lua` 那 292 行渲染，而且渲出来是英文），
@@ -312,7 +312,7 @@ POST /chat[/stream]  api/chat.py（只做校验与编排调用）
 
 **这一页自带对账口径，所以对账是全量而不是抽样**：表里的 `需求等级` 与 `魔力` 两列，
 本库早就有 PoB 侧的值；`基础伤害` 也能与第二十九轮算出来的显示值逐格比。
-820 颗里 **812 颗**三项逐级全对、入库（效果文本 712 颗有、属性需求 807 颗有），
+820 颗里 **811 颗**三项逐级全对、入库（效果文本 712 颗有、属性需求 807 颗有），
 **8 颗对不上就整颗拒绝**并登记 `source_conflict`（`kind='gem_review'`，
 待人工核对，**不作为跨来源冲突呈现**）。那 8 颗多是「PoB 发的是重做版本、
 POEDB 页面仍是旧版」：`号召` PoB 侧是 `ConvocationNew`（各级需求等级恒为 31）而页面还是
@@ -325,6 +325,34 @@ POEDB 页面仍是旧版」：`号召` PoB 侧是 `ConvocationNew`（各级需�
 配套三处出口（缺一处就等于没入库）：卡片加「效果文本」区块与每级「属性需求」、
 `skill_gem_levels` 返回这两维、覆盖声明与 `missing_dimension_hints` 同步删掉
 已经答得出的问法。
+
+`poedb_gem_fixed_stat` **2149** 条**与等级无关的固定效果**（第四十四轮，695 颗）：
+同一张详情页上的 `<th>固定</th>` 表（「有 25% 的几率对敌人造成冻结状态」
+「最多召唤 3 个赦罪哨卫」）。它与逐级效果文本的分界就是**有没有等级维度**。
+
+这一轮的做法本身是上一轮结论的产物：既然「停在一页上就下缺来源的结论」已经犯了四次，
+就**先把 820 张页上所有表头与区块清点一遍**，而不是再抓一张就收工。
+清点当场发现这张表在库里一条都没有——实测「有 25% 的几率对敌人造成冻结状态」
+在 `chunk` 里命中 0 次，冰霜新星那张卡里连「冻结」两个字都没有。
+
+四条实测判据：
+
+- **3607 行里有 515 行不是内容，是对账口径**：`Mana` / `CooldownTime` 两个内部字段。
+  不入库（拿调试字段冒充游戏文本是怪物词缀那一轮的禁忌，且 PoB 侧早就有），
+  但**这一维本来没有第二个来源**，它们正好补上：`CooldownTime` 是**毫秒**、
+  PoB 是秒（差 1000 倍），`Mana: 50%` 是**保留百分比**不是定值消耗。
+- **不能取第一张表**：280 张页有两张「固定」表，其中 **98 张两张内容不一样**
+  （静滞之天雷之珠 `2.8 米` vs `1.8 米`）。页面自己给了判据——两张在不同**标签页**里，
+  选中的那个标签标着这颗宝石的中文名。只有恰好一张时才不看选中态（没有可挑的就挑不错）。
+- **文本里的 `\n` 是字面的反斜杠加 n**（126 条），换成空格且**不拆行**：
+  它有时夹在句子中间，拆开会得到两个都读不通的碎片。
+- **21 颗没有这张表 → 卡上不出区块、也不写「未采集」**：那是「这个技能没有与等级
+  无关的机制」，写「未采集」就是假话。这与获取途径那 152 颗不同（页面确实没给那一维）。
+
+新对账当场补上了旧对账的一个盲区：**逐级对账只能比「存在的列」**，
+而破坏之冰锥地雷那一页根本没有魔力列，于是它一直漏网，
+而它的姊妹技能破坏之火屑地雷早就因同样的 5 倍差（POEDB 15 / PoB 3）被拒。
+现在两者一致了——代价是那一颗的 1 条效果文本与 40 行每级数值退场（`gem_review` 8 → 9）。
 
 `poedb_gem_quest` **1261** 行获取途径（第四十三轮）：**同一张详情页**上的「使命」表
 （章节 ｜ 使命 ｜ NPC ｜ 角色），全部 820 颗中有表的 **668 颗**、零解析错误。

@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""导入宝石的**每级效果文本与属性需求**（POEDB 详情页，逐级表）。
+"""导入宝石的**每级效果文本、属性需求与固定效果**（POEDB 详情页）。
+
+第四十四轮加进来的「固定效果」是同一张页上的另一张表（`<th>固定</th>`），
+所以并进本脚本而不是再开第三个——同一批页、同一批宝石、同一条「对不上就整颗拒绝」
+的策略，另开脚本只会让 `import_pob_skills.py` 多一条级联提醒。
+它与逐级表的分界是**有没有等级维度**：那张是「造成 25 - 38 冰霜伤害」（每级一个值），
+这张是「有 25% 的几率对敌人造成冻结状态」（与等级无关）。
 
 补的是第十二轮起就写在「未采集」里的两维。它们不是数据缺口而是**口径缺口**：
 PoB 侧的 stat 是 id + 乘数（要按 `Modules/StatDescriber.lua` 渲染，而且渲出来是英文），
@@ -33,12 +39,15 @@ from core.logging_setup import setup_logging  # noqa: E402
 from entities.taxonomy import Source  # noqa: E402
 from kb.fetcher import Fetcher, cache_path_for  # noqa: E402
 from kb.sources.poedb_gem_page import (  # noqa: E402
+    GemFixedStats,
     GemPage,
     GemPageError,
     Mismatch,
     damage_column,
+    parse_gem_fixed,
     parse_gem_page,
     reconcile,
+    reconcile_fixed,
 )
 from kb.sources.pob_skills import poedb_url  # noqa: E402
 
@@ -111,6 +120,21 @@ def stat_rows(gem_id: str, page: GemPage, *, priority: int) -> tuple[list[tuple]
         for row in page.levels
     ]
     return lines, levels
+
+
+def fixed_rows(gem_id: str, slug: str, fixed: GemFixedStats, *, priority: int) -> list[tuple]:
+    """一颗宝石的固定效果（第四十四轮）。只写中文文本，`Key: value` 不入库。"""
+    url = poedb_url(slug)
+    return [
+        (gem_id, index, text, Source.POEDB.value, priority, url)
+        for index, text in enumerate(fixed.prose)
+    ]
+
+
+_FIXED_INSERT = (
+    "INSERT INTO poedb_gem_fixed_stat(gem_id,stat_index,text_zh,source,source_priority,"
+    "url,fetched_at,updated_at) VALUES (?,?,?,?,?,?,datetime('now'),datetime('now'))"
+)
 
 
 def replace_snapshot(conn, per_gem: dict[str, GemPage], *, priority: int) -> tuple[int, int]:  # noqa: ANN001
@@ -205,9 +229,11 @@ def main() -> int:  # noqa: PLR0915
     started = time.monotonic()
     stat = Counter()
     per_gem: dict[str, GemPage] = {}
+    per_fixed: dict[str, GemFixedStats] = {}
     conflicts: list[tuple[dict, list[Mismatch]]] = []
     no_page: list[str] = []
     no_table: list[str] = []
+    no_fixed: list[str] = []
     for gem in gems:
         html = page_html(gem["poedb_slug"], fetcher=fetcher)
         if not html:
@@ -224,7 +250,15 @@ def main() -> int:  # noqa: PLR0915
             stat["没有逐级表"] += 1
             no_table.append(gem["name_zh"])
             continue
-        mismatches = reconcile(page, gem["pob_levels"])
+        fixed = parse_gem_fixed(html, poedb_slug=gem["poedb_slug"])
+        # 固定表的 `Key: value` 是这一维唯一的对账口径，并进同一份分歧列表：
+        # 对不上说明这一页讲的不是库里那颗宝石，那**整页的文本都不能用**
+        # （与第三十二轮「宁可少 8 颗」同一条）。实测它补上了逐级对账的一个盲区——
+        # 逐级表只能比**存在的列**，而破坏之冰锥地雷那一页根本没有魔力列，
+        # 于是它一直漏网，而它的姊妹技能破坏之火屑地雷早就因同样的 5 倍差被拒。
+        mismatches = reconcile(page, gem["pob_levels"]) + reconcile_fixed(
+            fixed, gem["pob_levels"].get(1)
+        )
         if mismatches:
             stat["对账不符"] += 1
             conflicts.append((gem, mismatches))
@@ -233,14 +267,28 @@ def main() -> int:  # noqa: PLR0915
             continue
         stat["可入库"] += 1
         stat["有伤害列"] += 1 if damage_column(page) else 0
+        if fixed.prose:
+            stat["有固定效果"] += 1
+        elif not fixed.reconcile_kv:
+            no_fixed.append(gem["name_zh"])
         per_gem[gem["gem_id"]] = page
+        per_fixed[gem["gem_id"]] = fixed
 
     elapsed_ms = int((time.monotonic() - started) * 1000)
     lines = sum(len(p.stat_lines) for p in per_gem.values())
     level_rows = sum(len(p.levels) for p in per_gem.values())
     with_req = sum(1 for p in per_gem.values() if any(r.requirements for r in p.levels))
     print(f"宝石 {len(gems)} 颗，解析 {elapsed_ms} ms：{dict(sorted(stat.items()))}")
+    fixed_total = sum(len(f.prose) for f in per_fixed.values())
+    fixed_gems = sum(1 for f in per_fixed.values() if f.prose)
+    kv_total = sum(len(f.reconcile_kv) for f in per_fixed.values())
     print(f"效果文本 {lines} 条、每级行 {level_rows}；带属性需求的 {with_req} 颗")
+    print(f"固定效果 {fixed_total} 条（{fixed_gems} 颗）；"
+          f"另有 {kv_total} 条内部字段只用于对账、不入库")
+    if no_fixed:
+        print(f"没有固定效果表 {len(no_fixed)} 颗：{'、'.join(no_fixed[:5])}"
+              f"{' 等' if len(no_fixed) > 5 else ''}"
+              "（该技能没有与等级无关的机制，**不是未采集**）")
     if no_table:
         print(f"没有逐级表 {len(no_table)} 颗：{'、'.join(no_table[:5])}"
               f"{' 等' if len(no_table) > 5 else ''}")
@@ -270,6 +318,9 @@ def main() -> int:  # noqa: PLR0915
             for gem_id, page in per_gem.items():
                 conn.execute("DELETE FROM poedb_gem_stat WHERE gem_id=?", (gem_id,))
                 conn.execute("DELETE FROM poedb_gem_stat_level WHERE gem_id=?", (gem_id,))
+                conn.execute("DELETE FROM poedb_gem_fixed_stat WHERE gem_id=?", (gem_id,))
+                conn.executemany(_FIXED_INSERT, fixed_rows(
+                    gem_id, page.poedb_slug, per_fixed[gem_id], priority=priority))
                 line_rows, level_list = stat_rows(gem_id, page, priority=priority)
                 conn.executemany(
                     "INSERT INTO poedb_gem_stat(gem_id,stat_index,text_zh,source,"
@@ -282,8 +333,13 @@ def main() -> int:  # noqa: PLR0915
             written_lines, written_levels = lines, level_rows
         else:
             written_lines, written_levels = replace_snapshot(conn, per_gem, priority=priority)
+            conn.execute("DELETE FROM poedb_gem_fixed_stat")
+            for gem_id, page in per_gem.items():
+                conn.executemany(_FIXED_INSERT, fixed_rows(
+                    gem_id, page.poedb_slug, per_fixed[gem_id], priority=priority))
         reviewed = record_conflicts(conn, conflicts)
-        gap_rows = record_gaps(conn, no_page=no_page, no_table=no_table, conflicts=conflicts)
+        gap_rows = record_gaps(conn, no_page=no_page, no_table=no_table,
+                               no_fixed=no_fixed, conflicts=conflicts)
         conn.execute("RELEASE gem_stats")
     except Exception:
         conn.execute("ROLLBACK TO gem_stats")
@@ -293,12 +349,13 @@ def main() -> int:  # noqa: PLR0915
         "UPDATE ingest_run SET finished_at=datetime('now'),succeeded=?,failed=0,"
         "elapsed_ms=?,note=? WHERE run_id=?",
         (len(per_gem), elapsed_ms,
-         f"{written_lines} 条效果文本 / {written_levels} 行每级数值；"
-         f"待核对 {reviewed}；台账 {gap_rows} 组", run_id),
+         f"{written_lines} 条效果文本 / {written_levels} 行每级数值 / "
+         f"{fixed_total} 条固定效果；待核对 {reviewed}；台账 {gap_rows} 组", run_id),
     )
     conn.commit()
-    print(f"已写入 {written_lines} 条效果文本、{written_levels} 行每级数值"
-          f"（run_id={run_id}）；待人工核对 {reviewed} 颗，台账 {gap_rows} 组")
+    print(f"已写入 {written_lines} 条效果文本、{written_levels} 行每级数值、"
+          f"{fixed_total} 条固定效果（run_id={run_id}）；"
+          f"待人工核对 {reviewed} 颗，台账 {gap_rows} 组")
 
     cards = reindex_cards(conn)
     conn.commit()
@@ -307,8 +364,15 @@ def main() -> int:  # noqa: PLR0915
 
 
 def record_gaps(conn, *, no_page: list[str], no_table: list[str],  # noqa: ANN001
+                no_fixed: list[str],
                 conflicts: list[tuple[dict, list[Mismatch]]]) -> int:
-    """按成因登记未入库项。三类分开——它们对应三个不同的动作。"""
+    """按成因登记未入库项。三类分开——它们对应三个不同的动作。
+
+    **`no_fixed` 不进台账**：那 21 颗是「这个技能没有与等级无关的机制」，
+    不是缺口。把它记成待办会让「该采集什么」这个信号重新失真——
+    第三十轮修的就是台账里混进了永远不该执行的条目。参数留着是为了让调用方
+    显式表达「我知道有这一类，且我判断它不是缺口」。
+    """
     points: list[tuple[str, int]] = []
     if no_page:
         points.append((

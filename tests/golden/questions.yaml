@@ -1005,11 +1005,24 @@ cases:
       易误判：ModJewelCluster.lua 已入库，但那是星团珠宝**自身的词缀**，
       不是它能开出的天赋点定义。
 
-  - id: gap_prefix_capacity
+  - id: num_prefix_capacity
     query: 稀有装备最多能有几条前缀
-    kind: gap
-    expect_gap: true
-    note: craft_rule 未结构化，game_constant 里查无此键·不得硬编码 3/3
+    kind: numeric
+    expect_values: ["3"]
+    note: >-
+      稀有 3 前缀 3 后缀。**这条用例第四十四轮从 `kind: gap` 翻成了数值类**，
+      而且它的 note 从第三十七轮起就过期了——那一轮 `craft_affix_capacity`
+      入库并做了卡片，答案一直在库里
+    lesson: >-
+      翻面的**触发方式**才是这条的价值：第四十四轮往宝石卡加了 2149 条固定效果，
+      语料一变 BM25 就把这条哨兵从「拒答」推成了「漏出」。查下去发现真正的毛病是
+      **那张名额规则卡不可达**——被 9.4 万条词缀阶梯 chunk 淹没，
+      连「前缀名额」都进不了 top20，top1 永远是某条「物品稀有度提高」的词缀
+      （稀有/装备/前缀 三个通用词全中）。**卡片存在但检索不到，等于能力是死的**，
+      与幽魂、Boss 技能「没有卡片」是同一种结果，所以修法也一样：
+      精确事实走结构化工具（`affix_capacity_rules`）+ 意图词路由，不指望 BM25。
+      顺带记一条：`craft_rule` 域的 hints 当年只写了「几个前缀」，
+      而用户会说「几**条**前缀」——差一个量词就路由不到。
 
   - id: num_skill_gem_base_damage
     query: 冰霜脉冲在 20 级时的基础伤害是多少
@@ -1082,6 +1095,29 @@ cases:
       `poedb_gem_page` 的 docstring 当时就写着页面上还有「任务奖励」表：
       **看见了，走过去了**。这是「停在一页上就下缺来源的结论」的第四次
       （前三次：万神殿第三十五轮、Boss 第三十八轮、宝石效果文本第三十二轮）。
+
+  - id: num_ice_nova_freeze_chance
+    query: 冰霜新星有多大几率冻结敌人
+    kind: numeric
+    expect_slug: Ice_Nova
+    expect_values: ["25"]
+    note: >-
+      25%。取自 POEDB 详情页的「固定」表（第四十四轮入库，695 颗共 2149 条）——
+      **与等级无关**，所以它不在逐级效果文本里
+    lesson: >-
+      这一维是**系统清点整页**才发现的：上一轮的结论是「停在一页上就下缺来源的
+      结论」已经犯了四次，所以这一轮先把 820 张页上所有表头列了一遍。
+      实测「有 25% 的几率对敌人造成冻结状态」在 `chunk` 表里命中 0 次，
+      冰霜新星那张卡里连「冻结」两个字都没有。
+
+  - id: desc_gem_fixed_effect
+    query: 赦罪最多能召唤几个赦罪哨卫
+    kind: description
+    expect_slug: Absolution
+    expect_evidence_text: "最多召唤 3 个赦罪哨卫"
+    note: >-
+      固定效果里写着「最多召唤 3 个赦罪哨卫」。这类「最多几个 / 持续多久 /
+      有没有几率触发」的技能机制正是这一维要答的问题
 
   - id: gap_skill_gem_drop_source
     query: 瓦尔冰霜新星这颗宝石从哪里掉落
@@ -1227,6 +1263,15 @@ cases:
     kind: tool_route
     expect_tool: check_mod_combination
     note: 多目标词缀共存 → check_mod_combination（三态，unknown 要原样说明）
+
+  - id: route_affix_capacity
+    query: 魔法装备最多能有几条后缀
+    kind: tool_route
+    expect_tool: affix_capacity_rules
+    note: >-
+      名额问法 → affix_capacity_rules（第四十四轮）。成对的另一面是
+      `route_check_mod_combination`：**问名额**与**问某组词缀能否共存**是两件事，
+      判据是问句形式，裸的「前缀/后缀」会把 mod_tiers 的档位问题抢过来
 
   # ── Boss 技能伤害建模（2026-08-27 第三十八轮入库）────────────────
   - id: route_boss_skill_damage

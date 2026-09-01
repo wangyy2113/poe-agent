@@ -632,6 +632,44 @@ CREATE TABLE IF NOT EXISTS poedb_gem_stat_level (
     FOREIGN KEY(gem_id) REFERENCES pob_skill_gem(gem_id) ON DELETE CASCADE
 );
 
+-- ── 技能石的固定效果（POEDB 详情页的「固定」表，第四十四轮）──
+-- 与 `poedb_gem_stat` 的分界就是**有没有等级维度**：那张是逐级效果文本
+-- （「造成 25 - 38 冰霜伤害」，每级一个值），这张是**与等级无关**的技能机制
+-- （「有 25% 的几率对敌人造成冻结状态」「最多召唤 3 个赦罪哨卫」）。
+-- 所以这里没有配套的 `_level` 表，也不该有。
+--
+-- 2026-09-01 实测：820 颗里 704 颗有中文固定效果、共 **2187** 条；
+-- 21 颗页面上没有这张表（那是「这个技能没有固定机制」，**不是未采集**，
+-- 所以卡片上不写「未采集」——写了就是假话）；95 颗只有内部字段（全是光环）。
+--
+-- **不存 `Key: value` 行**（实测 444 条，键只有 `Mana` 与 `CooldownTime`）：
+-- 把内部字段当中文答案输出就是拿调试字段冒充游戏文本（怪物词缀那一轮的禁忌），
+-- 而且这两项 PoB 侧早就有，存进来就是第二份会分叉的真源。
+-- 它们改作**对账口径**——这一维本来只有 POEDB 一个来源，见 `reconcile_fixed`。
+--
+-- 取表要看**选中的标签页**，不能取第一张：实测 280 张页有两张「固定」表，
+-- 其中 98 张两张内容不一样（静滞之天雷之珠 2.8 米 vs 1.8 米）。
+-- 取第一张等于在两个互相矛盾的说法里无依据地挑一个。
+--
+-- 文本里的换行是上游写成的**字面反斜杠加 n**（实测 126 条），入库前换成空格
+-- 且**不拆行**：它有时夹在句子中间，拆开会得到两个都读不通的碎片。
+--
+-- 外键与另外两张 POEDB 宝石表一样级联，重导宝石快照后要重跑 `import_gem_stats.py`。
+CREATE TABLE IF NOT EXISTS poedb_gem_fixed_stat (
+    gem_id          TEXT NOT NULL,
+    -- 页面顺序。固定效果之间有语义顺序（技能本体在前、限制条件在后），
+    -- 乱序展示会让用户以为是另一颗技能。
+    stat_index      INTEGER NOT NULL,
+    text_zh         TEXT NOT NULL CHECK(text_zh <> ''),
+    source          TEXT NOT NULL,
+    source_priority INTEGER NOT NULL,
+    url             TEXT NOT NULL CHECK(url <> ''),
+    fetched_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL,
+    PRIMARY KEY(gem_id, stat_index),
+    FOREIGN KEY(gem_id) REFERENCES pob_skill_gem(gem_id) ON DELETE CASCADE
+);
+
 -- ── 技能石的获取途径（POEDB 详情页的「使命」表，第四十三轮）──
 -- 从第十二轮起「获取途径」一直写在宝石域的未采集里，`kb/coverage.py` 的注释还写着
 -- 「任务奖励与掉落不在任何已缓存页上」。**那句是错的**：第三十二轮为取效果文本

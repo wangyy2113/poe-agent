@@ -2,13 +2,13 @@
   "format_version": 1,
   "case_id": "name_pact_of_beidat_mana",
   "query": "贝达特契约 1 级消耗多少魔力",
-  "recorded_at": "2026-09-01T11:53:20+08:00",
+  "recorded_at": "2026-09-01T14:37:56+08:00",
   "model": "glm-5.2",
   "tokens": {
-    "prompt": 15285,
-    "output": 97,
-    "reasoning": 66,
-    "total": 15382
+    "prompt": 15710,
+    "output": 88,
+    "reasoning": 57,
+    "total": 15798
   },
   "tool_calls": [
     "kb_search"
@@ -19,8 +19,8 @@
   "gap_answer": "",
   "final_answer": "贝达特契约（Pact of Beidat）1 级消耗 **16 魔力**[[E1]]。\n\n> **括号内的百分比是该档在同组内的生成权重占比**，不等于任何通货或具体工艺的一次使用成功率，也不等于期望消耗。\n\n> 检索以降级通道完成（alias, fts）：向量检索与重排未启用（网关无 embedding 模型），当前走 BM25 + 实体精确匹配",
   "blocked_claims": 0,
-  "elapsed_ms": 3363,
-  "evidence_fingerprint": "sha256:d9fded269de01dd888b924519b2068b9",
+  "elapsed_ms": 2973,
+  "evidence_fingerprint": "sha256:0633ef88bf163ab33b35977562cf2e7b",
   "_warning": "raw_answer 是未过出口闸门的模型原文，含可能无据的断言，不得当作事实引用",
   "raw_answer": "贝达特契约（Pact of Beidat）1 级消耗 **16 魔力**[[E1]]。",
   "evidence": [
@@ -32,7 +32,7 @@
       "url": "https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/other.lua",
       "source": "Path of Building",
       "source_priority": 2,
-      "text": "# 贝达特契约（Pact of Beidat）\n类型：技能石 ｜ 白色（无属性需求）\n英文标签：Exceptional, Projectile, Chaining, AoE, Spell, Pact\n施放时间 0.8 秒 ｜ 自然最高 20 级\n\n- 1 级：需角色 24 级，消耗 16 魔力，冷却 4 秒\n- 20 级（自然最高）：需角色 70 级，消耗 33 魔力，冷却 4 秒\n- 40 级（PoB 数据上限，需腐化或 +等级）：需角色 100 级，消耗 44 魔力，冷却 4 秒\n\n**效果文本（POEDB 逐级表）**\n- 来自强化技能的光束额外连锁 4 次（1 级 4｜20 级 6）\n- 强化技能额外发射 4 枚投射物强化技能以环形发射投射物（1 级 4｜20 级 6）\n- 强化技能还会以螺旋方式影响目标区域周围的 5 个额外区域（1 级 5｜20 级 8）\n- 强化技能的击中与异常状态伤害总增 16%（1 级 16｜20 级 35）\n\n**获取途径**\n- POEDB 详情页未给出任务/商人表，本库未采集该宝石的获取途径\n\nPoB 英文说明：Cast a pact, Empowering non-channelling spells that either fire projectiles, apply an effect to an area around a targeted location or fire chaining beams, causing them to deal more damage and have enhanced coverage. However, using this skill also burdens you with an Affliction.\n\n来源：Path of Building → Data/Skills/other.lua\nhttps://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/other.lua\n中文名对照：https://poedb.tw/cn/Pact_of_Beidat",
+      "text": "# 贝达特契约（Pact of Beidat）\n类型：技能石 ｜ 白色（无属性需求）\n英文标签：Exceptional, Projectile, Chaining, AoE, Spell, Pact\n施放时间 0.8 秒 ｜ 自然最高 20 级\n\n- 1 级：需角色 24 级，消耗 16 魔力，冷却 4 秒\n- 20 级（自然最高）：需角色 70 级，消耗 33 魔力，冷却 4 秒\n- 40 级（PoB 数据上限，需腐化或 +等级）：需角色 100 级，消耗 44 魔力，冷却 4 秒\n\n**效果文本（POEDB 逐级表）**\n- 来自强化技能的光束额外连锁 4 次（1 级 4｜20 级 6）\n- 强化技能额外发射 4 枚投射物强化技能以环形发射投射物（1 级 4｜20 级 6）\n- 强化技能还会以螺旋方式影响目标区域周围的 5 个额外区域（1 级 5｜20 级 8）\n- 强化技能的击中与异常状态伤害总增 16%（1 级 16｜20 级 35）\n\n**固定效果（与等级无关）**\n- 赋能你接下来施放的 6 个法术\n\n**获取途径**\n- POEDB 详情页未给出任务/商人表，本库未采集该宝石的获取途径\n\nPoB 英文说明：Cast a pact, Empowering non-channelling spells that either fire projectiles, apply an effect to an area around a targeted location or fire chaining beams, causing them to deal more damage and have enhanced coverage. However, using this skill also burdens you with an Affliction.\n\n来源：Path of Building → Data/Skills/other.lua\nhttps://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/other.lua\n中文名对照：https://poedb.tw/cn/Pact_of_Beidat",
       "can_support_facts": true,
       "claim_scope": "general",
       "claim_data": {}
@@ -104,26 +104,26 @@
     },
     {
       "label": "E7",
-      "chunk_id": "skill:Pact_of_Lycia#0#5e23b4167fbaf5b0",
-      "entity_id": "skill:Pact_of_Lycia",
-      "title": "莉西娅契约（Pact of Lycia）",
-      "url": "https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/other.lua",
-      "source": "Path of Building",
-      "source_priority": 2,
-      "text": "# 莉西娅契约（Pact of Lycia）\n类型：技能石 ｜ 白色（无属性需求）\n英文标签：Exceptional, Channelling, Spell, Pact, Lightning, AoE, Trigger\n施放时间 0.8 秒 ｜ 自然最高 20 级\n\n- 1 级：需角色 24 级，消耗 16 魔力，冷却 4 秒\n- 20 级（自然最高）：需角色 70 级，消耗 33 魔力，冷却 4 秒\n- 40 级（PoB 数据上限，需腐化或 +等级）：需角色 100 级，消耗 44 魔力，冷却 4 秒\n\n**效果文本（POEDB 逐级表）**\n- 造成 8 - 144 闪电伤害（1 级 8, 144｜20 级 130, 2467）\n\n**获取途径**\n- POEDB 详情页未给出任务/商人表，本库未采集该宝石的获取途径\n\nPoB 英文说明：Cast a pact, Empowering the next channelling spells you cast yourself but burdening you with an Affliction. Empowered spells deal more damage and periodically trigger lightning bolts while channelling.\n\n来源：Path of Building → Data/Skills/other.lua\nhttps://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/other.lua\n中文名对照：https://poedb.tw/cn/Pact_of_Lycia",
-      "can_support_facts": true,
-      "claim_scope": "general",
-      "claim_data": {}
-    },
-    {
-      "label": "E8",
       "chunk_id": "skill:Pact_of_K'Tash#0#76d8feb4d73497c4",
       "entity_id": "skill:Pact_of_K'Tash",
       "title": "科塔席契约（Pact of K'Tash）",
       "url": "https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/other.lua",
       "source": "Path of Building",
       "source_priority": 2,
-      "text": "# 科塔席契约（Pact of K'Tash）\n类型：技能石 ｜ 白色（无属性需求）\n英文标签：Exceptional, Spell, Pact\n施放时间 0.8 秒 ｜ 自然最高 20 级\n\n- 1 级：需角色 24 级，消耗 16 魔力，冷却 6 秒\n- 20 级（自然最高）：需角色 70 级，消耗 33 魔力，冷却 6 秒\n- 40 级（PoB 数据上限，需腐化或 +等级）：需角色 100 级，消耗 44 魔力，冷却 6 秒\n\n**效果文本（POEDB 逐级表）**\n- 强化技能造成的伤害总增 10%（1 级 10｜20 级 29）\n\n**获取途径**\n- POEDB 详情页未给出任务/商人表，本库未采集该宝石的获取途径\n\nPoB 英文说明：Cast a pact, Empowering your damaging Vaal spells but burdening you with an Affliction. Empowered Vaal spells deal more damage, have less soul gain prevention duration and regain consumed souls on use.\n\n来源：Path of Building → Data/Skills/other.lua\nhttps://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/other.lua\n中文名对照：https://poedb.tw/cn/Pact_of_K'Tash",
+      "text": "# 科塔席契约（Pact of K'Tash）\n类型：技能石 ｜ 白色（无属性需求）\n英文标签：Exceptional, Spell, Pact\n施放时间 0.8 秒 ｜ 自然最高 20 级\n\n- 1 级：需角色 24 级，消耗 16 魔力，冷却 6 秒\n- 20 级（自然最高）：需角色 70 级，消耗 33 魔力，冷却 6 秒\n- 40 级（PoB 数据上限，需腐化或 +等级）：需角色 100 级，消耗 44 魔力，冷却 6 秒\n\n**效果文本（POEDB 逐级表）**\n- 强化技能造成的伤害总增 10%（1 级 10｜20 级 29）\n\n**固定效果（与等级无关）**\n- 赋能你接下来施放的造成伤害的瓦尔法术\n- 赋能技能使用时重获已消耗的灵魂\n- 赋能技能的阻灵术持续时间总降 50%\n\n**获取途径**\n- POEDB 详情页未给出任务/商人表，本库未采集该宝石的获取途径\n\nPoB 英文说明：Cast a pact, Empowering your damaging Vaal spells but burdening you with an Affliction. Empowered Vaal spells deal more damage, have less soul gain prevention duration and regain consumed souls on use.\n\n来源：Path of Building → Data/Skills/other.lua\nhttps://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/other.lua\n中文名对照：https://poedb.tw/cn/Pact_of_K'Tash",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E8",
+      "chunk_id": "skill:Pact_of_Lycia#0#5e23b4167fbaf5b0",
+      "entity_id": "skill:Pact_of_Lycia",
+      "title": "莉西娅契约（Pact of Lycia）",
+      "url": "https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/other.lua",
+      "source": "Path of Building",
+      "source_priority": 2,
+      "text": "# 莉西娅契约（Pact of Lycia）\n类型：技能石 ｜ 白色（无属性需求）\n英文标签：Exceptional, Channelling, Spell, Pact, Lightning, AoE, Trigger\n施放时间 0.8 秒 ｜ 自然最高 20 级\n\n- 1 级：需角色 24 级，消耗 16 魔力，冷却 4 秒\n- 20 级（自然最高）：需角色 70 级，消耗 33 魔力，冷却 4 秒\n- 40 级（PoB 数据上限，需腐化或 +等级）：需角色 100 级，消耗 44 魔力，冷却 4 秒\n\n**效果文本（POEDB 逐级表）**\n- 造成 8 - 144 闪电伤害（1 级 8, 144｜20 级 130, 2467）\n\n**固定效果（与等级无关）**\n- 赋能你接下来施放的 3 个引导法术\n- 强化技能造成的伤害总增 40%\n- 引导强化法术时此技能每 0.3 秒触发一次，最多 10 次\n- 引导强化法术结束时，此技能按其引导期间已触发次数再次触发\n- 基础范围为 1.2 米\n\n**获取途径**\n- POEDB 详情页未给出任务/商人表，本库未采集该宝石的获取途径\n\nPoB 英文说明：Cast a pact, Empowering the next channelling spells you cast yourself but burdening you with an Affliction. Empowered spells deal more damage and periodically trigger lightning bolts while channelling.\n\n来源：Path of Building → Data/Skills/other.lua\nhttps://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/other.lua\n中文名对照：https://poedb.tw/cn/Pact_of_Lycia",
       "can_support_facts": true,
       "claim_scope": "general",
       "claim_data": {}
