@@ -122,7 +122,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 1261 项，秒级
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 1269 项，秒级
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选
@@ -139,7 +139,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 .venv/bin/python scripts/eval_run.py --record        # 重录真实响应（**要凭证、烧 token**）
 ```
 
-黄金问答集是 `tests/golden/questions.yaml`（134 条，六类），基线与全部结论在
+黄金问答集是 `tests/golden/questions.yaml`（137 条，六类），基线与全部结论在
 `tests/golden/BASELINE.md`——**动闸门前先读它**，里面记了多个已修缺陷与三条已知未修边界，
 以及两次「测量本身写错」的教训。
 
@@ -325,6 +325,37 @@ POEDB 页面仍是旧版」：`号召` PoB 侧是 `ConvocationNew`（各级需�
 配套三处出口（缺一处就等于没入库）：卡片加「效果文本」区块与每级「属性需求」、
 `skill_gem_levels` 返回这两维、覆盖声明与 `missing_dimension_hints` 同步删掉
 已经答得出的问法。
+
+`poedb_gem_support_pair` **56895** 对**技能 × 辅助的搭配关系**（第四十五轮）：
+「多重投射能不能辅助冰霜脉冲」这类问题在这之前完全答不了——
+辅助宝石的 `skill_types` 是空的，也没有任何搭配表。
+
+**被否掉的一条路：从 PoB 算。** PoB 有权威规则（`requireSkillTypes` /
+`excludeSkillTypes` + `CalcTools.doesTypeExpressionMatch` 那个带 OR/AND/NOT 的
+栈式求值器），但 `canGrantedEffectSupportActiveSkill` **依赖角色状态**：
+武器（Varunastra 算作所有单手）、召唤物技能、物品赋予的技能、触发类。
+无状态复现只能做出一个子集，而**会在武器类辅助上悄悄与 PoB 不一致的子集**
+正是「带着引用的错数字」。所以用 POEDB 页面自己算好的、**默认无 build 语境**的清单。
+
+三条实测判据：
+
+- **只入两侧都确认的对**：页面有两个方向（`被辅助` 558 页、`可辅助` 260 页），
+  实测两侧一致 **56,895** 对，另有 **2,201** 对只有一侧说（按成因进台账、不入库）。
+  与唯一装备详情页「两侧对不上就拒绝合并」、`craft_affix_capacity.agreement` 同一条。
+  因此「库里查不到」**不等于「不能搭配」**，工具只说「本库未确认」，
+  黄金集 `desc_gem_support_unconfirmed` 用 `forbid_in_answer` 钉住它不许说成「不能」。
+- **取哪个区块看标签页 id，不是位置**：一页上可能有好几个「被辅助」，
+  分别属于同一页上的**不同技能**（冰封军团 14 颗 vs 118 颗）。
+  取不到同名标签页就取空、**不退而求其次**——另有 19 颗辅助的区块在
+  「这颗辅助所赋予的技能」那个标签页里，用它就等于把清单挂错对象。
+- **自证是「链接数 ÷ 2 == 声明数」**：标题里写着条数（`被辅助 /116`），
+  而每条目有图标与文字两个链接。1,111 个区块里 24 个去重后少 1，
+  成因全是两个条目共用一张详情页（`Convocation`），按链接对数比 24/24 全过。
+
+**没有卡片**（每技能平均 ~99 颗辅助，而卡片上限 1200 字），只靠
+`gem_support_match` + 意图词路由到达——与幽魂、Boss 技能同一条。
+意图词**必须是问句形式**：裸的「辅助」会把「某辅助 20 级消耗倍率」整片抢走
+（单测 `test_逐级数值问法不被搭配工具抢走` 钉住）。
 
 `poedb_gem_fixed_stat` **2149** 条**与等级无关的固定效果**（第四十四轮，695 颗）：
 同一张详情页上的 `<th>固定</th>` 表（「有 25% 的几率对敌人造成冻结状态」

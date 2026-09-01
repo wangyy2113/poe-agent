@@ -1119,6 +1119,38 @@ cases:
       固定效果里写着「最多召唤 3 个赦罪哨卫」。这类「最多几个 / 持续多久 /
       有没有几率触发」的技能机制正是这一维要答的问题
 
+  - id: desc_gem_support_yes
+    query: 多重投射能辅助冰霜脉冲吗
+    kind: description
+    expect_any_hit: true
+    expect_evidence_text: "能辅助"
+    note: >-
+      能。冰霜脉冲是投射物技能，POEDB 两个方向的清单都收录了这一对
+      （第四十五轮入库 56,895 对，只收两侧一致的）
+    lesson: >-
+      判据钉在**证据**上而不是模型措辞上（第一版写的是 `expect_in_answer`）。
+      实测模型把结论写成整行加粗 `**能。多重投射(辅) 可以辅助冰霜脉冲。**[[E9]]`，
+      而分句在 `。` 上把这一行切成三段、只有末段带标记，于是结论句被闸门拦掉——
+      答案实质正确、路由也对，却因为一个排版形态判成缺表述。
+      这一维要验的是**工具给没给出裁决**，那就该在证据层断言。
+      （那个「整行带标记、行内被切成多句」的形态全集共 59 句，
+      够不够格放宽是另一件事，要单独立项先量再改。）
+
+  - id: desc_gem_support_unconfirmed
+    query: 多重投射能辅助冰霜新星吗
+    kind: description
+    expect_any_hit: true
+    expect_in_answer: ["未确认"]
+    forbid_in_answer: ["不能辅助"]
+    note: >-
+      **成对哨兵**：冰霜新星是新星不是投射物，两侧清单里没有这一对。
+      但库里查不到**不等于**「不能」——也可能是两侧清单不同步而未确认。
+      工具因此只说「本库未确认」，`forbid_in_answer` 钉住它不许说成「不能辅助」
+    lesson: >-
+      这一维只入两侧一致的交集（另有 2,201 对只有一侧说），
+      所以「查不到」有两种含义，而工具**不区分**这两种情况就只能说未确认。
+      与唯一装备详情页「两侧对不上就拒绝合并」是同一条规矩。
+
   - id: gap_skill_gem_drop_source
     query: 瓦尔冰霜新星这颗宝石从哪里掉落
     kind: gap
@@ -1263,6 +1295,14 @@ cases:
     kind: tool_route
     expect_tool: check_mod_combination
     note: 多目标词缀共存 → check_mod_combination（三态，unknown 要原样说明）
+
+  - id: route_gem_support_match
+    query: 多重投射能不能辅助冰霜脉冲
+    kind: tool_route
+    expect_tool: gem_support_match
+    note: >-
+      搭配问法 → gem_support_match（第四十五轮）。这一维**没有卡片**：
+      每个技能平均 ~99 颗辅助，而卡片上限 1200 字
 
   - id: route_affix_capacity
     query: 魔法装备最多能有几条后缀

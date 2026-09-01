@@ -240,3 +240,97 @@ class CardTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# ── 技能 × 辅助的搭配关系（第四十五轮）────────────────────────
+
+
+def support_block(label: str, slugs: list[str], *, pane: str | None,
+                  declared: int | None = None) -> str:
+    """一个「被辅助 / 可辅助」区块。每个条目在页面上是**两个链接**（图标 + 文字）。"""
+    body = "".join(
+        f'<a href="/cn/{s}"><img/></a><a href="/cn/{s}">{s}</a>' for s in slugs)
+    n = declared if declared is not None else len(slugs)
+    card = f'<div class="card"><h5 class="card-header">{label} /{n} </h5>{body}</div>'
+    if pane is None:
+        return card
+    return f'<div class="tab-pane fade" id="{pane}">{card}</div>'
+
+
+class SupportLinksTest(unittest.TestCase):
+    def _parse(self, html: str, slug: str = "Freezing_Pulse"):
+        from kb.sources.poedb_gem_page import parse_gem_support_links
+
+        return parse_gem_support_links(html, poedb_slug=slug)
+
+    def test_两个方向分别取出(self) -> None:
+        html = (support_block("被辅助", ["A_Support", "B_Support"], pane="被辅助")
+                + support_block("可辅助", ["Fireball"], pane="可辅助"))
+        got = self._parse(html)
+        self.assertEqual(got.supported_by, ("A_Support", "B_Support"))
+        self.assertEqual(got.can_support, ("Fireball",))
+
+    def test_按标签页id选块而不是按位置(self) -> None:
+        """一页上可能有好几个「被辅助」，分别属于**同一页上的不同技能**。
+        实测 272 页有两个、其中 59 页内容不同（冰封军团 14 vs 118 颗）。
+        取错块 = 把另一个技能的清单挂到这颗宝石上。"""
+        html = (support_block("被辅助", ["Other_Support"], pane="WeaponPassive")
+                + support_block("被辅助", ["Mine_Support"], pane="被辅助"))
+        self.assertEqual(self._parse(html).supported_by, ("Mine_Support",))
+
+    def test_没有同名标签页时取空而不是退而求其次(self) -> None:
+        """实测 19 颗辅助宝石只有一个区块，而它在**这颗辅助所赋予的技能**
+        那个标签页里（裂隙虫群（辅）→ SummonHiveborn）——那份清单描述的是
+        被赋予的技能，不是这颗辅助本身。「只有一个就用它」会把 19 份清单挂错对象。"""
+        html = support_block("被辅助", ["X_Support"], pane="SummonHiveborn")
+        self.assertEqual(self._parse(html).supported_by, ())
+
+    def test_声明条数是自证判据(self) -> None:
+        """标题里的 `/N` 按**条目**算，而每条目有两个链接。"""
+        html = support_block("被辅助", ["A_Support"], pane="被辅助", declared=9)
+        with self.assertRaises(GemPageError):
+            self._parse(html)
+
+    def test_两个条目共用一张详情页不算错(self) -> None:
+        """实测 24 个区块去重后少 1，成因全是两个条目共用一张页
+        （`Convocation` 出现 4 次 = 2 条目 × 2 链接）。判据按**链接对数**，
+        所以这里声明 2、去重后 1，仍应通过。"""
+        html = ('<div class="tab-pane" id="被辅助"><div class="card">'
+                '<h5 class="card-header">被辅助 /2 </h5>'
+                '<a href="/cn/Convocation"><img/></a><a href="/cn/Convocation">a</a>'
+                '<a href="/cn/Convocation"><img/></a><a href="/cn/Convocation">b</a>'
+                "</div></div>")
+        self.assertEqual(self._parse(html).supported_by, ("Convocation",))
+
+    def test_没有区块返回空(self) -> None:
+        got = self._parse("<div>没有搭配区块</div>")
+        self.assertEqual((got.supported_by, got.can_support), ((), ()))
+
+
+class SupportRouteTest(unittest.TestCase):
+    """搭配问法的路由。**判据是问句形式，不是话题词。**"""
+
+    def route(self, question: str) -> str:
+        from orchestrator.loop import _preferred_tool_route
+
+        return _preferred_tool_route(question)
+
+    def test_搭配问法路由到搭配工具(self) -> None:
+        for q in ("多重投射能不能辅助冰霜脉冲", "冰霜脉冲能配哪些辅助",
+                  "闪电箭可以辅助吗", "重击能用哪些辅助"):
+            with self.subTest(q=q):
+                self.assertEqual("gem_support_match", self.route(q))
+
+    def test_逐级数值问法不被搭配工具抢走(self) -> None:
+        """**这一条是加意图词时最容易犯的错**：裸的「辅助」会把某颗辅助宝石的
+        逐级数值问题整片抢走。与第二十一轮「法术压制」被 mitigation_calc 抢、
+        第三十三轮「命中率」让给 accuracy_calc 是同一个形状。
+
+        断言写成「不是 gem_support_match」而不是「是 skill_gem_levels」：
+        `skill_gem_levels` 本来就不在偏好工具表里（由模型自选），
+        断言它会是在钉一个系统从未承诺过的行为——第一版黄金用例正是这么写错的。
+        """
+        for q in ("多重投射辅助 20 级的消耗与保留倍率是多少",
+                  "启迪辅助的冷却时间", "多重投射(辅) 是什么颜色"):
+            with self.subTest(q=q):
+                self.assertNotEqual("gem_support_match", self.route(q))

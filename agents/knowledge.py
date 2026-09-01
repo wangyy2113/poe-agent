@@ -21,6 +21,7 @@ ALLOWED_TOOLS = [
     "affix_pool_odds",  # 精确：胸甲 normal 同侧有效池与条件权重概率
     "check_mod_combination",  # 精确：目标词缀组合的三态可行性与缺据点
     "affix_capacity_rules",  # 精确：某稀有度最多几条前缀/后缀（卡片被词缀阶梯淹没）
+    "gem_support_match",  # 精确：某辅助能不能辅助某技能 / 某技能能配哪些辅助（无卡片）
     "bench_recipe_catalog",   # 精确：工艺台页面目录、原始费用、适用类别与解锁信息
     "harvest_craft_catalog",  # 精确：收获（古灵庄园）定向工艺目录与原始命能费用
     "metamod_interaction_matrix",  # 精确：来源矩阵逐字 operation × guard 单元格

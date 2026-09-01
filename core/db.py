@@ -632,6 +632,48 @@ CREATE TABLE IF NOT EXISTS poedb_gem_stat_level (
     FOREIGN KEY(gem_id) REFERENCES pob_skill_gem(gem_id) ON DELETE CASCADE
 );
 
+-- ── 技能 × 辅助的搭配关系（POEDB 详情页，第四十五轮）──
+-- 「这个技能能配哪些辅助 / 多重投射能不能辅助冰霜新星」是最常问的一类问题，
+-- 而在这之前本库完全答不了：`pob_skill_gem.skill_types` 在**辅助宝石上是空的**。
+--
+-- **被否掉的一条路：从 PoB 算。** PoB 有权威规则（`requireSkillTypes` /
+-- `excludeSkillTypes` + `CalcTools.doesTypeExpressionMatch` 那个带 OR/AND/NOT 的
+-- 栈式求值器），但 `canGrantedEffectSupportActiveSkill` **依赖角色状态**：
+-- 装备的武器（Varunastra 算作所有单手）、召唤物技能、物品赋予的技能、触发类。
+-- 无状态复现只能做出一个子集，而**会在武器类辅助上悄悄与 PoB 不一致的子集**
+-- 正是「带着引用的错数字」。所以用 POEDB 页面自己算好的、**默认无 build 语境**
+-- 的清单——那也正是用户问这句话时的语境。这条边界要写进工具的 `boundary`。
+--
+-- **只存两侧都确认的对。** 页面有两个方向：`被辅助`（技能→辅助，558 页）与
+-- `可辅助`（辅助→技能，260 页）。2026-09-01 实测：
+--     两侧一致 56,895 对（入库）
+--     只在被辅助侧 1,152（其中 558 对方 slug 不在库、594 两边都在库却单侧）
+--     只在可辅助侧 1,049（其中 597 不在库、452 单侧）
+-- 单侧的按成因进台账、不入库——与唯一装备详情页「两侧对不上就拒绝合并」、
+-- `craft_affix_capacity.agreement` 是同一条：单侧来源不是冲突，
+-- 但不能当成两侧确认过的事实。
+--
+-- 两道自证都在页面上：区块标题里写着条数（`被辅助 /116`，判据是
+-- `链接数 // 2 == 声明数`，因为每条目有图标与文字两个链接），
+-- 以及双向一致性本身。
+--
+-- 取哪个区块看**标签页 id**，不是位置：一页上可能有好几个「被辅助」，
+-- 分别属于同一页上的不同技能（见 `parse_gem_support_links` 的 docstring）。
+CREATE TABLE IF NOT EXISTS poedb_gem_support_pair (
+    skill_gem_id    TEXT NOT NULL,
+    support_gem_id  TEXT NOT NULL,
+    source          TEXT NOT NULL,
+    source_priority INTEGER NOT NULL,
+    url             TEXT NOT NULL CHECK(url <> ''),
+    fetched_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL,
+    PRIMARY KEY(skill_gem_id, support_gem_id),
+    FOREIGN KEY(skill_gem_id) REFERENCES pob_skill_gem(gem_id) ON DELETE CASCADE,
+    FOREIGN KEY(support_gem_id) REFERENCES pob_skill_gem(gem_id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_gem_support_by_support
+    ON poedb_gem_support_pair(support_gem_id);
+
 -- ── 技能石的固定效果（POEDB 详情页的「固定」表，第四十四轮）──
 -- 与 `poedb_gem_stat` 的分界就是**有没有等级维度**：那张是逐级效果文本
 -- （「造成 25 - 38 冰霜伤害」，每级一个值），这张是**与等级无关**的技能机制
