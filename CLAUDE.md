@@ -79,6 +79,17 @@ PoB Community 的 PoE1 版（库里 `game_version` 全是 `3.29`；POE2 用 0.x 
   放宽只到「续写」为止：普通句子、链式继承（跟着上一个列表项）、`>` 引用块都不继承。
   逐条看完 42 句候选之后只有「引导句 + 清单」是真的续写，其余拦得对
   （判据见 `binding._is_list_lead_in` / `_list_lead_in`）。
+- **排版单位内部不分句**：绑定标记 `[[E1;E2]]` 与 **Markdown 加粗跨度 `**…**`**
+  都不在内部切。理由是同一条：切开会让标记与它的句子分家——
+  `**能。多重投射(辅) 可以辅助冰霜脉冲。**[[E9]]` 在 `。` 上切会得到三段，
+  **标记跟着末段那两个星号走了**，结论句自己反倒被判成未绑定引用（错误拒答）。
+  流式侧必须**等加粗闭合再下发**（`_has_open_bold`），否则批量按整个跨度判、
+  流式按半句判——实测漏掉这一半会让一致率从 108/108 掉到 100/108。
+  风险量过：全部录制里含句末标点的加粗跨度只有 8 个、最长 59 字，且数值回填照旧跑。
+  **同一轮里被否掉的是更大的那个放宽**：让「整行带标记」的所有句子都继承。
+  逐条看完 21 句候选后发现，同一形态里混着模型自己的推断
+  （「因为火焰属于元素，这条也能产出火焰词缀」「因此无法排除…」「建议查阅…」），
+  而它们与该继承的那些在句法上分不开——只修分句这一刀，不动继承判据。
 - **流式粒度是句不是字。** 未校验内容一旦推给用户就撤不回来。增量校验由
   `binding.StreamingGate` 做，它**复用批量 `verify()` 的分句与判定函数**，绝不另写一套增量
   规则（`tests/unit/test_streaming_gate.py` 用 10 组文本 × 4 种切片粒度钉住两者结果一致）。
@@ -122,7 +133,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 1269 项，秒级
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 1274 项，秒级
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选

@@ -53,6 +53,10 @@ _LABEL_RE = re.compile(r"E(\d+)", re.I)
 #: 切开会让标记失效、有据的句子被误拦（错误拒答）。
 _SENT_SPLIT_RE = re.compile(r"(?<=[。！？!?；;])\s*|\n+")
 
+#: Markdown 加粗跨度。**不加 `re.S`**：`.` 因此不跨行，一个没闭合的 `**`
+#: 最多影响这一行，不会把整篇答案吞成一句。
+_BOLD_SPAN_RE = re.compile(r"\*\*.+?\*\*")
+
 #: Markdown 结构行：标题、加粗标签、水平分隔线、空列表符号。
 #: 这些是**排版**而非断言。早先按事实句处理，实测一次回答 16 句里拦了 5 句，
 #: 全是 `## 猎首（Headhunter）`、`**隐式词缀**`、`---` 这类——答案结构被撕碎，
@@ -644,7 +648,9 @@ class StreamingGate:
 
         # 绑定标记未闭合时**绝不切**：`[[E1;E2]]` 只写到 `[[E1;` 时，
         # 那个分号会被当成句末标点，切出来的半个标记会让有据句被判成未绑定。
-        if _has_open_marker(buf):
+        # 加粗跨度未闭合时同样不切，理由见 `_has_open_bold`：
+        # 批量不在跨度内部切，流式提前切就会两边分叉。
+        if _has_open_marker(buf) or _has_open_bold(buf):
             return (buf, "") if final else (None, buf)
 
         parts = split_sentences(buf)
@@ -711,6 +717,21 @@ def _has_open_marker(text: str) -> bool:
     return text.find("]]", open_at) < 0
 
 
+def _has_open_bold(text: str) -> bool:
+    """缓冲区**当前这一行**里是否有未闭合的 `**`（第四十六轮）。
+
+    与 `_has_open_marker` 是同一件事：批量 `split_sentences` 不在加粗跨度内部切，
+    流式若不等它闭合就会在 `**能。` 处先切一刀——**批量按整个跨度判、
+    流式按半句判，两边就分叉了**（实测：不加这一条，流式与批量一致率
+    从 108/108 掉到 100/108）。这正是规约第 5 条点名的最高频成对点。
+
+    只看最后一行：`_BOLD_SPAN_RE` 不跨行，所以一个永远不闭合的 `**`
+    最多把这一行拖到 `final`，不会把整篇答案卡住。
+    """
+    last_line = text.rsplit("\n", 1)[-1]
+    return last_line.count("**") % 2 == 1
+
+
 _SENT_END_CHARS = "。！？!?；;\n"
 
 
@@ -726,10 +747,22 @@ def split_sentences(text: str) -> list[str]:
 
     绑定标记内部不切（实测踩到）：`[[E1;E2]]` 里的 `;` 会被当成句末标点，
     切开后标记失效，一条有据的句子被判成未绑定引用——这是错误拒答。
+
+    **Markdown 加粗跨度内部同样不切**（第四十六轮，与上一条是同一个道理）：
+    模型爱把结论写成整行加粗 `**能。多重投射(辅) 可以辅助冰霜脉冲。**[[E9]]`，
+    而在 `。` 上切会得到 `**能。` / `多重投射(辅) 可以辅助冰霜脉冲。` / `**[[E9]]`
+    三段——**标记跟着末段那两个星号走了**，结论句自己反倒成了未绑定引用。
+    加粗跨度是一个排版单位，切开它和切开绑定标记是同一种错误。
+
+    风险是有界的，且是量过的：全部录制里**含句末标点的加粗跨度只有 8 个**，
+    长度中位 25 字、最长 59 字（都是一句结论，不是整段）。合并之后数值回填照旧跑，
+    所以编造的数字仍然拦得住；剩下的残余（纯文字断言跟着继承）与表格、
+    列表项那两处**早已接受的残余**是同一种，不是新开的口子。
     """
     if not text:
         return []
     protected = [(m.start(), m.end()) for m in _BINDING_RE.finditer(text)]
+    protected += [(m.start(), m.end()) for m in _BOLD_SPAN_RE.finditer(text)]
 
     def inside_marker(idx: int) -> bool:
         return any(lo < idx < hi for lo, hi in protected)
