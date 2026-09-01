@@ -273,3 +273,45 @@ class TestFlush(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class BoldSpanTest(unittest.TestCase):
+    """加粗跨度内部不切句（第四十六轮）——批量与流式必须同时改。"""
+
+    def test_批量不在加粗跨度内部切(self):
+        """模型爱把结论写成整行加粗。在 `。` 上切会得到
+        `**能。` / `多重投射(辅) 可以辅助冰霜脉冲。` / `**[[E9]]` 三段，
+        **标记跟着末段那两个星号走了**，结论句反倒成了未绑定引用。"""
+        line = "**能。多重投射(辅) 可以辅助冰霜脉冲。**[[E1]]"
+        parts = binding.split_sentences(line)
+        self.assertEqual(len(parts), 1, parts)
+        self.assertTrue(binding.extract_labels(parts[0]))
+
+    def test_加粗之外照常切(self):
+        parts = binding.split_sentences("第一句。第二句[[E1]]。")
+        self.assertEqual(len(parts), 2, parts)
+
+    def test_加粗不跨行(self):
+        """`_BOLD_SPAN_RE` 不带 re.S：一个没闭合的 `**` 最多影响这一行，
+        不会把整篇答案吞成一句。"""
+        parts = binding.split_sentences("**没闭合的加粗。\n下一行。")
+        self.assertGreaterEqual(len(parts), 2, parts)
+
+    def test_流式等加粗闭合才下发(self):
+        """**这是规约第 5 条点名的最高频成对点。** 批量按整个跨度判、
+        流式若在 `**能。` 处先切一刀，两边就分叉——实测不加这一条，
+        流式与批量一致率从 108/108 掉到 100/108。"""
+        e = [ev("E1", "多重投射可以辅助冰霜脉冲")]
+        g = gate(e)
+        self.assertEqual(g.feed("**能。"), [])
+        self.assertEqual(g.feed("多重投射可以辅助冰霜脉冲。"), [])
+        out = g.feed("**[[E1]]")
+        out += g.flush()
+        self.assertEqual(len(out), 1, [v.text for v in out])
+        self.assertTrue(out[0].ok, out[0].reason)
+
+    def test_收尾时未闭合的加粗也要交出(self):
+        """不能因为模型漏了闭合星号就把内容永远扣着。"""
+        g = gate([ev("E1", "x")])
+        self.assertEqual(g.feed("**一直没闭合。"), [])
+        self.assertTrue(g.flush())
