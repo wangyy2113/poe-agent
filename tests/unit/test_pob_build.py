@@ -327,3 +327,75 @@ class HealthReportTest(unittest.TestCase):
                     any("没有重算" in n for n in report.notes),
                     "必须说清本库没有重算任何一项",
                 )
+
+
+# ── 分享链接（第五十轮）─────────────────────────────────────
+
+
+class BuildLinkTest(unittest.TestCase):
+    """站点表逐条抄自 PoB `Modules/BuildSiteTools.lua`，不凭记忆。"""
+
+    def resolve(self, link: str) -> str:
+        from parsers.pob_link import resolve_download_url
+
+        return resolve_download_url(link)
+
+    def test_pobb_in_的下载地址不是_raw_结尾(self) -> None:
+        """**照记忆写会错**：pobb.in 的下载地址是 `/pob/<id>`，不是 `/<id>/raw`。
+        这条正是「能钉住上游原文就别凭印象」的现成例子。"""
+        self.assertEqual(
+            self.resolve("https://pobb.in/abc123"), "https://pobb.in/pob/abc123")
+
+    def test_各站点按_pob_的表解析(self) -> None:
+        cases = {
+            "https://pastebin.com/AbC123": "https://pastebin.com/raw/AbC123",
+            "https://pob.codes/b/xyz": "https://api.pob.codes/xyz/raw",
+            "https://rentry.co/abc": "https://rentry.co/paste/abc/raw",
+            "https://maxroll.gg/poe/pob/deadbeef": "https://maxroll.gg/poe/api/pob/deadbeef",
+            "https://poedb.tw/pob/zzz": "https://poedb.tw/pob/zzz/raw",
+        }
+        for link, expected in cases.items():
+            with self.subTest(link=link):
+                self.assertEqual(self.resolve(link), expected)
+
+    def test_没有协议头也能认(self) -> None:
+        self.assertEqual(self.resolve("pobb.in/abc"), "https://pobb.in/pob/abc")
+
+    def test_poe_ninja_只认_poe1_路径(self) -> None:
+        """poe.ninja 两款游戏都服务。POE1/POE2 边界顺带落在这张表上：
+        `poe2` 那一段匹配不上，自然被挡在外面。"""
+        from parsers.pob_link import PobLinkError
+
+        self.assertEqual(
+            self.resolve("https://poe.ninja/poe1/pob/abc123"),
+            "https://poe.ninja/poe1/pob/raw/abc123")
+        with self.assertRaises(PobLinkError):
+            self.resolve("https://poe.ninja/poe2/pob/abc123")
+
+    def test_白名单之外一律拒绝(self) -> None:
+        """**这是白名单不是黑名单**：URL 由用户给、服务端拿它去发请求，
+        放开等于允许指使本服务访问任意地址（内网、云元数据端点都在射程内）。"""
+        from parsers.pob_link import PobLinkError
+
+        for bad in (
+            "https://evil.example.com/x",
+            "http://169.254.169.254/latest/meta-data/",
+            "https://localhost:8787/admin",
+            "file:///etc/passwd",
+        ):
+            with self.subTest(url=bad), self.assertRaises(PobLinkError):
+                self.resolve(bad)
+
+    def test_拒绝时列出支持的站点(self) -> None:
+        from parsers.pob_link import PobLinkError
+
+        with self.assertRaises(PobLinkError) as ctx:
+            self.resolve("https://evil.example.com/x")
+        self.assertIn("pobb.in", str(ctx.exception))
+
+    def test_分享码不会被当成链接(self) -> None:
+        from parsers.pob_link import looks_like_link
+
+        self.assertFalse(looks_like_link("eJy9XVtzm8i2fh7_CspV-7yMbPcdOifZu"))
+        self.assertTrue(looks_like_link("https://pobb.in/abc"))
+        self.assertTrue(looks_like_link("pobb.in/abc"))

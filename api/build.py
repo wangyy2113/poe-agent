@@ -25,8 +25,11 @@ from pydantic import BaseModel, Field
 
 from api.deps import require_user
 from core import db as dbmod
+from core.config import get_config
+from kb.fetcher import Fetcher, Poe2SourceRejected
 from parsers.build_report import build_health_report
 from parsers.pob_build import PobParseError, bridge_gems, decode_share_code, parse_build
+from parsers.pob_link import PobLinkError, looks_like_link, resolve_download_url
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["Build"])
@@ -35,7 +38,11 @@ router = APIRouter(tags=["Build"])
 class BuildRequest(BaseModel):
     code: str = Field(
         min_length=1, max_length=200000,
-        description="PoB 的分享码（Import/Export → Generate 出来的那串字符）。暂不支持链接。",
+        description=(
+            "PoB 的分享码，或**已知分享站**的链接"
+            "（pobb.in / pastebin.com / pob.codes / poe.ninja / Maxroll / rentry.co …）。"
+            "只认白名单里的站点：服务端会拿这个地址去发请求。"
+        ),
     )
 
 
@@ -111,11 +118,44 @@ _ANALYSIS_NOTE = (
 )
 
 
+def _resolve_code(raw: str) -> str:
+    """输入既可能是分享码、也可能是链接。是链接就先抓回原文。
+
+    抓取复用 `kb.fetcher.Fetcher`（限速、robots、缓存、UA 一并继承），
+    它内部还会再过一次 `reject_poe2_host`——白名单之外的第二道。
+    """
+    if not looks_like_link(raw):
+        return raw
+    url = resolve_download_url(raw)
+    cfg = get_config()
+    fetcher = Fetcher(
+        cache_dir=cfg.cache_dir,
+        user_agent=str(cfg.get("crawl.user_agent")),
+        requests_per_second=float(cfg.get("crawl.requests_per_second", 0.5)),
+        timeout=float(cfg.get("crawl.timeout_seconds", 60)),
+        cache_ttl_hours=int(cfg.get("crawl.cache_ttl_hours", 24)),
+    )
+    logger.info("build 链接导入 %s → %s", raw, url)
+    return fetcher.fetch(url).text.strip()
+
+
 @router.post("/build", response_model=BuildResponse)
 def analyze_build(req: BuildRequest, caller: str = Depends(require_user)) -> BuildResponse:
     try:
-        xml = decode_share_code(req.code)
+        code = _resolve_code(req.code)
+        xml = decode_share_code(code)
         build = bridge_gems(dbmod.get_conn(), parse_build(xml))
+    except (PobLinkError, Poe2SourceRejected) as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"error": "pob_link_rejected", "reason": str(exc)},
+        ) from exc
+    except OSError as exc:
+        # 抓取失败是**外部**问题，与「链接不合法」分开报，用户才知道该重试还是该换链接
+        raise HTTPException(
+            status_code=502,
+            detail={"error": "pob_fetch_failed", "reason": f"抓取分享链接失败：{exc}"},
+        ) from exc
     except PobParseError as exc:
         # 422 而不是 400：格式对不上属于语义无法处理，且要把可读原因带回去
         raise HTTPException(

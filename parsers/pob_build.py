@@ -114,8 +114,9 @@ def decode_share_code(code: str) -> str:
     # 允许用户直接粘 pobb.in 链接时给出明确指引，而不是丢一个 base64 报错
     if "://" in text or text.startswith("www."):
         raise PobParseError(
-            "这看起来是链接。本版只接受**分享码本身**（PoB 里 Import/Export → "
-            "Generate 出来的那串字符）；链接需要联网抓取，尚未支持"
+            "这看起来是链接。本函数只解码**分享码本身**；链接要先经 "
+            "`parsers.pob_link.resolve_download_url` 过白名单再抓回原文"
+            "（`/build` 端点已经这么做了）"
         )
     if not _CODE_RE.match(text):
         raise PobParseError("不是合法的分享码：含 base64 之外的字符，可能是粘贴时混入了别的内容")
