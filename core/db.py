@@ -632,6 +632,44 @@ CREATE TABLE IF NOT EXISTS poedb_gem_stat_level (
     FOREIGN KEY(gem_id) REFERENCES pob_skill_gem(gem_id) ON DELETE CASCADE
 );
 
+-- ── 获取途径（POEDB 详情页的 `Acquisition` 区块，第五十四轮）──
+-- 「哪张命运卡能出头猎」「托沃卧怎么合」这类问题在这之前一条都答不了。
+--
+-- **不只是命运卡**：`ingredient` 为空是命运卡（集齐这张卡换到 `offer`），
+-- 非空是**升级/合成配方**（`托沃崩 + 托沃的祝福 → 托沃卧`）。混成一类会让
+-- 「托沃卧怎么来」得到错答案，所以 `kind` 由 `ingredient` 是否为空派生、不另存。
+--
+-- **覆盖是部分的，这一点要传到出口**：2026-09-01 实测（全部来自已缓存页）
+--     唯一装备 1342 页里 264 页有 → 338 行
+--     通货      113 页里  19 页有 →  36 行
+--     技能石    820 页里   9 页有 →  13 行
+-- 八成的唯一装备没有这一段。「库里查不到」与「没有卡能出它」在用户那边分不开，
+-- 所以工具必须逐条说清是哪一种——与宝石那 152 颗「详情页未给出使命表」同一条规矩。
+--
+-- 不挂外键：`owner_slug` 跨三类实体（唯一装备 / 通货 / 技能石），
+-- 三张表的主键各不相同；挂谁都会漏掉另外两类。
+CREATE TABLE IF NOT EXISTS poedb_acquisition (
+    -- 这一段属于哪个实体的详情页（该实体的 POEDB slug）
+    owner_slug      TEXT NOT NULL CHECK(owner_slug <> ''),
+    owner_kind      TEXT NOT NULL CHECK(owner_kind IN ('unique_item','currency','skill_gem')),
+    row_index       INTEGER NOT NULL,
+    -- 命运卡名，或合成配方里的主料
+    source_zh       TEXT NOT NULL CHECK(source_zh <> ''),
+    source_slug     TEXT NOT NULL DEFAULT '',
+    -- 附加材料。**空串表示这是命运卡途径**，非空表示合成/升级配方
+    ingredient      TEXT NOT NULL DEFAULT '',
+    -- 换到手的东西（页面 Offer 列）
+    offer_zh        TEXT NOT NULL CHECK(offer_zh <> ''),
+    source          TEXT NOT NULL,
+    source_priority INTEGER NOT NULL,
+    url             TEXT NOT NULL CHECK(url <> ''),
+    fetched_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL,
+    PRIMARY KEY(owner_slug, row_index)
+);
+CREATE INDEX IF NOT EXISTS idx_acquisition_offer ON poedb_acquisition(offer_zh);
+CREATE INDEX IF NOT EXISTS idx_acquisition_source ON poedb_acquisition(source_zh);
+
 -- ── 商店配方（POEDB `/cn/Vendor_recipe_system`，第五十一轮）──
 -- 「怎么用装备换混沌石」「点金石从哪来」是最常问的获取途径，而通货/精华/圣甲虫
 -- 三个域的 `partial_note` 都写着「获取途径未采集」。
