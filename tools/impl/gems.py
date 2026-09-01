@@ -97,6 +97,17 @@ def _poedb_quests(conn, gem_id: str) -> list[dict[str, Any]]:  # noqa: ANN001
     ]
 
 
+def _poedb_fixed(conn, gem_id: str) -> list[str]:  # noqa: ANN001
+    """固定效果（第四十四轮）：与等级无关的技能机制。空列表就是这颗技能没有。"""
+    return [
+        str(r["text_zh"])
+        for r in conn.execute(
+            "SELECT text_zh FROM poedb_gem_fixed_stat WHERE gem_id = ? "
+            "ORDER BY stat_index", (gem_id,)
+        )
+    ]
+
+
 def _quest_line(row: dict[str, Any]) -> str:
     kind = str(row.get("source_kind") or "")
     if kind == "vendor":
@@ -113,7 +124,7 @@ def _quest_line(row: dict[str, Any]) -> str:
 def _render_gem(
     gem: sqlite3.Row, levels: list[sqlite3.Row], total: int, *,
     stat_lines: list[dict[str, Any]], poedb_levels: dict[int, dict[str, Any]],
-    quests: list[dict[str, Any]],
+    quests: list[dict[str, Any]], fixed_stats: list[str],
 ) -> str:
     name = f"{gem['name_zh']}（{gem['name_en']}）"
     kind = KIND_LABEL.get(gem["gem_kind"], "宝石")
@@ -163,6 +174,12 @@ def _render_gem(
             ]
             suffix = f"（{'｜'.join(marks)}）" if marks else ""
             out.append(f"- {line_row['text_zh']}{suffix}")
+    # 固定效果（第四十四轮）：与等级无关，所以单列一段而不是塞进逐级数值里。
+    if fixed_stats:
+        out.append("")
+        out.append("固定效果（与等级无关）：")
+        out.extend(f"- {text}" for text in fixed_stats)
+
     # 获取途径（第四十三轮）。逐颗说真话：668 颗有使命表，152 颗没有。
     out.append("")
     if quests:
@@ -289,9 +306,10 @@ def skill_gem_levels(gem_query: str, level: int | None = None) -> ToolResult:
         stat_lines = _poedb_stat_lines(conn, gem["gem_id"])
         poedb_levels = _poedb_levels(conn, gem["gem_id"])
         quests = _poedb_quests(conn, gem["gem_id"])
+        fixed_stats = _poedb_fixed(conn, gem["gem_id"])
         citations.append(_citation(gem, _render_gem(
             gem, shown, total, stat_lines=stat_lines, poedb_levels=poedb_levels,
-            quests=quests)))
+            quests=quests, fixed_stats=fixed_stats)))
         picked.append({
             "name_zh": gem["name_zh"],
             "name_en": gem["name_en"],
@@ -306,6 +324,7 @@ def skill_gem_levels(gem_query: str, level: int | None = None) -> ToolResult:
                 if any(v is not None for k, v in row.items() if k.startswith("req_"))
             },
             "acquisition": quests,
+            "fixed_stats": fixed_stats,
             "poedb_url": gem["poedb_url"],
         })
 
@@ -328,9 +347,9 @@ def skill_gem_levels(gem_query: str, level: int | None = None) -> ToolResult:
             #（metamods / bench / craft_pool 三个工具都走它）。
             # 让模型自己说这句话就会被出口闸门拦掉——那是同一个模式的第五次。
             "boundary": (
-                "每级字面值与基础伤害出自 PoB，效果文本、属性需求与获取途径出自 "
-                "POEDB 详情页（前两维逐级对过账）；获取途径只含任务奖励、商人与"
-                "开局箱子，**掉落来源与 DPS 不提供**"
+                "每级字面值与基础伤害出自 PoB，效果文本、属性需求、固定效果与获取途径"
+                "出自 POEDB 详情页（逐级两维与固定效果的冷却/魔力都对过账）；"
+                "获取途径只含任务奖励、商人与开局箱子，**掉落来源与 DPS 不提供**"
             ),
         },
         citations=citations,

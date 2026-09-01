@@ -1,0 +1,132 @@
+{
+  "format_version": 1,
+  "case_id": "desc_gem_fixed_effect",
+  "query": "赦罪最多能召唤几个赦罪哨卫",
+  "recorded_at": "2026-09-01T14:39:09+08:00",
+  "model": "glm-5.2",
+  "tokens": {
+    "prompt": 16926,
+    "output": 331,
+    "reasoning": 199,
+    "total": 17257
+  },
+  "tool_calls": [
+    "kb_search"
+  ],
+  "evidence_gap": false,
+  "out_of_scope": false,
+  "precision_route": "",
+  "gap_answer": "",
+  "final_answer": "赦罪（Absolution）最多可召唤 **3 个**赦罪哨卫[[E1]]。\n\n〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕- **奋发之赦罪（Absolution of Inspiring）**（蜕变宝石版本）：最多召唤 **2 个**赦罪哨卫，但该技能有「对召唤生物伤害的增幅与减益有 250% 也作用于该技能的伤害」的额外效果[[E3]]。\n- **瓦尔：赦罪（Vaal Absolution）**：最多 1 个飞升哨兵，且飞升哨卫**不计入通常限制**[[E2]]。\n\n> 检索以降级通道完成（alias, fts）：向量检索与重排未启用（网关无 embedding 模型），当前走 BM25 + 实体精确匹配",
+  "blocked_claims": 1,
+  "elapsed_ms": 5326,
+  "evidence_fingerprint": "sha256:226a7bb608feb5d72cad7abccf3e8c77",
+  "_warning": "raw_answer 是未过出口闸门的模型原文，含可能无据的断言，不得当作事实引用",
+  "raw_answer": "赦罪（Absolution）最多可召唤 **3 个**赦罪哨卫[[E1]]。\n\n补充说明各变体的差异：\n\n- **奋发之赦罪（Absolution of Inspiring）**（蜕变宝石版本）：最多召唤 **2 个**赦罪哨卫，但该技能有「对召唤生物伤害的增幅与减益有 250% 也作用于该技能的伤害」的额外效果[[E3]]。\n- **瓦尔：赦罪（Vaal Absolution）**：最多 1 个飞升哨兵，且飞升哨卫**不计入通常限制**[[E2]]。",
+  "evidence": [
+    {
+      "label": "E1",
+      "chunk_id": "skill:Absolution#0#75e5bbf93d4bfe51",
+      "entity_id": "skill:Absolution",
+      "title": "赦罪（Absolution）",
+      "url": "https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/act_str.lua",
+      "source": "Path of Building",
+      "source_priority": 2,
+      "text": "# 赦罪（Absolution）\n类型：技能石 ｜ 红色（力量）\n标签：法术、召唤生物、持续时间、物理、闪电、效果区域\n英文标签：Spell, Minion, Duration, Physical, Lightning, AoE\n施放时间 0.65 秒 ｜ 自然最高 20 级\n\n- 1 级：需角色 12 级，属性需求 力量 21、智慧 14，消耗 9 魔力，基础物理伤害 21–31，暴击率 6%\n- 20 级（自然最高）：需角色 70 级，属性需求 力量 98、智慧 68，消耗 26 魔力，基础物理伤害 873–1310，暴击率 6%\n- 40 级（PoB 数据上限，需腐化或 +等级）：需角色 100 级，消耗 35 魔力，基础物理伤害 4273–6410，暴击率 6%\n\n**效果文本（POEDB 逐级表）**\n- 造成 21 - 31 物理伤害（1 级 21, 31｜20 级 873, 1310）\n- 范围 # 米（1 级 0｜20 级 0.6）\n\n**固定效果（与等级无关）**\n- 将该法术和召唤生物 50% 的物理伤害转化为闪电伤害\n- 最多召唤 3 个赦罪哨卫\n- 基础额外效果持续时间 15 秒\n- 有 25% 的几率在击中一个稀有或传奇怪物时召唤一个赦罪哨兵\n- 基础持续时间为 3 秒\n\n**获取途径**\n- 第 1 章「海妖之歌」任务奖励（圣堂武僧）\n- 第 1 章「海妖之歌」向奈莎购买（野蛮人、贵族、女巫）\n- 第 2 章「盘根错节」任务奖励（圣堂武僧）\n\nPoB 英文说明：Damages enemies in an area, applying a debuff for a short duration. If a non-unique enemy dies while affected by the debuff, the corpse will be consumed to summon a Sentinel of Absolution for a secondary duration, or to refresh the duration and life of an existing one instead if you have the maximum number of them.\n\n来源：Path of Building → Data/Skills/act_str.lua\nhttps://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/act_str.lua\n中文名对照：https://poedb.tw/cn/Absolution",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E2",
+      "chunk_id": "skill:Vaal_Absolution#0#593b204cd6e4a729",
+      "entity_id": "skill:Vaal_Absolution",
+      "title": "瓦尔：赦罪（Vaal Absolution）",
+      "url": "https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/act_str.lua",
+      "source": "Path of Building",
+      "source_priority": 2,
+      "text": "# 瓦尔：赦罪（Vaal Absolution）\n类型：技能石 ｜ 红色（力量） ｜ 瓦尔宝石\n标签：法术、召唤生物、持续时间、物理、闪电、瓦尔、效果区域\n英文标签：Spell, Minion, Duration, Physical, Lightning, Vaal, AoE\n施放时间 0.5 秒 ｜ 自然最高 20 级\n\n- 1 级：需角色 12 级，属性需求 力量 21、智慧 14，消耗 40 魂\n- 20 级（自然最高）：需角色 70 级，属性需求 力量 98、智慧 68，消耗 40 魂\n- 40 级（PoB 数据上限，需腐化或 +等级）：需角色 100 级，消耗 40 魂\n\n**固定效果（与等级无关）**\n- 基础持续时间为 20 秒\n- 最多 1 个飞升的赦罪哨兵 飞升哨卫不计入通常限制\n- 飞升哨兵的伤害总增 300%\n- 飞升哨兵受到的伤害降低 70%\n- 技能效果持续时间的加成也作用于此技能的阻灵术效果\n\n**获取途径**\n- POEDB 详情页未给出任务/商人表，本库未采集该宝石的获取途径\n\nPoB 英文说明：Causes one of your existing Sentinels of Absolution to Ascend, becoming more powerful, gaining new spells, and overriding its duration, while maintaining its other bonuses, including from support gems. If you cannot have more Ascended Sentinels of Absolution, an existing one will be refreshed instead.\n\n来源：Path of Building → Data/Skills/act_str.lua\nhttps://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/act_str.lua\n中文名对照：https://poedb.tw/cn/Vaal_Absolution",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E3",
+      "chunk_id": "skill:Absolution_of_Inspiring#0#c880f4d78acec675",
+      "entity_id": "skill:Absolution_of_Inspiring",
+      "title": "奋发之赦罪（Absolution of Inspiring）",
+      "url": "https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/act_str.lua",
+      "source": "Path of Building",
+      "source_priority": 2,
+      "text": "# 奋发之赦罪（Absolution of Inspiring）\n类型：技能石 ｜ 红色（力量） ｜ 蜕变宝石\n标签：法术、召唤生物、持续时间、物理、闪电、效果区域\n英文标签：Spell, Minion, Duration, Physical, Lightning, AoE\n施放时间 0.65 秒 ｜ 自然最高 20 级\n\n- 1 级：需角色 12 级，属性需求 力量 21、智慧 14，消耗 9 魔力，基础物理伤害 21–31，暴击率 6%\n- 20 级（自然最高）：需角色 70 级，属性需求 力量 98、智慧 68，消耗 26 魔力，基础物理伤害 873–1310，暴击率 6%\n- 40 级（PoB 数据上限，需腐化或 +等级）：需角色 100 级，消耗 35 魔力，基础物理伤害 4273–6410，暴击率 6%\n\n**效果文本（POEDB 逐级表）**\n- 造成 21 - 31 物理伤害（1 级 21, 31｜20 级 873, 1310）\n- 范围 # 米（1 级 0｜20 级 0.6）\n\n**固定效果（与等级无关）**\n- 将该法术和召唤生物 50% 的物理伤害转化为闪电伤害\n- 最多召唤 2 个赦罪哨卫\n- 基础额外效果持续时间 15 秒\n- 有 25% 的几率在击中一个稀有或传奇怪物时召唤一个赦罪哨兵\n- 基础持续时间为 3 秒\n- 对召唤生物伤害的增幅与减益 有 250% 也作用于该技能的伤害\n\n**获取途径**\n- 第 1 章「海妖之歌」任务奖励（圣堂武僧）\n- 第 1 章「海妖之歌」向奈莎购买（野蛮人、贵族、女巫）\n- 第 2 章「盘根错节」任务奖励（圣堂武僧）\n\nPoB 英文说明：Damages enemies in an area, applying a debuff for a short duration. If a non-unique enemy dies while affected by the debuff, the corpse will be consumed to summon a Sentinel of Absolution for a secondary duration, or to refresh the duration and life of an existing one instead if you have the maximum number of them.\n\n来源：Path of Building → Data/Skills/act_str.lua\nhttps://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/act_",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E4",
+      "chunk_id": "passive:Sleepless_Sentries_e9676dcdde#b8ac111a91d94b17",
+      "entity_id": "passive:Sleepless_Sentries_e9676dcdde",
+      "title": "核心天赋·不眠哨卫（Sleepless Sentries）",
+      "url": "https://poedb.tw/cn/passive-skill-tree/",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 核心天赋·不眠哨卫（Sleepless Sentries）\n核心天赋 ｜ 天赋树 3.29\n\n- 图腾的持续时间延长 20%\n- 若你近期内召唤过图腾，则你获得猛攻\n\n> ( 近期内意指 4 秒内 )\n\n来源：POEDB → 天赋树 · 不眠哨卫（Sleepless Sentries）\nhttps://poedb.tw/cn/passive-skill-tree/",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E5",
+      "chunk_id": "skill:Bladefall#0#b3ea3b2553b2c82b",
+      "entity_id": "skill:Bladefall",
+      "title": "虚空刀雨（Bladefall）",
+      "url": "https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/act_dex.lua",
+      "source": "Path of Building",
+      "source_priority": 2,
+      "text": "# 虚空刀雨（Bladefall）\n类型：技能石 ｜ 绿色（敏捷）\n标签：法术、效果区域、物理、持续时间\n英文标签：Spell, AoE, Physical, Duration\n施放时间 0.7 秒 ｜ 自然最高 20 级\n\n- 1 级：需角色 28 级，属性需求 敏捷 67，消耗 12 魔力，基础物理伤害 52–78，暴击率 10%\n- 20 级（自然最高）：需角色 70 级，属性需求 敏捷 155，消耗 23 魔力，基础物理伤害 713–1070，暴击率 10%\n- 40 级（PoB 数据上限，需腐化或 +等级）：需角色 100 级，消耗 31 魔力，基础物理伤害 3730–5595，暴击率 10%\n\n**效果文本（POEDB 逐级表）**\n- 造成 52 - 78 物理伤害（1 级 52, 78｜20 级 713, 1070）\n\n**固定效果（与等级无关）**\n- 5 波飞刀\n- 每 1 波飞刃在地面留下一枚徘徊之刃\n- 地上同时最多能留下 40 枚徘徊之刃\n- 基础持续时间为 6 秒\n\n**获取途径**\n- 第 3 章「铲除左右手」任务奖励（贵族、暗影）\n- 第 3 章「铲除左右手」向卡尔莉萨购买（游侠、贵族、暗影、女巫）\n\nPoB 英文说明：Ethereal weapons rain from the sky, dealing damage to enemies in a sequence of volleys. Enemies can be hit multiple times where these overlap.\n\n来源：Path of Building → Data/Skills/act_dex.lua\nhttps://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/act_dex.lua\n中文名对照：https://poedb.tw/cn/Bladefall",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E6",
+      "chunk_id": "skill:Ethereal_Knives_of_Lingering_Blades#0#07fe22e560a92fe3",
+      "entity_id": "skill:Ethereal_Knives_of_Lingering_Blades",
+      "title": "徘徊之虚空匕首（Ethereal Knives of Lingering Blades）",
+      "url": "https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/act_dex.lua",
+      "source": "Path of Building",
+      "source_priority": 2,
+      "text": "# 徘徊之虚空匕首（Ethereal Knives of Lingering Blades）\n类型：技能石 ｜ 绿色（敏捷） ｜ 蜕变宝石\n标签：法术、投射物、物理、持续时间\n英文标签：Spell, Projectile, Physical, Duration\n施放时间 0.6 秒 ｜ 自然最高 20 级\n\n- 1 级：需角色 1 级，属性需求 敏捷 0、智慧 0，消耗 5 魔力，基础物理伤害 7–11，暴击率 10%\n- 20 级（自然最高）：需角色 70 级，属性需求 敏捷 98、智慧 68，消耗 20 魔力，基础物理伤害 1104–1656，暴击率 10%\n- 40 级（PoB 数据上限，需腐化或 +等级）：需角色 100 级，消耗 26 魔力，基础物理伤害 5642–8464，暴击率 10%\n\n**效果文本（POEDB 逐级表）**\n- 造成 7 - 11 物理伤害（1 级 7, 11｜20 级 1104, 1656）\n- 发射 7 个投射物（1 级 7｜20 级 10）\n\n**固定效果（与等级无关）**\n- 地上同时最多能留下 40 枚徘徊之刃\n- 发射的每 1 个投射物留下一把徘徊之刃\n- 基础持续时间为 6 秒\n\n**获取途径**\n- 第 1 章「大门口的敌人」任务奖励（暗影）\n- 第 1 章「大门口的敌人」向奈莎购买（野蛮人、暗影、女巫）\n\nPoB 英文说明：Fires an arc of knives down into the ground in front of the caster which deal physical damage.\nCannot be supported by Volley.\n\n来源：Path of Building → Data/Skills/act_dex.lua\nhttps://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/act_dex.lua\n中文名对照：https://poedb.tw/cn/Ethereal_Knives_of_Lingering_Blades",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E7",
+      "chunk_id": "skill:Bladefall_of_Trarthus#0#17f552834db5db34",
+      "entity_id": "skill:Bladefall_of_Trarthus",
+      "title": "特拉特斯之虚空刀雨（Bladefall of Trarthus）",
+      "url": "https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/act_dex.lua",
+      "source": "Path of Building",
+      "source_priority": 2,
+      "text": "# 特拉特斯之虚空刀雨（Bladefall of Trarthus）\n类型：技能石 ｜ 绿色（敏捷） ｜ 蜕变宝石\n标签：法术、效果区域、物理、奥术、持续时间\n英文标签：Spell, AoE, Physical, Arcane, Duration\n施放时间 0 秒 ｜ 自然最高 20 级\n\n- 1 级：需角色 28 级，属性需求 敏捷 67，消耗 5% 魔力/秒，基础物理伤害 46–70，冷却 0.3 秒，暴击率 10%\n- 20 级（自然最高）：需角色 70 级，属性需求 敏捷 155，消耗 5% 魔力/秒，基础物理伤害 634–951，冷却 0.3 秒，暴击率 10%\n- 40 级（PoB 数据上限，需腐化或 +等级）：需角色 100 级，消耗 5% 魔力/秒，基础物理伤害 3315–4973，冷却 0.3 秒，暴击率 10%\n\n**效果文本（POEDB 逐级表）**\n- 造成 46 - 70 物理伤害（1 级 46, 70｜20 级 634, 951）\n\n**固定效果（与等级无关）**\n- 地上同时最多能留下 40 枚徘徊之刃\n- 基础持续时间为 6 秒\n- 每 0.7 秒落下一波飞刃\n- 每 100 魔力上限使飞刃频率提高 2%\n- 基础齐射范围为 2.5 米\n- 基础刀刃范围为 1 米\n- 每波落下 5 把刀刃，并留在地上作为徘徊之刃\n\n**获取途径**\n- 第 3 章「铲除左右手」任务奖励（贵族、暗影）\n- 第 3 章「铲除左右手」向卡尔莉萨购买（游侠、贵族、暗影、女巫）\n\nPoB 英文说明：Once activated, continuously spends mana to cause volleys of ethereal weapons rain from the sky around you, dealing damage to enemies they impact. Each Blade will target a separate enemy in the volley area if possible. Each enemy can only be hit once by each volley, even if multiple blades land near them. This skill cannot be triggered or used by Totems, Traps, or Mines.\n\n来源：Path of Building → Data/Skills/act_dex.lua\nhttps://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Ski",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E8",
+      "chunk_id": "passive:Minion_Defence_Mastery_f0f159cb77#7b8fa3f0693bcfa2",
+      "entity_id": "passive:Minion_Defence_Mastery_f0f159cb77",
+      "title": "大师天赋·召唤生物防御专精（Minion Defence Mastery）",
+      "url": "https://poedb.tw/cn/passive-skill-tree/",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 大师天赋·召唤生物防御专精（Minion Defence Mastery）\n大师天赋 ｜ 天赋树 3.29 ｜ 树上 5 处（同名同效，可分别点取）\n\n以下 6 个效果**只能选定其中一个**，不是同时获得：\n1. 召唤生物获得 +8% 最大全元素抗性\n2. 羁绊技能能以可受伤的召唤生物为目标\n3. 召唤生物获得 1% 生命偷取\n4. 号召的冷却回复率提高 40%\n5. 召唤生物的生命回复率降低 15%\n   - 召唤生物的最大生命提高 30%\n6. 召唤生物被击败时，其它召唤生物回复 5% 生命\n\n来源：POEDB → 天赋树 · 召唤生物防御专精（Minion Defence Mastery）\nhttps://poedb.tw/cn/passive-skill-tree/",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    }
+  ]
+}

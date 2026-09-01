@@ -270,6 +270,11 @@ def load_poedb_stats(conn) -> dict[str, dict]:  # noqa: ANN001
             "req_str": row["req_str"], "req_dex": row["req_dex"], "req_int": row["req_int"],
             "stat_values": json.loads(row["values_json"] or "{}"),
         }
+    fixed: dict[str, list[str]] = {}
+    for row in conn.execute(
+        "SELECT gem_id, text_zh FROM poedb_gem_fixed_stat ORDER BY gem_id, stat_index"
+    ):
+        fixed.setdefault(row["gem_id"], []).append(row["text_zh"])
     quests: dict[str, list[dict]] = {}
     for row in conn.execute(
         "SELECT gem_id, act, quest_zh, quest_slug, source_kind, npc_zh, classes_json, "
@@ -289,12 +294,13 @@ def load_poedb_stats(conn) -> dict[str, dict]:  # noqa: ANN001
     # ——那是一句假话。只有表里有行、而这一颗没有，才是那 152 颗的情形。
     quests_loaded = bool(quests)
     out: dict[str, dict] = {}
-    for gem_id in set(lines) | set(per_level) | set(quests):
+    for gem_id in set(lines) | set(per_level) | set(quests) | set(fixed):
         out[gem_id] = {
             "stat_lines": lines.get(gem_id, []),
             "levels": per_level.get(gem_id, {}),
             "quests": quests.get(gem_id, []),
             "quests_loaded": quests_loaded,
+            "fixed_stats": fixed.get(gem_id, []),
         }
     return out
 
@@ -311,6 +317,7 @@ def merge_poedb_stats(entity: Entity, stats: dict | None) -> Entity:
     attrs["stat_lines"] = stats["stat_lines"]
     attrs["quests"] = stats.get("quests") or []
     attrs["quests_loaded"] = bool(stats.get("quests_loaded"))
+    attrs["fixed_stats"] = stats.get("fixed_stats") or []
     per_level = stats["levels"]
     levels = []
     for level in attrs.get("levels") or []:

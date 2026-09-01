@@ -189,6 +189,32 @@ def stat_lines_block(attrs: dict) -> list[str]:
     return out
 
 
+#: 卡片上最多列几条固定效果。实测 695 颗里**单颗最多 16 条**，所以这个上限
+#: 会真的触发——超了必须写出还剩多少（静默截断等同于漏答）。
+MAX_CARD_FIXED_LINES = 10
+
+
+def fixed_stats_block(attrs: dict) -> list[str]:
+    """固定效果区块（第四十四轮）：与等级无关的技能机制。
+
+    与「效果文本」的分界是**有没有等级维度**：那一段是「造成 25 - 38 冰霜伤害
+    （1 级 …｜20 级 …）」，这一段是「有 25% 的几率对敌人造成冻结状态」。
+
+    **没有就不出区块，也不写「未采集」**：实测 21 颗页面上没有这张表，
+    那是「这个技能没有与等级无关的机制」，不是采集缺口——写「未采集」就是一句假话。
+    这与获取途径那 152 颗不同：那些是**页面确实没给**这一维，所以那边要写。
+    """
+    lines = [str(t) for t in (attrs.get("fixed_stats") or []) if str(t).strip()]
+    if not lines:
+        return []
+    out = ["**固定效果（与等级无关）**"]
+    out.extend(f"- {text}" for text in lines[:MAX_CARD_FIXED_LINES])
+    if len(lines) > MAX_CARD_FIXED_LINES:
+        out.append(f"（另有 {len(lines) - MAX_CARD_FIXED_LINES} 条固定效果，"
+                   "用 skill_gem_levels 查完整数据）")
+    return out
+
+
 #: 卡片上最多列几条获取途径。实测 668 颗里最多 6 条、平均 1.9 条。
 #: 与效果文本同一条约定：**静默截断等同于漏答**，超了必须写出还剩多少。
 MAX_CARD_QUEST_LINES = 8
@@ -284,6 +310,11 @@ def render_card(entity: Entity) -> str:
     if stat_block:
         parts.append("")
         parts.extend(stat_block)
+
+    fixed_block = fixed_stats_block(attrs)
+    if fixed_block:
+        parts.append("")
+        parts.extend(fixed_block)
 
     quest_block = acquisition_block(attrs)
     if quest_block:

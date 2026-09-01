@@ -306,3 +306,111 @@ def check_mod_combination(
             "analysis": "craft_feasibility",
         },
     )
+
+
+#: 名额规则表的列 → 卡片上的说法。与 `kb/render_craft_rule` 共用同一套措辞，
+#: 两处分叉就会出现「卡片说 3、工具说 3 条」这种同一事实两种写法。
+_KIND_ZH = {
+    "default": "一般装备", "flask": "药剂", "jewel": "珠宝",
+    "jewel_abyss_corrupted": "已腐化的深渊珠宝", "graft": "移植物（Graft）",
+}
+_AGREEMENT_ZH = {
+    "both": "POEDB 与 PoB 两侧一致",
+    "poedb_only": "仅 POEDB 载明",
+    "pob_only": "仅 PoB 载明",
+}
+
+
+@REGISTRY.register(
+    name="affix_capacity_rules",
+    description=(
+        "查某稀有度的装备**最多能有几条前缀、几条后缀**（魔法 1+1、稀有 3+3、"
+        "传奇不受数量限制、药剂随魔法，另有珠宝与移植物的 2+2 与"
+        "「已腐化的深渊珠宝回到 3+3」这条例外）。不传 rarity 就返回全部 7 条。"
+        "名额只约束**随机的**前后缀；腐化、附魔、灭界者等其他生成位不占名额。"
+        "本工具只给名额，**不判断某组词缀能不能共存**（那是 check_mod_combination）。"
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "rarity": {
+                "type": "string",
+                "description": "可选稀有度，如「稀有」「魔法」「传奇」。不给就全列。",
+            },
+        },
+        "additionalProperties": False,
+    },
+)
+def affix_capacity_rules(rarity: str | None = None) -> ToolResult:
+    """名额规则的**查表**出口。
+
+    为什么要有它：这张表第三十七轮入库时只做了卡片，而那张卡在 9.4 万条词缀阶梯
+    chunk 里**连「前缀名额」都进不了 top20**（第四十四轮实测）——
+    卡片存在但不可达，等于这个能力是死的。这与幽魂倍率表、Boss 技能伤害
+    「没有卡片、只能靠工具到达」是同一条：**精确事实走结构化工具，不指望 BM25**。
+    """
+    conn = dbmod.get_conn()
+    sql = "SELECT * FROM craft_affix_capacity"
+    args: tuple[str, ...] = ()
+    wanted = (rarity or "").strip()
+    if wanted:
+        sql += " WHERE rarity = ?"
+        args = (wanted,)
+    rows = [dict(r) for r in conn.execute(sql + " ORDER BY rarity, item_kind", args)]
+    if not rows:
+        known = [r[0] for r in conn.execute(
+            "SELECT DISTINCT rarity FROM craft_affix_capacity")]
+        return ToolResult(
+            ok=True,
+            data={"found": False, "rarity": wanted, "known_rarities": known,
+                  "reason": f"库里没有稀有度「{wanted}」的名额规则"},
+        )
+
+    lines = [
+        "### 前后缀名额规则（稀有度 × 物品种类）",
+        "",
+        "| 稀有度 | 物品种类 | 前缀上限 | 后缀上限 | 来源 |",
+        "| --- | --- | --- | --- | --- |",
+    ]
+    for row in rows:
+        prefix, suffix = row["prefix_limit"], row["suffix_limit"]
+        left = "不受前后缀数量限制" if prefix is None else str(prefix)
+        right = "" if prefix is None else str(suffix)
+        lines.append(
+            f"| {row['rarity']} | {_KIND_ZH.get(row['item_kind'], row['item_kind'])} "
+            f"| {left} | {right} | {_AGREEMENT_ZH.get(row['agreement'], '')} |"
+        )
+    lines.append("")
+    for row in rows:
+        if row["poedb_text"]:
+            lines.append(f"- 页面原文：{row['poedb_text']}")
+    lines.append("")
+    lines.append(
+        "名额只约束**随机的**前后缀。固定词缀（部分底材自带）与腐化、附魔、"
+        "灭界者等其他生成位各有各的规则，不占随机前后缀名额。"
+    )
+    text = "\n".join(lines)
+    return ToolResult(
+        ok=True,
+        data={
+            "found": True,
+            "rules": [
+                {"rarity": r["rarity"], "item_kind": r["item_kind"],
+                 "prefix_limit": r["prefix_limit"], "suffix_limit": r["suffix_limit"],
+                 "agreement": r["agreement"]}
+                for r in rows
+            ],
+            "boundary": (
+                "名额只约束随机前后缀；腐化 / 附魔 / 灭界者等生成位不占名额。"
+                "本表不判断某组词缀能否共存"
+            ),
+        },
+        citations=[{
+            "text": text,
+            "source": rows[0]["source"],
+            "url": rows[0]["url"],
+            "priority": int(rows[0]["source_priority"]),
+            "claim_scope": "affix_capacity",
+        }],
+        meta={"channel": "structured", "table": "craft_affix_capacity"},
+    )

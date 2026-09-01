@@ -2,13 +2,13 @@
   "format_version": 1,
   "case_id": "num_skill_gem_attribute_req",
   "query": "冰霜脉冲需要多少智力需求",
-  "recorded_at": "2026-09-01T11:54:38+08:00",
+  "recorded_at": "2026-09-01T14:38:52+08:00",
   "model": "glm-5.2",
   "tokens": {
-    "prompt": 14627,
-    "output": 601,
-    "reasoning": 400,
-    "total": 15228
+    "prompt": 16170,
+    "output": 253,
+    "reasoning": 148,
+    "total": 16423
   },
   "tool_calls": [
     "kb_search"
@@ -17,12 +17,12 @@
   "out_of_scope": false,
   "precision_route": "",
   "gap_answer": "",
-  "final_answer": "〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕| 等级 | 角色等级需求 | 智慧需求 |\n|---|---|---|\n| 1 级 | 1 级 | 0[[E1]] |\n| 20 级（自然最高） | 70 级 | 155[[E1]] |\n\n- **1 级时智慧需求为 0**，即角色创建即可使用[[E1]]。\n- **20 级（自然最高级）时智慧需求为 155**，同时角色等级需达到 70 级[[E1]]。\n- 40 级数据中仅记录了角色等级需求 100 级，未单独列出智慧需求值[[E1]]。\n\n〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕\n\n> **括号内的百分比是该档在同组内的生成权重占比**，不等于任何通货或具体工艺的一次使用成功率，也不等于期望消耗。\n\n> 检索以降级通道完成（alias, fts）：向量检索与重排未启用（网关无 embedding 模型），当前走 BM25 + 实体精确匹配",
-  "blocked_claims": 2,
-  "elapsed_ms": 33977,
-  "evidence_fingerprint": "sha256:365dd419ed1d46378414f660b25e7f39",
+  "final_answer": "〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕- **1 级**：属性需求 智慧 **0**[[E1]]\n- **20 级（自然最高）**：属性需求 智慧 **155**[[E1]]\n\n40 级（PoB 数据上限，需腐化或 +等级）的条目中未列出属性需求[[E1]]，因此该等级的具体智力需求在现有证据中无法确认。\n\n> 检索以降级通道完成（alias, fts）：向量检索与重排未启用（网关无 embedding 模型），当前走 BM25 + 实体精确匹配",
+  "blocked_claims": 1,
+  "elapsed_ms": 4525,
+  "evidence_fingerprint": "sha256:10374bcfe9398cf1665c9b3d73360a49",
   "_warning": "raw_answer 是未过出口闸门的模型原文，含可能无据的断言，不得当作事实引用",
-  "raw_answer": "依据 E1 的数据，冰霜脉冲（Freezing Pulse）的智慧（智力）需求如下：\n\n| 等级 | 角色等级需求 | 智慧需求 |\n|---|---|---|\n| 1 级 | 1 级 | 0[[E1]] |\n| 20 级（自然最高） | 70 级 | 155[[E1]] |\n\n- **1 级时智慧需求为 0**，即角色创建即可使用[[E1]]。\n- **20 级（自然最高级）时智慧需求为 155**，同时角色等级需达到 70 级[[E1]]。\n- 40 级数据中仅记录了角色等级需求 100 级，未单独列出智慧需求值[[E1]]。\n\n注：E1 中的\"智慧\"即英文 Intelligence，对应你说的\"智力\"。",
+  "raw_answer": "根据证据，冰霜脉冲的智力需求随宝石等级变化：\n\n- **1 级**：属性需求 智慧 **0**[[E1]]\n- **20 级（自然最高）**：属性需求 智慧 **155**[[E1]]\n\n40 级（PoB 数据上限，需腐化或 +等级）的条目中未列出属性需求[[E1]]，因此该等级的具体智力需求在现有证据中无法确认。",
   "evidence": [
     {
       "label": "E1",
@@ -32,7 +32,7 @@
       "url": "https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/act_int.lua",
       "source": "Path of Building",
       "source_priority": 2,
-      "text": "# 冰霜脉冲（Freezing Pulse）\n类型：技能石 ｜ 蓝色（智慧）\n标签：法术、投射物、冰霜\n英文标签：Spell, Projectile, Cold\n施放时间 0.65 秒 ｜ 自然最高 20 级\n\n- 1 级：需角色 1 级，属性需求 智慧 0，消耗 5 魔力，基础冰霜伤害 9–14，暴击率 7.5%\n- 20 级（自然最高）：需角色 70 级，属性需求 智慧 155，消耗 21 魔力，基础冰霜伤害 1659–2488，暴击率 7.5%\n- 40 级（PoB 数据上限，需腐化或 +等级）：需角色 100 级，消耗 28 魔力，基础冰霜伤害 8799–13198，暴击率 7.5%\n\n**效果文本（POEDB 逐级表）**\n- 造成 9 - 14 冰霜伤害（1 级 9, 14｜20 级 1659, 2488）\n- 发射 1 个投射物（1 级 1｜20 级 5）\n\n**获取途径**\n- 第 1 章「大门口的敌人」任务奖励（女巫、暗影）\n- 第 1 章「大门口的敌人」向 奈莎 购买（暗影、圣堂武僧、女巫）\n\nPoB 英文说明：An icy projectile which has a chance to freeze enemies it passes through. The projectile fades quickly, reducing damage and freezing chance until it dissipates.\n\n来源：Path of Building → Data/Skills/act_int.lua\nhttps://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/act_int.lua\n中文名对照：https://poedb.tw/cn/Freezing_Pulse",
+      "text": "# 冰霜脉冲（Freezing Pulse）\n类型：技能石 ｜ 蓝色（智慧）\n标签：法术、投射物、冰霜\n英文标签：Spell, Projectile, Cold\n施放时间 0.65 秒 ｜ 自然最高 20 级\n\n- 1 级：需角色 1 级，属性需求 智慧 0，消耗 5 魔力，基础冰霜伤害 9–14，暴击率 7.5%\n- 20 级（自然最高）：需角色 70 级，属性需求 智慧 155，消耗 21 魔力，基础冰霜伤害 1659–2488，暴击率 7.5%\n- 40 级（PoB 数据上限，需腐化或 +等级）：需角色 100 级，消耗 28 魔力，基础冰霜伤害 8799–13198，暴击率 7.5%\n\n**效果文本（POEDB 逐级表）**\n- 造成 9 - 14 冰霜伤害（1 级 9, 14｜20 级 1659, 2488）\n- 发射 1 个投射物（1 级 1｜20 级 5）\n\n**固定效果（与等级无关）**\n- 投射物贯穿所有目标\n- 投射物持续损失伤害，在消散前伤害最多总降 50% 投射物有 25% 的几率造成冻结状态，该效果持续到投射物前四分之一的飞行结束\n\n**获取途径**\n- 第 1 章「大门口的敌人」任务奖励（女巫、暗影）\n- 第 1 章「大门口的敌人」向奈莎购买（暗影、圣堂武僧、女巫）\n\nPoB 英文说明：An icy projectile which has a chance to freeze enemies it passes through. The projectile fades quickly, reducing damage and freezing chance until it dissipates.\n\n来源：Path of Building → Data/Skills/act_int.lua\nhttps://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/act_int.lua\n中文名对照：https://poedb.tw/cn/Freezing_Pulse",
       "can_support_facts": true,
       "claim_scope": "general",
       "claim_data": {}
@@ -65,6 +65,19 @@
     },
     {
       "label": "E4",
+      "chunk_id": "skill:Lightning_Tendrils_of_Eccentricity#0#9551b7657b03daa7",
+      "entity_id": "skill:Lightning_Tendrils_of_Eccentricity",
+      "title": "离心之电能释放（Lightning Tendrils of Eccentricity）",
+      "url": "https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/act_int.lua",
+      "source": "Path of Building",
+      "source_priority": 2,
+      "text": "# 离心之电能释放（Lightning Tendrils of Eccentricity）\n类型：技能石 ｜ 蓝色（智慧） ｜ 蜕变宝石\n标签：暴击、法术、效果区域、闪电、持续吟唱\n英文标签：Critical, Spell, AoE, Lightning, Channelling\n施放时间 0.2 秒 ｜ 自然最高 20 级\n\n- 1 级：需角色 1 级，属性需求 智慧 0，消耗 1 魔力，基础闪电伤害 0–3，暴击率 6%\n- 20 级（自然最高）：需角色 70 级，属性需求 智慧 155，消耗 6 魔力，基础闪电伤害 48–916，暴击率 6%\n- 40 级（PoB 数据上限，需腐化或 +等级）：需角色 100 级，消耗 10 魔力，基础闪电伤害 330–6267，暴击率 6%\n\n**效果文本（POEDB 逐级表）**\n- 造成 1 - 3 闪电伤害（1 级 1, 3｜20 级 48, 916）\n- 基础范围为 2.6 米（1 级 2.6｜20 级 3.6）\n\n**固定效果（与等级无关）**\n- 每 5 次脉冲释放一次强力脉冲 强力脉冲必定暴击\n- 强力脉冲会使击中伤害和异常状态伤害总增 500%\n- 强力脉冲的效果范围总增 150%\n\n**获取途径**\n- 第 1 章「大门口的敌人」任务奖励（女巫、贵族、圣堂武僧）\n- 第 1 章「大门口的敌人」向奈莎购买（贵族、暗影、圣堂武僧、女巫）\n\nPoB 英文说明：While you channel this skill, it releases pulses of electrical energy, dealing lightning damage in a semicircular area in front of you.\n\n来源：Path of Building → Data/Skills/act_int.lua\nhttps://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/act_int.lua\n中文名对照：https://poedb.tw/cn/Lightning_Tendrils_of_Eccentricity",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E5",
       "chunk_id": "unique_item:Aukunas_Will#0#3c48654d952ab862",
       "entity_id": "unique_item:Aukunas_Will",
       "title": "奥库娜的意志（Aukuna's Will）",
@@ -77,7 +90,7 @@
       "claim_data": {}
     },
     {
-      "label": "E5",
+      "label": "E6",
       "chunk_id": "unique_item:Hateforge#0#dab352c32f8b907b",
       "entity_id": "unique_item:Hateforge",
       "title": "仇恨熔炉（Hateforge）",
@@ -90,40 +103,27 @@
       "claim_data": {}
     },
     {
-      "label": "E6",
-      "chunk_id": "passive:Hollow_Effigy_b10c5d5cd7#a900db684805e918",
-      "entity_id": "passive:Hollow_Effigy_b10c5d5cd7",
-      "title": "核心天赋·空洞雕像（Hollow Effigy）",
-      "url": "https://poedb.tw/cn/passive-skill-tree/",
-      "source": "POEDB",
-      "source_priority": 1,
-      "text": "# 核心天赋·空洞雕像（Hollow Effigy）\n核心天赋 ｜ 天赋树 3.29\n\n- 你的奉献技能不需要灵柩\n\n来源：POEDB → 天赋树 · 空洞雕像（Hollow Effigy）\nhttps://poedb.tw/cn/passive-skill-tree/",
-      "can_support_facts": true,
-      "claim_scope": "general",
-      "claim_data": {}
-    },
-    {
       "label": "E7",
-      "chunk_id": "ascendancy:Priest_of_Kopec_a9dcbecf03#394344325d452678",
-      "entity_id": "ascendancy:Priest_of_Kopec_a9dcbecf03",
-      "title": "升华节点·科佩克祭司（Priest of Kopec）",
-      "url": "https://poedb.tw/cn/passive-skill-tree/",
-      "source": "POEDB",
-      "source_priority": 1,
-      "text": "# 升华节点·科佩克祭司（Priest of Kopec）\n升华节点 ｜ 天赋树 3.29\n\n- 瓦尔技能每需要一个灵魂，伤害总增 1%\n- 瓦尔技能每次施放所需灵魂提高 40%\n- 瓦尔技能可储存 +1 次使用\n\n来源：POEDB → 天赋树 · 科佩克祭司（Priest of Kopec）\nhttps://poedb.tw/cn/passive-skill-tree/",
+      "chunk_id": "skill:Lightning_Tendrils#0#92567daffce531ad",
+      "entity_id": "skill:Lightning_Tendrils",
+      "title": "电能释放（Lightning Tendrils）",
+      "url": "https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/act_int.lua",
+      "source": "Path of Building",
+      "source_priority": 2,
+      "text": "# 电能释放（Lightning Tendrils）\n类型：技能石 ｜ 蓝色（智慧）\n标签：暴击、法术、效果区域、闪电、持续吟唱\n英文标签：Critical, Spell, AoE, Lightning, Channelling\n施放时间 0.2 秒 ｜ 自然最高 20 级\n\n- 1 级：需角色 1 级，属性需求 智慧 0，消耗 1 魔力，基础闪电伤害 0–6，暴击率 6%\n- 20 级（自然最高）：需角色 70 级，属性需求 智慧 155，消耗 6 魔力，基础闪电伤害 105–1986，暴击率 6%\n- 40 级（PoB 数据上限，需腐化或 +等级）：需角色 100 级，消耗 10 魔力，基础闪电伤害 715–13579，暴击率 6%\n\n**效果文本（POEDB 逐级表）**\n- 造成 1 - 6 闪电伤害（1 级 1, 6｜20 级 105, 1986）\n- 基础范围为 2.6 米（1 级 2.6｜20 级 3.6）\n\n**固定效果（与等级无关）**\n- 每 3 次脉冲释放一次强力脉冲 强力脉冲必定暴击\n\n**获取途径**\n- 第 1 章「大门口的敌人」任务奖励（女巫、贵族、圣堂武僧）\n- 第 1 章「大门口的敌人」向奈莎购买（贵族、暗影、圣堂武僧、女巫）\n\nPoB 英文说明：While you channel this skill, it releases pulses of electrical energy, dealing lightning damage in a semicircular area in front of you.\n\n来源：Path of Building → Data/Skills/act_int.lua\nhttps://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/act_int.lua\n中文名对照：https://poedb.tw/cn/Lightning_Tendrils",
       "can_support_facts": true,
       "claim_scope": "general",
       "claim_data": {}
     },
     {
       "label": "E8",
-      "chunk_id": "mod_ladder:Bows:VaalSoulCost#b97a646c8619b7d7",
-      "entity_id": "mod_ladder:Bows:VaalSoulCost",
-      "title": "弓 · VaalSoulCost",
-      "url": "https://poedb.tw/cn/Bows#ModifiersCalc",
-      "source": "POEDB",
-      "source_priority": 1,
-      "text": "# 弓 · VaalSoulCost\n底材类别：弓 ｜ 词缀组：VaalSoulCost ｜ 类型：后缀 ｜ 来源渠道：1 个\n\n本词缀组在该底材上共 1 条，来自 1 个来源：地心探索。\n互斥规则：与本组（VaalSoulCost）有相同词缀组的其他词缀不能同时存在于一件装备上。\n\n## 地心探索 · 后缀 · 1 条\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/1 | 地下之 | 非光环瓦尔技能每次施放需要的灵魂量降低 40% | 1 | 2000（8.8106%） |\n\n置信度说明：\n- T 级按 POEDB 的算法推导——在同一来源类别与词缀组内，把物品等级去重后降序排名，物品等级最高者为 T1（算法已复刻并通过不变量校验）\n\n来源：POEDB → 弓 · VaalSoulCost\nhttps://poedb.tw/cn/Bows#ModifiersCalc",
+      "chunk_id": "skill:Hydrosphere#0#75ced2c7e51cdaaa",
+      "entity_id": "skill:Hydrosphere",
+      "title": "水源法球（Hydrosphere）",
+      "url": "https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/act_int.lua",
+      "source": "Path of Building",
+      "source_priority": 2,
+      "text": "# 水源法球（Hydrosphere）\n类型：技能石 ｜ 蓝色（智慧）\n标签：法术、效果区域、持续时间、冰霜、法球、闪电、物理\n英文标签：Spell, AoE, Duration, Cold, Orb, Lightning, Physical\n施放时间 0.6 秒 ｜ 自然最高 20 级\n\n- 1 级：需角色 34 级，属性需求 智慧 79，消耗 12 魔力，基础物理伤害 37–56，暴击率 6%\n- 20 级（自然最高）：需角色 70 级，属性需求 智慧 155，消耗 20 魔力，基础物理伤害 510–765，暴击率 6%\n- 40 级（PoB 数据上限，需腐化或 +等级）：需角色 100 级，消耗 26 魔力，基础物理伤害 3786–5679，暴击率 6%\n\n**效果文本（POEDB 逐级表）**\n- 造成 37 - 56 物理伤害（1 级 37, 56｜20 级 510, 765）\n\n**固定效果（与等级无关）**\n- 在冰冻、感电、易碎、筋疲力尽状态下，每 0.4 秒脉冲一次\n- 基础额外效果持续时间 4 秒\n- 浸湿的敌人具有冰霜和闪电的曝露效果，其抗性 -10%\n- 每 1 秒才能击中一次\n- 基础持续时间为 8 秒\n- 球体没有异常状态时，将 100% 物理伤害转化为冰霜伤害 球体具有感电或筋疲力尽时，将 100% 物理伤害转化为闪电伤害 球体具有冻结或易碎时，将100% 物理伤害转化为冰霜伤害\n\n**获取途径**\n- 第 4 章「突破封印」任务奖励（女巫、圣堂武僧）\n- 第 4 章「突破封印」向佩塔卢斯和芙安珈(技能杂货)购买（贵族）\n\nPoB 英文说明：Create a sphere of water, or move an existing sphere and reset its duration. The sphere continually applies a drenched debuff with a short duration to enemies in its area or those it moves through. You can hit the sphere with other skills to inflict Cold and Lightning Ailments (other than Chill). The sphere pulses when created, at regular intervals while afflicted by an Ailment, and after moving, damaging all drenched enemies in a large area.\n\n来源：Path of Building → Data/Skills/act_int.lua\nhttps://g",
       "can_support_facts": true,
       "claim_scope": "general",
       "claim_data": {}

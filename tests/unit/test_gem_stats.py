@@ -346,3 +346,128 @@ class ToolTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# ── 固定效果（第四十四轮）─────────────────────────────────────
+
+
+def fixed_table(rows: list[str], *, active: bool = True) -> str:
+    """一张「固定」表，包在 tab-pane 里（真实页面就是这个结构）。"""
+    body = "".join(f"<tr><td>{r}</td></tr>" for r in rows)
+    cls = "tab-pane fade show active" if active else "tab-pane fade"
+    return (
+        f'<div class="{cls}"><table><thead><tr><th>固定</th></tr></thead>'
+        f"<tbody>{body}</tbody></table></div>"
+    )
+
+
+class FixedStatsParseTest(unittest.TestCase):
+    """`固定` 表：与等级无关的技能机制。"""
+
+    def _parse(self, html: str, slug: str = "Ice_Nova"):
+        from kb.sources.poedb_gem_page import parse_gem_fixed
+
+        return parse_gem_fixed(html, poedb_slug=slug)
+
+    def test_中文文本与内部字段分流(self) -> None:
+        """`CooldownTime: 5000` 不是内容，是对账口径。把内部字段当中文答案输出
+        就是拿调试字段冒充游戏文本（怪物词缀那一轮定下的禁忌）。"""
+        got = self._parse(fixed_table([
+            "CooldownTime: 5000", "有 25% 的几率对敌人造成冻结状态", "Mana: 50%",
+        ]))
+        self.assertEqual(got.prose, ("有 25% 的几率对敌人造成冻结状态",))
+        self.assertEqual(got.reconcile_kv, {"CooldownTime": "5000", "Mana": "50%"})
+
+    def test_字面反斜杠n换成空格且不拆行(self) -> None:
+        """实测 126 条含它，而它**有时夹在句子中间**——拆开会得到两个读不通的碎片。
+        一个单元格是上游的一个断言单位。"""
+        got = self._parse(fixed_table(["对召唤生物伤害的增幅与减益\\n有 250% 也作用于该技能的伤害"]))
+        self.assertEqual(len(got.prose), 1)
+        self.assertNotIn("\\n", got.prose[0])
+        self.assertIn("增幅与减益 有 250%", got.prose[0])
+
+    def test_数值两侧的空格要保留(self) -> None:
+        """数字在 `<span class="mod-value">` 里。`text(strip=True)` 会得到
+        `增助攻击的暴击率+25%`，而页面上是 `增助攻击的暴击率 +25%`。"""
+        got = self._parse(fixed_table(
+            ['增助攻击的暴击率 <span class="mod-value">+25</span>%']))
+        self.assertEqual(got.prose, ("增助攻击的暴击率 +25%",))
+
+    def test_两张表时取选中的那一张(self) -> None:
+        """实测 280 张页有两张固定表，其中 **98 张内容不一样**
+        （静滞之天雷之珠 2.8 米 vs 1.8 米）。取第一张就是在两个互相矛盾的说法里
+        无依据地挑一个。"""
+        html = fixed_table(["基础范围为 1.8 米"], active=False) + fixed_table(
+            ["基础范围为 2.8 米"], active=True)
+        self.assertEqual(self._parse(html).prose, ("基础范围为 2.8 米",))
+
+    def test_只有一张表时即使没选中也用它(self) -> None:
+        """没有可挑的就没有挑错的风险（实测 5 颗如此）。"""
+        got = self._parse(fixed_table(["最多储存 50 次使用次数"], active=False))
+        self.assertEqual(got.prose, ("最多储存 50 次使用次数",))
+
+    def test_多张表且都没选中要报错(self) -> None:
+        html = (fixed_table(["A"], active=False) + fixed_table(["B"], active=False))
+        with self.assertRaises(GemPageError):
+            self._parse(html)
+
+    def test_没有固定表返回空(self) -> None:
+        got = self._parse("<table><thead><tr><th>等级</th></tr></thead></table>")
+        self.assertEqual(got.prose, ())
+        self.assertEqual(got.reconcile_kv, {})
+
+
+class FixedReconcileTest(unittest.TestCase):
+    """那 444 条内部字段是这一维**唯一**的对账口径。"""
+
+    def _reconcile(self, kv: dict, pob: dict | None):
+        from kb.sources.poedb_gem_page import GemFixedStats, reconcile_fixed
+
+        return reconcile_fixed(GemFixedStats(prose=(), reconcile_kv=kv), pob)
+
+    def test_冷却毫秒要换算成秒(self) -> None:
+        """POEDB 写毫秒、PoB 写秒，差 1000 倍。不换算会把全对报成全错。"""
+        self.assertEqual(self._reconcile({"CooldownTime": "5000"}, {"cooldown": 5.0}), [])
+        self.assertTrue(self._reconcile({"CooldownTime": "5000"}, {"cooldown": 8.0}))
+
+    def test_带百分号的魔力走保留而不是消耗(self) -> None:
+        """`Mana: 50%` 是光环的保留百分比。跟定值消耗比会把光环全判成分歧。"""
+        self.assertEqual(
+            self._reconcile({"Mana": "50%"}, {"reservation_percent": 50.0, "cost": {}}), [])
+
+    def test_不带百分号的魔力走消耗(self) -> None:
+        """实测抓到一颗真分歧：破坏之冰锥地雷 POEDB 15 / PoB 3。
+        它的姊妹技能破坏之火屑地雷早就因同样的 5 倍差被拒，而它一直漏网——
+        因为逐级表只能比**存在的列**，而那一页根本没有魔力列。"""
+        self.assertTrue(self._reconcile({"Mana": "15"}, {"cost": {"Mana": 3.0}}))
+        self.assertEqual(self._reconcile({"Mana": "15"}, {"cost": {"Mana": 15.0}}), [])
+
+    def test_缺一侧不算分歧(self) -> None:
+        self.assertEqual(self._reconcile({"CooldownTime": "5000"}, {}), [])
+        self.assertEqual(self._reconcile({}, {"cooldown": 5.0}), [])
+
+
+class FixedCardTest(unittest.TestCase):
+    def _card(self, fixed: list[str]) -> str:
+        from tests.unit.test_pob_skills import _entity as build
+
+        return render_skills.render_card(build(
+            [{"gem_level": 1, "level_requirement": 12}], fixed_stats=fixed))
+
+    def test_固定效果写在卡上(self) -> None:
+        card = self._card(["有 25% 的几率对敌人造成冻结状态"])
+        self.assertIn("**固定效果（与等级无关）**", card)
+        self.assertIn("有 25% 的几率对敌人造成冻结状态", card)
+
+    def test_没有固定效果时不出区块也不写未采集(self) -> None:
+        """实测 21 颗页面上没有这张表——那是「这个技能没有与等级无关的机制」，
+        **不是采集缺口**。写「未采集」就是一句假话。
+        这与获取途径那 152 颗不同：那些是页面确实没给这一维。"""
+        card = self._card([])
+        self.assertNotIn("固定效果", card)
+        self.assertNotIn("未采集该宝石的固定", card)
+
+    def test_超过上限要写出还剩多少(self) -> None:
+        """实测单颗最多 16 条，这个上限会真的触发。"""
+        many = [f"固定效果第 {i} 条" for i in range(render_skills.MAX_CARD_FIXED_LINES + 4)]
+        self.assertIn("另有 4 条固定效果", self._card(many))
