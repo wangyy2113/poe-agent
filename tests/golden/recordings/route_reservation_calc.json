@@ -2,13 +2,13 @@
   "format_version": 1,
   "case_id": "route_reservation_calc",
   "query": "坚定和优雅一共保留多少魔力",
-  "recorded_at": "2026-08-20T12:15:39+08:00",
+  "recorded_at": "2026-09-01T11:01:17+08:00",
   "model": "glm-5.2",
   "tokens": {
-    "prompt": 13063,
-    "output": 276,
-    "reasoning": 84,
-    "total": 13339
+    "prompt": 17208,
+    "output": 245,
+    "reasoning": 108,
+    "total": 17453
   },
   "tool_calls": [
     "kb_search",
@@ -18,12 +18,12 @@
   "out_of_scope": false,
   "precision_route": "",
   "gap_answer": "",
-  "final_answer": "坚定和优雅合计保留 **100%** 最大魔力[[E1,E2,E9]]。\n\n具体拆分如下：\n\n| 技能 | 等级 | 保留 |\n|---|---|---|\n| 坚定（Determination） | 20 级 | 50% 最大魔力[[E1]] |\n| 优雅（Grace） | 20 级 | 50% 最大魔力[[E2]] |\n| **合计** | | **100%**[[E9]] |\n\n〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕值得注意的是，「保留效能提高」可以降低这个百分比——例如虚空忆境隐式词缀提供的「坚定的魔力保留效能提高 20%」或「优雅的魔力保留效能提高 20%」[[E3,E4]]，但这类词缀没有生成权重数据，无法计算获取成功率[[E3]]。\n\n> 保留百分比与定值取自库里的宝石每级数值，池大小与各项加成逐字取自问题；**不含血魔法（光环改为保留生命）**——库里没有生命保留的每级数值；也不判断这几个光环搭不搭（那是取向不是计算），不读取角色档案\n\n> 检索以降级通道完成（alias, fts）：向量检索与重排未启用（网关无 embedding 模型），当前走 BM25 + 实体精确匹配",
-  "blocked_claims": 1,
-  "elapsed_ms": 6000,
-  "evidence_fingerprint": "sha256:bc29babf3d5bbb5635e9bfbd53533295",
+  "final_answer": "坚定和优雅合计保留 **100% 最大魔力**[[E9]]。\n\n具体拆分：坚定（20 级）保留 50% 魔力[[E1]]，优雅（20 级）保留 50% 魔力[[E2]]，两者各自保留百分比取整后求和为 100%[[E9]]。\n\n这意味着在没有保留效率加成、血魔法或其他修正的情况下，这两个光环会占满全部魔力池，剩 0 点魔力可用[[E9]]。如果你想算出具体被占用了多少点魔力数值，需要提供你的**最大魔力**[[E9]]。\n\n> 保留百分比与定值取自库里的宝石每级数值，池大小与各项加成逐字取自问题；**不含血魔法（光环改为保留生命）**——库里没有生命保留的每级数值；也不判断这几个光环搭不搭（那是取向不是计算），不读取角色档案\n\n推导（取自证据 [[E9]]，由代码逐字附上）：\n\n| 步骤 | 算式 | 结果 |\n| --- | --- | --- |\n| 坚定（Determination，20 级） | 50% | 50 |\n| 优雅（Grace，20 级） | 50% | 50 |\n| 百分比合计（各自 round 到 2 位后求和） | 50% + 50% | 100 |\n\n> 检索以降级通道完成（alias, fts）：向量检索与重排未启用（网关无 embedding 模型），当前走 BM25 + 实体精确匹配",
+  "blocked_claims": 0,
+  "elapsed_ms": 6136,
+  "evidence_fingerprint": "sha256:25007c46706999ab33440d1b348ec3e4",
   "_warning": "raw_answer 是未过出口闸门的模型原文，含可能无据的断言，不得当作事实引用",
-  "raw_answer": "坚定和优雅合计保留 **100%** 最大魔力[[E1,E2,E9]]。\n\n具体拆分如下：\n\n| 技能 | 等级 | 保留 |\n|---|---|---|\n| 坚定（Determination） | 20 级 | 50% 最大魔力[[E1]] |\n| 优雅（Grace） | 20 级 | 50% 最大魔力[[E2]] |\n| **合计** | | **100%**[[E9]] |\n\n也就是说，单开这两个光环就会把你的魔力全部保留掉。值得注意的是，「保留效能提高」可以降低这个百分比——例如虚空忆境隐式词缀提供的「坚定的魔力保留效能提高 20%」或「优雅的魔力保留效能提高 20%」[[E3,E4]]，但这类词缀没有生成权重数据，无法计算获取成功率[[E3]]。",
+  "raw_answer": "坚定和优雅合计保留 **100% 最大魔力**[[E9]]。\n\n具体拆分：坚定（20 级）保留 50% 魔力[[E1]]，优雅（20 级）保留 50% 魔力[[E2]]，两者各自保留百分比取整后求和为 100%[[E9]]。\n\n这意味着在没有保留效率加成、血魔法或其他修正的情况下，这两个光环会占满全部魔力池，剩 0 点魔力可用[[E9]]。如果你想算出具体被占用了多少点魔力数值，需要提供你的**最大魔力**[[E9]]。",
   "evidence": [
     {
       "label": "E1",
@@ -33,7 +33,7 @@
       "url": "https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/act_str.lua",
       "source": "Path of Building",
       "source_priority": 2,
-      "text": "# 坚定（Determination）\n类型：技能石 ｜ 红色（力量）\n标签：光环、法术、效果区域、物理\n英文标签：Aura, Spell, AoE, Physical\n施放时间 0 秒 ｜ 自然最高 20 级\n\n- 1 级：需角色 24 级，保留 50% 魔力，冷却 1.2 秒\n- 20 级（自然最高）：需角色 70 级，保留 50% 魔力，冷却 1.2 秒\n- 40 级（PoB 数据上限，需腐化或 +等级）：需角色 100 级，保留 50% 魔力，冷却 1.2 秒\n\nPoB 英文说明：Casts an aura that grants armour to you and your allies.\n\n来源：Path of Building → Data/Skills/act_str.lua\nhttps://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/act_str.lua\n中文名对照：https://poedb.tw/cn/Determination",
+      "text": "# 坚定（Determination）\n类型：技能石 ｜ 红色（力量）\n标签：光环、法术、效果区域、物理\n英文标签：Aura, Spell, AoE, Physical\n施放时间 0 秒 ｜ 自然最高 20 级\n\n- 1 级：需角色 24 级，属性需求 力量 58，保留 50% 魔力，冷却 1.2 秒\n- 20 级（自然最高）：需角色 70 级，属性需求 力量 155，保留 50% 魔力，冷却 1.2 秒\n- 40 级（PoB 数据上限，需腐化或 +等级）：需角色 100 级，保留 50% 魔力，冷却 1.2 秒\n\n**效果文本（POEDB 逐级表）**\n- 你与周围友军的护甲总增 40%（1 级 40｜20 级 49）\n- 你与周围友军的护甲提高 90（1 级 90｜20 级 1026）\n- 范围 # 米（1 级 0｜20 级 1.9）\n\nPoB 英文说明：Casts an aura that grants armour to you and your allies.\n\n来源：Path of Building → Data/Skills/act_str.lua\nhttps://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/act_str.lua\n中文名对照：https://poedb.tw/cn/Determination",
       "can_support_facts": true,
       "claim_scope": "general",
       "claim_data": {}
@@ -46,7 +46,7 @@
       "url": "https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/act_dex.lua",
       "source": "Path of Building",
       "source_priority": 2,
-      "text": "# 优雅（Grace）\n类型：技能石 ｜ 绿色（敏捷）\n标签：光环、法术、效果区域\n英文标签：Aura, Spell, AoE\n施放时间 0 秒 ｜ 自然最高 20 级\n\n- 1 级：需角色 24 级，保留 50% 魔力，冷却 1.2 秒\n- 20 级（自然最高）：需角色 70 级，保留 50% 魔力，冷却 1.2 秒\n- 40 级（PoB 数据上限，需腐化或 +等级）：需角色 100 级，保留 50% 魔力，冷却 1.2 秒\n\nPoB 英文说明：Casts an aura that grants evasion to you and your allies.\n\n来源：Path of Building → Data/Skills/act_dex.lua\nhttps://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/act_dex.lua\n中文名对照：https://poedb.tw/cn/Grace",
+      "text": "# 优雅（Grace）\n类型：技能石 ｜ 绿色（敏捷）\n标签：光环、法术、效果区域\n英文标签：Aura, Spell, AoE\n施放时间 0 秒 ｜ 自然最高 20 级\n\n- 1 级：需角色 24 级，属性需求 敏捷 58，保留 50% 魔力，冷却 1.2 秒\n- 20 级（自然最高）：需角色 70 级，属性需求 敏捷 155，保留 50% 魔力，冷却 1.2 秒\n- 40 级（PoB 数据上限，需腐化或 +等级）：需角色 100 级，保留 50% 魔力，冷却 1.2 秒\n\n**效果文本（POEDB 逐级表）**\n- 你与周围友军的总闪避值总增 20%（1 级 20｜20 级 29）\n- 你与周围友军的闪避值提高 136（1 级 136｜20 级 1545）\n- 范围 # 米（1 级 0｜20 级 1.9）\n\nPoB 英文说明：Casts an aura that grants evasion to you and your allies.\n\n来源：Path of Building → Data/Skills/act_dex.lua\nhttps://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/act_dex.lua\n中文名对照：https://poedb.tw/cn/Grace",
       "can_support_facts": true,
       "claim_scope": "general",
       "claim_data": {}

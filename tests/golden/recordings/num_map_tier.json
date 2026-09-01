@@ -2,13 +2,13 @@
   "format_version": 1,
   "case_id": "num_map_tier",
   "query": "王陵是几阶地图",
-  "recorded_at": "2026-08-19T16:31:18+08:00",
+  "recorded_at": "2026-09-01T11:00:57+08:00",
   "model": "glm-5.2",
   "tokens": {
-    "prompt": 8135,
-    "output": 63,
-    "reasoning": 47,
-    "total": 8198
+    "prompt": 14031,
+    "output": 57,
+    "reasoning": 40,
+    "total": 14088
   },
   "tool_calls": [
     "kb_search"
@@ -17,12 +17,12 @@
   "out_of_scope": false,
   "precision_route": "",
   "gap_answer": "",
-  "final_answer": "王陵是 13 阶地图[[E1]]。\n\n> 检索以降级通道完成（alias, fts）：向量检索与重排未启用（网关无 embedding 模型），当前走 BM25 + 实体精确匹配",
+  "final_answer": "王陵是**13 阶**地图[[E1]]。\n\n> 检索以降级通道完成（alias, fts）：向量检索与重排未启用（网关无 embedding 模型），当前走 BM25 + 实体精确匹配",
   "blocked_claims": 0,
-  "elapsed_ms": 3215,
-  "evidence_fingerprint": "sha256:4c5cb6169dd1df8a76a2f78fe6f37bed",
+  "elapsed_ms": 2390,
+  "evidence_fingerprint": "sha256:4d37bcf09bc872ff9781a665c6f0a40b",
   "_warning": "raw_answer 是未过出口闸门的模型原文，含可能无据的断言，不得当作事实引用",
-  "raw_answer": "王陵是 13 阶地图[[E1]]。",
+  "raw_answer": "王陵是**13 阶**地图[[E1]]。",
   "evidence": [
     {
       "label": "E1",
@@ -110,7 +110,7 @@
       "url": "https://poedb.tw/cn/Shadow_Shaping",
       "source": "POEDB",
       "source_priority": 1,
-      "text": "# 暗影塑形（Shadow Shaping）\n类型：唯一装备 ｜ 底材：小型雕像 ｜ 分类：其他\n\n**需求**：需求 等级 68\n\n**隐式词缀**\n- [隐式词缀] 你地图中找到的地图数量提高 2%\n\n**显式词缀**\n- [显式词缀] 掉落的地图不会是偏好地图\n- [显式词缀] 你每拥有一个不同的恩典地图，你的地图中找到的地图就有+1%的几率拥有特殊基底属性\n\n来源：POEDB → 暗影塑形（Shadow Shaping）\nhttps://poedb.tw/cn/Shadow_Shaping",
+      "text": "# 暗影塑形（Shadow Shaping）\n类型：唯一装备 ｜ 底材：小型雕像 ｜ 分类：其他\n\n**需求**：需求 等级 68\n\n**隐式词缀**\n- [隐式词缀] 你地图中找到的地图数量提高 2%\n\n**显式词缀**\n- [显式词缀] 掉落的地图不会是偏好地图\n- [显式词缀] 你每拥有一个不同的恩典地图，你的地图中找到的地图就有+1%的几率拥有特殊基底属性\n- [显式词缀] 不可改变\n\n来源：POEDB → 暗影塑形（Shadow Shaping）\nhttps://poedb.tw/cn/Shadow_Shaping",
       "can_support_facts": true,
       "claim_scope": "general",
       "claim_data": {}
@@ -123,7 +123,7 @@
       "url": "https://poedb.tw/cn/Twist_of_Fate",
       "source": "POEDB",
       "source_priority": 1,
-      "text": "# 扭转命运（Twist of Fate）\n类型：唯一装备 ｜ 底材：小型雕像 ｜ 分类：其他\n\n**需求**：需求 等级 68\n\n**隐式词缀**\n- [隐式词缀] 你地图中找到的地图数量提高 2%\n\n**显式词缀**\n- [显式词缀] 你的已腐化的稀有地图在打开地图时获得无法预测的修改\n- [显式词缀] 以该方式修改的地图具有 1-3 个额外的随机地图词缀\n\n**附加说明**\n- [说明] （无法修改菌潮地图或异界图鉴上位于虚空石插槽后方的地图）\n\n来源：POEDB → 扭转命运（Twist of Fate）\nhttps://poedb.tw/cn/Twist_of_Fate",
+      "text": "# 扭转命运（Twist of Fate）\n类型：唯一装备 ｜ 底材：小型雕像 ｜ 分类：其他\n\n**需求**：需求 等级 68\n\n**隐式词缀**\n- [隐式词缀] 你地图中找到的地图数量提高 2%\n\n**显式词缀**\n- [显式词缀] 你的已腐化的稀有地图在打开地图时获得无法预测的修改\n- [显式词缀] 以该方式修改的地图具有 1-3 个额外的随机地图词缀\n- [显式词缀] 不可改变\n\n**附加说明**\n- [说明] （无法修改菌潮地图或异界图鉴上位于虚空石插槽后方的地图）\n\n来源：POEDB → 扭转命运（Twist of Fate）\nhttps://poedb.tw/cn/Twist_of_Fate",
       "can_support_facts": true,
       "claim_scope": "general",
       "claim_data": {}

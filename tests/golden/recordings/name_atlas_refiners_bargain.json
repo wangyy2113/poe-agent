@@ -2,24 +2,27 @@
   "format_version": 1,
   "case_id": "name_atlas_refiners_bargain",
   "query": "精炼师的交易",
-  "recorded_at": "2026-08-17T18:03:14+08:00",
+  "recorded_at": "2026-09-01T11:00:44+08:00",
   "model": "glm-5.2",
   "tokens": {
-    "prompt": 6418,
-    "output": 301,
-    "reasoning": 44,
-    "total": 6719
+    "prompt": 14150,
+    "output": 218,
+    "reasoning": 76,
+    "total": 14368
   },
   "tool_calls": [
-    ""
+    "kb_search"
   ],
   "evidence_gap": false,
+  "out_of_scope": false,
+  "precision_route": "",
   "gap_answer": "",
-  "blocked_claims": 6,
-  "elapsed_ms": 5583,
-  "evidence_fingerprint": "sha256:100bb9157c0c6cf713061811486a377c",
+  "final_answer": "## 精炼师的交易（Refiner's Bargain）\n\n**类型**：基石 ｜ Atlas 天赋树 3.29[[E1]]\n\n该基石具有以下效果：\n\n1. **你地图中被附身的怪物掉落的具有稀有度的装备物品有 5% 的几率被转化为奇术之尘**[[E1]]\n2. **你地图中找到的亚硫酸改为提供 10% 数量的随机矿石**[[E1]]\n3. **你地图中找到的命能改为提供 250% 数量的随机作物**[[E1]]\n\n这三条效果同时生效，属于 Atlas 天赋树上的一个基石节点[[E1]]。\n\n> **括号内的百分比是该档在同组内的生成权重占比**，不等于任何通货或具体工艺的一次使用成功率，也不等于期望消耗。\n\n> 检索以降级通道完成（alias, fts）：向量检索与重排未启用（网关无 embedding 模型），当前走 BM25 + 实体精确匹配",
+  "blocked_claims": 0,
+  "elapsed_ms": 5912,
+  "evidence_fingerprint": "sha256:f2f684d8ec7386d5f101c73e539f0d0d",
   "_warning": "raw_answer 是未过出口闸门的模型原文，含可能无据的断言，不得当作事实引用",
-  "raw_answer": "## 精炼师的交易（Refiner's Bargain）\n\n**类型**：基石（Atlas 天赋树）｜ 版本 3.29\n\n### 效果\n\n- 你地图中被附身的怪物掉落的具有稀有度的装备物品有 **5%** 的几率被转化为奇术之尘[[E1]]\n- 你地图中找到的亚硫酸改为提供 **10%** 数量的随机矿石[[E1]]\n- 你地图中找到的命能改为提供 **250%** 数量的随机作物[[E1]]\n\n### 说明\n\n这是一个 **Atlas 天赋树**上的**基石节点**，同时涉及地图中三类掉落的转化规则：\n\n1. **被附身怪物**掉落的稀有装备有 5% 几率转化为「奇术之尘」（一种通货/碎片）[[E1]]\n2. **亚硫酸**掉落改为提供 10% 数量的随机矿石[[E1]]\n3. **命能**掉落改为提供 250% 数量的随机作物——即收获（古灵庄园）相关的作物数量大幅增加[[E1]]\n\n如果你有更具体的问题（例如与之搭配的其他 Atlas 节点、或某个效果的具体机制），可以继续提问。",
+  "raw_answer": "## 精炼师的交易（Refiner's Bargain）\n\n**类型**：基石 ｜ Atlas 天赋树 3.29[[E1]]\n\n该基石具有以下效果：\n\n1. **你地图中被附身的怪物掉落的具有稀有度的装备物品有 5% 的几率被转化为奇术之尘**[[E1]]\n2. **你地图中找到的亚硫酸改为提供 10% 数量的随机矿石**[[E1]]\n3. **你地图中找到的命能改为提供 250% 数量的随机作物**[[E1]]\n\n这三条效果同时生效，属于 Atlas 天赋树上的一个基石节点[[E1]]。",
   "evidence": [
     {
       "label": "E1",
@@ -36,6 +39,19 @@
     },
     {
       "label": "E2",
+      "chunk_id": "scarab:Kalguuran_Scarab_of_Refinement#0#76aecc8724c1eff2",
+      "entity_id": "scarab:Kalguuran_Scarab_of_Refinement",
+      "title": "精炼之卡古兰圣甲虫（Kalguuran Scarab of Refinement）",
+      "url": "https://poedb.tw/cn/Kalguuran_Scarab_of_Refinement",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 精炼之卡古兰圣甲虫（Kalguuran Scarab of Refinement）\n类型：圣甲虫 ｜ 堆叠上限 20 ｜ 地图装置放置上限 1\n\n- 效果：区域内的矿脉提供冶炼金属锭，而非标记的矿石\n\n来源：POEDB → 圣甲虫\nhttps://poedb.tw/cn/Kalguuran_Scarab_of_Refinement",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E3",
       "chunk_id": "passive:Alchemist_83d887c6b8#cc0da4ca3885f557",
       "entity_id": "passive:Alchemist_83d887c6b8",
       "title": "核心天赋·炼金师（Alchemist）",
@@ -48,7 +64,7 @@
       "claim_data": {}
     },
     {
-      "label": "E3",
+      "label": "E4",
       "chunk_id": "atlas_passive:Meticulous_Appraiser_f3f5f4d139#213ddb2068ef1560",
       "entity_id": "atlas_passive:Meticulous_Appraiser_f3f5f4d139",
       "title": "基石·严谨鉴定师（Meticulous Appraiser）",
@@ -61,20 +77,20 @@
       "claim_data": {}
     },
     {
-      "label": "E4",
+      "label": "E5",
       "chunk_id": "unique_item:Meticulous_Appraiser#0#487b73d9a516b81b",
       "entity_id": "unique_item:Meticulous_Appraiser",
       "title": "严谨鉴定师（Meticulous Appraiser）",
       "url": "https://poedb.tw/cn/Meticulous_Appraiser",
       "source": "POEDB",
       "source_priority": 1,
-      "text": "# 严谨鉴定师（Meticulous Appraiser）\n类型：唯一装备 ｜ 底材：小型雕像 ｜ 分类：其他\n\n**需求**：需求 等级 68\n\n**隐式词缀**\n- [隐式词缀] 你地图中找到的地图数量提高 2%\n\n**显式词缀**\n- [显式词缀] 地图中掉落物品数量的修正改为以 300% 的效果作用于地图中掉落物品的稀有度\n\n来源：POEDB → 严谨鉴定师（Meticulous Appraiser）\nhttps://poedb.tw/cn/Meticulous_Appraiser",
+      "text": "# 严谨鉴定师（Meticulous Appraiser）\n类型：唯一装备 ｜ 底材：小型雕像 ｜ 分类：其他\n\n**需求**：需求 等级 68\n\n**隐式词缀**\n- [隐式词缀] 你地图中找到的地图数量提高 2%\n\n**显式词缀**\n- [显式词缀] 地图中掉落物品数量的修正改为以 300% 的效果作用于地图中掉落物品的稀有度\n- [显式词缀] 不可改变\n\n来源：POEDB → 严谨鉴定师（Meticulous Appraiser）\nhttps://poedb.tw/cn/Meticulous_Appraiser",
       "can_support_facts": true,
       "claim_scope": "general",
       "claim_data": {}
     },
     {
-      "label": "E5",
+      "label": "E6",
       "chunk_id": "unique_item:The_Embalmer#0#75986d306b560be8",
       "entity_id": "unique_item:The_Embalmer",
       "title": "入殓师（The Embalmer）",
@@ -87,7 +103,7 @@
       "claim_data": {}
     },
     {
-      "label": "E6",
+      "label": "E7",
       "chunk_id": "ascendancy:Trickster_27e9532636#acdf2f72afb9a126",
       "entity_id": "ascendancy:Trickster_27e9532636",
       "title": "升华节点·欺诈师（Trickster）",
@@ -100,7 +116,7 @@
       "claim_data": {}
     },
     {
-      "label": "E7",
+      "label": "E8",
       "chunk_id": "mod_ladder:Corvine_Charm:AnimalCharmChargeDuration#dd8a94c2e49bcfd0",
       "entity_id": "mod_ladder:Corvine_Charm:AnimalCharmChargeDuration",
       "title": "暗鸦咒符 · AnimalCharmChargeDuration",
@@ -108,19 +124,6 @@
       "source": "POEDB",
       "source_priority": 1,
       "text": "# 暗鸦咒符 · AnimalCharmChargeDuration\n底材类别：暗鸦咒符 ｜ 词缀组：AnimalCharmChargeDuration ｜ 类型：前缀 ｜ 来源渠道：1 个\n\n本词缀组在该底材上共 2 条，来自 1 个来源：Base。\n互斥规则：与本组（AnimalCharmChargeDuration）有相同词缀组的其他词缀不能同时存在于一件装备上。\n\n## Base · 前缀 · 2 档\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/2 | 欺诈师的 | 能量球的持续时间提高 (61-100)% | 60 | 250（0.9244%） |\n| T2/2 | 欺诈师的 | 能量球的持续时间提高 (40-60)% | 1 | 500（1.8488%） |\n\n置信度说明：\n- T 级按 POEDB 的算法推导——在同一来源类别与词缀组内，把物品等级去重后降序排名，物品等级最高者为 T1（算法已复刻并通过不变量校验）\n\n来源：POEDB → 暗鸦咒符 · AnimalCharmChargeDuration\nhttps://poedb.tw/cn/Corvine_Charm#ModifiersCalc",
-      "can_support_facts": true,
-      "claim_scope": "general",
-      "claim_data": {}
-    },
-    {
-      "label": "E8",
-      "chunk_id": "mod_ladder:Lupine_Charm:AnimalCharmChargeDuration#fe429f24a590fb90",
-      "entity_id": "mod_ladder:Lupine_Charm:AnimalCharmChargeDuration",
-      "title": "幽狼咒符 · AnimalCharmChargeDuration",
-      "url": "https://poedb.tw/cn/Lupine_Charm#ModifiersCalc",
-      "source": "POEDB",
-      "source_priority": 1,
-      "text": "# 幽狼咒符 · AnimalCharmChargeDuration\n底材类别：幽狼咒符 ｜ 词缀组：AnimalCharmChargeDuration ｜ 类型：前缀 ｜ 来源渠道：1 个\n\n本词缀组在该底材上共 2 条，来自 1 个来源：Base。\n互斥规则：与本组（AnimalCharmChargeDuration）有相同词缀组的其他词缀不能同时存在于一件装备上。\n\n## Base · 前缀 · 2 档\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/2 | 欺诈师的 | 能量球的持续时间提高 (61-100)% | 60 | 250（0.9016%） |\n| T2/2 | 欺诈师的 | 能量球的持续时间提高 (40-60)% | 1 | 500（1.8031%） |\n\n置信度说明：\n- T 级按 POEDB 的算法推导——在同一来源类别与词缀组内，把物品等级去重后降序排名，物品等级最高者为 T1（算法已复刻并通过不变量校验）\n\n来源：POEDB → 幽狼咒符 · AnimalCharmChargeDuration\nhttps://poedb.tw/cn/Lupine_Charm#ModifiersCalc",
       "can_support_facts": true,
       "claim_scope": "general",
       "claim_data": {}
