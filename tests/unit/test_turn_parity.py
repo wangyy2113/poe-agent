@@ -305,3 +305,53 @@ class SharedPipelineTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DimensionGateSingleImplTest(unittest.TestCase):
+    """维度闸门只能有**一份**实现，评测必须用线上那一份。
+
+    第四十七轮 review 抓到的形态：`_apply_dimension_gate` 是死代码、
+    `_prepare_turn` 内联了一份等价实现、`scripts/eval_run.py` 又自己调
+    `dimension_gap` 并在外面套了 `if sufficient:`（第十八轮之前的语义）。
+    **三份实现、两种行为，而注释声称是同一个函数。**
+    """
+
+    def test_prepare_turn_调用共享实现而不是自己内联(self) -> None:
+        import inspect
+
+        src = inspect.getsource(loop._prepare_turn)
+        self.assertIn("_apply_dimension_gate(", src, "必须调共享实现")
+        # 内联的标志：自己设这几个字段
+        self.assertNotIn('data["missing_terms"] =', src, "不许再内联一份改判")
+
+    def test_评测走的是线上同一个函数(self) -> None:
+        """评测量的必须是线上真正生效的那条路径，否则指标与线上分叉。
+
+        只看 `run_case` 的**代码行**：注释里出现 `if sufficient:` 是在讲这段历史，
+        整文件 grep 会把讲述历史的那句话本身判成违规。
+        """
+        import ast
+
+        path = Path(__file__).resolve().parents[2] / "scripts" / "eval_run.py"
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        run_case = next(
+            n for n in ast.walk(tree)
+            if isinstance(n, ast.FunctionDef) and n.name == "run_case"
+        )
+        code = "\n".join(
+            line for line in ast.unparse(run_case).splitlines()
+            if not line.lstrip().startswith("#")
+        )
+        self.assertIn("_apply_dimension_gate(", code, "评测必须调线上那一份")
+        self.assertNotIn("if sufficient", code,
+                         "外面套 if sufficient 就退回了第十八轮之前的语义")
+
+    def test_无条件问覆盖层(self) -> None:
+        """「这一维有没有数据」与「这次 BM25 有没有命中」是两个问题。
+        第十八轮实测：只在充分时问，偏好工具那条路上它从没被咨询过。"""
+        import inspect
+
+        src = inspect.getsource(loop._apply_dimension_gate)
+        body = src.split('"""')[-1]
+        self.assertNotIn("sufficient", body.split("verdict =")[0],
+                         "改判前不许先看 sufficient")

@@ -29,7 +29,6 @@ from typing import Any, Iterator
 __all__ = [
     "LuaOpaque",
     "LuaSyntaxError",
-    "parse_lua_value",
     "parse_return_table",
     "parse_assignments",
     "load_lua_file",
@@ -314,12 +313,6 @@ class _Parser:
 
 
 # ── 对外入口 ───────────────────────────────────────────────
-
-def parse_lua_value(text: str) -> Any:
-    """解析单个 Lua 值（一般是表字面量）。"""
-    p = _Parser(_tokenize(text), text)
-    return p.parse_value()
-
 
 def parse_return_table(text: str) -> dict[Any, Any]:
     """解析「整个文件就是一张表」的形式。
