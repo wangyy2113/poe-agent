@@ -235,6 +235,12 @@ FACTS: tuple[Fact, ...] = (
     Fact("CLAUDE.md 效果文本入库颗数", "CLAUDE.md", r"820 颗里 \*\*([\d,]+) 颗\*\*",
          lambda c: int(c.execute(
              "SELECT count(DISTINCT gem_id) FROM poedb_gem_stat_level").fetchone()[0])),
+    Fact("CLAUDE.md 宝石获取途径行数", "CLAUDE.md",
+         r"`poedb_gem_quest` \*\*([\d,]+)\*\* 行", _count("poedb_gem_quest")),
+    Fact("CLAUDE.md 有获取途径的宝石颗数", "CLAUDE.md",
+         r"全部 820 颗中有表的 \*\*([\d,]+) 颗\*\*",
+         lambda c: int(c.execute(
+             "SELECT count(DISTINCT gem_id) FROM poedb_gem_quest").fetchone()[0])),
     Fact("CLAUDE.md 宝石待核对颗数", "CLAUDE.md", r"`gem_review` \*\*([\d,]+)\*\*",
          _count_where("source_conflict", "kind='gem_review'")),
     Fact("CLAUDE.md 唯一装备待核对条数", "CLAUDE.md",

@@ -189,6 +189,54 @@ def stat_lines_block(attrs: dict) -> list[str]:
     return out
 
 
+#: 卡片上最多列几条获取途径。实测 668 颗里最多 6 条、平均 1.9 条。
+#: 与效果文本同一条约定：**静默截断等同于漏答**，超了必须写出还剩多少。
+MAX_CARD_QUEST_LINES = 8
+
+#: 获取途径 → 卡上的说法。`box` 那 21 行是七个职业在绝望岩滩捡到的开局技能。
+_QUEST_KIND_LABEL = {
+    "quest_reward": "任务奖励",
+    "vendor": "向{npc}购买",
+    "box": "开局箱子",
+}
+
+
+def acquisition_block(attrs: dict) -> list[str]:
+    """获取途径区块（第四十三轮）。
+
+    **只写页面给了的三条途径**（任务奖励 / 任务商人 / 开局箱子）。
+    页面没给使命表的那 152 颗（瓦尔、觉醒辅助、契约类）写一句中性事实——
+    只说「页面没有给」+「本库未采集」，**不推断「所以靠掉落」**：
+    那是经验推断，正是第一原则要拦的东西（与通货那 15 条没有效果文本时
+    「留空而不自己补一句」是同一条规矩）。
+
+    整块只有在这一维**导入过**时才出现（`quests_loaded`）。表整张是空的说明
+    `import_gem_quests.py` 还没跑，这时写「POEDB 详情页没给」是一句假话。
+    """
+    if not attrs.get("quests_loaded"):
+        return []
+    rows = [dict(q) for q in (attrs.get("quests") or [])]
+    if not rows:
+        return [
+            "**获取途径**",
+            "- POEDB 详情页未给出任务/商人表，本库未采集该宝石的获取途径",
+        ]
+    out = ["**获取途径**"]
+    for row in rows[:MAX_CARD_QUEST_LINES]:
+        kind = str(row.get("source_kind") or "")
+        label = _QUEST_KIND_LABEL.get(kind, kind)
+        if kind == "vendor":
+            label = label.format(npc=row.get("npc_zh") or "商人")
+        classes = "、".join(str(c) for c in (row.get("classes") or []))
+        quest = row.get("quest_zh") or ""
+        bits = f"- 第 {row.get('act')} 章「{quest}」{label}"
+        out.append(f"{bits}（{classes}）" if classes else bits)
+    if len(rows) > MAX_CARD_QUEST_LINES:
+        out.append(f"（另有 {len(rows) - MAX_CARD_QUEST_LINES} 条获取途径，"
+                   "用 skill_gem_levels 查完整数据）")
+    return out
+
+
 def render_card(entity: Entity) -> str:
     """渲染宝石卡。数值取自 `entity.attributes`（导入时写入的结构化字段）。"""
     attrs = entity.attributes
@@ -236,6 +284,11 @@ def render_card(entity: Entity) -> str:
     if stat_block:
         parts.append("")
         parts.extend(stat_block)
+
+    quest_block = acquisition_block(attrs)
+    if quest_block:
+        parts.append("")
+        parts.extend(quest_block)
 
     if attrs.get("description_en"):
         parts.append(f"\nPoB 英文说明：{attrs['description_en']}")

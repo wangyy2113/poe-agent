@@ -2,13 +2,13 @@
   "format_version": 1,
   "case_id": "num_skill_gem_base_damage",
   "query": "冰霜脉冲在 20 级时的基础伤害是多少",
-  "recorded_at": "2026-09-01T11:01:24+08:00",
+  "recorded_at": "2026-09-01T11:53:57+08:00",
   "model": "glm-5.2",
   "tokens": {
-    "prompt": 18192,
-    "output": 199,
-    "reasoning": 131,
-    "total": 18391
+    "prompt": 18371,
+    "output": 173,
+    "reasoning": 103,
+    "total": 18544
   },
   "tool_calls": [
     "kb_search"
@@ -17,12 +17,12 @@
   "out_of_scope": false,
   "precision_route": "",
   "gap_answer": "",
-  "final_answer": "冰霜脉冲（Freezing Pulse）在 20 级时的基础冰霜伤害为 **1659–2488**[[E1]]。这一级需要角色等级 70、智慧 155，消耗 21 魔力，暴击率为 7.5%[[E1]]。\n\n> **括号内的百分比是该档在同组内的生成权重占比**，不等于任何通货或具体工艺的一次使用成功率，也不等于期望消耗。\n\n> 检索以降级通道完成（alias, fts）：向量检索与重排未启用（网关无 embedding 模型），当前走 BM25 + 实体精确匹配",
+  "final_answer": "冰霜脉冲（Freezing Pulse）在 20 级时的基础冰霜伤害为 **1659–2488**[[E1]]。该级需角色 70 级、智慧 155，消耗 21 魔力，暴击率为 7.5%[[E1]]。\n\n> **括号内的百分比是该档在同组内的生成权重占比**，不等于任何通货或具体工艺的一次使用成功率，也不等于期望消耗。\n\n> 检索以降级通道完成（alias, fts）：向量检索与重排未启用（网关无 embedding 模型），当前走 BM25 + 实体精确匹配",
   "blocked_claims": 0,
-  "elapsed_ms": 6664,
-  "evidence_fingerprint": "sha256:2b180a60169d9625108cea9e5df32250",
+  "elapsed_ms": 4244,
+  "evidence_fingerprint": "sha256:b0a9ee6d9a5697dcd44676db45668881",
   "_warning": "raw_answer 是未过出口闸门的模型原文，含可能无据的断言，不得当作事实引用",
-  "raw_answer": "冰霜脉冲（Freezing Pulse）在 20 级时的基础冰霜伤害为 **1659–2488**[[E1]]。这一级需要角色等级 70、智慧 155，消耗 21 魔力，暴击率为 7.5%[[E1]]。",
+  "raw_answer": "冰霜脉冲（Freezing Pulse）在 20 级时的基础冰霜伤害为 **1659–2488**[[E1]]。该级需角色 70 级、智慧 155，消耗 21 魔力，暴击率为 7.5%[[E1]]。",
   "evidence": [
     {
       "label": "E1",
@@ -32,7 +32,7 @@
       "url": "https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/act_int.lua",
       "source": "Path of Building",
       "source_priority": 2,
-      "text": "# 冰霜脉冲（Freezing Pulse）\n类型：技能石 ｜ 蓝色（智慧）\n标签：法术、投射物、冰霜\n英文标签：Spell, Projectile, Cold\n施放时间 0.65 秒 ｜ 自然最高 20 级\n\n- 1 级：需角色 1 级，属性需求 智慧 0，消耗 5 魔力，基础冰霜伤害 9–14，暴击率 7.5%\n- 20 级（自然最高）：需角色 70 级，属性需求 智慧 155，消耗 21 魔力，基础冰霜伤害 1659–2488，暴击率 7.5%\n- 40 级（PoB 数据上限，需腐化或 +等级）：需角色 100 级，消耗 28 魔力，基础冰霜伤害 8799–13198，暴击率 7.5%\n\n**效果文本（POEDB 逐级表）**\n- 造成 9 - 14 冰霜伤害（1 级 9, 14｜20 级 1659, 2488）\n- 发射 1 个投射物（1 级 1｜20 级 5）\n\nPoB 英文说明：An icy projectile which has a chance to freeze enemies it passes through. The projectile fades quickly, reducing damage and freezing chance until it dissipates.\n\n来源：Path of Building → Data/Skills/act_int.lua\nhttps://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/act_int.lua\n中文名对照：https://poedb.tw/cn/Freezing_Pulse",
+      "text": "# 冰霜脉冲（Freezing Pulse）\n类型：技能石 ｜ 蓝色（智慧）\n标签：法术、投射物、冰霜\n英文标签：Spell, Projectile, Cold\n施放时间 0.65 秒 ｜ 自然最高 20 级\n\n- 1 级：需角色 1 级，属性需求 智慧 0，消耗 5 魔力，基础冰霜伤害 9–14，暴击率 7.5%\n- 20 级（自然最高）：需角色 70 级，属性需求 智慧 155，消耗 21 魔力，基础冰霜伤害 1659–2488，暴击率 7.5%\n- 40 级（PoB 数据上限，需腐化或 +等级）：需角色 100 级，消耗 28 魔力，基础冰霜伤害 8799–13198，暴击率 7.5%\n\n**效果文本（POEDB 逐级表）**\n- 造成 9 - 14 冰霜伤害（1 级 9, 14｜20 级 1659, 2488）\n- 发射 1 个投射物（1 级 1｜20 级 5）\n\n**获取途径**\n- 第 1 章「大门口的敌人」任务奖励（女巫、暗影）\n- 第 1 章「大门口的敌人」向 奈莎 购买（暗影、圣堂武僧、女巫）\n\nPoB 英文说明：An icy projectile which has a chance to freeze enemies it passes through. The projectile fades quickly, reducing damage and freezing chance until it dissipates.\n\n来源：Path of Building → Data/Skills/act_int.lua\nhttps://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/act_int.lua\n中文名对照：https://poedb.tw/cn/Freezing_Pulse",
       "can_support_facts": true,
       "claim_scope": "general",
       "claim_data": {}

@@ -2,13 +2,13 @@
   "format_version": 1,
   "case_id": "num_portal_gem_char_level",
   "query": "时空之门这个技能石需要角色多少级",
-  "recorded_at": "2026-08-27T19:17:16+08:00",
+  "recorded_at": "2026-09-01T11:53:17+08:00",
   "model": "glm-5.2",
   "tokens": {
-    "prompt": 13917,
-    "output": 136,
-    "reasoning": 85,
-    "total": 14053
+    "prompt": 14067,
+    "output": 154,
+    "reasoning": 82,
+    "total": 14221
   },
   "tool_calls": [
     "kb_search"
@@ -17,12 +17,12 @@
   "out_of_scope": false,
   "precision_route": "",
   "gap_answer": "",
-  "final_answer": "时空之门（Portal）技能石需要**角色 10 级**[[E1]]。它自然最高为 1 级，施放时间 2.5 秒，无属性需求[[E1]]。\n\n> 检索以降级通道完成（alias, fts）：向量检索与重排未启用（网关无 embedding 模型），当前走 BM25 + 实体精确匹配",
+  "final_answer": "时空之门（Portal）技能石在 1 级时需要角色 **10 级**[[E1]]。该宝石自然最高为 1 级，施放时间 2.5 秒，为白色宝石（无属性需求，力量/敏捷/智慧均为 0）[[E1]]。\n\n> 检索以降级通道完成（alias, fts）：向量检索与重排未启用（网关无 embedding 模型），当前走 BM25 + 实体精确匹配",
   "blocked_claims": 0,
-  "elapsed_ms": 3886,
-  "evidence_fingerprint": "sha256:d29c5b32bc4aaae75bfa26653cbeea7d",
+  "elapsed_ms": 4034,
+  "evidence_fingerprint": "sha256:e27d8658e34c5955458d5da28ef798c4",
   "_warning": "raw_answer 是未过出口闸门的模型原文，含可能无据的断言，不得当作事实引用",
-  "raw_answer": "时空之门（Portal）技能石需要**角色 10 级**[[E1]]。它自然最高为 1 级，施放时间 2.5 秒，无属性需求[[E1]]。",
+  "raw_answer": "时空之门（Portal）技能石在 1 级时需要角色 **10 级**[[E1]]。该宝石自然最高为 1 级，施放时间 2.5 秒，为白色宝石（无属性需求，力量/敏捷/智慧均为 0）[[E1]]。",
   "evidence": [
     {
       "label": "E1",
@@ -32,7 +32,7 @@
       "url": "https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/other.lua",
       "source": "Path of Building",
       "source_priority": 2,
-      "text": "# 时空之门（Portal）\n类型：技能石 ｜ 白色（无属性需求）\n英文标签：Spell\n施放时间 2.5 秒 ｜ 自然最高 1 级\n\n- 1 级：需角色 10 级，属性需求 力量 0、敏捷 0、智慧 0\n- 10 级（PoB 数据上限，需腐化或 +等级）：需角色 10 级，属性需求 力量 0、敏捷 0、智慧 0\n\nPoB 英文说明：Creates a portal to the current area's town.\n\n来源：Path of Building → Data/Skills/other.lua\nhttps://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/other.lua\n中文名对照：https://poedb.tw/cn/Portal",
+      "text": "# 时空之门（Portal）\n类型：技能石 ｜ 白色（无属性需求）\n英文标签：Spell\n施放时间 2.5 秒 ｜ 自然最高 1 级\n\n- 1 级：需角色 10 级，属性需求 力量 0、敏捷 0、智慧 0\n- 10 级（PoB 数据上限，需腐化或 +等级）：需角色 10 级，属性需求 力量 0、敏捷 0、智慧 0\n\n**获取途径**\n- POEDB 详情页未给出任务/商人表，本库未采集该宝石的获取途径\n\nPoB 英文说明：Creates a portal to the current area's town.\n\n来源：Path of Building → Data/Skills/other.lua\nhttps://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/other.lua\n中文名对照：https://poedb.tw/cn/Portal",
       "can_support_facts": true,
       "claim_scope": "general",
       "claim_data": {}

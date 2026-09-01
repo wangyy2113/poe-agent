@@ -251,14 +251,47 @@ class SkillGemIntentTest(DimensionGapTest):
             with self.subTest(q=q):
                 self.assertFalse(self._verdict(q, self.GEM_HIT).is_gap, q)
 
-    def test_仍然缺的那几维照旧拦(self) -> None:
-        """DPS 要攻速与整条加成链（基础伤害只是其中一个乘数）；
-        获取途径（任务奖励 / 掉落）不在任何已缓存页上。"""
+    def test_获取途径第四十三轮起放行(self) -> None:
+        """**这条边界又往前挪了一格。**
+
+        上一版这里断言「怎么获得 / 哪里买」照旧拦，理由写在 `kb/coverage.py` 的
+        注释里：「任务奖励与掉落不在任何已缓存页上」。**那句是错的**——
+        第三十二轮为取效果文本抓的 820 张详情页里就有「使命」表
+        （章节｜使命｜NPC｜角色），实测 668 颗有、共 1261 行。
+
+        与万神殿（第三十五轮）、Boss（第三十八轮）、宝石效果文本（第三十二轮）
+        是同一个错误的第四次：**停在一页/一个字段上就下「缺来源」的结论**。
+        """
+        for q in ("冰霜脉冲怎么获得",
+                  "冰霜脉冲哪里买",
+                  "冰霜脉冲是哪个任务奖励"):
+            with self.subTest(q=q):
+                self.assertFalse(self._verdict(q, self.GEM_HIT).is_gap, q)
+
+    def test_仍然缺的那两维照旧拦(self) -> None:
+        """成对点：放行获取途径不等于放行一切。
+
+        DPS 要攻速与整条加成链，基础伤害只是其中一个乘数——它仍然没有。
+        **掉落来源**同样仍未采集：那 152 颗瓦尔/觉醒/契约类页面上没有使命表。
+
+        「掉落」这条**差点没敢加**，理由是「这个词在唯一装备、通货、精华文本里
+        到处都是」。**那个理由是错的**，而且是评测量出来的（加之前
+        `gap_skill_gem_drop_source` 漏出，加之后归零、错误拒答仍是 0）：
+        这份判据匹配的是**问句**，且只在本域**已被识别**之后才生效——
+        「冈姆的壮志哪里掉落」命中的是唯一装备，压根走不到这里
+        （下面 `test_唯一装备的伤害问题不被宝石维度误拦` 钉的就是这条）。
+        **判据描述的是「问句形式 + 已识别的域」，不是语料里的词频。**
+        """
         for q in ("冰霜脉冲的 dps 是多少",
-                  "冰霜脉冲怎么获得",
-                  "冰霜脉冲哪里买"):
+                  "冰霜脉冲每秒伤害多少",
+                  "冰霜脉冲从哪里掉落"):
             with self.subTest(q=q):
                 self.assertTrue(self._verdict(q, self.GEM_HIT).is_gap, q)
+
+    def test_掉落判据不牵连唯一装备(self) -> None:
+        """成对的另一面：加「掉落」不能把别的域的问题拦下来。"""
+        v = self._verdict("冈姆的壮志哪里掉落", ("unique_item:Kaoms_Heart",))
+        self.assertFalse(any(s.key in {"skill_gem", "support_gem"} for s in v.uncovered))
 
     def test_属性需求与效果文本这两维放行(self) -> None:
         """**边界又往前挪了一格（第三十二轮）。**
@@ -323,9 +356,15 @@ class SkillGemIntentTest(DimensionGapTest):
             with self.subTest(q=q):
                 self.assertFalse(self._verdict(q, self.SUPPORT_HIT).is_gap, q)
 
-    def test_辅助宝石仍然缺的那两维照旧拦(self) -> None:
-        """成对点：放行「加成多少」不等于放行一切——DPS 与获取途径确实没有。"""
-        for q in ("受伤时施放的 dps 是多少", "受伤时施放怎么获得"):
+    def test_辅助宝石的获取途径第四十三轮起放行(self) -> None:
+        """与 `skill_gem` 成对：使命表同样覆盖了 173 颗辅助宝石。"""
+        for q in ("受伤时施放怎么获得", "受伤时施放哪里买"):
+            with self.subTest(q=q):
+                self.assertFalse(self._verdict(q, self.SUPPORT_HIT).is_gap, q)
+
+    def test_辅助宝石仍然缺的那一维照旧拦(self) -> None:
+        """成对点：放行「加成多少」与「怎么获得」不等于放行一切——DPS 确实没有。"""
+        for q in ("受伤时施放的 dps 是多少",):
             with self.subTest(q=q):
                 v = self._verdict(q, self.SUPPORT_HIT)
                 self.assertTrue(v.is_gap, q)

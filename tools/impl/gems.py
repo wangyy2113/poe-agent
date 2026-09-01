@@ -81,9 +81,39 @@ def _poedb_stat_lines(conn, gem_id: str) -> list[dict[str, Any]]:  # noqa: ANN00
     ]
 
 
+def _poedb_quests(conn, gem_id: str) -> list[dict[str, Any]]:  # noqa: ANN001
+    """获取途径（第四十三轮）。没有行有两种含义，由调用方按整表是否为空区分。"""
+    return [
+        {
+            "act": int(r["act"]), "quest_zh": r["quest_zh"],
+            "source_kind": r["source_kind"], "npc_zh": r["npc_zh"] or None,
+            "classes": json.loads(r["classes_json"] or "[]"),
+        }
+        for r in conn.execute(
+            "SELECT act, quest_zh, source_kind, npc_zh, classes_json "
+            "FROM poedb_gem_quest WHERE gem_id = ? ORDER BY act, quest_zh, source_kind",
+            (gem_id,),
+        )
+    ]
+
+
+def _quest_line(row: dict[str, Any]) -> str:
+    kind = str(row.get("source_kind") or "")
+    if kind == "vendor":
+        label = f"向{row.get('npc_zh') or '商人'}购买"
+    elif kind == "box":
+        label = "开局箱子"
+    else:
+        label = "任务奖励"
+    classes = "、".join(str(c) for c in (row.get("classes") or []))
+    line = f"- 第 {row.get('act')} 章「{row.get('quest_zh')}」{label}"
+    return f"{line}（{classes}）" if classes else line
+
+
 def _render_gem(
     gem: sqlite3.Row, levels: list[sqlite3.Row], total: int, *,
     stat_lines: list[dict[str, Any]], poedb_levels: dict[int, dict[str, Any]],
+    quests: list[dict[str, Any]],
 ) -> str:
     name = f"{gem['name_zh']}（{gem['name_en']}）"
     kind = KIND_LABEL.get(gem["gem_kind"], "宝石")
@@ -133,17 +163,26 @@ def _render_gem(
             ]
             suffix = f"（{'｜'.join(marks)}）" if marks else ""
             out.append(f"- {line_row['text_zh']}{suffix}")
+    # 获取途径（第四十三轮）。逐颗说真话：668 颗有使命表，152 颗没有。
+    out.append("")
+    if quests:
+        out.append("获取途径（POEDB 详情页的使命表）：")
+        out.extend(_quest_line(row) for row in quests)
+        acquisition_note = "掉落来源未采集（上表只有任务奖励、商人与开局箱子）"
+    else:
+        acquisition_note = (
+            "POEDB 详情页未给出这颗宝石的使命表，本库未采集它的获取途径"
+        )
     out.append("")
     if stat_lines:
-        out.append(
-            "本库未采集该技能的 DPS 与获取途径——这些不在上表里，不要从上表推断。"
-        )
+        out.append(f"本库未采集该技能的 DPS；{acquisition_note}——不要从上表推断。")
     else:
         # 逐颗说真话：819 颗有效果文本，这一颗没有。笼统说「本库未采集效果文本」
         # 会在另外 819 颗上变成假话，而那正是覆盖声明要避免的那种句子。
         out.append(
             "本库没有这颗宝石的效果文本与属性需求（POEDB 详情页未取到或与 PoB "
-            "逐级数值对不上），也未采集 DPS 与获取途径——不要从上表推断这些。"
+            f"逐级数值对不上），也未采集 DPS；{acquisition_note}"
+            "——不要从上表推断这些。"
         )
     out.append("")
     out.append(f"来源：{gem['source']} {gem['source_file']}")
@@ -249,8 +288,10 @@ def skill_gem_levels(gem_query: str, level: int | None = None) -> ToolResult:
             shown = _sample_levels(rows, int(gem["natural_max_level"] or 0))
         stat_lines = _poedb_stat_lines(conn, gem["gem_id"])
         poedb_levels = _poedb_levels(conn, gem["gem_id"])
+        quests = _poedb_quests(conn, gem["gem_id"])
         citations.append(_citation(gem, _render_gem(
-            gem, shown, total, stat_lines=stat_lines, poedb_levels=poedb_levels)))
+            gem, shown, total, stat_lines=stat_lines, poedb_levels=poedb_levels,
+            quests=quests)))
         picked.append({
             "name_zh": gem["name_zh"],
             "name_en": gem["name_en"],
@@ -264,6 +305,7 @@ def skill_gem_levels(gem_query: str, level: int | None = None) -> ToolResult:
                 for lv, row in sorted(poedb_levels.items())
                 if any(v is not None for k, v in row.items() if k.startswith("req_"))
             },
+            "acquisition": quests,
             "poedb_url": gem["poedb_url"],
         })
 
@@ -286,8 +328,9 @@ def skill_gem_levels(gem_query: str, level: int | None = None) -> ToolResult:
             #（metamods / bench / craft_pool 三个工具都走它）。
             # 让模型自己说这句话就会被出口闸门拦掉——那是同一个模式的第五次。
             "boundary": (
-                "每级字面值与基础伤害出自 PoB，效果文本与属性需求出自 POEDB 详情页"
-                "（逐级对过账）；不提供 DPS 与获取途径"
+                "每级字面值与基础伤害出自 PoB，效果文本、属性需求与获取途径出自 "
+                "POEDB 详情页（前两维逐级对过账）；获取途径只含任务奖励、商人与"
+                "开局箱子，**掉落来源与 DPS 不提供**"
             ),
         },
         citations=citations,

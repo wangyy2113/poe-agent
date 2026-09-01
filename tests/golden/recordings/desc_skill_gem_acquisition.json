@@ -1,0 +1,132 @@
+{
+  "format_version": 1,
+  "case_id": "desc_skill_gem_acquisition",
+  "query": "冰霜新星这个技能石怎么获得",
+  "recorded_at": "2026-09-01T11:55:00+08:00",
+  "model": "glm-5.2",
+  "tokens": {
+    "prompt": 9324,
+    "output": 427,
+    "reasoning": 158,
+    "total": 9751
+  },
+  "tool_calls": [
+    "kb_search"
+  ],
+  "evidence_gap": false,
+  "out_of_scope": false,
+  "precision_route": "",
+  "gap_answer": "",
+  "final_answer": "## 冰霜新星（Ice Nova）的获取途径\n\n根据检索到的数据，**冰霜新星**的获取途径如下：\n\n- **第 1 章「海妖之歌」任务奖励**：女巫、贵族、圣堂武僧可获 [[E1]]\n- **第 1 章「海妖之歌」向 奈莎（Nessa）购买**：贵族、圣堂武僧、女巫可购买 [[E1]]\n\n---\n\n〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕- **深寒之冰霜新星（Ice Nova of Deep Freeze）**：同样通过第 1 章「海妖之歌」任务奖励或向奈莎购买，适用职业与原版一致 [[E3]]\n- **寒冰弹之冰霜新星（Ice Nova of Frostbolts）**：同样通过第 1 章「海妖之歌」任务奖励或向奈莎购买，适用职业与原版一致 [[E4]]\n\n---\n\n需要注意的是，**瓦尔：冰霜新星（Vaal Ice Nova）**是瓦尔版本，其获取途径在 POEDB 详情页上未给出任务/商人表，**本库未采集该宝石的获取途径**[[E2]]。\n\n> 检索以降级通道完成（alias, fts）：向量检索与重排未启用（网关无 embedding 模型），当前走 BM25 + 实体精确匹配",
+  "blocked_claims": 1,
+  "elapsed_ms": 16268,
+  "evidence_fingerprint": "sha256:b5780e398cfeac1628a85dbe2272e1bf",
+  "_warning": "raw_answer 是未过出口闸门的模型原文，含可能无据的断言，不得当作事实引用",
+  "raw_answer": "## 冰霜新星（Ice Nova）的获取途径\n\n根据检索到的数据，**冰霜新星**的获取途径如下：\n\n- **第 1 章「海妖之歌」任务奖励**：女巫、贵族、圣堂武僧可获 [[E1]]\n- **第 1 章「海妖之歌」向 奈莎（Nessa）购买**：贵族、圣堂武僧、女巫可购买 [[E1]]\n\n---\n\n此外，冰霜新星还有两个**蜕变宝石（Transfigured Gem）**版本，获取途径相同：\n\n- **深寒之冰霜新星（Ice Nova of Deep Freeze）**：同样通过第 1 章「海妖之歌」任务奖励或向奈莎购买，适用职业与原版一致 [[E3]]\n- **寒冰弹之冰霜新星（Ice Nova of Frostbolts）**：同样通过第 1 章「海妖之歌」任务奖励或向奈莎购买，适用职业与原版一致 [[E4]]\n\n---\n\n需要注意的是，**瓦尔：冰霜新星（Vaal Ice Nova）**是瓦尔版本，其获取途径在 POEDB 详情页上未给出任务/商人表，**本库未采集该宝石的获取途径**[[E2]]。",
+  "evidence": [
+    {
+      "label": "E1",
+      "chunk_id": "skill:Ice_Nova#0#68fe340251f4954a",
+      "entity_id": "skill:Ice_Nova",
+      "title": "冰霜新星（Ice Nova）",
+      "url": "https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/act_int.lua",
+      "source": "Path of Building",
+      "source_priority": 2,
+      "text": "# 冰霜新星（Ice Nova）\n类型：技能石 ｜ 蓝色（智慧）\n标签：法术、效果区域、冰霜、新星\n英文标签：Spell, AoE, Cold, Nova\n施放时间 0.7 秒 ｜ 自然最高 20 级\n\n- 1 级：需角色 12 级，属性需求 智慧 33，消耗 8 魔力，基础冰霜伤害 25–38，暴击率 7.5%\n- 20 级（自然最高）：需角色 70 级，属性需求 智慧 155，消耗 23 魔力，基础冰霜伤害 1122–1683，暴击率 7.5%\n- 40 级（PoB 数据上限，需腐化或 +等级）：需角色 100 级，消耗 31 魔力，基础冰霜伤害 5619–8429，暴击率 7.5%\n\n**效果文本（POEDB 逐级表）**\n- 造成 25 - 38 冰霜伤害（1 级 25, 38｜20 级 1122, 1683）\n- 基础范围为 2.6 米（1 级 2.6｜20 级 3）\n\n**获取途径**\n- 第 1 章「海妖之歌」任务奖励（女巫、贵族、圣堂武僧）\n- 第 1 章「海妖之歌」向 奈莎 购买（贵族、圣堂武僧、女巫）\n\nPoB 英文说明：A circle of ice expands from the caster.\n\n来源：Path of Building → Data/Skills/act_int.lua\nhttps://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/act_int.lua\n中文名对照：https://poedb.tw/cn/Ice_Nova",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E2",
+      "chunk_id": "skill:Vaal_Ice_Nova#0#e26d6df18f587784",
+      "entity_id": "skill:Vaal_Ice_Nova",
+      "title": "瓦尔：冰霜新星（Vaal Ice Nova）",
+      "url": "https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/act_int.lua",
+      "source": "Path of Building",
+      "source_priority": 2,
+      "text": "# 瓦尔：冰霜新星（Vaal Ice Nova）\n类型：技能石 ｜ 蓝色（智慧） ｜ 瓦尔宝石\n标签：法术、效果区域、瓦尔、冰霜、新星\n英文标签：Spell, AoE, Vaal, Cold, Nova\n施放时间 0.7 秒 ｜ 自然最高 20 级\n\n- 1 级：需角色 12 级，属性需求 智慧 33，消耗 25 魂，基础冰霜伤害 20–29，暴击率 7.5%\n- 20 级（自然最高）：需角色 70 级，属性需求 智慧 155，消耗 25 魂，基础冰霜伤害 834–1227，暴击率 7.5%\n- 40 级（PoB 数据上限，需腐化或 +等级）：需角色 100 级，消耗 25 魂，基础冰霜伤害 4060–5971，暴击率 7.5%\n\n**效果文本（POEDB 逐级表）**\n- 造成 20 - 29 冰霜伤害（1 级 20, 29｜20 级 834, 1227）\n\n**获取途径**\n- POEDB 详情页未给出任务/商人表，本库未采集该宝石的获取途径\n\nPoB 英文说明：A chilling circle of ice expands from the caster, repeating from every enemy it hits.\n\n来源：Path of Building → Data/Skills/act_int.lua\nhttps://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/act_int.lua\n中文名对照：https://poedb.tw/cn/Vaal_Ice_Nova",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E3",
+      "chunk_id": "skill:Ice_Nova_of_Deep_Freeze#0#1f42bf0be10d6e84",
+      "entity_id": "skill:Ice_Nova_of_Deep_Freeze",
+      "title": "深寒之冰霜新星（Ice Nova of Deep Freeze）",
+      "url": "https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/act_int.lua",
+      "source": "Path of Building",
+      "source_priority": 2,
+      "text": "# 深寒之冰霜新星（Ice Nova of Deep Freeze）\n类型：技能石 ｜ 蓝色（智慧） ｜ 蜕变宝石\n标签：法术、效果区域、冰霜、新星\n英文标签：Spell, AoE, Cold, Nova\n施放时间 0.7 秒 ｜ 自然最高 20 级\n\n- 1 级：需角色 12 级，属性需求 智慧 33，消耗 8 魔力，基础冰霜伤害 18–28，暴击率 7.5%\n- 20 级（自然最高）：需角色 70 级，属性需求 智慧 155，消耗 23 魔力，基础冰霜伤害 817–1225，暴击率 7.5%\n- 40 级（PoB 数据上限，需腐化或 +等级）：需角色 100 级，消耗 31 魔力，基础冰霜伤害 4089–6134，暴击率 7.5%\n\n**效果文本（POEDB 逐级表）**\n- 造成 18 - 28 冰霜伤害（1 级 18, 28｜20 级 817, 1225）\n- 对敌人造成相当于伤害总增 300% 的冻结效果（1 级 300｜20 级 490）\n- 基础范围为 2.8 米（1 级 2.8｜20 级 3.2）\n\n**获取途径**\n- 第 1 章「海妖之歌」任务奖励（女巫、贵族、圣堂武僧）\n- 第 1 章「海妖之歌」向 奈莎 购买（贵族、圣堂武僧、女巫）\n\nPoB 英文说明：A circle of ice expands from the caster.\n\n来源：Path of Building → Data/Skills/act_int.lua\nhttps://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/act_int.lua\n中文名对照：https://poedb.tw/cn/Ice_Nova_of_Deep_Freeze",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E4",
+      "chunk_id": "skill:Ice_Nova_of_Frostbolts#0#b52d2dde996cc400",
+      "entity_id": "skill:Ice_Nova_of_Frostbolts",
+      "title": "寒冰弹之冰霜新星（Ice Nova of Frostbolts）",
+      "url": "https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/act_int.lua",
+      "source": "Path of Building",
+      "source_priority": 2,
+      "text": "# 寒冰弹之冰霜新星（Ice Nova of Frostbolts）\n类型：技能石 ｜ 蓝色（智慧） ｜ 蜕变宝石\n标签：法术、效果区域、冰霜、新星\n英文标签：Spell, AoE, Cold, Nova\n施放时间 0.7 秒 ｜ 自然最高 20 级\n\n- 1 级：需角色 12 级，属性需求 智慧 33，消耗 8 魔力，基础冰霜伤害 14–20，暴击率 7.5%\n- 20 级（自然最高）：需角色 70 级，属性需求 智慧 155，消耗 23 魔力，基础冰霜伤害 590–885，暴击率 7.5%\n- 40 级（PoB 数据上限，需腐化或 +等级）：需角色 100 级，消耗 31 魔力，基础冰霜伤害 2920–4381，暴击率 7.5%\n\n**效果文本（POEDB 逐级表）**\n- 造成 14 - 20 冰霜伤害（1 级 14, 20｜20 级 590, 885）\n- 基础范围为 1.8 米（1 级 1.8｜20 级 2.2）\n\n**获取途径**\n- 第 1 章「海妖之歌」任务奖励（女巫、贵族、圣堂武僧）\n- 第 1 章「海妖之歌」向 奈莎 购买（贵族、圣堂武僧、女巫）\n\nPoB 英文说明：A circle of ice expands from the caster. If the caster targets near their Frostbolt projectiles, it will expand from a number of those projectiles instead. If this skill would repeat when cast this way, it will instead expand again from the same projectiles after a short delay.\n\n来源：Path of Building → Data/Skills/act_int.lua\nhttps://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/act_int.lua\n中文名对照：https://poedb.tw/cn/Ice_Nova_of_Frostbolts",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E5",
+      "chunk_id": "unique_item:Replica_Quill_Rain#0#e034bd5c700a4eb2",
+      "entity_id": "unique_item:Replica_Quill_Rain",
+      "title": "骤雨之弦【仿品】（Replica Quill Rain）",
+      "url": "https://poedb.tw/cn/Replica_Quill_Rain",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 骤雨之弦【仿品】（Replica Quill Rain）\n类型：唯一装备 ｜ 底材：短弓 ｜ 分类：武器\n\n**需求**：需求 等级 5, 26 敏捷\n\n**显式词缀**\n- [显式词缀] 插槽内的技能石被等级 1 的箭之新星辅助\n- [显式词缀] +(10-20) 敏捷\n- [显式词缀] 物理伤害提高 100%\n- [显式词缀] 攻击速度加快 (25-30)%\n- [显式词缀] 每击中一名敌人获得 2 点魔力\n- [显式词缀] 投射物速度加快 (50-100)%\n- [显式词缀] +(25-50) 命中值\n\n来源：POEDB → 骤雨之弦【仿品】（Replica Quill Rain）\nhttps://poedb.tw/cn/Replica_Quill_Rain",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E6",
+      "chunk_id": "skill:Vortex#0#392c02a41bb0cdaf",
+      "entity_id": "skill:Vortex",
+      "title": "漩涡（Vortex）",
+      "url": "https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/act_int.lua",
+      "source": "Path of Building",
+      "source_priority": 2,
+      "text": "# 漩涡（Vortex）\n类型：技能石 ｜ 蓝色（智慧）\n标签：法术、效果区域、冰霜、持续时间、新星\n英文标签：Spell, AoE, Cold, Duration, Nova\n施放时间 0.6 秒 ｜ 自然最高 20 级\n\n- 1 级：需角色 28 级，属性需求 智慧 67，消耗 10 魔力，基础冰霜伤害 48–72，暴击率 7.5%\n- 20 级（自然最高）：需角色 70 级，属性需求 智慧 155，消耗 19 魔力，基础冰霜伤害 933–1399，暴击率 7.5%\n- 40 级（PoB 数据上限，需腐化或 +等级）：需角色 100 级，消耗 25 魔力，基础冰霜伤害 6236–9354，暴击率 7.5%\n\n**效果文本（POEDB 逐级表）**\n- 造成 48 - 72 冰霜伤害（1 级 48, 72｜20 级 933, 1399）\n- 每秒造成 135.3 基础冰霜伤害（1 级 135.3｜20 级 3245.7）\n\n**获取途径**\n- 第 3 章「铲除左右手」向 卡尔莉萨 购买（贵族、暗影、圣堂武僧、女巫）\n\nPoB 英文说明：An icy blast explodes around the caster, dealing cold damage to enemies, and leaving behind a whirling vortex which deals cold damage over time and chills enemies caught in it.\n\n来源：Path of Building → Data/Skills/act_int.lua\nhttps://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/act_int.lua\n中文名对照：https://poedb.tw/cn/Vortex",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E7",
+      "chunk_id": "skill:Vortex_of_Projection#0#8a0fddc13b57342c",
+      "entity_id": "skill:Vortex_of_Projection",
+      "title": "投射之漩涡（Vortex of Projection）",
+      "url": "https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/act_int.lua",
+      "source": "Path of Building",
+      "source_priority": 2,
+      "text": "# 投射之漩涡（Vortex of Projection）\n类型：技能石 ｜ 蓝色（智慧） ｜ 蜕变宝石\n标签：法术、效果区域、冰霜、持续时间、新星\n英文标签：Spell, AoE, Cold, Duration, Nova\n施放时间 0.6 秒 ｜ 自然最高 20 级\n\n- 1 级：需角色 28 级，属性需求 智慧 67，消耗 10 魔力，基础冰霜伤害 48–72，暴击率 7.5%\n- 20 级（自然最高）：需角色 70 级，属性需求 智慧 155，消耗 19 魔力，基础冰霜伤害 933–1399，暴击率 7.5%\n- 40 级（PoB 数据上限，需腐化或 +等级）：需角色 100 级，消耗 25 魔力，基础冰霜伤害 6236–9354，暴击率 7.5%\n\n**效果文本（POEDB 逐级表）**\n- 造成 48 - 72 冰霜伤害（1 级 48, 72｜20 级 933, 1399）\n- 每秒造成 76.5 基础冰霜伤害（1 级 76.5｜20 级 2112）\n\n**获取途径**\n- 第 3 章「铲除左右手」向 卡尔莉萨 购买（贵族、暗影、圣堂武僧、女巫）\n\nPoB 英文说明：An icy blast explodes around the caster, dealing cold damage to enemies, and leaving behind a whirling vortex which deals cold damage over time and chills enemies caught in it. If the caster targets near their Frostbolt projectiles, it will explode from a number of those projectiles instead, destroying them.\n\n来源：Path of Building → Data/Skills/act_int.lua\nhttps://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/act_int.lua\n中文名对照：https://poedb.tw/cn/Vortex_of_Projection",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E8",
+      "chunk_id": "skill:Discharge#0#b5efde5e2bb850f2",
+      "entity_id": "skill:Discharge",
+      "title": "解放（Discharge）",
+      "url": "https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/act_int.lua",
+      "source": "Path of Building",
+      "source_priority": 2,
+      "text": "# 解放（Discharge）\n类型：技能石 ｜ 蓝色（智慧）\n标签：法术、效果区域、火焰、冰霜、闪电、新星\n英文标签：Spell, AoE, Fire, Cold, Lightning, Nova\n施放时间 0.75 秒 ｜ 自然最高 20 级\n\n- 1 级：需角色 28 级，属性需求 智慧 67，消耗 13 魔力，冷却 1 秒，暴击率 7%\n- 20 级（自然最高）：需角色 70 级，属性需求 智慧 155，消耗 25 魔力，冷却 1 秒，暴击率 7%\n- 40 级（PoB 数据上限，需腐化或 +等级）：需角色 100 级，消耗 33 魔力，冷却 1 秒，暴击率 7%\n\n**效果文本（POEDB 逐级表）**\n- 每消耗 1 个暴击球，造成 79 - 237 基础闪电伤害（1 级 79, 237｜20 级 735, 2206）\n- 每消耗 1 个耐力球，造成 126 - 189 基础火焰伤害（1 级 126, 189｜20 级 1176, 1765）\n- 每消耗 1 个狂怒球，造成 126 - 189 基础冰霜伤害（1 级 126, 189｜20 级 1176, 1765）\n\n**获取途径**\n- 第 3 章「铲除左右手」向 卡尔莉萨 购买（野蛮人、决斗者、游侠、暗影、女巫、圣堂武僧、贵族）\n\nPoB 英文说明：Discharge all the character's charges to deal elemental damage to all nearby monsters.\n\n来源：Path of Building → Data/Skills/act_int.lua\nhttps://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Skills/act_int.lua\n中文名对照：https://poedb.tw/cn/Discharge",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    }
+  ]
+}

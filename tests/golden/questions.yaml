@@ -1063,18 +1063,39 @@ cases:
     lesson: >-
       辅助宝石「给多少加成」是这个域最常被问、又长期答不了的一块：
       `missing_dimension_hints` 里「加成多少 / 提升多少 / 增加多少」三条
-      因此在这一轮被删掉。成对的那面是 `gap_skill_gem_acquisition`。
+      因此在这一轮被删掉。成对的那面第四十三轮换成了 `gap_skill_gem_drop_source`
+      （原先那条 `gap_skill_gem_acquisition` 已随获取途径入库翻成
+      `desc_skill_gem_acquisition`）。
 
-  - id: gap_skill_gem_acquisition
+  - id: desc_skill_gem_acquisition
     query: 冰霜新星这个技能石怎么获得
+    kind: description
+    expect_slug: Ice_Nova
+    expect_evidence_text: "海妖之歌"
+    note: >-
+      第 1 章「海妖之歌」的任务奖励（女巫 / 贵族 / 圣堂武僧），也可以向奈莎购买。
+      **这条用例第四十三轮从 `kind: gap` 翻成了描述类**：获取途径取自 POEDB
+      详情页的「使命」表（章节｜使命｜NPC｜角色），668 颗共 1261 行
+    lesson: >-
+      它上一版的 note 写着「获取途径不在任何已缓存页上」——**那句是错的**。
+      第三十二轮为取效果文本抓的 820 张详情页里就有这张表，而
+      `poedb_gem_page` 的 docstring 当时就写着页面上还有「任务奖励」表：
+      **看见了，走过去了**。这是「停在一页上就下缺来源的结论」的第四次
+      （前三次：万神殿第三十五轮、Boss 第三十八轮、宝石效果文本第三十二轮）。
+
+  - id: gap_skill_gem_drop_source
+    query: 瓦尔冰霜新星这颗宝石从哪里掉落
     kind: gap
     expect_gap: true
     note: >-
-      获取途径（任务奖励 / 掉落 / 兑换）不在任何已缓存页上；效果文本与属性需求
-      第三十二轮入库之后，这一维是宝石域仅剩的两个缺口之一（另一个是 DPS）
+      瓦尔宝石（52 颗）与觉醒辅助、契约类共 152 颗，POEDB 详情页上**没有**使命表——
+      它们靠掉落，而掉落来源本地没有来源。卡片与工具在这些宝石上写的是
+      「详情页未给出任务/商人表，本库未采集该宝石的获取途径」这句中性事实，
+      **不推断「所以靠掉落」**
     lesson: >-
-      成对哨兵：同一轮里放行了三批问法（属性需求、效果文本、辅助加成），
-      就必须有一条钉住「剩下的仍然拒答」。只压一头不算完成。
+      成对哨兵：第四十三轮放行了「怎么获得」这一族问法，就必须有一条钉住
+      「掉落来源仍然拒答」。边界往前挪一格要说清挪的是哪一格——
+      与第二十九轮「基础伤害入库、DPS 仍拒答」是同一个形状。
 
   - id: gap_boss_mechanics
     query: 潜伏之主的技能怎么应对
