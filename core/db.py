@@ -632,6 +632,42 @@ CREATE TABLE IF NOT EXISTS poedb_gem_stat_level (
     FOREIGN KEY(gem_id) REFERENCES pob_skill_gem(gem_id) ON DELETE CASCADE
 );
 
+-- ── 商店配方（POEDB `/cn/Vendor_recipe_system`，第五十一轮）──
+-- 「怎么用装备换混沌石」「点金石从哪来」是最常问的获取途径，而通货/精华/圣甲虫
+-- 三个域的 `partial_note` 都写着「获取途径未采集」。
+--
+-- **这一页一直在缓存里**（179KB、21 张表、201 行），从来没被抽取过；同一张表头
+-- 也出现在宝石详情页上（第四十四轮清点时数到 32 处，当时记作「商店配方」放过了）。
+-- 这次先把缓存翻了一遍，才没有去抓 113 张通货详情页——是那个「缺来源」错误的反面。
+--
+-- **方向不能弄反**：`result` 是**换到手的**（页面的「贡品」列），
+-- `ingredients` 是**付出去的**（「你的物品」列）。写反会把「2 个重铸石换 1 个后悔石」
+-- 说成反过来——一个读起来通顺的错答案。
+--
+-- 主键要带 `block_index`：**类别名不唯一**，`賣物品給商人 Recipe` 在页面上出现两次
+-- （5 行与 2 行两张表）。只用类别名做键会丢掉其中一张。
+--
+-- 每块的行数由标题自证（`传奇 物品 Recipe /23`），对不上直接拒绝整页——
+-- 静默少收等于漏答，而这一维的用户问题正是「有没有这个配方」。
+CREATE TABLE IF NOT EXISTS poedb_vendor_recipe (
+    category        TEXT NOT NULL CHECK(category <> ''),
+    block_index     INTEGER NOT NULL,
+    row_index       INTEGER NOT NULL,
+    -- 换到手的东西（页面「贡品」列）
+    result          TEXT NOT NULL CHECK(result <> ''),
+    -- 付出去的东西（页面「你的物品」列）
+    ingredients     TEXT NOT NULL CHECK(ingredients <> ''),
+    note            TEXT NOT NULL DEFAULT '',
+    source          TEXT NOT NULL,
+    source_priority INTEGER NOT NULL,
+    url             TEXT NOT NULL CHECK(url <> ''),
+    fetched_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL,
+    PRIMARY KEY(category, block_index, row_index)
+);
+CREATE INDEX IF NOT EXISTS idx_vendor_recipe_result
+    ON poedb_vendor_recipe(result);
+
 -- ── 技能 × 辅助的搭配关系（POEDB 详情页，第四十五轮）──
 -- 「这个技能能配哪些辅助 / 多重投射能不能辅助冰霜新星」是最常问的一类问题，
 -- 而在这之前本库完全答不了：`pob_skill_gem.skill_types` 在**辅助宝石上是空的**。

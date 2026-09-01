@@ -1296,6 +1296,22 @@ cases:
     expect_tool: check_mod_combination
     note: 多目标词缀共存 → check_mod_combination（三态，unknown 要原样说明）
 
+  - id: route_vendor_recipe
+    query: 6 词缀稀有物品能换什么
+    kind: tool_route
+    expect_tool: vendor_recipe_lookup
+    note: >-
+      商店配方（第五十一轮）。这一页**一直在缓存里**、从来没被抽取过——
+      本轮先翻缓存才没有去抓 113 张通货详情页，是「停在一页上就下缺来源结论」
+      那个错误的反面
+    lesson: >-
+      与 `gap_currency_drop_source` 成对：商店配方补的是「怎么**换**」，
+      而通货的主要来源是**掉落**，那一半仍未采集。所以广义问法
+      「混沌石怎么获得」照旧拒答、具体问法「怎么换」答得出来。
+      本轮一度把「怎么获得」从 `missing_dimension_hints` 删掉，实测它
+      **路由到了 `stat_sources`**（那是「某属性能从哪来」的工具，答非所问），
+      于是加了回来——记在 `kb/coverage.py` 的注释里免得下次再删一遍。
+
   - id: route_gem_support_match
     query: 多重投射能不能辅助冰霜脉冲
     kind: tool_route
