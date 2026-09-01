@@ -234,8 +234,15 @@ def _dimension_verdict(question: str, citations: list[dict[str, Any]] | None):  
 
 def _apply_dimension_gate(
     question: str, data: dict[str, Any], *, citations: list[dict[str, Any]] | None = None
-) -> dict[str, Any]:
+) -> tuple[dict[str, Any], bool]:
     """充分性判定之后的第二道：**被问的维度**有没有数据（见 `kb.coverage.dimension_gap`）。
+
+    返回 `(改判后的 data, 是否改判)`。
+
+    **这个函数一度是死代码**（第四十七轮 review 发现）：`_prepare_turn` 里内联了一份
+    等价实现，而这里带着这道闸门最权威的 docstring——读到的人会以为它在生效。
+    更糟的是 `scripts/eval_run.py` 的注释写着「与它同一道闸门、同一个函数」，
+    而那句话两半都是假的。现在它是**唯一**实现，`_prepare_turn` 与评测都调它。
 
     别名精确命中只证明「这个实体在库里」，不证明「被问的那一面有数据」。实测
     「猎首现在值多少混沌石」命中猎首即判依据充分，而价格维度一个字都没有；
@@ -244,17 +251,22 @@ def _apply_dimension_gate(
 
     只做一个方向的改判（充分 → 不足）：放宽依据需要新证据，这里没有引入任何新证据。
     探测失败时按检索判定继续——覆盖层不可用不该让问答停摆。
+
+    **无条件问覆盖层，不看 `data['sufficient']`。**「这一维有没有数据」与
+    「这次 BM25 有没有命中」是两个问题；第十八轮实测：先前只在充分时问，
+    于是偏好工具那条路上它从没被咨询过。调用方不要再在外面加 `if sufficient`——
+    评测那一侧就是这么与线上分叉了近三十轮的。
     """
     verdict = _dimension_verdict(question, citations)
     if verdict is None or not verdict.is_gap:
-        return data
+        return data, False
     logger.info("维度覆盖闸门改判为依据不足：%s", verdict.reason())
     out = dict(data)
     out["sufficient"] = False
     out["reason"] = verdict.reason()
     out["missing_terms"] = verdict.missing_points()
     out["dimension_gate"] = True
-    return out
+    return out, True
 
 
 #: 工具 `data` 里那些**要求必须传达给用户**的声明字段，逐字取用。
@@ -2085,19 +2097,13 @@ def _prepare_turn(question: str, result: TurnResult) -> _TurnSetup:
         result.retrieval_meta["precision_route"] = precision_tool
     else:
         # 精确路由不过这道闸：那类问题的维度由工具自己的缺据字段负责声明。
-        # 其余情况**无论检索是否充分都先问覆盖层**——「这一维有没有数据」与
-        # 「这次 BM25 有没有命中」是两个问题，先前只在充分时问，
-        # 于是偏好工具那条路上它从没被咨询过。
-        verdict = _dimension_verdict(question, first.citations)
-        gate_refused = bool(verdict is not None and verdict.is_gap)
+        # 其余情况一律走 `_apply_dimension_gate`（它内部无条件问覆盖层）。
+        # **这里曾内联过一份等价实现**，而那个函数就在同一个文件里、还带着这道闸门
+        # 最权威的 docstring——第四十七轮 review 才发现它是死代码。
+        data, gate_refused = _apply_dimension_gate(
+            question, data, citations=first.citations)
         if gate_refused:
             result.retrieval_meta["dimension_gate"] = True
-            data = dict(data)
-            data["sufficient"] = False
-            data["reason"] = verdict.reason()
-            data["missing_terms"] = verdict.missing_points()
-            data["dimension_gate"] = True
-            logger.info("维度覆盖闸门改判为依据不足：%s", verdict.reason())
 
     # 偏好工具**只豁免「BM25 命不中」，不豁免维度闸门**。
     # 两者是不同的判断：前者说「证据不在 chunk 里」（那正是工具要去查的），

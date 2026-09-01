@@ -40,11 +40,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from core import db as dbmod  # noqa: E402
 from core.config import get_config  # noqa: E402
 from core.logging_setup import setup_logging  # noqa: E402
-from kb.coverage import dimension_gap  # noqa: E402
 from orchestrator.loop import GAP_SOURCE  # noqa: E402
+from orchestrator.loop import _apply_dimension_gate  # noqa: E402
 from orchestrator.loop import _precision_tool_route, _preferred_tool_route  # noqa: E402
 from orchestrator.loop import poe2_marker  # noqa: E402
-from retrieval import alias as alias_mod  # noqa: E402
 from retrieval.hybrid import retrieve  # noqa: E402
 from tests.golden.loader import (  # noqa: E402
     KIND_ZH,
@@ -164,23 +163,26 @@ def run_case(conn, case: Case, params: dict) -> CaseOutcome:
     r = retrieve(conn, case.query, **params)
     top = r.hits[0] if r.hits else None
 
-    # 与 `orchestrator/loop.py._apply_dimension_gate` 同一道闸门、同一个函数。
+    # 与线上**同一个函数**：`orchestrator/loop._apply_dimension_gate`。
     # 评测必须量到线上真正生效的那条路径——各测一半会让指标与线上行为分叉。
+    #
+    # 这句话先前是**假的**（第四十七轮 review 抓到）：那个函数当时是死代码、
+    # 线上内联了另一份，而这里又自己调 `dimension_gap` 并且**外面套了
+    # `if sufficient:`**——也就是停在第十八轮修复之前的语义（线上从那轮起
+    # 无论充分与否都问覆盖层）。三份实现、两种行为，而注释声称是一份。
     #
     # 别名精确命中的实体也要一起传：领域识别有两条通道（意图词 + 点名了库里的实体），
     # 少传这一个参数，凡是靠专名识别领域的用例都会在评测里显示为漏出，
     # 而线上其实拦住了（2026-08-19 实测三条宝石用例就是这么假报的）。
-    sufficient, reason, gated = r.sufficient, r.reason, False
-    if sufficient:
-        verdict = dimension_gap(
-            conn,
-            case.query,
-            exact_entity_ids=alias_mod.exact_entity_ids(
-                (h.channel, h.entity_id or "") for h in r.hits
-            ),
-        )
-        if verdict.is_gap:
-            sufficient, reason, gated = False, verdict.reason(), True
+    gate_data, gated = _apply_dimension_gate(
+        case.query,
+        {"sufficient": r.sufficient, "reason": r.reason},
+        citations=[
+            {"channel": h.channel, "entity_id": h.entity_id or ""} for h in r.hits
+        ],
+    )
+    sufficient = bool(gate_data["sufficient"])
+    reason = str(gate_data["reason"])
 
     # 与线上同序：精确路由优先，其次偏好工具（见 `loop._prepare_turn`）。
     # **两者都算路由豁免**：线上这两类问题都不看 `sufficient`——精确路由的对错由工具

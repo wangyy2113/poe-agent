@@ -262,15 +262,26 @@ class GemFixedStats:
     reconcile_kv: dict[str, str] = field(default_factory=dict)
 
 
-def _in_active_tab(node) -> bool | None:  # noqa: ANN001
-    """这个节点在不在**当前选中的**标签页里。不在任何标签页里返回 None。"""
+def _tab_pane(node):  # noqa: ANN001, ANN201
+    """这个节点所属的标签页节点；不在任何标签页里返回 None。
+
+    这一页的三处判据都要沿同一条 parent 链找 `tab-pane`——「固定」表要问它
+    **是不是选中的那个**，「被辅助 / 可辅助」要问它**叫什么 id**。
+    第四十四、四十五两轮各写了一份遍历（`_in_active_tab` / `_pane_id`），
+    第四十七轮 review 合掉：同一个概念写两份就是规约第 3 条点名的症状。
+    """
     parent = node.parent
     while parent is not None:
-        classes = parent.attributes.get("class") or ""
-        if "tab-pane" in classes:
-            return "active" in classes
+        if "tab-pane" in (parent.attributes.get("class") or ""):
+            return parent
         parent = parent.parent
     return None
+
+
+def _in_active_tab(node) -> bool | None:  # noqa: ANN001
+    """这个节点在不在**当前选中的**标签页里。不在任何标签页里返回 None。"""
+    pane = _tab_pane(node)
+    return None if pane is None else "active" in (pane.attributes.get("class") or "")
 
 
 def parse_gem_fixed(html: str, *, poedb_slug: str) -> GemFixedStats:
@@ -382,12 +393,8 @@ def _support_slugs(card, *, poedb_slug: str, label: str, declared: int) -> tuple
 
 def _pane_id(node) -> str | None:  # noqa: ANN001
     """这个节点所在标签页的 id。不在任何标签页里返回 None。"""
-    parent = node.parent
-    while parent is not None:
-        if "tab-pane" in (parent.attributes.get("class") or ""):
-            return parent.attributes.get("id")
-        parent = parent.parent
-    return None
+    pane = _tab_pane(node)
+    return None if pane is None else pane.attributes.get("id")
 
 
 def parse_gem_support_links(html: str, *, poedb_slug: str) -> GemSupportLinks:
