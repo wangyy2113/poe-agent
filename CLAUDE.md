@@ -133,7 +133,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 1317 项，秒级
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 1325 项，秒级
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选
@@ -150,7 +150,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 .venv/bin/python scripts/eval_run.py --record        # 重录真实响应（**要凭证、烧 token**）
 ```
 
-黄金问答集是 `tests/golden/questions.yaml`（138 条，六类），基线与全部结论在
+黄金问答集是 `tests/golden/questions.yaml`（139 条，六类），基线与全部结论在
 `tests/golden/BASELINE.md`——**动闸门前先读它**，里面记了多个已修缺陷与三条已知未修边界，
 以及两次「测量本身写错」的教训。
 
@@ -392,6 +392,24 @@ POEDB 页面仍是旧版」：`号召` PoB 侧是 `ConvocationNew`（各级需�
 配套三处出口（缺一处就等于没入库）：卡片加「效果文本」区块与每级「属性需求」、
 `skill_gem_levels` 返回这两维、覆盖声明与 `missing_dimension_hints` 同步删掉
 已经答得出的问法。
+
+`poedb_acquisition` **387** 行**获取途径**（第五十四轮）：POEDB 详情页的
+`Acquisition` 区块，**零新增抓取**（三类详情页早就在缓存里）。
+
+**不只是命运卡**：`Ingredient` 为空是命运卡（集齐这张卡换到 Offer），
+非空是**升级/合成配方**（`托沃崩 + 托沃的祝福 → 托沃卧`）。混成一类会让
+「托沃卧怎么来」得到错答案，所以 `kind` 由 `ingredient` 是否为空派生。
+实测 命运卡 297 行 / 升级配方 90 行。
+
+**覆盖是部分的，而且这一点必须传到出口**：唯一装备 1342 件里只有 **264** 件有这一段
+（通货 19/113、技能石 9/820）。「库里查不到」与「它没有获取途径」在用户那边分不开，
+所以 `acquisition_routes` 查不到时会**明说是哪一种**——与宝石那 152 颗
+「详情页未给出使命表」同一条规矩。**掉落来源仍然没有**（第五十二轮实测 POEDB 侧无来源）。
+
+**裸的「怎么获得」不能收进它的意图词**：那是 `stat_sources` 的
+（第五十一轮实测「混沌石怎么获得」被它抢走），而且通货的主要来源是掉落、
+那一维本库没有，放开等于拿次要途径顶替主要途径。只收「命运卡 / 哪张卡 / 怎么合成」
+这类专指说法，两个方向都有单测钉住。
 
 `poedb_vendor_recipe` **201** 条**商店配方**（第五十一轮，20 类）：
 `/cn/Vendor_recipe_system` 的 21 张 `贡品 ｜ 你的物品 ｜ Note` 表。

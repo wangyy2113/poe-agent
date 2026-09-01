@@ -1296,6 +1296,19 @@ cases:
     expect_tool: check_mod_combination
     note: 多目标词缀共存 → check_mod_combination（三态，unknown 要原样说明）
 
+  - id: route_acquisition_card
+    query: 哪张命运卡能换到崇高石
+    kind: tool_route
+    expect_tool: acquisition_routes
+    note: >-
+      获取途径（第五十四轮，387 行）。**不只是命运卡**：`Ingredient` 非空时
+      是升级配方（托沃崩 + 托沃的祝福 → 托沃卧），混成一类会答错
+    lesson: >-
+      成对点是**裸的「怎么获得」不能收进这条的意图词**——它是 `stat_sources` 的，
+      第五十一轮实测「混沌石怎么获得」就是被它抢走的；而且通货的主要来源是**掉落**、
+      那一维本库没有，放开等于拿次要途径顶替主要途径。
+      单测 `test_裸的怎么获得不能被抢过来` 两个方向都钉了。
+
   - id: route_vendor_recipe
     query: 6 词缀稀有物品能换什么
     kind: tool_route

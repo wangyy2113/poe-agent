@@ -191,3 +191,107 @@ def entity_lookup(name: str) -> ToolResult:
               "evidence_count": len(citations)},
         citations=citations,
     )
+
+
+# ── 获取途径（第五十四轮）─────────────────────────────────────
+
+#: 单次最多列几条。静默截断等同于漏答，超出必须写出还剩多少。
+MAX_ACQUISITION_ROWS = 30
+
+#: 边界。由代码附在 `data` 里，不让模型转述。
+_ACQ_BOUNDARY = (
+    "获取途径只收录 POEDB 详情页 `Acquisition` 区块里的**命运卡与升级配方**，"
+    "**不含掉落来源**（怎么刷）——那一维 POEDB 这一侧没有来源。"
+    "而且覆盖是部分的：1342 件唯一装备里只有 264 件有这一段，"
+    "所以**查不到不等于没有**。"
+)
+
+
+@REGISTRY.register(
+    name="acquisition_routes",
+    description=(
+        "查某件唯一装备 / 通货 / 技能石的**获取途径**：哪张命运卡能换到它、"
+        "或者用什么升级配方合成它。也可以反过来问某张命运卡能换到什么。"
+        "**不回答掉落来源**（怎么刷）——那一维本库没有来源。"
+        "覆盖是部分的（唯一装备只有两成有这一段），查不到会明说是哪一种情况。"
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "name": {
+                "type": "string",
+                "description": "物品名（查它怎么来），或命运卡名（查它能换什么）。",
+            },
+        },
+        "required": ["name"],
+        "additionalProperties": False,
+    },
+)
+def acquisition_routes(name: str) -> ToolResult:
+    conn = dbmod.get_conn()
+    q = (name or "").strip()
+    if not q:
+        return ToolResult(ok=False, error="name 不能为空")
+
+    got = [dict(r) for r in conn.execute(
+        "SELECT owner_kind, source_zh, ingredient, offer_zh, url, source, source_priority "
+        "FROM poedb_acquisition WHERE offer_zh LIKE ? OR source_zh LIKE ? "
+        "ORDER BY owner_kind, offer_zh, row_index",
+        (f"%{q}%", f"%{q}%"),
+    )]
+    if not got:
+        # **「本库没这一段」与「它没有获取途径」是两件事**，必须说清是哪一种
+        known = conn.execute(
+            "SELECT count(*) FROM poedb_acquisition").fetchone()[0]
+        return ToolResult(
+            ok=True,
+            data={
+                "found": False,
+                "reason": (
+                    f"本库的获取途径里没有「{q}」。**这不等于它没有获取途径**："
+                    f"这一维只收录了 POEDB 详情页上有 `Acquisition` 区块的那些"
+                    f"（共 {known} 行，唯一装备里只有两成有这一段），"
+                    "而掉落来源本库完全没有采集。"
+                ),
+                "boundary": _ACQ_BOUNDARY,
+            },
+        )
+
+    shown = got[:MAX_ACQUISITION_ROWS]
+    lines = [f"### 「{q}」相关的获取途径（共 {len(got)} 条）", "",
+             "| 换到手 | 来源 | 附加材料 | 类型 |", "| --- | --- | --- | --- |"]
+    for r in shown:
+        kind = "升级配方" if r["ingredient"] else "命运卡"
+        lines.append(
+            f"| {r['offer_zh']} | {r['source_zh']} | {r['ingredient'] or '—'} | {kind} |")
+    if len(got) > len(shown):
+        lines.append("")
+        lines.append(f"（以上仅列 {len(shown)} 条，还有 {len(got) - len(shown)} 条未列出）")
+    lines.append("")
+    lines.append(_ACQ_BOUNDARY)
+    return ToolResult(
+        ok=True,
+        data={
+            "found": True, "total": len(got), "shown": len(shown),
+            "truncated": len(got) > len(shown),
+            "routes": [
+                {"offer": r["offer_zh"], "source": r["source_zh"],
+                 "ingredient": r["ingredient"],
+                 "kind": "recipe" if r["ingredient"] else "divination_card"}
+                for r in shown
+            ],
+            "boundary": _ACQ_BOUNDARY,
+        },
+        citations=[{
+            "chunk_id": f"acquisition:{q}",
+            "entity_id": None,
+            "title": f"{q} 的获取途径（POEDB）",
+            "url": got[0]["url"],
+            "source": got[0]["source"],
+            "source_priority": int(got[0]["source_priority"]),
+            "can_support_facts": True,
+            "text": "\n".join(lines),
+            "channel": "structured",
+        }],
+        meta={"channel": "structured", "table": "poedb_acquisition"},
+    )
