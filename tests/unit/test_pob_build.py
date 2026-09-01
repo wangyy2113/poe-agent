@@ -196,3 +196,134 @@ class BridgeTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# ── 需求 8.4 体检报告（第四十九轮）────────────────────────────
+
+
+class RequirementCoverageTest(unittest.TestCase):
+    """「检查并报告下列全部项目，**不得遗漏**」是需求原文，靠代码保证。"""
+
+    def test_十六项一个不缺(self) -> None:
+        from parsers.build_report import REQUIREMENT_8_4_ITEMS, uncovered_requirements
+
+        self.assertEqual(len(REQUIREMENT_8_4_ITEMS), 16, "需求 8.4 点名 16 项")
+        self.assertEqual(uncovered_requirements(), (), "有需求项没有任何检查覆盖")
+
+    def test_判据落在需求那一侧(self) -> None:
+        """**不能写成 `REQUIRED = len(_CHECKS)`**——那等于「要求的项数 = 我实现了几项」，
+        恒等于自己、永远不会失败。第一版就是这么写的，实测它报 18 而需求是 16。"""
+        import inspect
+
+        from parsers import build_report
+
+        src = inspect.getsource(build_report)
+        self.assertNotIn("= len(_CHECKS)", src)
+
+
+class HealthReportTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.files = _fixtures()
+        if not self.files:
+            self.skipTest("PoB 检出不可用，跳过夹具用例")
+        import sqlite3
+
+        from calc import constants
+        from core.db import SCHEMA
+
+        constants.reset_cache()
+        self.conn = sqlite3.connect(":memory:")
+        self.conn.row_factory = sqlite3.Row
+        self.conn.executescript(SCHEMA)
+        # 判据用的三个上限——与 `test_resistance.fixture_conn` 同一套打桩方式
+        self.conn.executemany(
+            "INSERT INTO game_constant VALUES (?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'))",
+            [
+                (key, "pobMisc", None, 0, "scalar", value, None,
+                 "Path of Building", 2, "https://example/blob/Data.lua",
+                 "PoB 2.66.2 / tree 3.29", "3.29")
+                for key, value in (
+                    (constants.MAX_RESIST_CAP, 90.0),
+                    (constants.BLOCK_CHANCE_CAP, 90.0),
+                    (constants.SUPPRESSION_CHANCE_CAP, 100.0),
+                )
+            ],
+        )
+        self.conn.commit()
+        constants.load(self.conn, force=True)
+
+    def tearDown(self) -> None:
+        from calc import constants
+
+        constants.reset_cache()
+        self.conn.close()
+
+    def _report(self, path: Path):
+        from parsers.build_report import build_health_report
+        from parsers.pob_build import parse_build
+
+        return build_health_report(self.conn, parse_build(path.read_text(encoding="utf-8")))
+
+    def test_缺失项标未知且不填估计值(self) -> None:
+        """8.4.7 的原文：缺失 SHALL 标注为「未知」**而非填入估计值**。
+
+        3.13 夹具里法术压制/EHP/MaxHit/保留都没有（压制是 3.16 才加的），
+        正好是这条路径的天然样本。
+        """
+        report = self._report(self.files[-1])
+        for item in report.items:
+            if item.known:
+                continue
+            with self.subTest(item=item.key):
+                self.assertEqual(item.value, "", "未知项必须留空，不许填估计值")
+                self.assertTrue(item.missing_reason, "未知必须说清缺的是哪一项")
+
+    def test_法术压制在_313_夹具上是未知(self) -> None:
+        item = self._report(self.files[-1]).by_key("spell_suppression")
+        self.assertIsNotNone(item)
+        self.assertFalse(item.known)
+        self.assertIn("SpellSuppressionChance", item.missing_reason)
+
+    def test_超抗要写进抗性(self) -> None:
+        """超抗顶得住减抗与诅咒、顶不住穿透，是 `calc/resistance` 的既有结论，
+        报告里不能把它吞掉。"""
+        item = self._report(self.files[-1]).by_key("fire_resist")
+        self.assertIn("超抗", item.value)
+
+    def test_护甲不给减伤百分比(self) -> None:
+        """护甲不是固定百分比减伤，不给这一击多大就没有减伤可言——
+        与 `num_armour_reduction` / `gap_armour_without_damage` 那对用例同一条规矩。"""
+        item = self._report(self.files[-1]).by_key("armour")
+        self.assertNotIn("%", item.value)
+        self.assertIn("这一击", item.basis)
+
+    def test_dps_只复述不计算(self) -> None:
+        item = self._report(self.files[-1]).by_key("dps")
+        self.assertIn("不计算 DPS", item.basis)
+
+    def test_珠宝按树上插槽而不是装备栏(self) -> None:
+        """实测 OccVortex：装备 Slot 里一件珠宝都没有，而树上插着 3 颗。
+        按 Slot 名找会得出「没有珠宝」这个错结论。"""
+        occ = next((p for p in self.files if p.stem == "OccVortex"), None)
+        if occ is None:
+            self.skipTest("没有 OccVortex 夹具")
+        item = self._report(occ).by_key("jewels")
+        self.assertIn("3", item.value)
+
+    def test_万神殿没开不等于未知(self) -> None:
+        item = self._report(self.files[-1]).by_key("pantheon")
+        self.assertTrue(item.known, "没开是一个确定的事实，不是「未知」")
+        self.assertIn("未启用", item.value)
+
+    def test_五个夹具都能出完整报告(self) -> None:
+        from parsers.build_report import uncovered_requirements
+
+        for path in self.files:
+            with self.subTest(build=path.stem):
+                report = self._report(path)
+                self.assertEqual(uncovered_requirements(), ())
+                self.assertTrue(report.notes, "报告必须带来源说明")
+                self.assertTrue(
+                    any("没有重算" in n for n in report.notes),
+                    "必须说清本库没有重算任何一项",
+                )

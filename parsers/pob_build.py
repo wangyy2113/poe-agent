@@ -95,6 +95,10 @@ class PobBuild:
     config: dict[str, Any] = field(default_factory=dict)
     #: `<PlayerStat>`：**PoB 自己算的快照**，见模块 docstring
     player_stats: dict[str, float] = field(default_factory=dict)
+    #: `<Tree><Spec nodes="...">` 里已分配的天赋节点 id
+    passive_nodes: tuple[str, ...] = ()
+    #: 树上**插着珠宝**的插槽数（珠宝不在 `Items` 的 Slot 里，在树的 `<Sockets>` 里）
+    tree_jewels: int = 0
     warnings: list[str] = field(default_factory=list)
 
     @property
@@ -235,6 +239,21 @@ def parse_build(xml: str) -> PobBuild:
             )
     out.skill_groups = _parse_skills(root)
     out.items = _parse_items(root, out.warnings)
+
+    # 天赋树与珠宝都在 `<Tree><Spec>` 里：`nodes` 是已分配节点，
+    # **珠宝不在 `Items` 的 Slot 里**——它们插在树的 `<Sockets>` 上
+    # （实测 OccVortex：Slot 里一件珠宝都没有，树上有 3 颗）。
+    spec = root.find("Tree/Spec")
+    if spec is not None:
+        out.passive_nodes = tuple(
+            n.strip() for n in (spec.get("nodes") or "").split(",") if n.strip()
+        )
+        sockets = spec.find("Sockets")
+        if sockets is not None:
+            out.tree_jewels = sum(
+                1 for s in sockets.findall("Socket")
+                if (s.get("itemId") or "0") != "0"
+            )
     return out
 
 
