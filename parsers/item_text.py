@@ -166,6 +166,10 @@ _EN_KEYS = {
     "dexterity": "req_dex",
     "intelligence": "req_int",
     "requires level": "req_level",
+    # PoB 存档里等级需求写成 `LevelReq:`（同一个概念、另一个键名，实测 100 件里 84 件有）。
+    # 其余 PoB 内部键（`Variant` / `Selected Variant` / `CatalystQuality`）**不映射**：
+    # 它们在游戏文本里没有对应概念，按失败契约进 `properties` + 告警才是诚实的。
+    "levelreq": "req_level",
     "armour": "armour",
     "evasion rating": "evasion",
     "energy shield": "energy_shield",
@@ -460,6 +464,60 @@ def _split_sections(text: str) -> list[list[str]]:
     return [s for s in sections if s]
 
 
+#: PoB **存档**格式的边界行：`Implicits: 1`。它不是属性，是「后面 N 行是隐式」的计数。
+_POB_IMPLICITS_RE = re.compile(r"^Implicits:\s*(\d+)\s*$", re.I)
+
+
+def _pob_sections(text: str) -> list[list[str]] | None:
+    """PoB 存档方言的分段。不是这个方言就返回 None，交回 `_split_sections`。
+
+    两种方言的差别只在**怎么标段落边界**：
+
+        游戏 Ctrl+C ：段落用 `--------` 分隔
+        PoB 存档    ：没有分隔符，改用计数行 `Implicits: N`
+
+    实测（PoB `spec/TestBuilds/3.13/` 的 5 个 build 共 100 件装备）：不认这个方言时
+    **99 件报「没解析出任何词缀」**——名字/底材/稀有度/物等/插槽都对，词缀全丢，
+    而词缀正是 T 级匹配与后面 build 分析要用的那一半。
+
+    切成 `[头部, 隐式 N 行, 其余显式]` 三段之后，下游完全复用：
+    `_assign_mod_kinds` 对「两段无旗标词缀」的既有规则正好是「前隐式、后显式」。
+    `Implicits: N` 这一行**本身不进任何段**——它是标记不是属性，
+    留着会被 `_PROP_RE` 当成一条属性收进 `properties`。
+    """
+    lines = [
+        ln.strip()
+        for ln in text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+        if ln.strip()
+    ]
+    if any(_SECTION_RE.match(ln) for ln in lines):
+        return None  # 带分隔符 → 是游戏原文，不是这个方言
+    marker = next(
+        ((i, int(m.group(1))) for i, ln in enumerate(lines)
+         if (m := _POB_IMPLICITS_RE.match(ln))),
+        None,
+    )
+    if marker is None:
+        return None
+    index, count = marker
+    head_all = lines[:index]
+    implicits = lines[index + 1 : index + 1 + count]
+    explicits = lines[index + 1 + count :]
+
+    # 头部还要再切一刀：游戏原文里 `Item Level:` / `Sockets:` 在**后面的段落**，
+    # 而 PoB 存档把它们和名字挤在同一段。`parse_item` 只解析 `sections[1:]` 的属性，
+    # 不切开的话物等与插槽全部留空——实测就是这么丢的。
+    # 切法：开头的属性行（Rarity 等）+ 紧随其后的裸行（名称、底材）算头部，
+    # 再往后的 `键: 值` 归属性段。
+    cut = 0
+    while cut < len(head_all) and _PROP_RE.match(head_all[cut]):
+        cut += 1
+    while cut < len(head_all) and not _PROP_RE.match(head_all[cut]):
+        cut += 1
+    head, props = head_all[:cut], head_all[cut:]
+    return [s for s in (head, props, implicits, explicits) if s]
+
+
 def _detect_language(sections: list[list[str]]) -> str:
     """按表头键是中文还是英文判定。只看键，不看值——值里本来就可能混英文。"""
     for section in sections[:3]:
@@ -623,7 +681,8 @@ def parse_item(text: str) -> ParsedItem:
     if not text or not text.strip():
         raise ItemParseError("输入为空")
 
-    sections = _split_sections(text)
+    # PoB 存档方言优先识别（见 `_pob_sections`）；不是它就按游戏原文的 `--------` 分段。
+    sections = _pob_sections(text) or _split_sections(text)
     if not sections:
         raise ItemParseError("文本里没有任何有效行")
 

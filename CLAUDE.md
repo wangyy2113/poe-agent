@@ -133,7 +133,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 1277 项，秒级
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 1291 项，秒级
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选
@@ -175,8 +175,30 @@ POST /chat[/stream]  api/chat.py（只做校验与编排调用）
 ```
 
 其他入口：`POST /item`（装备文本 → 结构化报告，**全程不调 LLM**，因此不过出口闸门——闸门防
-的是模型编造）、`POST /search`（调试用，先看 `sufficient` 字段）、`GET /healthz`、
+的是模型编造）、`POST /build`（PoB 分享码 → 结构化 build，同样不调 LLM）、
+`POST /search`（调试用，先看 `sufficient` 字段）、`GET /healthz`、
 `GET /admin/*`（`Authorization: Bearer $ADMIN_TOKEN`，未配置也返回 403 而非放行）。
+
+**PoB 分享码解析（第四十八轮，V2 的地基）**：`parsers/pob_build.py`，
+编码方式取自 PoB `Classes/ImportTab.lua:504/631`——**zlib deflate + URL-safe base64**
+（`+`→`-`、`/`→`_`），拿 PoB 自己的 `spec/TestBuilds/3.13/*.xml` 实测往返一致。
+5 个夹具、100 件装备全程离线可测。三条要记住的：
+
+- **`parsers/item_text.py` 要认两种方言**。游戏 Ctrl+C 用 `--------` 分段，
+  **PoB 存档不带分隔符**、改用计数行 `Implicits: N`。不认它时实测
+  **100 件里 99 件词缀全丢**（名字/底材/稀有度都对，偏偏丢了 T 级匹配要用的那一半）；
+  而且 PoB 把 `Item Level` / `Sockets` 和名字挤在同一段，头部不再切一刀就全留空。
+  修在同一个解析器里，**不另写一份**——PoB 自己的 `Item.lua` 也是一个解析器认两种方言。
+- **`<PlayerStat>` 是 PoB 自己算的快照，不是我们算的**。它既不是知识库证据、
+  也不是本库计算结果，反映的是用户那份 PoB 的版本与配置。出口必须写清
+  「取自你粘贴的 build」且**不与本库计算器结论混排**。下一轮做分析时它是**对账口径**
+  （XML 里带着 `Life 6728`、四抗 `75/75/75/68` 这些可直接比对的数）。
+- **桥不上的宝石留英文原文 + 告警，不猜**。实测 111 颗里 8 颗桥不上，
+  成因是夹具是 3.13 而本库是 3.29——**版本偏移，不是缺陷**。
+
+**只接受分享码，不接受链接**：`pobb.in`/`pastebin` 要联网，而抓取入口的
+POE1/POE2 护栏要一并考虑，单独一轮做。**本版只解析、不做需求 8.4 的 16 项分析**，
+返回里 `analysis_done=false` 明说这件事。
 
 ## 模块职责
 
