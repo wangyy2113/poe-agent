@@ -1,0 +1,43 @@
+{
+  "format_version": 1,
+  "case_id": "route_vendor_recipe",
+  "query": "6 词缀稀有物品能换什么",
+  "recorded_at": "2026-09-01T19:42:18+08:00",
+  "model": "glm-5.2",
+  "tokens": {
+    "prompt": 20385,
+    "output": 373,
+    "reasoning": 203,
+    "total": 20758
+  },
+  "tool_calls": [
+    "kb_search",
+    "vendor_recipe_lookup",
+    "vendor_recipe_lookup"
+  ],
+  "evidence_gap": false,
+  "out_of_scope": false,
+  "precision_route": "",
+  "gap_answer": "",
+  "final_answer": "〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕将一件 **6 词缀稀有物品** 卖给商人（NPC），可以换取 **1 颗增幅石**[[E1]]。\n\n这条配方属于「賣物品給商人 Recipe」类别，投入仅需 1 件 6 词缀的稀有物品，无需鉴定、无需同名、无需同基底[[E1]]。\n\n---\n\n补充：同一类别下还有一条相关配方——将 **1 件 2 词缀稀有物品** 卖给商人可换得 **1 颗重铸石**[[E1]]。〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕\n\n> 商店配方回答的是**怎么换**（拿什么向 NPC 换什么），**不是怎么刷**——掉落来源本库未采集。页面没有给成功率、期望消耗与当前赛季适用性，这些也不提供。\n\n> 检索以降级通道完成（fts, mod_intent）：向量检索与重排未启用（网关无 embedding 模型），当前走 BM25 + 实体精确匹配",
+  "blocked_claims": 2,
+  "elapsed_ms": 13575,
+  "evidence_fingerprint": "sha256:58a376bc713f9d68b988b592058baef3",
+  "_warning": "raw_answer 是未过出口闸门的模型原文，含可能无据的断言，不得当作事实引用",
+  "raw_answer": "## 6 词缀稀有物品的商店配方\n\n将一件 **6 词缀稀有物品** 卖给商人（NPC），可以换取 **1 颗增幅石**[[E1]]。\n\n这条配方属于「賣物品給商人 Recipe」类别，投入仅需 1 件 6 词缀的稀有物品，无需鉴定、无需同名、无需同基底[[E1]]。\n\n---\n\n补充：同一类别下还有一条相关配方——将 **1 件 2 词缀稀有物品** 卖给商人可换得 **1 颗重铸石**[[E1]]。但用户只问 6 词缀，以上即为直接答案。",
+  "evidence": [
+    {
+      "label": "E1",
+      "chunk_id": "vendor_recipe:稀有物品",
+      "entity_id": null,
+      "title": "商店配方（POEDB）",
+      "url": "https://poedb.tw/cn/Vendor_recipe_system",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "### 商店配方（共 8 条）\n\n| 换到手 | 付出 | 说明 | 类别 |\n| --- | --- | --- | --- |\n| 机会石 | 2x 已鑑定同名稀有物品 | — | 相同物品 Recipe |\n| 点金石 | 3x 已鑑定同名稀有物品 | — | 相同物品 Recipe |\n| 点金石 | 2x 已鑑定同名稀有物品且20%品質 | — | 相同物品 Recipe |\n| 富豪石 | 3x 已鑑定同名稀有物品且20%品質 | — | 相同物品 Recipe |\n| 未鑑定稀有物品 | 5x 同基底稀有物品 | 物品等級取最低, 星團珠寶天賦數量重骰, 勢力不會轉移 | 装备 Recipe |\n| 稀有物品, 已汙染/未汙染 | 5x 同基底稀有物品, 已汙染 | 物品等級取最低, 星團珠寶天賦數量重骰, 勢力不會轉移 | 装备 Recipe |\n| 增幅石 | 1x 6 詞綴稀有物品 | — | 賣物品給商人 Recipe |\n| 重铸石 | 1x 2 詞綴稀有物品 | — | 賣物品給商人 Recipe |\n\n商店配方回答的是**怎么换**（拿什么向 NPC 换什么），**不是怎么刷**——掉落来源本库未采集。页面没有给成功率、期望消耗与当前赛季适用性，这些也不提供。",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    }
+  ]
+}

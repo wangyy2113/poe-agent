@@ -133,7 +133,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 1308 项，秒级
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 1317 项，秒级
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选
@@ -150,7 +150,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 .venv/bin/python scripts/eval_run.py --record        # 重录真实响应（**要凭证、烧 token**）
 ```
 
-黄金问答集是 `tests/golden/questions.yaml`（137 条，六类），基线与全部结论在
+黄金问答集是 `tests/golden/questions.yaml`（138 条，六类），基线与全部结论在
 `tests/golden/BASELINE.md`——**动闸门前先读它**，里面记了多个已修缺陷与三条已知未修边界，
 以及两次「测量本身写错」的教训。
 
@@ -392,6 +392,32 @@ POEDB 页面仍是旧版」：`号召` PoB 侧是 `ConvocationNew`（各级需�
 配套三处出口（缺一处就等于没入库）：卡片加「效果文本」区块与每级「属性需求」、
 `skill_gem_levels` 返回这两维、覆盖声明与 `missing_dimension_hints` 同步删掉
 已经答得出的问法。
+
+`poedb_vendor_recipe` **201** 条**商店配方**（第五十一轮，20 类）：
+`/cn/Vendor_recipe_system` 的 21 张 `贡品 ｜ 你的物品 ｜ Note` 表。
+补的是通货域「获取途径未采集」的**一半——怎么换**；掉落来源（怎么刷）仍未采集。
+
+**这一页一直在缓存里**（179KB），从来没被抽取过；同一张表头也出现在宝石详情页上
+（第四十四轮清点时数到 32 处，当时记作「商店配方」放过了）。本轮**先翻缓存再动手**，
+因此没有去抓 113 张通货详情页——这是「停在一页上就下缺来源结论」那个错误的反面。
+
+三条实测判据：
+
+- **方向不能弄反**：`result` 是换到手的（页面「贡品」列），`ingredients` 是付出去的。
+  写反会把「2 个重铸石换 1 个后悔石」说成反过来——一个读起来通顺的错答案。
+- **主键要带 `block_index`**：类别名不唯一，`賣物品給商人 Recipe` 在页面上出现两次
+  （5 行与 2 行两张表），只用类别名会丢掉其中一张。
+- **行数由区块标题自证**（`传奇 物品 Recipe /23`），对不上整页拒绝——
+  静默少收等于漏答，而这一维的用户问题正是「有没有这个配方」。
+
+**没有卡片**（201 条三列表格高度雷同，做成卡会在 BM25 里互相挤掉，与收获目录同一条），
+只靠 `vendor_recipe_lookup` + 意图词到达。
+
+**「怎么获得」试着从通货的 `missing_dimension_hints` 里删过、又加了回来**：
+商店配方入库后这个问题部分答得出来，看着该放行；但实测删掉之后「混沌石怎么获得」
+**路由到了 `stat_sources`**（那是「某属性能从哪来」的枚举工具，对通货答非所问）。
+加回来的两个理由：通货的主要来源是**掉落**、那一半确实没有；而具体问法
+「混沌石怎么换」不含这个词，会正确路由到新工具。**广义拒答、具体作答，两边都对。**
 
 `poedb_gem_support_pair` **56895** 对**技能 × 辅助的搭配关系**（第四十五轮）：
 「多重投射能不能辅助冰霜脉冲」这类问题在这之前完全答不了——

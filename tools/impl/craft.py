@@ -414,3 +414,108 @@ def affix_capacity_rules(rarity: str | None = None) -> ToolResult:
         }],
         meta={"channel": "structured", "table": "craft_affix_capacity"},
     )
+
+
+#: 单次最多列几条。**静默截断等同于漏答**，超出必须写出还剩多少
+#: （与 `mod_tiers` / `gem_support_match` 同一条约定）。
+MAX_VENDOR_ROWS = 25
+
+#: 这一维的边界。由代码附在 `data` 里，不让模型转述。
+_VENDOR_BOUNDARY = (
+    "商店配方回答的是**怎么换**（拿什么向 NPC 换什么），"
+    "**不是怎么刷**——掉落来源本库未采集。"
+    "页面没有给成功率、期望消耗与当前赛季适用性，这些也不提供。"
+)
+
+
+@REGISTRY.register(
+    name="vendor_recipe_lookup",
+    description=(
+        "查**商店配方**：拿什么东西向 NPC 换什么（点金石怎么来、装备怎么换混沌石、"
+        "宝石怎么换品质、地图怎么升阶）。可以按产出物、投入物或类别查，都不给就列全部类别。"
+        "只回答**怎么换**，**不回答怎么刷**（掉落来源本库未采集），"
+        "也不提供成功率与期望消耗。"
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "query": {
+                "type": "string",
+                "description": "物品名或关键词，如「混沌石」「点金石」「6 词缀」。匹配产出与投入两列。",
+            },
+            "category": {
+                "type": "string",
+                "description": "配方类别，如「传奇 物品 Recipe」「装备 Recipe」。",
+            },
+        },
+        "additionalProperties": False,
+    },
+)
+def vendor_recipe_lookup(query: str | None = None, category: str | None = None) -> ToolResult:
+    conn = dbmod.get_conn()
+    q, cat = (query or "").strip(), (category or "").strip()
+    sql = "SELECT category, result, ingredients, note, url, source, source_priority " \
+          "FROM poedb_vendor_recipe"
+    where: list[str] = []
+    args: list[str] = []
+    if q:
+        # 两列都匹配：用户既可能问「混沌石怎么换」（产出）也可能问
+        # 「6 词缀稀有物品能换什么」（投入）
+        where.append("(result LIKE ? OR ingredients LIKE ?)")
+        args += [f"%{q}%", f"%{q}%"]
+    if cat:
+        where.append("category LIKE ?")
+        args.append(f"%{cat}%")
+    if where:
+        sql += " WHERE " + " AND ".join(where)
+    sql += " ORDER BY category, block_index, row_index"
+    rows = [dict(r) for r in conn.execute(sql, args)]
+
+    if not rows:
+        cats = [r[0] for r in conn.execute(
+            "SELECT DISTINCT category FROM poedb_vendor_recipe ORDER BY category")]
+        return ToolResult(
+            ok=True,
+            data={"found": False,
+                  "reason": f"没有匹配「{q or cat}」的商店配方",
+                  "categories": cats, "boundary": _VENDOR_BOUNDARY},
+        )
+
+    shown = rows[:MAX_VENDOR_ROWS]
+    lines = [f"### 商店配方（共 {len(rows)} 条）", "",
+             "| 换到手 | 付出 | 说明 | 类别 |", "| --- | --- | --- | --- |"]
+    lines += [
+        f"| {r['result']} | {r['ingredients']} | {r['note'] or '—'} | {r['category']} |"
+        for r in shown
+    ]
+    if len(rows) > len(shown):
+        lines.append("")
+        lines.append(f"（以上仅列 {len(shown)} 条，还有 {len(rows) - len(shown)} 条未列出；"
+                     "用 category 参数缩小范围）")
+    lines.append("")
+    lines.append(_VENDOR_BOUNDARY)
+    return ToolResult(
+        ok=True,
+        data={
+            "found": True, "total": len(rows), "shown": len(shown),
+            "truncated": len(rows) > len(shown),
+            "recipes": [
+                {"result": r["result"], "ingredients": r["ingredients"],
+                 "note": r["note"], "category": r["category"]}
+                for r in shown
+            ],
+            "boundary": _VENDOR_BOUNDARY,
+        },
+        citations=[{
+            "chunk_id": f"vendor_recipe:{q or cat or 'all'}",
+            "entity_id": None,
+            "title": "商店配方（POEDB）",
+            "url": rows[0]["url"],
+            "source": rows[0]["source"],
+            "source_priority": int(rows[0]["source_priority"]),
+            "can_support_facts": True,
+            "text": "\n".join(lines),
+            "channel": "structured",
+        }],
+        meta={"channel": "structured", "table": "poedb_vendor_recipe"},
+    )
