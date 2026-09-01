@@ -235,6 +235,9 @@ FACTS: tuple[Fact, ...] = (
     Fact("CLAUDE.md 效果文本入库颗数", "CLAUDE.md", r"820 颗里 \*\*([\d,]+) 颗\*\*",
          lambda c: int(c.execute(
              "SELECT count(DISTINCT gem_id) FROM poedb_gem_stat_level").fetchone()[0])),
+    Fact("CLAUDE.md 技能辅助搭配对数", "CLAUDE.md",
+         r"`poedb_gem_support_pair` \*\*([\d,]+)\*\* 对",
+         _count("poedb_gem_support_pair")),
     Fact("CLAUDE.md 宝石固定效果条数", "CLAUDE.md",
          r"`poedb_gem_fixed_stat` \*\*([\d,]+)\*\* 条", _count("poedb_gem_fixed_stat")),
     Fact("CLAUDE.md 宝石获取途径行数", "CLAUDE.md",

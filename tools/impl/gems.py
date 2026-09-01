@@ -376,3 +376,142 @@ def _sample_levels(rows: list[sqlite3.Row], natural_max: int) -> list[sqlite3.Ro
         if key % 5 == 0 and key not in picks:
             picks.append(key)
     return [by_level[k] for k in sorted(picks)]
+
+
+#: 列辅助时最多列几颗。实测平均每个技能 ~99 颗（56,895 / 577），
+#: 全列会把证据撑爆；**超出必须写出还剩多少**（与 `tools/impl/mods.py` 同一条约定，
+#: 静默截断等同于漏答）。
+MAX_SUPPORT_LIST = 40
+
+
+def _lookup_gem(conn, query: str) -> sqlite3.Row | None:  # noqa: ANN001
+    """按名字找一颗宝石。与 `skill_gem_levels` 用同一套匹配顺序，
+    免得同一个名字在两个工具里解析成两颗不同的宝石。"""
+    return conn.execute(
+        """
+        SELECT * FROM pob_skill_gem
+        WHERE name_zh = ? OR name_en = ? COLLATE NOCASE
+           OR name_zh LIKE ? OR name_en LIKE ? COLLATE NOCASE
+           OR name_zh_alt LIKE ?
+        ORDER BY (name_zh = ?) DESC, (name_en = ? COLLATE NOCASE) DESC,
+                 length(name_zh), name_zh
+        """,
+        (query, query, f"%{query}%", f"%{query}%", f'%"{query}"%', query, query),
+    ).fetchone()
+
+
+#: 这一维的边界。由代码附在 `data` 里（`loop._NOTE_FIELDS` 会逐字附到答案末尾），
+#: 不让模型转述——它只能无绑定地说，然后被自己的闸门拦掉。
+_SUPPORT_BOUNDARY = (
+    "搭配关系取自 POEDB 详情页两个方向的清单，**只收录两侧一致的对**"
+    "（56,895 对；另有 2,201 对只有一侧说，未确认、不在库）。"
+    "这是**默认语境**下的搭配：PoB 的真实判定还看装备的武器、召唤物与触发状态，"
+    "本库不建模这一层。本工具不提供辅助宝石给多少加成（那是 skill_gem_levels）。"
+)
+
+
+@REGISTRY.register(
+    name="gem_support_match",
+    description=(
+        "查**某个辅助宝石能不能辅助某个技能**，或**某个技能能配哪些辅助**。"
+        "两个名字都给就回答能/不能；只给技能名就列出能辅助它的辅助。"
+        "数据是 POEDB 两个方向清单的交集（只收两侧一致的对）——"
+        "查不到的对**不代表不能搭配**，可能是两侧清单不一致而未确认，返回里会说明。"
+        "本工具**不提供辅助给多少加成**，那是 skill_gem_levels。"
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "skill": {"type": "string", "description": "主动技能石名，如「冰霜脉冲」。"},
+            "support": {
+                "type": "string",
+                "description": "辅助宝石名，如「多重投射(辅)」。不给就列出全部能辅助该技能的辅助。",
+            },
+        },
+        "required": ["skill"],
+        "additionalProperties": False,
+    },
+)
+def gem_support_match(skill: str, support: str | None = None) -> ToolResult:
+    conn = dbmod.get_conn()
+    if not (skill or "").strip():
+        return ToolResult(ok=False, error="skill 不能为空")
+    gem = _lookup_gem(conn, skill.strip())
+    if gem is None:
+        return ToolResult(ok=True, data={"found": False, "reason": f"库里没有「{skill}」这颗宝石"})
+
+    if (support or "").strip():
+        sup = _lookup_gem(conn, support.strip())
+        if sup is None:
+            return ToolResult(
+                ok=True,
+                data={"found": False, "reason": f"库里没有「{support}」这颗宝石"})
+        hit = conn.execute(
+            "SELECT 1 FROM poedb_gem_support_pair WHERE skill_gem_id=? AND support_gem_id=?",
+            (gem["gem_id"], sup["gem_id"]),
+        ).fetchone() is not None
+        verdict = "能辅助" if hit else "本库未确认能辅助"
+        text = (
+            f"### {sup['name_zh']} 能否辅助 {gem['name_zh']}\n\n"
+            f"**{verdict}**。\n\n"
+            + ("依据：POEDB 详情页的「被辅助」与「可辅助」两个方向的清单**都**收录了这一对。"
+               if hit else
+               "两个方向的清单里**没有两侧一致地**收录这一对。"
+               "这既可能是确实不能搭配，也可能是两侧清单不同步——**本库不区分这两种情况**，"
+               "所以只说未确认，不说「不能」。")
+        )
+        return ToolResult(
+            ok=True,
+            data={"found": True, "skill": gem["name_zh"], "support": sup["name_zh"],
+                  "can_support": hit, "boundary": _SUPPORT_BOUNDARY},
+            citations=[{
+                "chunk_id": f"gem_support:{gem['gem_id']}:{sup['gem_id']}",
+                "entity_id": None,
+                "title": f"{gem['name_zh']} × {sup['name_zh']} 搭配关系",
+                "url": gem["poedb_url"] or "",
+                "source": Source.POEDB.value,
+                "source_priority": 1,
+                "can_support_facts": True,
+                "text": text,
+                "channel": "structured",
+            }],
+            meta={"channel": "structured", "table": "poedb_gem_support_pair"},
+        )
+
+    rows = [
+        r["name_zh"] for r in conn.execute(
+            "SELECT g.name_zh FROM poedb_gem_support_pair p "
+            "JOIN pob_skill_gem g ON g.gem_id = p.support_gem_id "
+            "WHERE p.skill_gem_id = ? ORDER BY g.name_zh", (gem["gem_id"],))
+    ]
+    if not rows:
+        return ToolResult(
+            ok=True,
+            data={"found": False, "skill": gem["name_zh"],
+                  "reason": f"本库没有「{gem['name_zh']}」两侧一致的搭配记录",
+                  "boundary": _SUPPORT_BOUNDARY})
+    shown = rows[:MAX_SUPPORT_LIST]
+    lines = [f"### 能辅助 {gem['name_zh']} 的辅助宝石（本库共 {len(rows)} 颗）", ""]
+    lines.extend(f"- {name}" for name in shown)
+    if len(rows) > len(shown):
+        lines.append("")
+        lines.append(f"（以上仅列 {len(shown)} 颗，还有 {len(rows) - len(shown)} 颗未列出；"
+                     "给出 support 参数可直接查某一颗）")
+    return ToolResult(
+        ok=True,
+        data={"found": True, "skill": gem["name_zh"], "supports_total": len(rows),
+              "supports_shown": len(shown), "truncated": len(rows) > len(shown),
+              "supports": shown, "boundary": _SUPPORT_BOUNDARY},
+        citations=[{
+            "chunk_id": f"gem_support:{gem['gem_id']}",
+            "entity_id": None,
+            "title": f"{gem['name_zh']} 可用辅助宝石",
+            "url": gem["poedb_url"] or "",
+            "source": Source.POEDB.value,
+            "source_priority": 1,
+            "can_support_facts": True,
+            "text": "\n".join(lines)[:MAX_EVIDENCE_CHARS],
+            "channel": "structured",
+        }],
+        meta={"channel": "structured", "table": "poedb_gem_support_pair"},
+    )

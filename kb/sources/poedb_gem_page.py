@@ -338,6 +338,94 @@ def parse_gem_fixed(html: str, *, poedb_slug: str) -> GemFixedStats:
     return GemFixedStats(prose=tuple(prose), reconcile_kv=kv)
 
 
+#: 搭配关系区块的标题（第四十五轮）：`被辅助 /116`、`可辅助 /275`。
+#: 斜杠后面那个数是**页面自己声明的条目数**，正好当自证判据用。
+_SUPPORT_BLOCK_RE = re.compile(r"^(被辅助|可辅助)\s*/\s*(\d+)")
+
+
+@dataclass(frozen=True)
+class GemSupportLinks:
+    """一页上的搭配关系。两个方向分开存——它们的**口径不同**。
+
+    `supported_by`（被辅助）里会出现**辅助宝石**（辅助辅助辅助，如启迪辅助
+    支持裂隙虫群辅助），而 `can_support`（可辅助）那一侧只列主动技能。
+    实测这一条结构性差异就占了两侧分歧的 1,840 对——**合并成一个集合就再也分不出来了**。
+    """
+
+    #: 这颗技能能被哪些辅助辅助（slug）
+    supported_by: tuple[str, ...] = ()
+    #: 这颗辅助能辅助哪些技能（slug）
+    can_support: tuple[str, ...] = ()
+
+
+def _support_slugs(card, *, poedb_slug: str, label: str, declared: int) -> tuple[str, ...]:  # noqa: ANN001
+    """区块里的 slug，并与标题声明的条数对账。
+
+    每个条目在页面上是**两个链接**（图标一个、文字一个），所以判据是
+    `链接数 // 2 == 声明数`，而不是「去重后的 slug 数 == 声明数」：
+    实测 1,111 个区块里有 **24 个**去重后少 1，成因全是**两个条目共用一张详情页**
+    （`Convocation` 在某个区块里出现 4 次 = 2 条目 × 2 链接）——
+    这正是第三十一轮记过的「同名共用一张详情页」。按链接对数比，24/24 全部对上。
+    """
+    hrefs = [
+        (a.attributes.get("href") or "").rsplit("/", 1)[-1]
+        for a in card.css('a[href^="/cn/"]')
+    ]
+    hrefs = [h for h in hrefs if h]
+    if len(hrefs) // 2 != declared:
+        raise GemPageError(
+            f"{poedb_slug} 的「{label}」区块声明 {declared} 条，"
+            f"实际 {len(hrefs)} 个链接（应为条数的两倍）"
+        )
+    return tuple(dict.fromkeys(hrefs))
+
+
+def _pane_id(node) -> str | None:  # noqa: ANN001
+    """这个节点所在标签页的 id。不在任何标签页里返回 None。"""
+    parent = node.parent
+    while parent is not None:
+        if "tab-pane" in (parent.attributes.get("class") or ""):
+            return parent.attributes.get("id")
+        parent = parent.parent
+    return None
+
+
+def parse_gem_support_links(html: str, *, poedb_slug: str) -> GemSupportLinks:
+    """解析「被辅助 / 可辅助」两个区块。没有就返回空。
+
+    按**区块标题**定位而不是按下标——这一页上并排着「等级效果」「使命」「属类」
+    「商城」好几个区块，下标会随上游加区块而错位（与本模块另外三处同一条纪律）。
+
+    ## 一页上可能有好几个「被辅助」，而它们讲的不是同一个技能
+
+    实测 272 页有两个、1 页有三个，其中 **59 页内容不同**。区别在**所在标签页**：
+
+        pane id = 被辅助                       ← 这颗宝石自己的清单
+        pane id = WeaponPassive / KineticFlux… ← 同一页上**另一个技能**的清单
+
+    所以判据是「所在标签页的 id 正好等于区块标题」。**取不到就取空，不退而求其次**：
+    实测另有 19 颗（全是辅助宝石，如裂隙虫群（辅）→ `SummonHiveborn`）
+    只有一个区块、而它在**这颗辅助所赋予的技能**那个标签页里——
+    那份清单描述的是被赋予的技能，不是这颗辅助本身。
+    「只有一个就用它」在这里会把 19 份清单挂错对象，
+    与第四十四轮固定表那条退路（那里确实无从挑起）不是同一种情形。
+    """
+    tree = HTMLParser(html)
+    found: dict[str, tuple[str, ...]] = {}
+    for header in tree.css("h5.card-header"):
+        matched = _SUPPORT_BLOCK_RE.match(_text(header))
+        if matched is None or header.parent is None:
+            continue
+        label, declared = matched.group(1), int(matched.group(2))
+        # 声明数的自证对**每个**区块都跑：它校的是解析没漏链接，与选哪一块无关。
+        slugs = _support_slugs(
+            header.parent, poedb_slug=poedb_slug, label=label, declared=declared)
+        if _pane_id(header) == label:
+            found[label] = slugs
+    return GemSupportLinks(
+        supported_by=found.get("被辅助", ()), can_support=found.get("可辅助", ()))
+
+
 #: 「使命」表的定位判据（第四十三轮）。同样按表头定位而不是按下标——
 #: 这一页上「逐级表」「品质变体」「使命」好几张表并存。
 QUEST_TABLE_HEAD = ("章节", "使命", "NPC", "角色")
