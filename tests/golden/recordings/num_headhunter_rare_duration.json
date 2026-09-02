@@ -2,22 +2,25 @@
   "format_version": 1,
   "case_id": "num_headhunter_rare_duration",
   "query": "猎首获得稀有怪物属性修正持续多久",
-  "recorded_at": "2026-08-17T18:05:25+08:00",
+  "recorded_at": "2026-09-02T10:41:36+08:00",
   "model": "glm-5.2",
   "tokens": {
-    "prompt": 6736,
-    "output": 93,
-    "reasoning": 55,
-    "total": 6829
+    "prompt": 15857,
+    "output": 101,
+    "reasoning": 63,
+    "total": 15958
   },
   "tool_calls": [
-    ""
+    "kb_search"
   ],
   "evidence_gap": false,
+  "out_of_scope": false,
+  "precision_route": "",
   "gap_answer": "",
+  "final_answer": "猎首（Headhunter）的显式词缀为「当你击败稀有怪物时，会获得该怪物属性修正 **60 秒**」[[E1]]。\n\n> **括号内的百分比是该档在同组内的生成权重占比**，不等于任何通货或具体工艺的一次使用成功率，也不等于期望消耗。\n\n> 检索以降级通道完成（alias, fts）：向量检索与重排未启用（网关无 embedding 模型），当前走 BM25 + 实体精确匹配",
   "blocked_claims": 0,
-  "elapsed_ms": 2531,
-  "evidence_fingerprint": "sha256:0bebb320b77647a988fdca5a9dcd7c36",
+  "elapsed_ms": 2579,
+  "evidence_fingerprint": "sha256:646ad4b110d7378a6d706bf1bb5d6ca5",
   "_warning": "raw_answer 是未过出口闸门的模型原文，含可能无据的断言，不得当作事实引用",
   "raw_answer": "猎首（Headhunter）的显式词缀为「当你击败稀有怪物时，会获得该怪物属性修正 **60 秒**」[[E1]]。",
   "evidence": [
@@ -29,7 +32,7 @@
       "url": "https://poedb.tw/cn/Headhunter",
       "source": "POEDB",
       "source_priority": 1,
-      "text": "# 猎首（Headhunter）\n类型：唯一装备 ｜ 底材：皮革腰带 ｜ 分类：其他\n\n**需求**：需求 等级 40\n\n**隐式词缀**\n- [隐式词缀] +(25-40) 最大生命\n\n**显式词缀**\n- [显式词缀] +(40-55) 力量\n- [显式词缀] +(40-55) 敏捷\n- [显式词缀] +(50-60) 最大生命\n- [显式词缀] 击中伤害对稀有怪物提高 (20-30)%\n- [显式词缀] 当你击败稀有怪物时，会获得该怪物属性修正 60 秒\n\n**附加说明**\n- [说明] ( 当你进入迷踪状态时, 你将不会被敌人所阻挡 )\n\n来源：POEDB → 猎首（Headhunter）\nhttps://poedb.tw/cn/Headhunter",
+      "text": "# 猎首（Headhunter）\n类型：唯一装备 ｜ 底材：皮革腰带 ｜ 分类：其他\n\n**需求**：需求 等级 40\n\n**隐式词缀**\n- [隐式词缀] +(25-40) 最大生命\n\n**显式词缀**\n- [显式词缀] +(40-55) 力量\n- [显式词缀] +(40-55) 敏捷\n- [显式词缀] +(50-60) 最大生命\n- [显式词缀] 击中伤害对稀有怪物提高 (20-30)%\n- [显式词缀] 当你击败稀有怪物时，会获得该怪物属性修正 60 秒\n\n**附加说明**\n- [说明] ( 当你进入迷踪状态时, 你将不会被敌人所阻挡 )\n\n**获取途径**\n- 命运卡：疯医\n- 命运卡：劣魔\n- 命运卡：女之武神\n- 命运卡：无畏者\n- 命运卡：恶魔\n\n来源：POEDB → 猎首（Headhunter）\nhttps://poedb.tw/cn/Headhunter",
       "can_support_facts": true,
       "claim_scope": "general",
       "claim_data": {}
@@ -55,7 +58,7 @@
       "url": "https://poedb.tw/cn/Inspired_Learning",
       "source": "POEDB",
       "source_priority": 1,
-      "text": "# 求知的热情（Inspired Learning）\n类型：唯一装备 ｜ 底材：赤红珠宝 ｜ 分类：其他\n\n**需求**：需求 等级 20\n\n**显式词缀**\n- [显式词缀] 若范围内配置了 4 个关键天赋点，当你击败稀有怪物时，你会获得该怪物的 1 属性修正 20 秒\n\n来源：POEDB → 求知的热情（Inspired Learning）\nhttps://poedb.tw/cn/Inspired_Learning",
+      "text": "# 求知的热情（Inspired Learning）\n类型：唯一装备 ｜ 底材：赤红珠宝 ｜ 分类：其他\n\n**需求**：需求 等级 20\n\n**显式词缀**\n- [显式词缀] 若范围内配置了 4 个关键天赋点，当你击败稀有怪物时，你会获得该怪物的 1 属性修正 20 秒\n\n**获取途径**\n- 命运卡：兵法家\n- 命运卡：学院派\n\n来源：POEDB → 求知的热情（Inspired Learning）\nhttps://poedb.tw/cn/Inspired_Learning",
       "can_support_facts": true,
       "claim_scope": "general",
       "claim_data": {}
@@ -75,19 +78,6 @@
     },
     {
       "label": "E5",
-      "chunk_id": "unique_item:Solstice_Vigil#0#4ac738ee06c333bf",
-      "entity_id": "unique_item:Solstice_Vigil",
-      "title": "至日不眠（Solstice Vigil）",
-      "url": "https://poedb.tw/cn/Solstice_Vigil",
-      "source": "POEDB",
-      "source_priority": 1,
-      "text": "# 至日不眠（Solstice Vigil）\n类型：唯一装备 ｜ 底材：黑曜护身符 ｜ 分类：其他\n\n**需求**：需求 等级 64\n\n**隐式词缀**\n- [隐式词缀] +(10-16) 全属性\n\n**显式词缀**\n- [显式词缀] 伤害提高 (30-40)%\n- [显式词缀] +(50-70) 最大生命\n- [显式词缀] 每秒再生 (8-10) 魔力\n- [显式词缀] 击败稀有或者传奇敌人时，获得塑界者姿态，持续 10 秒\n- [显式词缀] 时空锁链以光环形式施放时没有保留效果\n\n**附加说明**\n- [说明] （塑界者姿态会使你和周围友军身上的效果消退速度减缓 20%）\n- [说明] （效果无法低于正常消退速率的 25%）\n\n来源：POEDB → 至日不眠（Solstice Vigil）\nhttps://poedb.tw/cn/Solstice_Vigil",
-      "can_support_facts": true,
-      "claim_scope": "general",
-      "claim_data": {}
-    },
-    {
-      "label": "E6",
       "chunk_id": "unique_item:The_Hallowed_Monarch#0#4979ee0381113011",
       "entity_id": "unique_item:The_Hallowed_Monarch",
       "title": "圣洁君临（The Hallowed Monarch）",
@@ -95,6 +85,19 @@
       "source": "POEDB",
       "source_priority": 1,
       "text": "# 圣洁君临（The Hallowed Monarch）\n类型：唯一装备 ｜ 底材：信仰之盔 ｜ 分类：护甲\n\n**需求**：需求 等级 73, 101 力量, 101 智慧\n\n**显式词缀**\n- [显式词缀] 该装备的护甲提高 (150-230)%\n- [显式词缀] +(25-35)% 所有元素抗性\n- [显式词缀] 照亮范围扩大 50%\n- [显式词缀] 羁绊技能能以可受伤的召唤生物为目标\n- [显式词缀] 你羁绊的召唤物受到的伤害总降 (65-75)%\n- [显式词缀] 消灭稀有怪物时，一个随机羁绊的召唤物获得其词缀，持续 60 秒\n\n来源：POEDB → 圣洁君临（The Hallowed Monarch）\nhttps://poedb.tw/cn/The_Hallowed_Monarch",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E6",
+      "chunk_id": "unique_item:Solstice_Vigil#0#4ac738ee06c333bf",
+      "entity_id": "unique_item:Solstice_Vigil",
+      "title": "至日不眠（Solstice Vigil）",
+      "url": "https://poedb.tw/cn/Solstice_Vigil",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 至日不眠（Solstice Vigil）\n类型：唯一装备 ｜ 底材：黑曜护身符 ｜ 分类：其他\n\n**需求**：需求 等级 64\n\n**隐式词缀**\n- [隐式词缀] +(10-16) 全属性\n\n**显式词缀**\n- [显式词缀] 伤害提高 (30-40)%\n- [显式词缀] +(50-70) 最大生命\n- [显式词缀] 每秒再生 (8-10) 魔力\n- [显式词缀] 击败稀有或者传奇敌人时，获得塑界者姿态，持续 10 秒\n- [显式词缀] 时空锁链以光环形式施放时没有保留效果\n\n**附加说明**\n- [说明] （塑界者姿态会使你和周围友军身上的效果消退速度减缓 20%）\n- [说明] （效果无法低于正常消退速率的 25%）\n\n来源：POEDB → 至日不眠（Solstice Vigil）\nhttps://poedb.tw/cn/Solstice_Vigil",
       "can_support_facts": true,
       "claim_scope": "general",
       "claim_data": {}

@@ -1296,6 +1296,21 @@ cases:
     expect_tool: check_mod_combination
     note: 多目标词缀共存 → check_mod_combination（三态，unknown 要原样说明）
 
+  - id: desc_headhunter_acquisition
+    query: 猎首怎么获得
+    kind: description
+    expect_slug: Headhunter
+    expect_evidence_text: "命运卡：疯医"
+    note: >-
+      猎首可由 5 张命运卡换到（疯医/劣魔/女之武神/无畏者/恶魔）。
+      **这条钉的是「最自然的问法要走得通」**
+    lesson: >-
+      第五十四轮把 387 行获取途径入库了，却只有工具出口。实测「猎首怎么获得」
+      路由到 `stat_sources`（「某属性能从哪来」的工具），卡上一个字都没有——
+      **数据入库但出口不全**是这个项目反复踩的坑。第五十五轮接到卡上之后，
+      普通检索命中这张卡就能答，不再依赖意图词猜对。
+      判据钉在**证据**上而不是模型措辞上（与 `desc_gem_support_yes` 同一条）。
+
   - id: route_acquisition_card
     query: 哪张命运卡能换到崇高石
     kind: tool_route

@@ -82,3 +82,37 @@ class RouteTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CardTest(unittest.TestCase):
+    """卡片必须真的写出来——「数据入库但没有出口」是这个项目反复踩的坑。
+
+    第五十四轮入库了 387 行，却只有工具出口；实测「猎首怎么获得」这个最自然的问法
+    路由到了 `stat_sources`（「某属性能从哪来」的工具），而卡上一个字都没有。
+    """
+
+    def _card(self, routes: list[dict]) -> str:
+        from kb.render import acquisition_block
+
+        return "\n".join(acquisition_block({"acquisition": routes}))
+
+    def test_命运卡与升级配方分开写(self) -> None:
+        card = self._card([
+            {"source_zh": "疯医", "ingredient": ""},
+            {"source_zh": "托沃崩", "ingredient": "托沃的祝福"},
+        ])
+        self.assertIn("命运卡：疯医", card)
+        self.assertIn("升级配方：托沃崩 + 托沃的祝福", card)
+
+    def test_没有这一段就不出区块(self) -> None:
+        """1078 件唯一装备的详情页本来就没有 Acquisition 区块。
+        写「未采集」会把「页面没给」说成「我们没采」，写「无法获得」更是假话——
+        所以什么都不写，覆盖的诚实说明由工具在被问到时给。"""
+        self.assertEqual(self._card([]), "")
+
+    def test_超过上限要写出还剩多少(self) -> None:
+        from kb.render import MAX_CARD_ACQUISITION
+
+        many = [{"source_zh": f"卡{i}", "ingredient": ""}
+                for i in range(MAX_CARD_ACQUISITION + 3)]
+        self.assertIn("另有 3 条", self._card(many))

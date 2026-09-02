@@ -2,24 +2,27 @@
   "format_version": 1,
   "case_id": "name_tabula_rasa_en",
   "query": "Tabula Rasa",
-  "recorded_at": "2026-08-17T18:02:42+08:00",
+  "recorded_at": "2026-09-02T10:40:49+08:00",
   "model": "glm-5.2",
   "tokens": {
-    "prompt": 5678,
-    "output": 188,
-    "reasoning": 23,
-    "total": 5866
+    "prompt": 14811,
+    "output": 513,
+    "reasoning": 45,
+    "total": 15324
   },
   "tool_calls": [
-    ""
+    "kb_search"
   ],
   "evidence_gap": false,
+  "out_of_scope": false,
+  "precision_route": "",
   "gap_answer": "",
+  "final_answer": "## 无尽之衣（Tabula Rasa）\n\n**基本信息**\n\n| 项目 | 内容 |\n|------|------|\n| 类型 | 唯一装备 |\n| 底材 | 简易之袍 |\n| 分类 | 胸甲 |\n| 需求 | 等级 3，17 智慧[[E1]] |\n\n**显式词缀**\n\n〔此处原有一条无据断言，已被拦截：数值 6 未出现在绑定证据 E1 中〕- 插槽皆为白色[[E1]]\n- 此物品无需求或能量护盾（local unique tabula rasa no requirement or energy shield）[[E1]]\n\n**特点**\n\n无尽之衣是一件以简易之袍为底材的胸甲，本身没有能量护盾、闪避或护甲等防御属性，也没有属性需求限制[[E1]]。其核心价值在于提供**六连白色插槽**——白色插槽可以放入任意颜色的技能石，无需考虑属性需求匹配[[E1]]。\n\n**获取途径**\n\n无尽之衣可通过以下命运卡获得[[E1]]：\n\n- 命运卡：**谦逊**\n- 命运卡：**虚荣**\n\n---\n\n**关联物品**\n\n〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕可通过忠诚之肤 + 夏乌拉的祝福升级配方获得，命运卡追梦者与忠诚的代价也能换取[[E2]]。\n〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕由忠诚之肤 + 夏乌拉的祝福升级配方获得，命运卡天选也能换取[[E4]][[E2]]。\n\n君主之肤可视为忠诚之肤的进一步升级版本：技能石等级加成从 +1 提升到 +2，但限制了只能使用已腐化的技能石，并随机赋予一条关键天赋[[E2,E4]]。\n\n> 检索以降级通道完成（alias, fts）：向量检索与重排未启用（网关无 embedding 模型），当前走 BM25 + 实体精确匹配",
   "blocked_claims": 4,
-  "elapsed_ms": 4240,
-  "evidence_fingerprint": "sha256:c0c1d97bfcc82f0faae1bc3307536c3a",
+  "elapsed_ms": 8663,
+  "evidence_fingerprint": "sha256:d2e0181eb228c37b300ad9c56ab4534b",
   "_warning": "raw_answer 是未过出口闸门的模型原文，含可能无据的断言，不得当作事实引用",
-  "raw_answer": "# 无尽之衣（Tabula Rasa）\n\n| 项目 | 内容 |\n|------|------|\n| **类型** | 唯一装备 |\n| **底材** | 简易之袍 |\n| **分类** | 胸甲 |\n| **需求** | 等级 3, 17 智慧 [[E1]] |\n\n## 显式词缀\n\n- **六插槽連線** [[E1]]\n- **插槽皆为白色** [[E1]]\n\n无尽之衣的核心特征是拥有六個白色連線插槽，且不提供任何能量护盾（Energy Shield）。由于白色插槽可放入任意颜色技能石，这件胸甲在低等级时就能提供完整的六連组合，是非常实用的过渡装备[[E1]]。",
+  "raw_answer": "## 无尽之衣（Tabula Rasa）\n\n**基本信息**\n\n| 项目 | 内容 |\n|------|------|\n| 类型 | 唯一装备 |\n| 底材 | 简易之袍 |\n| 分类 | 胸甲 |\n| 需求 | 等级 3，17 智慧[[E1]] |\n\n**显式词缀**\n\n- 六插槽連線（6 连白孔）[[E1]]\n- 插槽皆为白色[[E1]]\n- 此物品无需求或能量护盾（local unique tabula rasa no requirement or energy shield）[[E1]]\n\n**特点**\n\n无尽之衣是一件以简易之袍为底材的胸甲，本身没有能量护盾、闪避或护甲等防御属性，也没有属性需求限制[[E1]]。其核心价值在于提供**六连白色插槽**——白色插槽可以放入任意颜色的技能石，无需考虑属性需求匹配[[E1]]。\n\n**获取途径**\n\n无尽之衣可通过以下命运卡获得[[E1]]：\n\n- 命运卡：**谦逊**\n- 命运卡：**虚荣**\n\n---\n\n**关联物品**\n\n同为简易之袍底材的系列唯一装备还有：\n\n- **忠诚之肤（Skin of the Loyal）**：六插槽連線、此物品上装备的技能石等级 +1、全局防御提高 100%，插槽无法被调整。可通过忠诚之肤 + 夏乌拉的祝福升级配方获得，命运卡追梦者与忠诚的代价也能换取[[E2]]。\n- **君主之肤（Skin of the Lords）**：六插槽連線、此物品上装备的技能石等级 +2、全局防御提高 100%、插槽无法被调整、只能放入已腐化的技能石，并附带一条**随机关键天赋**。由忠诚之肤 + 夏乌拉的祝福升级配方获得，命运卡天选也能换取[[E4]][[E2]]。\n\n君主之肤可视为忠诚之肤的进一步升级版本：技能石等级加成从 +1 提升到 +2，但限制了只能使用已腐化的技能石，并随机赋予一条关键天赋[[E2,E4]]。",
   "evidence": [
     {
       "label": "E1",
@@ -29,7 +32,7 @@
       "url": "https://poedb.tw/cn/Tabula_Rasa",
       "source": "POEDB",
       "source_priority": 1,
-      "text": "# 无尽之衣（Tabula Rasa）\n类型：唯一装备 ｜ 底材：简易之袍 ｜ 分类：胸甲\n\n**需求**：需求 等级 3, 17 智慧\n\n**显式词缀**\n- [显式词缀] local six linked white sockets [1]\n- [显式词缀] local unique tabula rasa no requirement or energy shield [1]\n- [显式词缀] [六插槽連線]\n- [显式词缀] [插槽皆為白色]\n\n来源：POEDB → 无尽之衣（Tabula Rasa）\nhttps://poedb.tw/cn/Tabula_Rasa",
+      "text": "# 无尽之衣（Tabula Rasa）\n类型：唯一装备 ｜ 底材：简易之袍 ｜ 分类：胸甲\n\n**需求**：需求 等级 3, 17 智慧\n\n**显式词缀**\n- [显式词缀] local six linked white sockets [1]\n- [显式词缀] local unique tabula rasa no requirement or energy shield [1]\n- [显式词缀] [六插槽連線]\n- [显式词缀] [插槽皆為白色]\n\n**获取途径**\n- 命运卡：谦逊\n- 命运卡：虚荣\n\n来源：POEDB → 无尽之衣（Tabula Rasa）\nhttps://poedb.tw/cn/Tabula_Rasa",
       "can_support_facts": true,
       "claim_scope": "general",
       "claim_data": {}
@@ -42,26 +45,13 @@
       "url": "https://poedb.tw/cn/Skin_of_the_Loyal",
       "source": "POEDB",
       "source_priority": 1,
-      "text": "# 忠诚之肤（Skin of the Loyal）\n类型：唯一装备 ｜ 底材：简易之袍 ｜ 分类：护甲\n\n**需求**：需求 等级 3, 17 智慧\n\n**显式词缀**\n- [显式词缀] 插槽无法被调整\n- [显式词缀] 此物品上装备的技能石等级 +1\n- [显式词缀] 全局防御提高 100%\n- [显式词缀] local unique tabula rasa no requirement or energy shield [1]\n- [显式词缀] [六插槽連線]\n\n**附加说明**\n- [说明] （护甲值、闪避值、能量护盾都属于标准防御属性）\n\n来源：POEDB → 忠诚之肤（Skin of the Loyal）\nhttps://poedb.tw/cn/Skin_of_the_Loyal",
+      "text": "# 忠诚之肤（Skin of the Loyal）\n类型：唯一装备 ｜ 底材：简易之袍 ｜ 分类：护甲\n\n**需求**：需求 等级 3, 17 智慧\n\n**显式词缀**\n- [显式词缀] 插槽无法被调整\n- [显式词缀] 此物品上装备的技能石等级 +1\n- [显式词缀] 全局防御提高 100%\n- [显式词缀] local unique tabula rasa no requirement or energy shield [1]\n- [显式词缀] [六插槽連線]\n\n**附加说明**\n- [说明] （护甲值、闪避值、能量护盾都属于标准防御属性）\n\n**获取途径**\n- 升级配方：忠诚之肤 + 夏乌拉的祝福\n- 命运卡：追梦者\n- 命运卡：忠诚的代价\n\n来源：POEDB → 忠诚之肤（Skin of the Loyal）\nhttps://poedb.tw/cn/Skin_of_the_Loyal",
       "can_support_facts": true,
       "claim_scope": "general",
       "claim_data": {}
     },
     {
       "label": "E3",
-      "chunk_id": "unique_item:Skin_of_the_Lords#0#ce491a3968eacb23",
-      "entity_id": "unique_item:Skin_of_the_Lords",
-      "title": "君主之肤（Skin of the Lords）",
-      "url": "https://poedb.tw/cn/Skin_of_the_Lords",
-      "source": "POEDB",
-      "source_priority": 1,
-      "text": "# 君主之肤（Skin of the Lords）\n类型：唯一装备 ｜ 底材：简易之袍 ｜ 分类：护甲\n\n**需求**：需求 等级 3, 17 智慧\n\n**显式词缀**\n- [显式词缀] 插槽无法被调整\n- [显式词缀] 此物品上装备的技能石等级 +2\n- [显式词缀] 全局防御提高 100%\n- [显式词缀] 只能在此物品上放入已腐化的技能石\n- [显式词缀] local unique tabula rasa no requirement or energy shield [1]\n- [显式词缀] [六插槽連線]\n- [显式词缀] [隨機關鍵天賦]\n\n**附加说明**\n- [说明] （护甲值、闪避值、能量护盾都属于标准防御属性）\n\n来源：POEDB → 君主之肤（Skin of the Lords）\nhttps://poedb.tw/cn/Skin_of_the_Lords",
-      "can_support_facts": true,
-      "claim_scope": "general",
-      "claim_data": {}
-    },
-    {
-      "label": "E4",
       "chunk_id": "unique_item:Wreath_of_Phrecia#0#2084a2c509322d73",
       "entity_id": "unique_item:Wreath_of_Phrecia",
       "title": "费西亚的花环（Wreath of Phrecia）",
@@ -69,6 +59,19 @@
       "source": "POEDB",
       "source_priority": 1,
       "text": "# 费西亚的花环（Wreath of Phrecia）\n类型：唯一装备 ｜ 底材：铁锻之冠 ｜ 分类：护甲\n\n**需求**：需求 等级 8\n\n**显式词缀**\n- [显式词缀] 穿戴对人物属性无需求\n- [显式词缀] 照亮范围的扩大和缩小也同样作用于效果区域，等于其数值的 50%\n- [显式词缀] 对照亮范围的增强与减弱效果也作用于伤害\n- [显式词缀] 照亮范围扩大 (15-25)%\n- [显式词缀] 无法造成混沌伤害\n- [显式词缀] local unique tabula rasa no requirement or energy shield [1]\n\n**附加说明**\n- [说明] (属性分为力量，敏捷和智慧三种)\n\n来源：POEDB → 费西亚的花环（Wreath of Phrecia）\nhttps://poedb.tw/cn/Wreath_of_Phrecia",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E4",
+      "chunk_id": "unique_item:Skin_of_the_Lords#0#ce491a3968eacb23",
+      "entity_id": "unique_item:Skin_of_the_Lords",
+      "title": "君主之肤（Skin of the Lords）",
+      "url": "https://poedb.tw/cn/Skin_of_the_Lords",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 君主之肤（Skin of the Lords）\n类型：唯一装备 ｜ 底材：简易之袍 ｜ 分类：护甲\n\n**需求**：需求 等级 3, 17 智慧\n\n**显式词缀**\n- [显式词缀] 插槽无法被调整\n- [显式词缀] 此物品上装备的技能石等级 +2\n- [显式词缀] 全局防御提高 100%\n- [显式词缀] 只能在此物品上放入已腐化的技能石\n- [显式词缀] local unique tabula rasa no requirement or energy shield [1]\n- [显式词缀] [六插槽連線]\n- [显式词缀] [隨機關鍵天賦]\n\n**附加说明**\n- [说明] （护甲值、闪避值、能量护盾都属于标准防御属性）\n\n**获取途径**\n- 升级配方：忠诚之肤 + 夏乌拉的祝福\n- 命运卡：天选\n\n来源：POEDB → 君主之肤（Skin of the Lords）\nhttps://poedb.tw/cn/Skin_of_the_Lords",
       "can_support_facts": true,
       "claim_scope": "general",
       "claim_data": {}

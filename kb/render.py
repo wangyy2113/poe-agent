@@ -42,6 +42,42 @@ def _mod_lines(mods: list[ModLine]) -> list[str]:
     return lines
 
 
+#: 卡片上最多列几条获取途径。实测单件最多 5 条（264 件里 207 件只有 1 条），
+#: 所以这个上限几乎不触发；留着是因为**静默截断等同于漏答**。
+MAX_CARD_ACQUISITION = 8
+
+
+def acquisition_block(attrs: dict) -> list[str]:
+    """获取途径区块（第五十五轮）：命运卡与升级配方。
+
+    数据第五十四轮就入库了（`poedb_acquisition`，387 行），但**只有工具出口**——
+    实测「猎首怎么获得」这个最自然的问法路由到了 `stat_sources`（那是
+    「某属性能从哪来」的工具），而卡片上一个字都没有。**数据入库但出口不全**
+    是这个项目反复踩的坑，这一轮把它接到卡上：普通检索命中这张卡就能答，
+    不再依赖意图词猜对。
+
+    **只写页面给了的**：`Ingredient` 为空是命运卡，非空是升级配方。
+    **没有这一段的 1078 件不写任何东西**——它们的详情页本来就没有 `Acquisition` 区块，
+    写「未采集」会把「页面没给」说成「我们没采」，而写「无法获得」更是假话。
+    覆盖的诚实说明由 `acquisition_routes` 工具在被问到时给出。
+    """
+    routes = [dict(r) for r in (attrs.get("acquisition") or [])]
+    if not routes:
+        return []
+    out = ["**获取途径**"]
+    for route in routes[:MAX_CARD_ACQUISITION]:
+        source = str(route.get("source_zh") or "")
+        ingredient = str(route.get("ingredient") or "")
+        if ingredient:
+            out.append(f"- 升级配方：{source} + {ingredient}")
+        else:
+            out.append(f"- 命运卡：{source}")
+    if len(routes) > MAX_CARD_ACQUISITION:
+        out.append(f"（另有 {len(routes) - MAX_CARD_ACQUISITION} 条，"
+                   "用 acquisition_routes 查完整数据）")
+    return out
+
+
 def render_card(entity: Entity) -> str:
     """渲染知识卡片。标题含中英文名便于对照社区资料。"""
     head = entity.name_zh
@@ -77,6 +113,11 @@ def render_card(entity: Entity) -> str:
 
     if not entity.factual_mods:
         parts.append("\n> 该物品在 POEDB 上未列出属性词缀（碎片 / 契约 / 奇珍类物品通常如此）。")
+
+    acquisition = acquisition_block(entity.attributes)
+    if acquisition:
+        parts.append("")
+        parts.extend(acquisition)
 
     if entity.flavour_text:
         parts.append(f"\n**风味文本**\n> {entity.flavour_text}")
