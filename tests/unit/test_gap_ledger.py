@@ -458,3 +458,56 @@ class IngestGapWriterTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CoverageNoteTest(unittest.TestCase):
+    """覆盖率度量不能坐进采集优先级（第五十七轮）。
+
+    起因与 `out_of_scope` 一模一样，只是这次是**自己**把信号搞脏的：
+    第 43/45/54 轮的导入脚本用 `ingest_gap` 记下了「上游那一页本来就没有这一段」，
+    于是台账头部八条全是它们（合计四千多的 hit_count），真待办被挤到第 9 位往后。
+    """
+
+    def test_coverage_note_不在采集优先级里(self) -> None:
+        self.assertIn("coverage_note", dbmod.GAP_KINDS)
+        self.assertNotIn("coverage_note", dbmod.COLLECTION_GAP_KINDS)
+
+    def test_按_kind_分组替换互不干扰(self) -> None:
+        """同一个 question 下两种 kind 各写各的——`record_ingest_gaps` 是整组替换，
+        若不按 kind 分组，写覆盖率那一次会把待办那一条删掉。"""
+        conn = _conn(_NEW_SCHEMA)
+        dbmod.record_ingest_gaps(
+            conn, question="Q", category="c", points=[("[no_detail_page] 3 页没抓", 3)])
+        dbmod.record_ingest_gaps(
+            conn, question="Q", category="c", points=[("[no_quest_table] 152 页没有", 152)],
+            kind="coverage_note")
+        kinds = {r[0]: r[1] for r in conn.execute(
+            "SELECT kind, hit_count FROM knowledge_gap WHERE question='Q'")}
+        self.assertEqual(kinds, {"ingest_gap": 3, "coverage_note": 152},
+                         "两种 kind 必须共存，不能互相覆盖")
+
+    def test_迁移把三种成因标记移出优先级(self) -> None:
+        """判据是 `missing_point` 里的成因标记，不是靠猜——这三个标记的语义都明确是
+        「去补它需要新来源」。**只重新归类、不删行**（台账是审计记录）。"""
+        conn = _conn(_NEW_SCHEMA)
+        for mark in ("[no_acquisition_block]", "[no_quest_table]", "[one_sided]"):
+            conn.execute(
+                "INSERT INTO knowledge_gap(question, missing_point, kind, source, hit_count,"
+                " first_seen, last_seen) VALUES (?,?,'ingest_gap','import',9,"
+                "datetime('now'),datetime('now'))",
+                (f"q{mark}", f"{mark} 上游没有这一段"),
+            )
+        conn.execute(
+            "INSERT INTO knowledge_gap(question, missing_point, kind, source, hit_count,"
+            " first_seen, last_seen) VALUES ('real','[pob_missing] 50 颗未桥接',"
+            "'ingest_gap','import',50,datetime('now'),datetime('now'))")
+        before = conn.execute("SELECT count(*) FROM knowledge_gap").fetchone()[0]
+        dbmod._migrate_gap_source(conn)
+        self.assertEqual(conn.execute("SELECT count(*) FROM knowledge_gap").fetchone()[0],
+                         before, "只重新归类，不删行")
+        self.assertEqual(
+            conn.execute("SELECT count(*) FROM knowledge_gap WHERE kind='coverage_note'")
+            .fetchone()[0], 3)
+        self.assertEqual(
+            conn.execute("SELECT kind FROM knowledge_gap WHERE question='real'")
+            .fetchone()[0], "ingest_gap", "真待办不能被误伤")

@@ -44,17 +44,22 @@ def stats() -> dict[str, Any]:
             "ORDER BY hit_count DESC LIMIT 50"
         )
     ]
-    #: 被排除掉的条目数——藏起来就等于又给自己一个失真的信号
+    #: 被排除掉的条目数——藏起来就等于又给自己一个失真的信号。
+    #: `coverage_note` 是第五十七轮加的第三档：那些条目说的是「上游那一页本来就
+    #: 没有这一段」，去补它需要新来源，不是待办（见 `core.db.GAP_KINDS`）。
     excluded = {
         str(r["why"]): r["n"]
         for r in conn.execute(
-            "SELECT CASE WHEN COALESCE(kind,'retrieval_gap')='out_of_scope' "
-            "THEN 'out_of_scope' ELSE 'eval_traffic' END AS why, count(*) AS n "
+            "SELECT CASE COALESCE(kind,'retrieval_gap') "
+            "  WHEN 'out_of_scope' THEN 'out_of_scope' "
+            "  WHEN 'coverage_note' THEN 'coverage_note' "
+            "  ELSE 'eval_traffic' END AS why, count(*) AS n "
             "FROM knowledge_gap "
             "WHERE COALESCE(kind,'retrieval_gap') IN "
-            "('retrieval_gap','tool_gap','ingest_gap','out_of_scope') "
+            "('retrieval_gap','tool_gap','ingest_gap','out_of_scope','coverage_note') "
             "AND (COALESCE(source,'chat')='eval' "
-            "OR COALESCE(kind,'retrieval_gap')='out_of_scope') GROUP BY 1"
+            "OR COALESCE(kind,'retrieval_gap') IN ('out_of_scope','coverage_note')) "
+            "GROUP BY 1"
         )
     }
     by_kind = {

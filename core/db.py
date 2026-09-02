@@ -1418,12 +1418,24 @@ def _migrate(conn: sqlite3.Connection) -> None:
 #: `ingest_gap` 是导入脚本写的（「这 51 条 POEDB 有而 PoB 没有」这类），
 #: 第三十轮才补进这份清单——它在用、却既没被声明也没在 `/admin/stats` 里露出来，
 #: 而它恰恰是**最可执行**的一类采集待办。
+#: `coverage_note` 是第五十七轮加的，起因与 `out_of_scope` 一模一样，
+#: 只是这次是**自己**把信号搞脏的：第 43/45/54 轮的导入脚本用 `ingest_gap` 记下了
+#: 「上游那一页本来就没有这一段」这类**覆盖率度量**——
+#:
+#:     1078x [no_acquisition_block] unique_item 有 1078 项的详情页上没有 Acquisition
+#:      597x [one_sided] 只在「可辅助」侧：对方 slug 不在库
+#:      152x [no_quest_table] 152 颗宝石的详情页上没有使命表
+#:
+#: 它们的 `missing_point` 里就写着「不是漏抽，是页面本来就没有这一段」，
+#: 却因为 `kind='ingest_gap'` 全部坐进采集优先级的头部，把真待办挤到第 9 位往后。
+#: 这正是上面那句话说的：**头部塞着永不执行的条目，整张表就失去了作用。**
+#: 判据：**「去补它需要新来源」的是覆盖率，不是待办**。
 GAP_KINDS = (
     "retrieval_gap", "tool_gap", "ingest_gap",
-    "binding_block", "binding_block_legacy", "out_of_scope",
+    "binding_block", "binding_block_legacy", "out_of_scope", "coverage_note",
 )
 
-#: 构成「采集优先级」的三类。其余是观测量或永久不在范围内。
+#: 构成「采集优先级」的三类。其余是观测量、覆盖率度量，或永久不在范围内。
 COLLECTION_GAP_KINDS = ("retrieval_gap", "tool_gap", "ingest_gap")
 
 #: 台账条目的**流量来源**。评测会把同一批问题反复跑，命中次数因此变成
@@ -1438,8 +1450,15 @@ def record_ingest_gaps(
     question: str,
     category: str,
     points: Sequence[tuple[str, int]],
+    kind: str = "ingest_gap",
 ) -> int:
-    """登记一次采集的未入库项（`kind='ingest_gap'`、`source='import'`）。
+    """登记一次采集的未入库项（`source='import'`）。
+
+    `kind` 默认 `ingest_gap`（**是采集待办**）。上游那一页本来就没有这一段时，
+    调用方要显式传 `kind='coverage_note'`——那是覆盖率度量、不是待办，
+    混进优先级会把真待办挤下去（理由见 `GAP_KINDS` 上那段）。
+    **按 `(question, kind, source)` 整组替换**，所以同一个 question 下
+    两种 kind 各写各的、互不覆盖。
 
     四个导入/采集脚本原先各写一份同样的 UPSERT，三个缺陷也就各犯了一遍
     （第三十一轮实测，起因是照着台账排序去干活时发现头部那条已经过期）：
@@ -1459,23 +1478,23 @@ def record_ingest_gaps(
         str(row["missing_point"]): str(row["first_seen"])
         for row in conn.execute(
             "SELECT missing_point, first_seen FROM knowledge_gap "
-            "WHERE question=? AND kind='ingest_gap' AND source='import'",
-            (question,),
+            "WHERE question=? AND kind=? AND source='import'",
+            (question, kind),
         )
     }
     oldest = min(previous.values(), default=None)
     conn.execute(
-        "DELETE FROM knowledge_gap "
-        "WHERE question=? AND kind='ingest_gap' AND source='import'",
-        (question,),
+        "DELETE FROM knowledge_gap WHERE question=? AND kind=? AND source='import'",
+        (question, kind),
     )
     for missing_point, magnitude in points:
         text = missing_point[:500]
         conn.execute(
             "INSERT INTO knowledge_gap(question, missing_point, guessed_category, kind, "
             "source, hit_count, first_seen, last_seen) "
-            "VALUES (?,?,?,'ingest_gap','import',?,COALESCE(?,datetime('now')),datetime('now'))",
-            (question, text, category, max(int(magnitude), 1), previous.get(text, oldest)),
+            "VALUES (?,?,?,?,'import',?,COALESCE(?,datetime('now')),datetime('now'))",
+            (question, text, category, kind,
+             max(int(magnitude), 1), previous.get(text, oldest)),
         )
     return len(points)
 
@@ -1553,6 +1572,24 @@ def _migrate_gap_source(conn: sqlite3.Connection) -> None:
     ).rowcount
     if marked:
         logger.info("缺口台账迁移：%d 条导入脚本写的条目归到 source='import'", marked)
+
+    # 4) **覆盖率度量移出采集优先级**（第五十七轮）。第 43/45/54 轮的导入脚本把
+    #    「上游那一页本来就没有这一段」记成了 `ingest_gap`，于是台账头部八条全是
+    #    它们（合计四千多的 hit_count），真待办被挤到第 9 位往后——正是第三十轮
+    #    修 POE2 越界时那句话说的：头部塞着永不执行的条目，整张表就失去了作用。
+    #
+    #    判据是 `missing_point` 里的成因标记，不是靠猜：这三个标记的语义都明确是
+    #    「去补它需要新来源」，而不是「我们漏抽了」。
+    #    **只重新归类、不删行**，与第三十轮同一条：台账是审计记录。
+    moved = conn.execute(
+        "UPDATE knowledge_gap SET kind='coverage_note' "
+        "WHERE kind='ingest_gap' AND ("
+        "  missing_point LIKE '%[no_acquisition_block]%'"
+        "  OR missing_point LIKE '%[no_quest_table]%'"
+        "  OR missing_point LIKE '%[one_sided]%')"
+    ).rowcount
+    if moved:
+        logger.info("缺口台账迁移：%d 条覆盖率度量移出采集优先级", moved)
     conn.commit()
     conn.execute("CREATE INDEX IF NOT EXISTS idx_gap_source ON knowledge_gap(source)")
 
