@@ -68,7 +68,13 @@ EXPECTED_HEADERS = ("描述", "消耗")
 
 #: 另外两张表的表头，用来报「本模块不取的有多少行」——静默省略与
 #: 「页面上就没有」事后分不清。
-CROP_HEADERS = ("怪物", "阶级", "Colour")
+#: 种子怪物表。**这张表的名字第三十六轮起被叫错了**：台账里写的是
+#: 「作物与掉落来源」，而它三列其实是 `怪物 ｜ 阶级 ｜ Colour`——
+#: 种子生成的怪物、它的阶级、以及**颜色**。颜色决定掉哪种命能，
+#: 所以它是命能的获取途径（第五十八轮入库）。
+SEED_HEADERS = ("怪物", "阶级", "Colour")
+#: 催化剂等混排参考表。同样被叫成过「相关物品」——实测是 `Type ｜ Name ｜ Tags`，
+#: 内容是催化剂与它们的标签，**属于另一个域**，这里仍然不取。
 MISC_HEADERS = ("Type", "Name", "Tags")
 
 #: `<a>通货</a> x50` 里跟在链接后面的数量。**数量在后**，与工艺台相反。
@@ -279,8 +285,54 @@ def extract_harvest_crafts(
     if not crafts:
         raise HarvestStructureError("定向工艺主表里没有解析到任何一行")
 
-    for headers, label in ((CROP_HEADERS, "作物与掉落来源"), (MISC_HEADERS, "相关物品")):
-        other = _find_table(tree, headers, what=label)
-        if other is not None:
-            stats.not_taken[label] = sum(1 for tr in other.css("tr") if tr.css("td"))
+    # 种子怪物表第五十八轮起单独入库（见 `parse_seeds`），不再算「有意跳过」。
+    # 催化剂那张仍然不取：它属于另一个域。
+    other = _find_table(tree, MISC_HEADERS, what="催化剂等参考表")
+    if other is not None:
+        stats.not_taken["催化剂等参考表"] = sum(
+            1 for tr in other.css("tr") if tr.css("td"))
     return crafts, stats
+
+
+@dataclass(frozen=True)
+class HarvestSeed:
+    """一种种子怪物。`colour` 决定掉哪种命能。"""
+
+    monster_zh: str
+    tier: int
+    #: `Wild` / `Vivid` / `Primal`。**与命能通货的英文名前缀逐字相同**
+    #: （`Wild Crystallised Lifeforce`），所以桥接是查表不是推断。
+    colour: str
+
+
+def parse_seeds(html: str, *, page_url: str = HORTICRAFTING_URL) -> tuple[HarvestSeed, ...]:
+    """解析种子怪物表。没有这张表就返回空元组。
+
+    这一维回答的是**命能怎么来**：种子生成的怪物按颜色掉对应命能
+    （实测 Wild / Vivid / Primal 各 17 个、共 51 个）。
+
+    **颜色到命能是查表不是推断**：`Colour` 的三个取值与
+    `poedb_currency.name_en` 的前缀逐字相同（`Wild Crystallised Lifeforce`）。
+    第四种命能「神圣白晶」**不在这张表里**——它没有对应的种子怪物，
+    这条边界要在出口说清，不能让用户以为四种都覆盖了。
+    """
+    tree = HTMLParser(html)
+    table = _find_table(tree, SEED_HEADERS, what="种子怪物表")
+    if table is None:
+        return ()
+    out: list[HarvestSeed] = []
+    for row in table.css("tbody tr"):
+        cells = row.css("td")
+        if len(cells) != len(SEED_HEADERS):
+            continue
+        monster, tier_raw, colour = (_text(c) for c in cells)
+        if not monster or not colour:
+            continue
+        try:
+            tier = int(tier_raw)
+        except ValueError:
+            raise HarvestStructureError(
+                f"种子怪物 {monster!r} 的阶级 {tier_raw!r} 不是数字"
+            ) from None
+        out.append(HarvestSeed(monster_zh=monster, tier=tier, colour=colour))
+    return tuple(out)

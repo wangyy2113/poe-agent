@@ -133,14 +133,50 @@ class ExtractTest(unittest.TestCase):
         crafts, _ = extract_harvest_crafts(html)
         self.assertEqual(1, len(crafts))
 
-    def test_未取的两张表按行数留痕(self) -> None:
-        """静默省略与「页面上就没有」事后分不清，所以条数要报出来。"""
+    def test_只剩催化剂那张表没取(self) -> None:
+        """静默省略与「页面上就没有」事后分不清，所以条数要报出来。
+
+        **种子怪物那张第五十八轮起入库了**，所以 `not_taken` 里只剩催化剂那张——
+        它是 `Type/Name/Tags`，内容是催化剂与标签，属于另一个域。
+        """
         html = page(
             craft_row("重铸", cost_link("狂野紫晶命能", 50)),
             extra_tables=CROP_TABLE + MISC_TABLE,
         )
         _, stats = extract_harvest_crafts(html)
-        self.assertEqual({"作物与掉落来源": 2, "相关物品": 1}, stats.not_taken)
+        self.assertEqual({"催化剂等参考表": 1}, stats.not_taken)
+
+    def test_种子怪物按颜色取出(self) -> None:
+        """**这张表第三十六轮起被叫错了名字**：台账里写的是「作物与掉落来源」，
+        而它三列其实是 `怪物 ｜ 阶级 ｜ Colour`。照那个名字去想会以为它是
+        「哪种作物掉什么」，实际是「哪个怪物属于哪个颜色」——注释里的名字也会骗人。
+        """
+        from kb.sources.poedb_harvest import parse_seeds
+
+        seeds = parse_seeds(page(
+            craft_row("重铸", cost_link("狂野紫晶命能", 50)),
+            extra_tables=CROP_TABLE,
+        ))
+        self.assertTrue(seeds)
+        for seed in seeds:
+            self.assertTrue(seed.monster_zh)
+            self.assertGreater(seed.tier, 0)
+            self.assertIn(seed.colour, ("Wild", "Vivid", "Primal"))
+
+    def test_没有种子表时返回空而不是报错(self) -> None:
+        from kb.sources.poedb_harvest import parse_seeds
+
+        self.assertEqual((), parse_seeds(page(craft_row("重铸", cost_link("狂野紫晶命能", 50)))))
+
+    def test_阶级不是数字就报错(self) -> None:
+        """不猜：阶级用来分档，猜错会把 1 阶怪物说成 4 阶。"""
+        from kb.sources.poedb_harvest import HarvestStructureError, parse_seeds
+
+        bad = ('<table><thead><tr><th>怪物</th><th>阶级</th><th>Colour</th></tr></thead>'
+               "<tbody><tr><td>荒野幼熊</td><td>甲</td><td>Wild</td></tr></tbody></table>")
+        with self.assertRaises(HarvestStructureError):
+            parse_seeds(page(craft_row("重铸", cost_link("狂野紫晶命能", 50)),
+                             extra_tables=bad))
 
     def test_缺数量整批拒绝(self) -> None:
         html = page(

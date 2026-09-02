@@ -980,6 +980,21 @@ def run_poedb_harvest(*, force: bool = False, allow_shrink: bool = False) -> int
                 for cost in craft.costs
             ],
         )
+        # 种子怪物表（第五十八轮）：命能的获取途径，同一页、同一次抓取
+        seeds = poedb_harvest.parse_seeds(
+            res.text, page_url=poedb_harvest.HORTICRAFTING_URL)
+        conn.execute("DELETE FROM poedb_harvest_seed")
+        conn.executemany(
+            "INSERT INTO poedb_harvest_seed(monster_zh, tier, colour, source, "
+            "source_priority, url, fetched_at, updated_at) "
+            "VALUES (?,?,?,?,?,?,?,datetime('now'))",
+            [
+                (s.monster_zh, s.tier, s.colour, Source.POEDB.value, priority,
+                 poedb_harvest.HORTICRAFTING_URL, res.fetched_at)
+                for s in seeds
+            ],
+        )
+        logger.info("收获种子怪物入库 %d 个", len(seeds))
         gap_rows = _record_harvest_gaps(conn, stats.not_taken)
         conn.execute("RELEASE harvest_snapshot")
     except Exception:

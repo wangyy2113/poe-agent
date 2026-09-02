@@ -632,6 +632,34 @@ CREATE TABLE IF NOT EXISTS poedb_gem_stat_level (
     FOREIGN KEY(gem_id) REFERENCES pob_skill_gem(gem_id) ON DELETE CASCADE
 );
 
+-- ── 收获种子怪物（POEDB `/cn/Horticrafting`，第五十八轮）──
+-- 回答「命能怎么来」：种子生成的怪物按**颜色**掉对应命能。
+-- 实测 51 个，Wild / Vivid / Primal 各 17。
+--
+-- **这张表第三十六轮起被叫错了名字**：台账里写的是「作物与掉落来源」，
+-- 而它三列其实是 `怪物 ｜ 阶级 ｜ Colour`。照那个名字去想，会以为它是
+-- 「哪种作物掉什么」，实际是「哪个怪物属于哪个颜色」——**注释里的名字也会骗人**。
+--
+-- **颜色到命能是查表不是推断**：`colour` 的三个取值与 `poedb_currency.name_en`
+-- 的前缀逐字相同（`Wild Crystallised Lifeforce`）。不做外键：命能只是通货表里的
+-- 四行，而这里的键是颜色；桥接在查询时做，两边都能独立重导。
+--
+-- **第四种命能「神圣白晶」不在这张表里**（它没有对应的种子怪物），
+-- 这条边界要在出口说清，不能让用户以为四种都覆盖了。
+CREATE TABLE IF NOT EXISTS poedb_harvest_seed (
+    monster_zh      TEXT NOT NULL CHECK(monster_zh <> ''),
+    tier            INTEGER NOT NULL CHECK(tier > 0),
+    -- Wild / Vivid / Primal
+    colour          TEXT NOT NULL CHECK(colour <> ''),
+    source          TEXT NOT NULL,
+    source_priority INTEGER NOT NULL,
+    url             TEXT NOT NULL CHECK(url <> ''),
+    fetched_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL,
+    PRIMARY KEY(monster_zh)
+);
+CREATE INDEX IF NOT EXISTS idx_harvest_seed_colour ON poedb_harvest_seed(colour);
+
 -- ── 获取途径（POEDB 详情页的 `Acquisition` 区块，第五十四轮）──
 -- 「哪张命运卡能出头猎」「托沃卧怎么合」这类问题在这之前一条都答不了。
 --
