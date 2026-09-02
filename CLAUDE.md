@@ -133,7 +133,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 1333 项，秒级
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 1336 项，秒级
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选
@@ -662,8 +662,21 @@ POEDB 页面仍是旧版」：`号召` PoB 侧是 `ConvocationNew`（各级需�
 **意图词收的是问法（「命能有什么用」）而不是裸的「命能」**——实测放裸词会把
 「狂野紫晶命能的堆叠上限是多少」抢到目录工具上，而那一列只在通货卡里有。
 
-同页另外两张表**有意不取**并按行数登记进台账：51 行作物与掉落来源
-（获取途径那一维，与通货、圣甲虫保持一致）、41 行催化/化石/工艺台/花园工艺站混排表。
+`poedb_harvest_seed` **51** 个种子怪物（第五十八轮）：同页那张表按颜色列出哪些怪物
+能种出哪种命能，`harvest_seed_lookup` 因此答得出「狂野紫晶命能怎么获得」。
+**颜色到命能是查表不是推断**：`Wild` / `Vivid` / `Primal` 与 `poedb_currency.name_en`
+的前缀逐字相同（`Wild Crystallised Lifeforce`）。第四种**神圣白晶命能不在这张表里**，
+工具查不到时明说，不替用户凑一个来源。
+
+这张表在缺口台账里挂了二十多轮，写的是「51 行**作物与掉落来源**未入库」——
+**那个名字是错的**，它三列其实是 `怪物 ｜ 阶级 ｜ Colour`。照台账的描述去想会以为
+是「哪种作物掉什么」，于是一直觉得它属于「获取途径」那条被划在边界外的维度；
+真去看表头才发现是「哪个怪物属于哪个颜色」，而且第 51/54 轮两个获取途径维度入库之后，
+当初那个「与通货、圣甲虫保持一致」的理由本来也不成立了。
+**错的名字来自我自己代码里的硬编码标签**（`CROP_HEADERS` / `"作物与掉落来源"`）——
+注释和台账里的名字同样会骗人，动手前先看真实表头。
+
+同页仍有 **41 行催化剂等参考表**（`Type/Name/Tags`）有意不取并按行数登记进台账。
 
 `pantheon_soul` **32** 层神力（12 位神祇、41 条词缀）——本库**唯一一张双源合成表**：
 PoB `Data/Pantheons.lua` 出结构、英文名、数值与 GGG stat id，POEDB 逐神页

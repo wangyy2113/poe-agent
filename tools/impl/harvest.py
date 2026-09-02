@@ -182,3 +182,107 @@ def harvest_craft_catalog(query: str, limit: int = DEFAULT_RESULTS) -> ToolResul
         citations=citations,
         meta={"channel": "structured", "table": "harvest_craft"},
     )
+
+
+#: 单次最多列几个怪物。51 个里同色 17 个，全列也不长，但静默截断等同于漏答。
+MAX_SEED_ROWS = 20
+
+#: 这一维的边界。由代码附在 `data` 里，不让模型转述。
+_SEED_BOUNDARY = (
+    "种子怪物按**颜色**掉对应命能（Wild→狂野紫晶、Vivid→活性黄晶、Primal→原始蓝晶）——"
+    "颜色与命能英文名前缀逐字对应，是查表不是推断。"
+    "**第四种「神圣白晶命能」不在这张表里**（它没有对应的种子怪物）。"
+    "页面没有给掉落数量与概率，本工具也不提供。"
+)
+
+#: 颜色 → 命能中文名。**桥接键是命能通货的英文名前缀**，不是猜的
+#: （`Wild Crystallised Lifeforce`）。
+_COLOUR_TO_LIFEFORCE = {
+    "Wild": "狂野紫晶命能",
+    "Vivid": "活性黄晶命能",
+    "Primal": "原始蓝晶命能",
+}
+
+
+@REGISTRY.register(
+    name="harvest_seed_lookup",
+    description=(
+        "查**收获（古灵庄园）的种子怪物**：某种命能由哪些怪物掉、某个怪物属于哪种颜色。"
+        "命能问「怎么获得 / 要种什么」时用它。"
+        "只回答颜色与阶级，**不提供掉落数量与概率**（页面没有给）。"
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "query": {
+                "type": "string",
+                "description": "命能名（如「狂野紫晶命能」）、颜色（Wild/Vivid/Primal）或怪物名。",
+            },
+        },
+        "required": ["query"],
+        "additionalProperties": False,
+    },
+)
+def harvest_seed_lookup(query: str) -> ToolResult:
+    conn = dbmod.get_conn()
+    q = (query or "").strip()
+    if not q:
+        return ToolResult(ok=False, error="query 不能为空")
+
+    colour = next(
+        (c for c, name in _COLOUR_TO_LIFEFORCE.items() if name in q or q in name), "")
+    if not colour and q.title() in _COLOUR_TO_LIFEFORCE:
+        colour = q.title()
+    if colour:
+        rows = [dict(r) for r in conn.execute(
+            "SELECT monster_zh, tier, colour, url, source, source_priority "
+            "FROM poedb_harvest_seed WHERE colour=? ORDER BY tier, monster_zh", (colour,))]
+    else:
+        rows = [dict(r) for r in conn.execute(
+            "SELECT monster_zh, tier, colour, url, source, source_priority "
+            "FROM poedb_harvest_seed WHERE monster_zh LIKE ? ORDER BY tier, monster_zh",
+            (f"%{q}%",))]
+
+    if not rows:
+        return ToolResult(
+            ok=True,
+            data={"found": False,
+                  "reason": (
+                      f"没有匹配「{q}」的收获种子怪物。"
+                      "本表只收录 51 个种子怪物（Wild/Vivid/Primal 各 17）；"
+                      "神圣白晶命能没有对应的种子怪物，不在表内。"),
+                  "boundary": _SEED_BOUNDARY},
+        )
+
+    got_colour = rows[0]["colour"]
+    lifeforce = _COLOUR_TO_LIFEFORCE.get(got_colour, "")
+    shown = rows[:MAX_SEED_ROWS]
+    title = f"{got_colour} 色种子怪物" + (f"（掉 {lifeforce}）" if lifeforce else "")
+    lines = [f"### {title}（共 {len(rows)} 个）", "", "| 怪物 | 阶级 | 颜色 |",
+             "| --- | --- | --- |"]
+    lines += [f"| {r['monster_zh']} | {r['tier']} | {r['colour']} |" for r in shown]
+    if len(rows) > len(shown):
+        lines.append("")
+        lines.append(f"（以上仅列 {len(shown)} 个，还有 {len(rows) - len(shown)} 个未列出）")
+    lines.append("")
+    lines.append(_SEED_BOUNDARY)
+    return ToolResult(
+        ok=True,
+        data={"found": True, "colour": got_colour, "lifeforce": lifeforce,
+              "total": len(rows), "shown": len(shown),
+              "truncated": len(rows) > len(shown),
+              "monsters": [{"name": r["monster_zh"], "tier": r["tier"]} for r in shown],
+              "boundary": _SEED_BOUNDARY},
+        citations=[{
+            "chunk_id": f"harvest_seed:{got_colour}",
+            "entity_id": None,
+            "title": title,
+            "url": rows[0]["url"],
+            "source": rows[0]["source"],
+            "source_priority": int(rows[0]["source_priority"]),
+            "can_support_facts": True,
+            "text": "\n".join(lines),
+            "channel": "structured",
+        }],
+        meta={"channel": "structured", "table": "poedb_harvest_seed"},
+    )
