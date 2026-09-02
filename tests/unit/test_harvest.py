@@ -289,7 +289,9 @@ class StorageAndCoverageTest(unittest.TestCase):
         self.assertIn("harvest_craft_catalog", harvest.spec.tools)
         # 这个域没有卡片，chunk 数为 0 是预期而不是缺陷
         self.assertEqual(0, harvest.chunk_count)
-        self.assertIn("获取途径", harvest.spec.partial_note)
+        # 第五十八轮起这句说的是「已入库」而不是「未采集」——断言要跟着真值走，
+        # 否则它会在措辞反转之后继续通过（同一个词，相反的意思）
+        self.assertIn("命能的获取途径已入库", harvest.spec.partial_note)
 
 
 class CatalogToolTest(unittest.TestCase):
@@ -346,7 +348,10 @@ class CatalogToolTest(unittest.TestCase):
         self.assertIn("不证明", text)
         self.assertIn("50x 狂野紫晶命能", text)
         self.assertIn("成功率", result.data["boundary"])
-        self.assertIn("获取途径", result.data["boundary"])
+        # **不再断言「获取途径未采集」**：第五十八轮种子怪物入库后那句是假话。
+        # 现在这个工具的边界是「掉落数量与概率」，并指向 harvest_seed_lookup
+        self.assertIn("掉落数量与概率未采集", result.data["boundary"])
+        self.assertIn("harvest_seed_lookup", result.data["boundary"])
         self.assertNotIn("steps", result.data)
         self.assertNotIn("probability", result.data)
 

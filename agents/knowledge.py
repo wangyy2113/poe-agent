@@ -25,6 +25,7 @@ ALLOWED_TOOLS = [
     "vendor_recipe_lookup",  # 精确：商店配方（拿什么换什么），无卡片
     "acquisition_routes",  # 精确：命运卡 / 升级配方（不含掉落来源），无卡片
     "harvest_seed_lookup",  # 精确：命能由哪些种子怪物掉（按颜色），无卡片
+    "essence_lookup",  # 精确：精华物品本身（按名/按阶/按有无等级上限枚举）
     "bench_recipe_catalog",   # 精确：工艺台页面目录、原始费用、适用类别与解锁信息
     "harvest_craft_catalog",  # 精确：收获（古灵庄园）定向工艺目录与原始命能费用
     "metamod_interaction_matrix",  # 精确：来源矩阵逐字 operation × guard 单元格

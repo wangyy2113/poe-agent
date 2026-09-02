@@ -31,6 +31,7 @@ MAX_CHUNK_CHARS = 1200
 _KIND = {
     EntityType.CURRENCY: ("通货", SubCategory.CURRENCY.value, Category.ECONOMY),
     EntityType.SCARAB: ("圣甲虫", SubCategory.SCARAB.value, Category.ATLAS),
+    EntityType.ESSENCE: ("精华", SubCategory.ESSENCE.value, Category.CRAFTING),
 }
 
 
@@ -47,6 +48,8 @@ def render_card(entity: Entity) -> str:
     if attrs.get("device_limit") is not None:
         # 与堆叠上限分开写：混一起会让「最多能放几个」答成 20
         meta.append(f"地图装置放置上限 {attrs['device_limit']}")
+    if attrs.get("tier") is not None:
+        meta.append(f"精华等阶 T{attrs['tier']}")
     parts.append(" ｜ ".join(meta))
     parts.append("")
     effect = attrs.get("effect_zh")
@@ -54,9 +57,34 @@ def render_card(entity: Entity) -> str:
         parts.append(f"- 效果：{effect}")
     else:
         parts.append(f"- POEDB 页面上没有给这条{label}的效果说明（碎片与命能类多为此形态）")
+    parts.extend(_essence_block(attrs))
     parts.append(f"\n来源：{entity.ref.source} → {label}")
     parts.append(entity.ref.url)
     return "\n".join(parts)
+
+
+def _essence_block(attrs: dict) -> list[str]:
+    """精华专有的两段：等级上限与逐装备类别的保底词缀。
+
+    **没有这两段，105 张卡里会有 62 张一模一样**——tier 5–8 的基础效果原文逐字相同，
+    只有名字和保底词缀不同。那正是收获目录当初决定不做卡片的理由（近重复文本
+    在 BM25 里互相挤掉），这里靠保底词缀把每张卡区分开。
+
+    `level_cap` 为 None 写的是「无等级上限」这个**确定的事实**，不是「未知」——
+    tier 5 起本来就没有上限，写成未知会把一条已知信息说成缺口。
+    """
+    if attrs.get("tier") is None:
+        return []
+    cap = attrs.get("level_cap")
+    out = [
+        f"- 适用范围：{f'物品等级需求 {cap} 及以下' if cap is not None else '无等级上限'}"
+    ]
+    mods = attrs.get("essence_mods") or []
+    if mods:
+        out.append("")
+        out.append("保底词缀（按装备类别）：")
+        out += [f"- {m.get('item_classes')}：{m.get('text_zh')}" for m in mods]
+    return out
 
 
 def build_metadata(entity: Entity) -> DocumentMetadata:
