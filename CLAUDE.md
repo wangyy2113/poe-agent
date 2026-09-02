@@ -133,7 +133,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 1328 项，秒级
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 1330 项，秒级
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选
@@ -414,10 +414,14 @@ POEDB 页面仍是旧版」：`号召` PoB 侧是 `ConvocationNew`（各级需�
 所以 `acquisition_routes` 查不到时会**明说是哪一种**——与宝石那 152 颗
 「详情页未给出使命表」同一条规矩。**掉落来源仍然没有**（第五十二轮实测 POEDB 侧无来源）。
 
-**裸的「怎么获得」不能收进它的意图词**：那是 `stat_sources` 的
-（第五十一轮实测「混沌石怎么获得」被它抢走），而且通货的主要来源是掉落、
-那一维本库没有，放开等于拿次要途径顶替主要途径。只收「命运卡 / 哪张卡 / 怎么合成」
-这类专指说法，两个方向都有单测钉住。
+**裸的「怎么获得」不能收进它的意图词**：通货的主要来源是掉落、那一维本库没有，
+放开等于拿次要途径顶替主要途径（「混沌石怎么获得」该由维度闸门拒答，
+而不是答成只有命运卡）。只收「命运卡 / 哪张卡 / 怎么合成」这类专指说法，
+两个方向都有单测钉住。
+
+> 这三条物品向问法**第五十六轮起谁都不认领**：先前它们归 `stat_sources`
+> （「某**属性**能从哪来」的工具），实测咬过两次——第五十一轮「混沌石怎么获得」、
+> 第五十五轮「猎首怎么获得」。现在它们落回普通检索，由卡片或维度闸门各自处理。
 
 `poedb_vendor_recipe` **201** 条**商店配方**（第五十一轮，20 类）：
 `/cn/Vendor_recipe_system` 的 21 张 `贡品 ｜ 你的物品 ｜ Note` 表。

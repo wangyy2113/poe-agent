@@ -110,7 +110,33 @@ class PreferredRouteTest(unittest.TestCase):
                 self.assertEqual("mod_tiers", loop._preferred_tool_route(q))
 
     def test_enumeration_questions_route_to_stat_sources(self) -> None:
-        self.assertEqual("stat_sources", loop._preferred_tool_route("法术压制能从哪些渠道获得"))
+        for q in ("法术压制能从哪些渠道获得", "生命再生能从哪些渠道获得",
+                  "闪避值有哪些来源"):
+            with self.subTest(q=q):
+                self.assertEqual("stat_sources", loop._preferred_tool_route(q))
+
+    def test_物品的怎么获得不归_stat_sources(self) -> None:
+        """**这条咬过两次**：第五十一轮「混沌石怎么获得」、第五十五轮「猎首怎么获得」
+        都被 `stat_sources` 抢走——那是「某**属性**能从哪来」的工具，对物品答非所问。
+
+        `怎么获得 / 哪里获得 / 从哪获得` 同时适用于属性与物品，**光看问句分不出主语**，
+        所以 `stat_sources` 只认「渠道 / 来源」这类专指属性来源清单的说法。
+        物品问法落回普通检索：猎首那张卡上写着五张命运卡，混沌石那一维由维度闸门拒答。
+
+        实测七条走这条路的黄金用例里**只有两条是属性题**。
+        """
+        for q in ("混沌石怎么获得", "猎首怎么获得", "深渊圣甲虫怎么获得",
+                  "冰霜新星这个技能石怎么获得"):
+            with self.subTest(q=q):
+                self.assertNotEqual("stat_sources", loop._preferred_tool_route(q))
+
+    def test_计算器仍然给枚举题让路(self) -> None:
+        """成对点：`怎么获得` **仍留在 `_ENUMERATION_INTENTS` 里**，因为那个集合
+        还管「计算器遇到枚举题要让路」。一并删掉会让「法术压制怎么获得」被
+        `mitigation_calc` 抢走——修一个坑挖另一个。"""
+        self.assertIn("怎么获得", loop._ENUMERATION_INTENTS)
+        self.assertNotIn("怎么获得", loop._STAT_SOURCE_INTENTS)
+        self.assertNotEqual("mitigation_calc", loop._preferred_tool_route("法术压制怎么获得"))
 
     def test_coverage_questions_route_to_kb_coverage(self) -> None:
         for q in ("你的知识库covered哪些领域", "你能回答哪些问题", "采集了哪些数据"):
