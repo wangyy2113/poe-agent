@@ -111,7 +111,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 # 采集（POEDB）
 .venv/bin/python -m kb.pipeline --category all
 #   category: unique_item | unique_l2 | mods | bench | horticraft | metamods | tree
-#             | monsters | currency | scarab | maps | coverage | all
+#             | monsters | currency | scarab | essence | maps | coverage | all
 #   收获那一类叫 horticraft 不叫 harvest：下面 --harvest 已经是「只抓不抽」的开关
 #   --harvest 只抓缓存不抽取 / --force 忽略缓存 / --rebuild 清空重建
 #   --allow-bench-shrink、--allow-metamod-shrink、--allow-monster-shrink
@@ -128,12 +128,13 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 .venv/bin/python scripts/import_pob_bosses.py     # Boss 技能的伤害建模（不是打法；--dry-run 只清点与 tooltip 抽验）
 .venv/bin/python scripts/import_pantheon.py       # 万神殿（PoB 出结构 × POEDB 逐神页出中文，--dry-run 只对账）
 .venv/bin/python scripts/verify_pob_mods.py       # 与 POEDB 对账
+.venv/bin/python scripts/verify_essence.py --write # 精华 POEDB × PoB 对账，回填 name_en 并重渲染卡片
 ```
 
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 1336 项，秒级
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 1356 项，秒级
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选
@@ -150,7 +151,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 .venv/bin/python scripts/eval_run.py --record        # 重录真实响应（**要凭证、烧 token**）
 ```
 
-黄金问答集是 `tests/golden/questions.yaml`（140 条，六类），基线与全部结论在
+黄金问答集是 `tests/golden/questions.yaml`（143 条，六类），基线与全部结论在
 `tests/golden/BASELINE.md`——**动闸门前先读它**，里面记了多个已修缺陷与三条已知未修边界，
 以及两次「测量本身写错」的教训。
 
@@ -258,6 +259,7 @@ POE1/POE2 边界顺带落在同一张表上：poe.ninja 两款游戏都服务，
 
 `affix_pool_odds`（胸甲同侧普通词缀条件概率）→ `check_mod_combination`（三态可行性）→
 `bench_recipe_catalog`（工艺台目录）→ `harvest_craft_catalog`（收获定向工艺目录与命能费用）→
+`essence_lookup`（精华物品本身：按名 / 按等阶 / 按有无等级上限枚举）→
 `metamod_interaction_matrix`（逐字矩阵单元格）→
 `mod_tiers`（T 级梯度）→ `skill_gem_levels`（宝石逐级字面值）→
 `spectre_stats`（幽魂倍率 / 抗性 / 排名）→ `boss_skill_damage`（Boss 技能某等级打多少 / 穿透 / Uber 差异）→
@@ -300,11 +302,11 @@ POE1/POE2 边界顺带落在同一张表上：poe.ninja 两款游戏都服务，
   属性需求至今没有可核对的真值来源，所以整维仍未采集，并明确划进 `partial_note`。
   也**不留空列**：留了下一个人会以为它待填，然后把乘数当伤害写进去。
 
-本机 `data/poe.db` 现状（`GET /healthz` 与 `/admin/stats` 可查）：`entity` 5220、
-`mod_affix` 93897、`pob_mod` 25487、`chunk` 18470、`alias` 8172、`game_constant` 543、
+本机 `data/poe.db` 现状（`GET /healthz` 与 `/admin/stats` 可查）：`entity` 5325、
+`mod_affix` 93897、`pob_mod` 25487、`chunk` 18575、`alias` 8382、`game_constant` 543、
 `craft_bench_recipe` 783、`pob_base_item` **1022**（18 个装备类别，PoB × POEDB 逐条桥接，
-覆盖 PoB 侧 96.1%；未桥接的 41 条已按类别登记在台账）、`source_conflict` **546**（`mod_review` 254 + `unique_review` **229** + `spectre_review` 43
-+ `spectre` **8** + `gem_review` **9** + `tree_review` 3）。
+覆盖 PoB 侧 96.1%；未桥接的 41 条已按类别登记在台账）、`source_conflict` **547**（`mod_review` 254 + `unique_review` **229** + `spectre_review` 43
++ `spectre` **8** + `gem_review` **9** + `tree_review` 3 + `essence_review` **1**）。
 
 `pob_skill_level` 第二十四轮补上 **`reservation_flat`**（400 行）：先前只收
 `manaReservationPercent`，于是清晰（279 点）、精准（186 点）、活力（233 点）这类
@@ -583,6 +585,53 @@ POEDB 页面仍是旧版」：`号召` PoB 侧是 `ConvocationNew`（各级需�
 `a.item_currency` / `div.property` / `div.explicitMod` 三个 class 里。
 **结构判断要去看 DOM，不要看表格计数**（这是同一类错误的第六次）。
 工艺台费用引用的 18 个通货按中文名与 slug **都 100% 命中**这张表。
+
+`poedb_essence` **105** 件精华 + `poedb_essence_mod` **632** 行逐装备类别的保底词缀
+（第五十九轮）：等阶 / 堆叠上限 / 等级上限 / 基础效果原文，与 PoB `Data/Essence.lua`
+逐项对账（条数 105/105、装备类别数两侧均 22、tier 104/105）。
+
+**这一轮最该记的是没做的那件事**：`mod_affix` 里早就有 **5985 条**
+`category='essence'` 的词缀，带着 `name_zh × item_class_zh × text_zh`，
+而且**已经渲染进词缀组卡**（实测 57 个 chunk 含「憎恨之低语精华」）。
+按第一直觉去做，这里会多出一张 105×22 = 2310 行、与它逐条重复的表。
+**动手前先查了库**——`essence` 域的 `partial_note` 早就写着缺的是
+「精华**物品本身**的等级」，而不是词缀。这与「先翻缓存再动手」是同一条：
+**先查库，再判断缺什么。**
+
+三条实测判据：
+
+- **取哪个区块看标签页 id，既不是位置也不是选中态。** 这一页 9 个 `tab-pane` 里
+  有 4 个含精华卡（`精华` 105 / `精华物品` 104 / `精髓仓库页` 104 / `Acronym` 2），
+  而**选中的是 `MinimapIcons`**（0 张卡）。判据是标签页自己声明的条数 `#精华 /105`，
+  且 PoB 侧也正好 105——两个独立自证。
+- **量的时候要量真正会被解析的那个范围。** 同一个错这一轮犯了两次：先在**整页**上
+  数到「8 张卡只给 tooltip 哈希」，据此写了一条 slug 退化桥接（实测那 8 张属于
+  另外两个区块，`精华` 里 105 张全给元数据路径，**退化键一次都不触发**，已删）；
+  又在整页上统计等级上限，得出「哀恸精华没有上限」，而它自己那张卡上写着 15。
+- **不要把自己的假设写进 CHECK 约束。** 第一版写了 `CHECK(tier BETWEEN 1 AND 8)`，
+  入库当场失败——`哀恸精华` 的 `Essence Tier` 就是 **0**，而它的四个同类都是 8、
+  PoB 侧给 `Essence of Desolation` 也是 8。**页面自己前后不一致**，
+  存页面原值并把分歧登记进 `source_conflict`（`kind='essence_review'` 1 条，
+  待人工核对，不作为跨来源冲突呈现）。约束该描述数据，不该描述我以为的范围。
+
+机制分界在 tier 4 与 5 之间，写在效果原文里、不由代码推断：
+**tier 0–4 的 41 件**只能升级白装且限等级（15/35/45/60/75），
+**tier 5–8 的 64 件**无等级上限、还能重置稀有物品的属性。`level_cap` 为 NULL 是
+「无等级上限」这个**确定的事实**，不是「未知」——卡上照这么写。
+
+**有卡片也有工具**：卡片答「这个精华是什么」（105 张，靠逐类别保底词缀区分开——
+没有那一段，tier 5–8 的 64 张会因为基础效果原文逐字相同而近乎一模一样，
+那正是收获目录当初不做卡片的理由）；`essence_lookup` 答跨精华的枚举
+（「哪些精华没有等级上限」「T7 精华有哪些」）。**掉落来源与兑换成本仍未采集**，
+`missing_dimension_hints` 里的「掉落 / 怎么获得 / 哪里刷」因此留着——
+与通货那一轮「广义拒答、具体作答」同一条。
+
+顺带修了 `retrieval/hybrid._MOD_INTENT_TERMS` 里**裸的「精华」**：精华物品入库后
+那两个字成了 105 个实体的域名，裸词会让「哀恸精华是什么」也去跑一路只查词缀卡的
+召回，把该命中的精华卡挤到后面（实测 top1 是毫不相干的 `箭袋 · CloseRangeChain`）。
+但**只删裸词会丢掉另一半**：「用什么精华能打出冰霜抗性」随即从正确的
+`腰带 · ColdResistance` 阶梯卡掉到一件唯一装备上。最终改成
+「精华词缀」+「什么精华 / 哪个精华 / 哪些精华」——**补回的是问句形式而不是话题词**。
 
 `poedb_scarab` **118** 个圣甲虫（效果、堆叠上限、**地图装置放置上限**——页面上的「限制」，
 与堆叠上限是两回事，混一起会把「最多放几个」答成 20）。那一页有三个物品类，

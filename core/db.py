@@ -1057,6 +1057,59 @@ CREATE TABLE IF NOT EXISTS poedb_currency (
 );
 CREATE INDEX IF NOT EXISTS idx_currency_name ON poedb_currency(name_zh);
 
+-- ── 精华物品本身（POEDB `/cn/Essence` 的 `精华` 标签页，第五十九轮）──
+-- **精华赋予的词缀早就在 `mod_affix` 里**（5985 条 `category='essence'`，带
+-- `name_zh` × `item_class_zh` × `text_zh`，并且已经渲染进词缀组卡）。这两张表补的是
+-- `essence` 域 `partial_note` 里写着的另一半：**精华物品本身**的 tier / 堆叠 / 等级上限 /
+-- 基础效果。动手前先查了库，否则这里会是一张与 `mod_affix` 逐条重复的 2310 行表。
+--
+-- 实测出来的机制分界在 tier 4 与 5 之间：tier 0–4 的 **41** 件只能升级白装且限等级
+-- （15/35/45/60/75），tier 5–8 的 **64** 件无等级上限、还能**重置稀有物品的属性**。
+-- 这条差异写在效果原文里，`level_cap` 为 NULL 就是「没有上限」——**不填 0**，
+-- 留空与 0 在事后是两件事。腐化专属的 5 件里 4 件是 tier 8，哀恸精华是那条 tier 0。
+CREATE TABLE IF NOT EXISTS poedb_essence (
+    -- GGG 元数据路径；97 条来自 `data-hover`，另外 8 条只给 tooltip 哈希，退化成
+    -- `slug:<英文 slug>`（与通货、圣甲虫同一条退化规则）
+    metadata_id     TEXT NOT NULL CHECK(metadata_id <> ''),
+    name_zh         TEXT NOT NULL CHECK(name_zh <> ''),
+    -- 由 `scripts/verify_essence.py` 从 PoB `Data/Essence.lua` 回填。**不由 slug 反推**：
+    -- slug 只用来找到 PoB 条目，存进来的是 PoB 自己写的 name
+    name_en         TEXT,
+    slug            TEXT NOT NULL CHECK(slug <> ''),
+    -- **不写 `BETWEEN 1 AND 8`**：那会把我的假设写进约束。实测页面上
+    -- `哀恸精华` 的 `Essence Tier` 是 **0**，而它的四个同类（浮夸/错乱/极恐/谵妄）
+    -- 都是 8、PoB 侧给 `Essence of Hysteria` 也是 8——**页面自己前后不一致**。
+    -- 存页面的原值，分歧由 `scripts/verify_essence.py` 登记进 `source_conflict`。
+    tier            INTEGER NOT NULL CHECK(tier >= 0),
+    stack_max       INTEGER,
+    -- tier 0–4 的 41 件有（15/35/45/60/75），tier 5 起为 NULL。NULL ≠ 0
+    level_cap       INTEGER,
+    base_effect     TEXT NOT NULL CHECK(base_effect <> ''),
+    source          TEXT NOT NULL,
+    source_priority INTEGER NOT NULL,
+    url             TEXT NOT NULL CHECK(url <> ''),
+    content_hash    TEXT,
+    fetched_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL,
+    PRIMARY KEY(metadata_id),
+    UNIQUE(slug)
+);
+CREATE INDEX IF NOT EXISTS idx_essence_name ON poedb_essence(name_zh);
+CREATE INDEX IF NOT EXISTS idx_essence_tier ON poedb_essence(tier);
+
+-- 逐装备类别的保底词缀，**按页面原始分组存**（105 个精华共 632 行，不是 105×22=2310）。
+-- 拆成一类一行会与 `mod_affix` 的 5985 条逐条重复；保留分组则是页面自己的表述，
+-- 卡片照着渲染就是用户在 POEDB 上看到的样子。
+-- `item_classes` 是逗号分隔的中文类别名，一行可能只有一个（`弓: 弓技能石等级+2`）。
+CREATE TABLE IF NOT EXISTS poedb_essence_mod (
+    metadata_id     TEXT NOT NULL,
+    group_index     INTEGER NOT NULL,
+    item_classes    TEXT NOT NULL CHECK(item_classes <> ''),
+    text_zh         TEXT NOT NULL CHECK(text_zh <> ''),
+    PRIMARY KEY(metadata_id, group_index),
+    FOREIGN KEY(metadata_id) REFERENCES poedb_essence(metadata_id) ON DELETE CASCADE
+);
+
 -- ── 圣甲虫（POEDB `/cn/Scarab`）──
 -- 与 `poedb_currency` 分表而不是合表：那张表的语义是「通货」，把圣甲虫塞进去会让表名说谎。
 -- 卡片解析两页共用 `kb/sources/poedb_cards.py`（结构逐字相同），分开的只是表与域。

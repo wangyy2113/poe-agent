@@ -41,6 +41,7 @@ from kb.sources import (
     poedb_currency,
     poedb_harvest,
     poedb_maps,
+    poedb_essence,
     poedb_scarab,
     poedb_index,
     poedb_mods,
@@ -2109,6 +2110,153 @@ def _scarab_entity(item: poedb_scarab.Scarab, priority: int, fetched_at: str) ->
     )
 
 
+MIN_ESSENCES = 90
+
+
+def reindex_essence_cards(conn) -> tuple[int, int]:  # noqa: ANN001
+    """按 `poedb_essence` 的当前内容重建精华卡片。
+
+    `scripts/verify_essence.py --write` 回填 `name_en` 之后必须调它，否则卡片上
+    还是只有中文名——**入库了但没有出口**，这个项目已经踩过四次。
+    """
+    cfg = get_config()
+    priority = int(cfg.priority_of(Source.POEDB.value))
+    rows = list(conn.execute(
+        "SELECT metadata_id,name_zh,name_en,slug,tier,stack_max,level_cap,base_effect,"
+        "       url,fetched_at FROM poedb_essence ORDER BY name_zh"
+    ))
+    mods: dict[str, list[dict[str, str]]] = {}
+    for mid, classes, text in conn.execute(
+        "SELECT metadata_id,item_classes,text_zh FROM poedb_essence_mod "
+        "ORDER BY metadata_id, group_index"
+    ):
+        mods.setdefault(mid, []).append({"item_classes": classes, "text_zh": text})
+    entities = [
+        Entity(
+            entity_id=make_entity_id(EntityType.ESSENCE, slug),
+            entity_type=EntityType.ESSENCE,
+            name_zh=name_zh,
+            name_en=name_en,
+            slug=slug,
+            item_class="StackableCurrency",
+            attributes={
+                "metadata_id": mid, "stack_max": stack_max, "tier": tier,
+                "level_cap": level_cap, "effect_zh": base_effect,
+                "essence_mods": mods.get(mid, []),
+            },
+            ref=SourceRef(source=Source.POEDB.value, url=url,
+                          priority=priority, fetched_at=fetched_at),
+        )
+        for (mid, name_zh, name_en, slug, tier, stack_max, level_cap, base_effect,
+             url, fetched_at) in rows
+    ]
+    return _reindex_entity_type(
+        conn, EntityType.ESSENCE, entities, render_stackable.to_chunks
+    )
+
+
+def run_poedb_essence(*, force: bool = False, allow_shrink: bool = False) -> int:
+    """采集**精华物品本身**（POEDB `/cn/Essence` 的 `精华` 标签页，105 件）。
+
+    补的是 `essence` 域 `partial_note` 里那半句「精华**物品本身**的等级…未采集」。
+    **精华赋予的词缀不在这里**——那 5985 条早就在 `mod_affix` 里，也早就渲染进了
+    词缀组卡；再存一份就是造第二份真源。
+
+    页面自证两处，对不上整页拒绝：标签页标题声明的条数、每个精华恰好 22 个装备类别。
+    """
+    cfg = get_config()
+    conn = dbmod.init_db(cfg.db_path, vector_dim=int(cfg.get("retrieval.vector.dim", 0) or 0))
+    fetcher = _make_fetcher(cfg)
+    started = time.time()
+    cur = conn.execute(
+        "INSERT INTO ingest_run(source, category, started_at) VALUES (?,?,datetime('now'))",
+        (Source.POEDB.value, "essence"),
+    )
+    run_id = cur.lastrowid
+    conn.commit()
+
+    res = fetcher.fetch(poedb_essence.ESSENCE_URL, force=force)
+    if not res.ok:
+        conn.execute(
+            "UPDATE ingest_run SET finished_at=datetime('now'), failed=1, note=? WHERE run_id=?",
+            (f"抓取失败 status={res.status_code}", run_id),
+        )
+        conn.commit()
+        return 2
+
+    items = poedb_essence.parse_essences(res.text, page_url=poedb_essence.ESSENCE_URL)
+    existing = int(conn.execute("SELECT count(*) FROM poedb_essence").fetchone()[0])
+    if len(items) < MIN_ESSENCES or (existing and len(items) < existing * 0.8):
+        if not allow_shrink:
+            conn.execute(
+                "UPDATE ingest_run SET finished_at=datetime('now'), failed=1, note=? "
+                "WHERE run_id=?",
+                (f"拒绝替换快照：{existing} -> {len(items)}（下限 {MIN_ESSENCES}）", run_id),
+            )
+            conn.commit()
+            logger.error("精华数量护栏触发，已拒绝写入：%d -> %d", existing, len(items))
+            return 2
+
+    priority = int(cfg.priority_of(Source.POEDB.value))
+    conn.execute("SAVEPOINT essence_snapshot")
+    try:
+        # poedb_essence_mod 靠外键级联删除，不单独 DELETE
+        conn.execute("DELETE FROM poedb_essence")
+        conn.executemany(
+            """
+            INSERT INTO poedb_essence(
+                metadata_id,name_zh,name_en,slug,tier,stack_max,level_cap,base_effect,
+                source,source_priority,url,content_hash,fetched_at,updated_at
+            ) VALUES (?,?,NULL,?,?,?,?,?,?,?,?,?,?,datetime('now'))
+            """,
+            [
+                (i.key, i.name_zh, i.slug, i.tier, i.stack_max, i.level_cap, i.base_effect,
+                 Source.POEDB.value, priority, f"{poedb_essence.ESSENCE_URL}#{i.slug}",
+                 res.content_hash, res.fetched_at)
+                for i in items
+            ],
+        )
+        conn.executemany(
+            "INSERT INTO poedb_essence_mod(metadata_id,group_index,item_classes,text_zh) "
+            "VALUES (?,?,?,?)",
+            [
+                (i.key, m.group_index, "、".join(m.item_classes), m.text)
+                for i in items for m in i.mods
+            ],
+        )
+        # 与 verify_essence.py --write 共用同一份渲染，不各写一遍
+        chunks, aliases = reindex_essence_cards(conn)
+        conn.execute("RELEASE essence_snapshot")
+    except Exception:
+        conn.execute("ROLLBACK TO essence_snapshot")
+        conn.execute("RELEASE essence_snapshot")
+        raise
+
+    mod_rows = sum(len(i.mods) for i in items)
+    elapsed_ms = int((time.time() - started) * 1000)
+    note = json.dumps(
+        {
+            "essences": len(items),
+            "mod_rows": mod_rows,
+            "by_tier": dict(sorted(Counter(i.tier for i in items).items())),
+            "with_level_cap": sum(1 for i in items if i.level_cap is not None),
+            "chunks": chunks,
+            "aliases": aliases,
+            "note": "精华赋予的词缀在 mod_affix（category='essence'），此处只存物品本身",
+        },
+        ensure_ascii=False,
+    )
+    conn.execute(
+        "UPDATE ingest_run SET finished_at=datetime('now'), total=?, succeeded=?, failed=0, "
+        "elapsed_ms=?, note=? WHERE run_id=?",
+        (len(items), len(items), elapsed_ms, note, run_id),
+    )
+    conn.commit()
+    logger.info("精华采集完成：%d 件、保底词缀 %d 行（卡片 %d、别名 %d），耗时 %dms",
+                len(items), mod_rows, chunks, aliases, elapsed_ms)
+    return 0
+
+
 def run_poedb_scarab(*, force: bool = False, allow_shrink: bool = False) -> int:
     """采集圣甲虫（POEDB `/cn/Scarab`，英文名取 `/us/` 版本）。
 
@@ -2514,7 +2662,7 @@ def main(argv: list[str] | None = None) -> int:
         "--category", default="unique_item",
         choices=[
             "unique_item", "unique_l2", "mods", "bench", "horticraft", "metamods",
-            "tree", "monsters", "currency", "scarab", "maps", "coverage", "all",
+            "tree", "monsters", "currency", "scarab", "essence", "maps", "coverage", "all",
         ],
         # 收获那一类**刻意不叫 `harvest`**：下面已经有一个 `--harvest` 布尔开关
         # （只抓不抽），`--category harvest --harvest` 会读成同一件事的两种写法。
@@ -2587,6 +2735,8 @@ def main(argv: list[str] | None = None) -> int:
             rc |= run_poedb_maps(force=args.force, allow_shrink=args.allow_currency_shrink)
         if args.category in ("scarab", "all"):
             rc |= run_poedb_scarab(force=args.force, allow_shrink=args.allow_currency_shrink)
+        if args.category in ("essence", "all"):
+            rc |= run_poedb_essence(force=args.force, allow_shrink=args.allow_currency_shrink)
         if args.category in ("horticraft", "all"):
             rc |= run_poedb_harvest(
                 force=args.force, allow_shrink=args.allow_currency_shrink

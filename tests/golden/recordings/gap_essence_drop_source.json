@@ -1,0 +1,22 @@
+{
+  "format_version": 1,
+  "case_id": "gap_essence_drop_source",
+  "query": "尖啸憎恨精华在哪里刷，掉率多少",
+  "recorded_at": "2026-09-02T16:19:59+08:00",
+  "model": "",
+  "tokens": {},
+  "tool_calls": [
+    "kb_search"
+  ],
+  "evidence_gap": true,
+  "out_of_scope": false,
+  "precision_route": "",
+  "gap_answer": "知识库中查不到回答这个问题所需的依据，因此不作答——给一个听起来合理但没有依据的\n答案，代价比说查不到高得多。\n\n**为什么查不到**\n问题涉及的领域（精华）本知识库**已采集**，但这次没有召回到足够依据——可能是用词与库中表述不一致。换用更具体的专名或词缀原文再试可能有效。\n\n**缺失的信息点**\n- 精华的数据\n\n**判定依据**\n问题所问的维度在知识库中没有数据 —— 精华（部分采集）：该领域只是部分采集，而问题涉及的「哪里刷」正落在未采集的部分（精华**赋予的词缀**已入库（5985 条，并已渲染进词缀组卡）；**精华物品本身**第五十九轮补上（105 件，等阶 / 堆叠 / 等级上限 / 效果原文 / 逐装备类别的保底词缀，与 PoB `Data/Essence.lua` 逐项对账）；**未采集**：掉落来源与兑换成本）\n\n**建议的查证途径**\n- POEDB 站内搜索：<https://poedb.tw/cn/search?q=精华的数据>\n- PoE Wiki：<https://www.poewiki.net/index.php?search=精华的数据>\n- 若属新赛季内容，可查 GGG 官方 Patch Notes\n",
+  "final_answer": "知识库中查不到回答这个问题所需的依据，因此不作答——给一个听起来合理但没有依据的\n答案，代价比说查不到高得多。\n\n**为什么查不到**\n问题涉及的领域（精华）本知识库**已采集**，但这次没有召回到足够依据——可能是用词与库中表述不一致。换用更具体的专名或词缀原文再试可能有效。\n\n**缺失的信息点**\n- 精华的数据\n\n**判定依据**\n问题所问的维度在知识库中没有数据 —— 精华（部分采集）：该领域只是部分采集，而问题涉及的「哪里刷」正落在未采集的部分（精华**赋予的词缀**已入库（5985 条，并已渲染进词缀组卡）；**精华物品本身**第五十九轮补上（105 件，等阶 / 堆叠 / 等级上限 / 效果原文 / 逐装备类别的保底词缀，与 PoB `Data/Essence.lua` 逐项对账）；**未采集**：掉落来源与兑换成本）\n\n**建议的查证途径**\n- POEDB 站内搜索：<https://poedb.tw/cn/search?q=精华的数据>\n- PoE Wiki：<https://www.poewiki.net/index.php?search=精华的数据>\n- 若属新赛季内容，可查 GGG 官方 Patch Notes\n",
+  "blocked_claims": 0,
+  "elapsed_ms": 207,
+  "evidence_fingerprint": "sha256:e3b0c44298fc1c149afbf4c8996fb924",
+  "_warning": "raw_answer 是未过出口闸门的模型原文，含可能无据的断言，不得当作事实引用",
+  "raw_answer": "",
+  "evidence": []
+}

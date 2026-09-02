@@ -442,6 +442,44 @@ cases:
       `poedb_currency.name_en` 的前缀逐字相同。第四种「神圣白晶命能」
       不在这张表里，工具查不到时会明说。
 
+  # ── 精华物品本身（2026-09-02 第五十九轮入库）────────────────────
+  - id: desc_essence_item_itself
+    query: 憎恨之低语精华有什么用
+    kind: description
+    expect_slug: "essence:Whispering_Essence_of_Hatred*"
+    expect_evidence_text: "物品等级需求 35 及以下"
+    note: >-
+      精华**赋予的词缀**（5985 条）一直在 `mod_affix` 里且已渲染进词缀组卡，
+      缺的一直是**物品本身**：等阶、堆叠上限、等级上限、基础效果原文
+    lesson: >-
+      入库前这条检索到的是一串**词缀组卡**（`戒指 · ColdDamagePercentage`），
+      精华物品本身一个字都没有，却被判依据充分。
+      **动手前先查了库**——否则这一轮会造出一张 2310 行、与 `mod_affix`
+      逐条重复的表；`partial_note` 早就写着缺的是「精华物品本身」。
+
+  - id: route_essence_no_level_cap
+    query: 哪些精华没有等级上限
+    kind: tool_route
+    expect_tool: essence_lookup
+    note: 跨精华的枚举一张卡都答不了，所以给它一个出口
+    lesson: >-
+      判据里**没有裸的「精华」**：那两个字既是物品名也是词缀来源，
+      裸词会把「戒指上冰霜伤害提高的精华词缀有哪些档位」这种阶梯题抢走。
+      同一轮里 `retrieval/hybrid._MOD_INTENT_TERMS` 的裸「精华」也拆成了
+      「精华词缀」+ 三个问句形式——**意图词必须专指**。
+
+  - id: gap_essence_drop_source
+    query: 尖啸憎恨精华在哪里刷，掉率多少
+    kind: gap
+    expect_gap: true
+    note: >-
+      精华的主要来源是禁锢怪物掉落，**那一维没有采集**。
+      第五十九轮补的是物品属性，不是获取途径
+    lesson: >-
+      与通货那一轮「广义拒答、具体作答」同一条：
+      物品属性答得出来不等于获取途径答得出来，
+      `missing_dimension_hints` 里的「掉落 / 怎么获得 / 哪里刷」因此留着。
+
   # ── 万神殿（2026-08-21 第三十五轮入库）──────────────────────────
   - id: desc_pantheon_soul_effect
     query: 暗影女皇 阿拉卡力之魂有什么效果

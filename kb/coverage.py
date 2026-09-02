@@ -486,11 +486,22 @@ DOMAINS: tuple[DomainSpec, ...] = (
         category=Category.CRAFTING,
         authority_url=f"{POEDB_BASE}/Essence",
         count_sql="SELECT count(*) FROM mod_affix WHERE category='essence'",
-        tools=("stat_sources",),
+        tools=("essence_lookup", "stat_sources"),
         hints=("精华", "精华词缀"),
-        question_hints=("某精华赋予什么词缀", "某词缀由哪个精华赋予"),
+        question_hints=(
+            "某精华赋予什么词缀", "某词缀由哪个精华赋予",
+            "某精华的等阶 / 堆叠上限 / 等级上限", "哪些精华没有等级上限",
+        ),
         poedb_pages=("Essence",),
-        partial_note="精华**赋予的词缀**已入库；精华物品本身的等级、掉落与兑换成本未采集",
+        partial_note=(
+            "精华**赋予的词缀**已入库（5985 条，并已渲染进词缀组卡）；"
+            "**精华物品本身**第五十九轮补上（105 件，等阶 / 堆叠 / 等级上限 / 效果原文 / "
+            "逐装备类别的保底词缀，与 PoB `Data/Essence.lua` 逐项对账）；"
+            "**未采集**：掉落来源与兑换成本"
+        ),
+        # 「怎么获得 / 如何获得 / 哪里刷」**留着**：精华的主要来源是禁锢怪物掉落，
+        # 那一维确实没有。第五十九轮补的是物品属性，不是获取途径——
+        # 与通货那一轮「广义拒答、具体作答」同一条。
         missing_dimension_hints=("掉落", "兑换", "成本", "怎么获得", "如何获得", "哪里刷"),
     ),
     DomainSpec(
