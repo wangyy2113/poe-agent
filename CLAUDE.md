@@ -133,7 +133,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 1325 项，秒级
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 1328 项，秒级
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选
@@ -150,7 +150,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 .venv/bin/python scripts/eval_run.py --record        # 重录真实响应（**要凭证、烧 token**）
 ```
 
-黄金问答集是 `tests/golden/questions.yaml`（139 条，六类），基线与全部结论在
+黄金问答集是 `tests/golden/questions.yaml`（140 条，六类），基线与全部结论在
 `tests/golden/BASELINE.md`——**动闸门前先读它**，里面记了多个已修缺陷与三条已知未修边界，
 以及两次「测量本身写错」的教训。
 
@@ -400,6 +400,14 @@ POEDB 页面仍是旧版」：`号召` PoB 侧是 `ConvocationNew`（各级需�
 非空是**升级/合成配方**（`托沃崩 + 托沃的祝福 → 托沃卧`）。混成一类会让
 「托沃卧怎么来」得到错答案，所以 `kind` 由 `ingredient` 是否为空派生。
 实测 命运卡 297 行 / 升级配方 90 行。
+
+**出口有两个**（第五十五轮补上卡片）：唯一装备的卡片上写「获取途径」区块，
+`acquisition_routes` 工具回答专指问法。先前只有工具，实测
+**「猎首怎么获得」这个最自然的问法路由到了 `stat_sources`**
+（那是「某属性能从哪来」的工具），而卡上一个字都没有——
+**数据入库但出口不全**是这个项目反复踩的坑，这次是第三次。
+接到卡上之后普通检索命中就能答，不再依赖意图词猜对。
+**那 1078 件没有这一段的不写任何东西**：写「未采集」会把「页面没给」说成「我们没采」。
 
 **覆盖是部分的，而且这一点必须传到出口**：唯一装备 1342 件里只有 **264** 件有这一段
 （通货 19/113、技能石 9/820）。「库里查不到」与「它没有获取途径」在用户那边分不开，

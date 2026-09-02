@@ -140,7 +140,50 @@ def main() -> int:
     )
     conn.commit()
     print(f"已写入 {len(rows)} 行获取途径（run_id={run_id}）；台账 {gap_rows} 组")
+
+    cards = reindex_unique_cards(conn)
+    conn.commit()
+    print(f"唯一装备卡片已重建 {cards} 张（获取途径现在写在卡上）")
     return 0
+
+
+def reindex_unique_cards(conn) -> int:  # noqa: ANN001
+    """把获取途径并进唯一装备的实体属性并重建卡片。
+
+    **这一步是导入的一部分，不是可选项**：数据入库却没有出口是这个项目反复踩的坑
+    （第二十九轮基础伤害、第五十四轮这一维本身都是先入库后补出口）。
+    """
+    from entities.taxonomy import EntityType  # noqa: PLC0415
+    from kb import render as render_mod  # noqa: PLC0415
+    from kb.pipeline import _entity_from_row, _upsert_entity  # noqa: PLC0415
+    from retrieval import fts as fts_mod  # noqa: PLC0415
+
+    by_slug: dict[str, list[dict]] = {}
+    for r in conn.execute(
+        "SELECT owner_slug, source_zh, ingredient FROM poedb_acquisition "
+        "WHERE owner_kind='unique_item' ORDER BY owner_slug, row_index"
+    ):
+        by_slug.setdefault(r["owner_slug"], []).append(
+            {"source_zh": r["source_zh"], "ingredient": r["ingredient"]})
+
+    entities = []
+    for row in conn.execute(
+        "SELECT * FROM entity WHERE entity_type = ?", (EntityType.UNIQUE_ITEM.value,)
+    ):
+        entity = _entity_from_row(row)
+        routes = by_slug.get(entity.slug or "")
+        if routes:
+            attrs = dict(entity.attributes)
+            attrs["acquisition"] = routes
+            entity = entity.model_copy(update={"attributes": attrs})
+        entities.append(entity)
+
+    for entity in entities:
+        _upsert_entity(conn, entity)
+    fts_mod.clear_index(conn, entity_prefix=f"{EntityType.UNIQUE_ITEM.value}:")
+    return sum(
+        fts_mod.index_chunks(conn, render_mod.to_chunks(entity)) for entity in entities
+    )
 
 
 def record_gaps(conn, without: Counter) -> int:  # noqa: ANN001

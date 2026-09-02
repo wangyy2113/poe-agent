@@ -2,22 +2,25 @@
   "format_version": 1,
   "case_id": "num_headhunter_implicit_life",
   "query": "猎首的隐式词缀是什么",
-  "recorded_at": "2026-08-17T18:05:21+08:00",
+  "recorded_at": "2026-09-02T10:41:31+08:00",
   "model": "glm-5.2",
   "tokens": {
-    "prompt": 7071,
-    "output": 53,
-    "reasoning": 25,
-    "total": 7124
+    "prompt": 16195,
+    "output": 49,
+    "reasoning": 21,
+    "total": 16244
   },
   "tool_calls": [
-    ""
+    "kb_search"
   ],
   "evidence_gap": false,
+  "out_of_scope": false,
+  "precision_route": "",
   "gap_answer": "",
+  "final_answer": "猎首（Headhunter）的隐式词缀为 **+(25-40) 最大生命**[[E1]]。\n\n> **括号内的百分比是该档在同组内的生成权重占比**，不等于任何通货或具体工艺的一次使用成功率，也不等于期望消耗。\n\n> 检索以降级通道完成（alias, fts, mod_intent）：向量检索与重排未启用（网关无 embedding 模型），当前走 BM25 + 实体精确匹配",
   "blocked_claims": 0,
-  "elapsed_ms": 2301,
-  "evidence_fingerprint": "sha256:b18a1d770e122f2d1cb71aee060b0ae8",
+  "elapsed_ms": 2907,
+  "evidence_fingerprint": "sha256:132ee5a9dec0386d89639ab4acdd5115",
   "_warning": "raw_answer 是未过出口闸门的模型原文，含可能无据的断言，不得当作事实引用",
   "raw_answer": "猎首（Headhunter）的隐式词缀为 **+(25-40) 最大生命**[[E1]]。",
   "evidence": [
@@ -29,7 +32,7 @@
       "url": "https://poedb.tw/cn/Headhunter",
       "source": "POEDB",
       "source_priority": 1,
-      "text": "# 猎首（Headhunter）\n类型：唯一装备 ｜ 底材：皮革腰带 ｜ 分类：其他\n\n**需求**：需求 等级 40\n\n**隐式词缀**\n- [隐式词缀] +(25-40) 最大生命\n\n**显式词缀**\n- [显式词缀] +(40-55) 力量\n- [显式词缀] +(40-55) 敏捷\n- [显式词缀] +(50-60) 最大生命\n- [显式词缀] 击中伤害对稀有怪物提高 (20-30)%\n- [显式词缀] 当你击败稀有怪物时，会获得该怪物属性修正 60 秒\n\n**附加说明**\n- [说明] ( 当你进入迷踪状态时, 你将不会被敌人所阻挡 )\n\n来源：POEDB → 猎首（Headhunter）\nhttps://poedb.tw/cn/Headhunter",
+      "text": "# 猎首（Headhunter）\n类型：唯一装备 ｜ 底材：皮革腰带 ｜ 分类：其他\n\n**需求**：需求 等级 40\n\n**隐式词缀**\n- [隐式词缀] +(25-40) 最大生命\n\n**显式词缀**\n- [显式词缀] +(40-55) 力量\n- [显式词缀] +(40-55) 敏捷\n- [显式词缀] +(50-60) 最大生命\n- [显式词缀] 击中伤害对稀有怪物提高 (20-30)%\n- [显式词缀] 当你击败稀有怪物时，会获得该怪物属性修正 60 秒\n\n**附加说明**\n- [说明] ( 当你进入迷踪状态时, 你将不会被敌人所阻挡 )\n\n**获取途径**\n- 命运卡：疯医\n- 命运卡：劣魔\n- 命运卡：女之武神\n- 命运卡：无畏者\n- 命运卡：恶魔\n\n来源：POEDB → 猎首（Headhunter）\nhttps://poedb.tw/cn/Headhunter",
       "can_support_facts": true,
       "claim_scope": "general",
       "claim_data": {}
@@ -94,7 +97,7 @@
       "url": "https://poedb.tw/cn/Stranglegasp",
       "source": "POEDB",
       "source_priority": 1,
-      "text": "# 绞杀之息（Stranglegasp）\n类型：唯一装备 ｜ 底材：黑曜护身符 ｜ 分类：其他\n\n**需求**：需求 等级 52\n\n**隐式词缀**\n- [隐式词缀] +(10-16) 全属性\n\n**显式词缀**\n- [显式词缀] 可以有额外 3 个附魔词缀\n\n来源：POEDB → 绞杀之息（Stranglegasp）\nhttps://poedb.tw/cn/Stranglegasp",
+      "text": "# 绞杀之息（Stranglegasp）\n类型：唯一装备 ｜ 底材：黑曜护身符 ｜ 分类：其他\n\n**需求**：需求 等级 52\n\n**隐式词缀**\n- [隐式词缀] +(10-16) 全属性\n\n**显式词缀**\n- [显式词缀] 可以有额外 3 个附魔词缀\n\n**获取途径**\n- 命运卡：窒息愧疚\n\n来源：POEDB → 绞杀之息（Stranglegasp）\nhttps://poedb.tw/cn/Stranglegasp",
       "can_support_facts": true,
       "claim_scope": "general",
       "claim_data": {}
@@ -120,7 +123,7 @@
       "url": "https://poedb.tw/cn/Voideye",
       "source": "POEDB",
       "source_priority": 1,
-      "text": "# 虚空慧眼（Voideye）\n类型：唯一装备 ｜ 底材：潜能之戒 ｜ 分类：其他\n\n**需求**：需求 等级 45\n\n**隐式词缀**\n- [隐式词缀] 有 1 个插槽\n\n**显式词缀**\n- [显式词缀] 此物品上装备的技能石等级 +5\n\n来源：POEDB → 虚空慧眼（Voideye）\nhttps://poedb.tw/cn/Voideye",
+      "text": "# 虚空慧眼（Voideye）\n类型：唯一装备 ｜ 底材：潜能之戒 ｜ 分类：其他\n\n**需求**：需求 等级 45\n\n**隐式词缀**\n- [隐式词缀] 有 1 个插槽\n\n**显式词缀**\n- [显式词缀] 此物品上装备的技能石等级 +5\n\n**获取途径**\n- 命运卡：忏悔者\n\n来源：POEDB → 虚空慧眼（Voideye）\nhttps://poedb.tw/cn/Voideye",
       "can_support_facts": true,
       "claim_scope": "general",
       "claim_data": {}

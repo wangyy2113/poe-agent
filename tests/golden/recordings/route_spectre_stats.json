@@ -2,13 +2,13 @@
   "format_version": 1,
   "case_id": "route_spectre_stats",
   "query": "生命倍率最高的幽魂是哪个",
-  "recorded_at": "2026-09-01T14:39:51+08:00",
+  "recorded_at": "2026-09-02T10:43:20+08:00",
   "model": "glm-5.2",
   "tokens": {
-    "prompt": 28007,
-    "output": 649,
-    "reasoning": 201,
-    "total": 28656
+    "prompt": 29002,
+    "output": 595,
+    "reasoning": 213,
+    "total": 29597
   },
   "tool_calls": [
     "kb_search",
@@ -18,12 +18,12 @@
   "out_of_scope": false,
   "precision_route": "",
   "gap_answer": "",
-  "final_answer": "## 生命倍率最高的幽魂\n\n根据 PoB 建模的幽魂生命系数排行，**生命倍率最高的幽魂是「逃逸的原型」（Escaped Prototype）**，生命系数为 **16×**[[E9]]。\n\n值得注意的是，前 3 名的生命系数并列 16×：\n\n〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕第 4 名「不洁毒尸」（Unholy Aberration）生命系数为 14×，第 5 名「石肤剥皮者」（Stoneskin Flayer）为 8×[[E9]]。\n\n### 重要限定\n\n〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕POEDB 的可作幽魂清单共 **1948** 个，未被 PoB 建模的不参与排名（其中混有开发用怪物，例如「测试之灵」）[[E9]]。\n- 因此，**不能排除** POEDB 清单中某些未建模幽魂拥有更高的生命倍率——只是本库没有它们的数据。\n- 本库**未采集**这些幽魂的掉落来源与怪物技能的中文说明[[E9]]。\n\n> 排名只在 PoB 建模的 268 个幽魂里做（POEDB 清单里另有未建模的，不参与排名）。倍率与抗性按来源原值给出；不提供掉落、怪物技能的中文说明\n\n> 检索以降级通道完成（fts）：向量检索与重排未启用（网关无 embedding 模型），当前走 BM25 + 实体精确匹配",
+  "final_answer": "## 生命倍率最高的幽魂\n\n根据 PoB 建模的 268 个幽魂的排行，生命系数最高的是以下三个并列第一，均为 **16× 生命系数**[[E9]]：\n\n| 名次 | 中文名 | 英文名 | 生命系数 | 伤害系数 | 四抗性 |\n|---|---|---|---|---|---|\n| 1 | 逃逸的原型 | Escaped Prototype | 16× | 1.5× | 火 30% / 冰 30% / 电 30% / 混 20% |\n| 2 | 残次逃逸的原型 | Imperfect Escaped Prototype | 16× | 1.5× | 火 30% / 冰 30% / 电 30% / 混 20% |\n| 3 | 完美逃逸的原型 | Perfect Escaped Prototype | 16× | 1.5× | 火 30% / 冰 30% / 电 30% / 混 20% |\n\n紧随其后的是第 4 名 **不洁毒尸**（Unholy Aberration），生命系数 14×[[E9]]。\n\n〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕POEDB 清单共收录 1,948 个可作幽魂的怪物，未建模的不参与排名（其中混有开发用怪物）[[E9]]。〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕\n\n> 排名只在 PoB 建模的 268 个幽魂里做（POEDB 清单里另有未建模的，不参与排名）。倍率与抗性按来源原值给出；不提供掉落、怪物技能的中文说明\n\n> 检索以降级通道完成（fts）：向量检索与重排未启用（网关无 embedding 模型），当前走 BM25 + 实体精确匹配",
   "blocked_claims": 2,
-  "elapsed_ms": 11381,
-  "evidence_fingerprint": "sha256:dcbef7e7b618e111f47a2c43ac8f36ae",
+  "elapsed_ms": 10457,
+  "evidence_fingerprint": "sha256:71c560beaf8bb19d99f1b2ec7f7dd47e",
   "_warning": "raw_answer 是未过出口闸门的模型原文，含可能无据的断言，不得当作事实引用",
-  "raw_answer": "## 生命倍率最高的幽魂\n\n根据 PoB 建模的幽魂生命系数排行，**生命倍率最高的幽魂是「逃逸的原型」（Escaped Prototype）**，生命系数为 **16×**[[E9]]。\n\n值得注意的是，前 3 名的生命系数并列 16×：\n\n| 名次 | 中文名 | 英文名 | 生命系数 | 伤害系数 | 四抗性 |\n|---|---|---|---|---|---|\n| 1 | 逃逸的原型 | Escaped Prototype | 16× | 1.5× | 火 30% / 冰 30% / 电 30% / 混 20% |\n| 2 | 残次逃逸的原型 | Imperfect Escaped Prototype | 16× | 1.5× | 火 30% / 冰 30% / 电 30% / 混 20% |\n| 3 | 完美逃逸的原型 | Perfect Escaped Prototype | 16× | 1.5× | 火 30% / 冰 30% / 电 30% / 混 20% |\n\n第 4 名「不洁毒尸」（Unholy Aberration）生命系数为 14×，第 5 名「石肤剥皮者」（Stoneskin Flayer）为 8×[[E9]]。\n\n### 重要限定\n\n- 此排名**只在 PoB 建模的 268 个幽魂中进行**。POEDB 的可作幽魂清单共 **1948** 个，未被 PoB 建模的不参与排名（其中混有开发用怪物，例如「测试之灵」）[[E9]]。\n- 因此，**不能排除** POEDB 清单中某些未建模幽魂拥有更高的生命倍率——只是本库没有它们的数据。\n- 本库**未采集**这些幽魂的掉落来源与怪物技能的中文说明[[E9]]。",
+  "raw_answer": "## 生命倍率最高的幽魂\n\n根据 PoB 建模的 268 个幽魂的排行，生命系数最高的是以下三个并列第一，均为 **16× 生命系数**[[E9]]：\n\n| 名次 | 中文名 | 英文名 | 生命系数 | 伤害系数 | 四抗性 |\n|---|---|---|---|---|---|\n| 1 | 逃逸的原型 | Escaped Prototype | 16× | 1.5× | 火 30% / 冰 30% / 电 30% / 混 20% |\n| 2 | 残次逃逸的原型 | Imperfect Escaped Prototype | 16× | 1.5× | 火 30% / 冰 30% / 电 30% / 混 20% |\n| 3 | 完美逃逸的原型 | Perfect Escaped Prototype | 16× | 1.5× | 火 30% / 冰 30% / 电 30% / 混 20% |\n\n紧随其后的是第 4 名 **不洁毒尸**（Unholy Aberration），生命系数 14×[[E9]]。\n\n**重要限定：** 此排名仅在 PoB 建模的 **268 个**幽魂中进行；POEDB 清单共收录 1,948 个可作幽魂的怪物，未建模的不参与排名（其中混有开发用怪物）[[E9]]。因此，本答案只能说明「在已建模数据中最高」，不能排除 POEDB 清单中其余 1,680 个未建模怪物存在更高生命系数的可能性。",
   "evidence": [
     {
       "label": "E1",
@@ -33,7 +33,7 @@
       "url": "https://poedb.tw/cn/Umbilicus_Immortalis",
       "source": "POEDB",
       "source_priority": 1,
-      "text": "# 不朽系命（Umbilicus Immortalis）\n类型：唯一装备 ｜ 底材：皮革腰带 ｜ 分类：其他\n\n**需求**：需求 等级 30\n\n**隐式词缀**\n- [隐式词缀] +(25-40) 最大生命\n\n**显式词缀**\n- [显式词缀] 生命上限提高 (8-12)%\n- [显式词缀] 每秒再生 2% 生命\n- [显式词缀] 你不能获得药剂效果\n- [显式词缀] 你使用的药剂可以用于复苏的魔卫和幽魂\n\n来源：POEDB → 不朽系命（Umbilicus Immortalis）\nhttps://poedb.tw/cn/Umbilicus_Immortalis",
+      "text": "# 不朽系命（Umbilicus Immortalis）\n类型：唯一装备 ｜ 底材：皮革腰带 ｜ 分类：其他\n\n**需求**：需求 等级 30\n\n**隐式词缀**\n- [隐式词缀] +(25-40) 最大生命\n\n**显式词缀**\n- [显式词缀] 生命上限提高 (8-12)%\n- [显式词缀] 每秒再生 2% 生命\n- [显式词缀] 你不能获得药剂效果\n- [显式词缀] 你使用的药剂可以用于复苏的魔卫和幽魂\n\n**获取途径**\n- 命运卡：遗弃之物\n\n来源：POEDB → 不朽系命（Umbilicus Immortalis）\nhttps://poedb.tw/cn/Umbilicus_Immortalis",
       "can_support_facts": true,
       "claim_scope": "general",
       "claim_data": {}

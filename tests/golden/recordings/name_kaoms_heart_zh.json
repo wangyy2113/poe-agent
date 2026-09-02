@@ -2,24 +2,27 @@
   "format_version": 1,
   "case_id": "name_kaoms_heart_zh",
   "query": "冈姆的壮志",
-  "recorded_at": "2026-08-17T18:02:19+08:00",
+  "recorded_at": "2026-09-02T10:40:20+08:00",
   "model": "glm-5.2",
   "tokens": {
-    "prompt": 6103,
-    "output": 346,
-    "reasoning": 97,
-    "total": 6449
+    "prompt": 15184,
+    "output": 251,
+    "reasoning": 48,
+    "total": 15435
   },
   "tool_calls": [
-    ""
+    "kb_search"
   ],
   "evidence_gap": false,
+  "out_of_scope": false,
+  "precision_route": "",
   "gap_answer": "",
-  "blocked_claims": 5,
-  "elapsed_ms": 5492,
-  "evidence_fingerprint": "sha256:42e005ce4ad4d289a9ba2cc7b4de9eb6",
+  "final_answer": "## 冈姆的壮志（Kaom's Heart）\n\n**基本信息**\n\n- 类型：唯一装备，底材为荣耀战铠，分类为护甲[[E1]]。\n- 需求：等级 68，191 力量[[E1]]。\n\n**显式词缀**\n\n- 没有插槽[[E1]]。\n- +1000 最大生命[[E1]]。\n\n**获取途径**\n\n- 可通过命运卡「王者之心」获取[[E1]]。\n- 可通过命运卡「骄者必败」获取[[E1]]。\n\n---\n\n**补充说明**\n\n该装备有一件仿品版本——**冈姆的壮志【仿品】（Replica Kaom's Heart）**，同样底材为荣耀战铠、需求等级 68 与 191 力量，但词缀完全不同：没有插槽、闪电伤害提高 (30-40)%、+500 最大魔力[[E2]]。\n\n> 检索以降级通道完成（alias, fts）：向量检索与重排未启用（网关无 embedding 模型），当前走 BM25 + 实体精确匹配",
+  "blocked_claims": 0,
+  "elapsed_ms": 4819,
+  "evidence_fingerprint": "sha256:2195bc22c2847b05b6a7ddcf7e27cba3",
   "_warning": "raw_answer 是未过出口闸门的模型原文，含可能无据的断言，不得当作事实引用",
-  "raw_answer": "## 冈姆的壮志（Kaom's Heart）\n\n| 属性 | 内容 |\n|---|---|\n| 类型 | 唯一装备 |\n| 底材 | 荣耀战铠 |\n| 分类 | 护甲 |\n| 需求 | 等级 68，191 力量[[E1]] |\n\n### 显式词缀\n\n- **没有插槽**[[E1]]\n- **+1000 最大生命**[[E1]]\n\n该装备以牺牲全部六连插槽为代价，换取极高的 +1000 最大生命加成[[E1]]。\n\n---\n\n### 仿品版本：冈姆的壮志【仿品】（Replica Kaom's Heart）\n\n同为荣耀战铠底材的唯一装备，需求等级 68、191 力量[[E2]]，但词缀完全不同：\n\n- **没有插槽**[[E2]]\n- **闪电伤害提高 (30-40)%**[[E2]]\n- **+500 最大魔力**[[E2]]\n\n仿品版本同样没有插槽，但将原版的 +1000 最大生命替换为闪电伤害提高与 +500 最大魔力[[E2]]。",
+  "raw_answer": "## 冈姆的壮志（Kaom's Heart）\n\n**基本信息**\n\n- 类型：唯一装备，底材为荣耀战铠，分类为护甲[[E1]]。\n- 需求：等级 68，191 力量[[E1]]。\n\n**显式词缀**\n\n- 没有插槽[[E1]]。\n- +1000 最大生命[[E1]]。\n\n**获取途径**\n\n- 可通过命运卡「王者之心」获取[[E1]]。\n- 可通过命运卡「骄者必败」获取[[E1]]。\n\n---\n\n**补充说明**\n\n该装备有一件仿品版本——**冈姆的壮志【仿品】（Replica Kaom's Heart）**，同样底材为荣耀战铠、需求等级 68 与 191 力量，但词缀完全不同：没有插槽、闪电伤害提高 (30-40)%、+500 最大魔力[[E2]]。",
   "evidence": [
     {
       "label": "E1",
@@ -29,7 +32,7 @@
       "url": "https://poedb.tw/cn/Kaoms_Heart",
       "source": "POEDB",
       "source_priority": 1,
-      "text": "# 冈姆的壮志（Kaom's Heart）\n类型：唯一装备 ｜ 底材：荣耀战铠 ｜ 分类：护甲\n\n**需求**：需求 等级 68, 191 力量\n\n**显式词缀**\n- [显式词缀] 没有插槽\n- [显式词缀] +1000 最大生命\n\n来源：POEDB → 冈姆的壮志（Kaom's Heart）\nhttps://poedb.tw/cn/Kaoms_Heart",
+      "text": "# 冈姆的壮志（Kaom's Heart）\n类型：唯一装备 ｜ 底材：荣耀战铠 ｜ 分类：护甲\n\n**需求**：需求 等级 68, 191 力量\n\n**显式词缀**\n- [显式词缀] 没有插槽\n- [显式词缀] +1000 最大生命\n\n**获取途径**\n- 命运卡：王者之心\n- 命运卡：骄者必败\n\n来源：POEDB → 冈姆的壮志（Kaom's Heart）\nhttps://poedb.tw/cn/Kaoms_Heart",
       "can_support_facts": true,
       "claim_scope": "general",
       "claim_data": {}
@@ -101,19 +104,6 @@
     },
     {
       "label": "E7",
-      "chunk_id": "unique_item:Kaoms_Roots#0#7debb02144cdfa96",
-      "entity_id": "unique_item:Kaoms_Roots",
-      "title": "冈姆的稳重之靴（Kaom's Roots）",
-      "url": "https://poedb.tw/cn/Kaoms_Roots",
-      "source": "POEDB",
-      "source_priority": 1,
-      "text": "# 冈姆的稳重之靴（Kaom's Roots）\n类型：唯一装备 ｜ 底材：巨人胫甲 ｜ 分类：护甲\n\n**需求**：需求 等级 68, 120 力量\n\n**显式词缀**\n- [显式词缀] 没有插槽\n- [显式词缀] +(150-200) 最大生命\n- [显式词缀] 无法被击退\n- [显式词缀] 你的行动速度无法被减速至基础以下\n- [显式词缀] 烈士意志\n\n**附加说明**\n- [说明] (无法闪避敌人攻击。不会被晕眩)\n\n来源：POEDB → 冈姆的稳重之靴（Kaom's Roots）\nhttps://poedb.tw/cn/Kaoms_Roots",
-      "can_support_facts": true,
-      "claim_scope": "general",
-      "claim_data": {}
-    },
-    {
-      "label": "E8",
       "chunk_id": "unique_item:Kaoms_Command#0#2a110ceef450215a",
       "entity_id": "unique_item:Kaoms_Command",
       "title": "冈姆的命令（Kaom's Command）",
@@ -121,6 +111,19 @@
       "source": "POEDB",
       "source_priority": 1,
       "text": "# 冈姆的命令（Kaom's Command）\n类型：唯一装备 ｜ 底材：破城之盔 ｜ 分类：护甲\n\n**需求**：需求 等级 48, 101 力量\n\n**显式词缀**\n- [显式词缀] +(60-80) 最大生命\n- [显式词缀] 战吼施法速度加快 (25-35)%\n- [显式词缀] 当你使用战吼时，周围的灵柩爆炸，造成其生命 (5-10)% 的物理伤害\n- [显式词缀] 战吼技能的效果范围提高 (25-35)%\n\n来源：POEDB → 冈姆的命令（Kaom's Command）\nhttps://poedb.tw/cn/Kaoms_Command",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E8",
+      "chunk_id": "unique_item:Kaoms_Roots#0#7debb02144cdfa96",
+      "entity_id": "unique_item:Kaoms_Roots",
+      "title": "冈姆的稳重之靴（Kaom's Roots）",
+      "url": "https://poedb.tw/cn/Kaoms_Roots",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 冈姆的稳重之靴（Kaom's Roots）\n类型：唯一装备 ｜ 底材：巨人胫甲 ｜ 分类：护甲\n\n**需求**：需求 等级 68, 120 力量\n\n**显式词缀**\n- [显式词缀] 没有插槽\n- [显式词缀] +(150-200) 最大生命\n- [显式词缀] 无法被击退\n- [显式词缀] 你的行动速度无法被减速至基础以下\n- [显式词缀] 烈士意志\n\n**附加说明**\n- [说明] (无法闪避敌人攻击。不会被晕眩)\n\n**获取途径**\n- 命运卡：王座\n\n来源：POEDB → 冈姆的稳重之靴（Kaom's Roots）\nhttps://poedb.tw/cn/Kaoms_Roots",
       "can_support_facts": true,
       "claim_scope": "general",
       "claim_data": {}

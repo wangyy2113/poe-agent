@@ -2,13 +2,13 @@
   "format_version": 1,
   "case_id": "num_crit_chance_cap",
   "query": "暴击率上限是多少",
-  "recorded_at": "2026-08-20T16:20:35+08:00",
+  "recorded_at": "2026-09-02T10:41:56+08:00",
   "model": "glm-5.2",
   "tokens": {
-    "prompt": 13109,
-    "output": 68,
-    "reasoning": 20,
-    "total": 13177
+    "prompt": 16545,
+    "output": 101,
+    "reasoning": 53,
+    "total": 16646
   },
   "tool_calls": [
     "kb_search",
@@ -18,12 +18,12 @@
   "out_of_scope": false,
   "precision_route": "",
   "gap_answer": "",
-  "final_answer": "暴击率上限是 **100%**（PoB 给 `CritChanceCap` 播的基础值就是 100，硬编码在常量中，不是社区常说的 95%）[[E9]]。\n\n> 只算暴击率与**平均伤害倍率**（不需要伤害数值），不算 DPS——这一击有多大要 PoB 的 effectiveness 公式与整条攻击链，本库刻意没有伤害列；也不含幸运暴击、命中判定与暴击对异常的加成\n\n> **括号内的百分比是该档在同组内的生成权重占比**，不等于任何通货或具体工艺的一次使用成功率，也不等于期望消耗。\n\n> 检索以降级通道完成（fts）：向量检索与重排未启用（网关无 embedding 模型），当前走 BM25 + 实体精确匹配",
-  "blocked_claims": 0,
-  "elapsed_ms": 2093,
-  "evidence_fingerprint": "sha256:9fdf3c9e79a489f622f8dfe5740794f2",
+  "final_answer": "〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕这个值是 Path of Building 硬编码的（`CritChanceCap` 的基础值就是 100），而非社区常说的 95%[[E9]]。\n\n> 只算暴击率与**平均伤害倍率**（不需要伤害数值），不算 DPS——这一击有多大要 PoB 的 effectiveness 公式与整条攻击链，本库刻意没有伤害列；也不含幸运暴击、命中判定与暴击对异常的加成\n\n> **括号内的百分比是该档在同组内的生成权重占比**，不等于任何通货或具体工艺的一次使用成功率，也不等于期望消耗。\n\n> 检索以降级通道完成（fts）：向量检索与重排未启用（网关无 embedding 模型），当前走 BM25 + 实体精确匹配",
+  "blocked_claims": 1,
+  "elapsed_ms": 3348,
+  "evidence_fingerprint": "sha256:0238e764a2e9ef043b8cef82c8a23fb8",
   "_warning": "raw_answer 是未过出口闸门的模型原文，含可能无据的断言，不得当作事实引用",
-  "raw_answer": "暴击率上限是 **100%**（PoB 给 `CritChanceCap` 播的基础值就是 100，硬编码在常量中，不是社区常说的 95%）[[E9]]。",
+  "raw_answer": "暴击率上限是 **100%**。这个值是 Path of Building 硬编码的（`CritChanceCap` 的基础值就是 100），而非社区常说的 95%[[E9]]。",
   "evidence": [
     {
       "label": "E1",
@@ -46,7 +46,7 @@
       "url": "https://poedb.tw/cn/Choir_of_the_Storm",
       "source": "POEDB",
       "source_priority": 1,
-      "text": "# 暴风之语（Choir of the Storm）\n类型：唯一装备 ｜ 底材：海玉护身符 ｜ 分类：其他\n\n**需求**：需求 等级 69\n\n**隐式词缀**\n- [隐式词缀] +(20-30) 智慧\n\n**显式词缀**\n- [显式词缀] 暴击时触发 30 级的雷霆万钧\n- [显式词缀] 魔力上限提高 (10-20)%\n- [显式词缀] -30% 闪电抗性\n- [显式词缀] 暴击率随超量闪电抗性提高\n\n**附加说明**\n- [说明] （当无上限抗性超过抗性上限时，其数值称为超量抗性）\n- [说明] (绝对抗性指假设无视抗性上限时的抗性数值)\n\n来源：POEDB → 暴风之语（Choir of the Storm）\nhttps://poedb.tw/cn/Choir_of_the_Storm",
+      "text": "# 暴风之语（Choir of the Storm）\n类型：唯一装备 ｜ 底材：海玉护身符 ｜ 分类：其他\n\n**需求**：需求 等级 69\n\n**隐式词缀**\n- [隐式词缀] +(20-30) 智慧\n\n**显式词缀**\n- [显式词缀] 暴击时触发 30 级的雷霆万钧\n- [显式词缀] 魔力上限提高 (10-20)%\n- [显式词缀] -30% 闪电抗性\n- [显式词缀] 暴击率随超量闪电抗性提高\n\n**附加说明**\n- [说明] （当无上限抗性超过抗性上限时，其数值称为超量抗性）\n- [说明] (绝对抗性指假设无视抗性上限时的抗性数值)\n\n**获取途径**\n- 升级配方：暴风之言 + 艾许的祝福\n\n来源：POEDB → 暴风之语（Choir of the Storm）\nhttps://poedb.tw/cn/Choir_of_the_Storm",
       "can_support_facts": true,
       "claim_scope": "general",
       "claim_data": {}
