@@ -198,7 +198,8 @@ def record_gaps(conn, without: Counter) -> int:  # noqa: ANN001
         for kind, count in without.most_common()
     ]
     return dbmod.record_ingest_gaps(
-        conn, question=GAP_QUESTION, category="unique_item", points=points)
+        conn, question=GAP_QUESTION, category="unique_item", points=points,
+        kind="coverage_note")
 
 
 if __name__ == "__main__":

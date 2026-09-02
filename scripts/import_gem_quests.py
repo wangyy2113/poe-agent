@@ -282,23 +282,31 @@ def main() -> int:  # noqa: PLR0915
 def record_gaps(conn, *, no_page: list[str], no_table: list[str]) -> int:  # noqa: ANN001
     """按成因登记未入库项。
 
-    `no_quest_table` 那一条是本轮的**边界本身**，不是待办：那 152 颗靠掉落，
-    而掉落来源没有本地来源。写进台账是为了让「还差什么」这个信号说得出它。
+    **两类分开记，因为它们是两种东西**（第五十七轮改）：
+    `no_detail_page` 是真待办（加 `--fetch` 就能补），
+    而 `no_quest_table` 是**覆盖率度量**——那 152 颗的页面本来就没有使命表，
+    去补它需要新来源。混在一起记会让后者以 152 的量级坐进采集优先级，
+    把真待办挤下去（第三十轮修 POE2 越界时踩的就是这个）。
     """
-    points: list[tuple[str, int]] = []
+    todo: list[tuple[str, int]] = []
+    coverage: list[tuple[str, int]] = []
     if no_page:
-        points.append((
+        todo.append((
             f"[no_detail_page] {len(no_page)} 颗宝石的 POEDB 详情页未抓取："
             f"{'、'.join(no_page[:3])}{' 等' if len(no_page) > 3 else ''}"
             "（加 --fetch 可补抓）", len(no_page)))
     if no_table:
-        points.append((
+        coverage.append((
             f"[no_quest_table] {len(no_table)} 颗宝石的详情页上没有使命表："
             f"{'、'.join(no_table[:3])}{' 等' if len(no_table) > 3 else ''}"
             "（瓦尔/觉醒辅助/契约类，靠掉落获得；**掉落来源本地无来源**）",
             len(no_table)))
-    return dbmod.record_ingest_gaps(
-        conn, question=GAP_QUESTION, category="skill_gem", points=points)
+    written = dbmod.record_ingest_gaps(
+        conn, question=GAP_QUESTION, category="skill_gem", points=todo)
+    written += dbmod.record_ingest_gaps(
+        conn, question=GAP_QUESTION, category="skill_gem", points=coverage,
+        kind="coverage_note")
+    return written
 
 
 def reindex_cards(conn) -> int:  # noqa: ANN001

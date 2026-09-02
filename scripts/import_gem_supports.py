@@ -173,7 +173,8 @@ def record_gaps(conn, *, only_f: set, only_r: set, by_slug: dict) -> int:  # noq
         for cause, count in classify(pairs, by_slug).most_common():
             points.append((f"[one_sided] 只在「{label}」侧：{cause}", count))
     return dbmod.record_ingest_gaps(
-        conn, question=GAP_QUESTION, category="skill_gem", points=points)
+        conn, question=GAP_QUESTION, category="skill_gem", points=points,
+        kind="coverage_note")
 
 
 if __name__ == "__main__":
