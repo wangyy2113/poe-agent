@@ -134,7 +134,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 1356 项，秒级
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 1364 项，秒级
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选
@@ -151,7 +151,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 .venv/bin/python scripts/eval_run.py --record        # 重录真实响应（**要凭证、烧 token**）
 ```
 
-黄金问答集是 `tests/golden/questions.yaml`（143 条，六类），基线与全部结论在
+黄金问答集是 `tests/golden/questions.yaml`（144 条，六类），基线与全部结论在
 `tests/golden/BASELINE.md`——**动闸门前先读它**，里面记了多个已修缺陷与三条已知未修边界，
 以及两次「测量本身写错」的教训。
 
@@ -303,7 +303,7 @@ POE1/POE2 边界顺带落在同一张表上：poe.ninja 两款游戏都服务，
   也**不留空列**：留了下一个人会以为它待填，然后把乘数当伤害写进去。
 
 本机 `data/poe.db` 现状（`GET /healthz` 与 `/admin/stats` 可查）：`entity` 5325、
-`mod_affix` 93897、`pob_mod` 25487、`chunk` 18575、`alias` 8382、`game_constant` 543、
+`mod_affix` 94406、`pob_mod` 25487、`chunk` 18994、`alias` 8382、`game_constant` 543、
 `craft_bench_recipe` 783、`pob_base_item` **1022**（18 个装备类别，PoB × POEDB 逐条桥接，
 覆盖 PoB 侧 96.1%；未桥接的 41 条已按类别登记在台账）、`source_conflict` **547**（`mod_review` 254 + `unique_review` **229** + `spectre_review` 43
 + `spectre` **8** + `gem_review` **9** + `tree_review` 3 + `essence_review` **1**）。
@@ -758,6 +758,45 @@ PoB `Data/Pantheons.lua` 出结构、英文名、数值与 GGG stat id，POEDB �
 额外目标、掉落的命运卡、打完头目解锁的工艺台配方，以及**异界图鉴上相邻的地图**，159 张全有）。
 这个域挂了三页而**只有 `Atlas_of_Worlds` 有实质内容**：`Maps` 页主表是「地图碎片 → 区域」
 且区域名是未翻译的英文 id，`Atlas` 页只有 1 张中文卡片。**同一个域下的页面要一页一页看。**
+
+**地图词缀第六十轮才补上（361 条），而缺的从来不是来源——是我们没去看那几页。**
+它们进的是 `mod_affix`（`item_class_zh='异界地图'`，掉落池 301 / 腐化 55 / 深渊 5），
+与其它底材类别同一张表、同一套 T 级卡片，来自 `Maps_low/mid/top/uber_tier` 与 `Maps_old`
+五页。这一维先前在 spec 里写着「未采集：地图词缀（`Maps` 页那 12 条只有未翻译的内部
+stat id）」——**那句话描述的是错的那一页**：真正的来源是另外五页。
+
+根因是一个**静默漏页**：`poedb_index.discover_mod_class_pages` 只认
+`href="/cn/XXX#ModifiersCalc"`，而枢纽页 147 个 `<li>` 链接里只有 **101 个**带片段，
+地图五页与已入库的 `Mavens_Invitation%3A_The_Feared#ModifiersCalc` 是**并排的兄弟节点**，
+只是写成了不带片段的形式。旧代码唯一的守卫是 `if not slugs: raise`——
+**它拦得住整页改版，拦不住少认了 46 个**。这是「全量守卫对部分漏掉是瞎的」的第一次实例，
+与「信号存在 ≠ 信号被消费」同族。
+
+修法是把残差变成显式信号而**不是再列一份硬编码清单**（那种清单与枢纽页迟早分叉，
+分叉方向恰好就是这次这种少认）：残差 = `<li>` 链接 − 带片段的 − `INDEX_PAGES`
+− `PARENT_CLASS_PAGES` − 站点功能链接，实测 **21 个**，判定权交给抽取器。
+两类页的失败语义不同，这是分开的理由：**声明页**取不到 `new ModsView(` 载荷是结构告警，
+**候选页**取不到是正常结果（它本来就可能只是索引页）——但候选页**库里已有词缀**时
+反过来必须报错，否则旧行会留在概率分母里。实测 21 个候选里只有 5 个地图页有词缀，
+另外 16 个（保险箱 ×9、六分仪、瓦尔容器、Atlas Memories、武器附魔、珠宝、帝王试炼迷宫、
+统御宝珠）确认不是词缀页，成因落 `ingest_run.note` 而不是台账——它们不是待办。
+
+三条实测判据：
+
+- **上游没给文本的行不入库**（185 条）。地图的魔血词缀在 POEDB 载荷里就是
+  `"str": ""`（不是抽取器丢的，去看载荷确认过）。一条没有文本的词缀当不了证据，
+  渲染进卡片是空行，而出口闸门还要拿证据原文做数值回填。与怪物词缀那 63 条
+  「只有未翻译的内部 stat id」同一条规矩，按页登记进台账。
+  **这条行数要显式进页审计等式**（`total = succeeded + deduped + textless`）——
+  第一版没加，页审计当场报「来源行审计不闭合」并拒绝写入那 5 页：**审计做对了事**。
+- **哨兵的问法是量出来的，不是想出来的。** 补的专指哨兵本来写成
+  「地图上的魔血**词缀**有哪些」，实测 `is_gap=False`——因为
+  `is_gap = uncovered and not covered`，而**任何带「词缀」的问题都会让
+  `mod_affix`（已采集）成为 covered**，一个领域覆盖到就不拦（复合问题要「有据的部分照答」）。
+  换成不含「词缀」的四种问法全部正确拒答。
+- **判断闸门有没有生效必须走 `_apply_dimension_gate` 的真实路径。**
+  我先前拿 `bool(verdict.uncovered)` 当判据，它把上面那条用例报成「拦住了」——
+  **测量本身错了一次**，而这正是本项目记了四次的那类错误。
 
 `pob_cluster_notable` **308** 条星团珠宝核心天赋与基石（中文名由已入库的天赋卡按英文名桥接，
 100% 命中）+ `pob_cluster_jewel` 3 个尺寸（小 2–3 / 中 4–6 / 大 8–12 个小天赋）

@@ -1470,7 +1470,7 @@ def _mod_page_audit(
 ) -> dict[str, object]:
     """构造查询端可独立核验的来源级页审计。"""
     if explicit_no_mods:
-        total = succeeded = failed = deduped = conflicts = 0
+        total = succeeded = failed = deduped = conflicts = textless = 0
         status = "verified_empty"
     else:
         if stats is None:
@@ -1480,10 +1480,20 @@ def _mod_page_audit(
         failed = int(stats.failed)
         deduped = int(stats.deduped)
         conflicts = int(stats.dedup_conflicts)
-        if failed or conflicts or succeeded != rows or total != succeeded + deduped:
+        # 上游没给文本而被拒的行也要进这条等式，否则页面一有空文本就报「不闭合」。
+        # 它必须**显式**出现在账上：这类行是「我们主动不收」，
+        # 与 deduped（同一条被合并）性质不同，混在一起就看不出上游少给了多少。
+        textless = int(getattr(stats, "textless", 0))
+        if (
+            failed
+            or conflicts
+            or succeeded != rows
+            or total != succeeded + deduped + textless
+        ):
             raise ValueError(
                 f"{slug} 来源行审计不闭合：total={total}, succeeded={succeeded}, "
-                f"failed={failed}, deduped={deduped}, conflicts={conflicts}, rows={rows}"
+                f"failed={failed}, deduped={deduped}, textless={textless}, "
+                f"conflicts={conflicts}, rows={rows}"
             )
         status = "complete"
     content_hash = str(result.content_hash or "")
@@ -1509,14 +1519,48 @@ def _mod_page_audit(
         "source_succeeded_rows": succeeded,
         "source_failed_rows": failed,
         "source_deduped_rows": deduped,
+        "source_textless_rows": textless,
         "source_dedup_conflicts": conflicts,
         "parse_complete": True,
         "explicit_no_mods": explicit_no_mods,
     }
 
 
+def _record_mod_textless_gaps(conn, textless_by_page: dict[str, int]) -> int:  # noqa: ANN001
+    """把「上游没给文本因而未入库」的词缀按页登记进缺口台账。
+
+    这一维**不是我们漏抽**：POEDB 载荷里就是 `"str": ""`（2026-09-02 实测，
+    地图页的魔血词缀）。所以它记的是「上游这一段没有中文文本」这个事实，
+    将来上游补齐了、或找到第二来源，这条会自己缩小。
+    与圣甲虫的其它物品类、怪物词缀那 63 条同一条路径。
+    """
+    if not textless_by_page:
+        return dbmod.record_ingest_gaps(
+            conn, question="词缀页上没有文本的条目",
+            category="partial/mod_affix", points=[],
+        )
+    points = [
+        (
+            f"[textless] {slug} 有 {count} 条词缀在 POEDB 载荷里 `str` 为空，"
+            "没有可展示文本，未入库",
+            count,
+        )
+        for slug, count in sorted(textless_by_page.items())
+    ]
+    return dbmod.record_ingest_gaps(
+        conn, question="词缀页上没有文本的条目",
+        category="partial/mod_affix", points=points,
+    )
+
+
 def run_poedb_mods(*, force: bool = False, rebuild: bool = False) -> int:
-    """抽取全部 101 个底材类别页的词缀并入库。"""
+    """抽取枢纽页上全部词缀页并入库。
+
+    两类：**声明页**（101 个，链接带 `#ModifiersCalc`）与**残差候选页**
+    （21 个，枢纽页列了却没带片段）。后者 2026-09-02 才纳进来——在那之前
+    地图 / 保险箱 / 六分仪 / 瓦尔容器的词缀一条都没入库，理由与判据见
+    `poedb_index.HubCandidate`。
+    """
     cfg = get_config()
     conn = dbmod.init_db(cfg.db_path, vector_dim=int(cfg.get("retrieval.vector.dim", 0) or 0))
     fetcher = _make_fetcher(cfg)
@@ -1534,14 +1578,26 @@ def run_poedb_mods(*, force: bool = False, rebuild: bool = False) -> int:
 
     from craft.pool import POOL_SNAPSHOT_MODE  # noqa: PLC0415
 
-    slugs = poedb_index.discover_mod_class_pages(fetcher, force=force)
+    # 两类页分开处理：带 `#ModifiersCalc` 片段的是枢纽页**声明**了有词缀区块的，
+    # 取不到载荷即结构告警；残差候选页只是「可能有」，取不到载荷是**正常结果**。
+    # 理由见 `poedb_index.HubCandidate`——地图 / 保险箱 / 六分仪的词缀先前
+    # 就是因为只认前一种写法而一条都没入库。
+    declared_slugs = poedb_index.discover_mod_class_pages(fetcher, force=force)
+    candidates = poedb_index.discover_candidate_mod_pages(fetcher, force=force)
+    pages: list[tuple[str, bool]] = [
+        *((slug, True) for slug in declared_slugs),
+        *((cand.slug, False) for cand in candidates),
+    ]
+    candidate_labels = {cand.slug: cand.label_zh for cand in candidates}
     total_records = 0
     pages_ok = pages_nodata = pages_failed = 0
     conflicts = 0
     failures: list[tuple[str, str]] = []
+    not_mod_pages: list[str] = []
+    textless_by_page: dict[str, int] = {}
     page_audits: dict[str, dict[str, object]] = {}
 
-    for i, slug in enumerate(slugs, 1):
+    for i, (slug, declared) in enumerate(pages, 1):
         url = f"{poedb_index.BASE}/{slug}"
         try:
             res = fetcher.fetch(url, force=force)
@@ -1552,7 +1608,38 @@ def run_poedb_mods(*, force: bool = False, rebuild: bool = False) -> int:
                     f"最终响应 URL 不匹配：requested={url}, final={res.final_url or '(missing)'}"
                 )
             mods, stats = poedb_mods.extract_mods(res.text, slug, url)
-        except poedb_mods.NoModsDataError:
+        except (poedb_mods.NoModsDataError, poedb_mods.ModStructureError) as exc:
+            if not declared:
+                # 候选页取不到 `new ModsView(` 载荷 = 它本来就不是词缀页（索引页居多），
+                # 不是错误。但**库里已有它的词缀**时性质相反：那说明上游改版了，
+                # 静默跳过会把旧行留在概率分母里，必须报错。
+                existing = int(
+                    conn.execute(
+                        "SELECT count(*) FROM mod_affix WHERE item_class_page=?", (slug,)
+                    ).fetchone()[0]
+                )
+                if existing:
+                    pages_failed += 1
+                    failures.append(
+                        (slug, f"候选页原有 {existing} 条词缀，本次取不到载荷：{exc}")
+                    )
+                    logger.error(
+                        "[%d/%d] %-32s 原有 %d 条词缀却取不到载荷，拒绝静默留下旧行",
+                        i, len(pages), slug, existing,
+                    )
+                    continue
+                not_mod_pages.append(slug)
+                # 带上枢纽页给的中文标签：slug 是英文的，只有它能说明这页是什么。
+                logger.info(
+                    "[%d/%d] %-32s 非词缀页（枢纽页残差候选「%s」，无载荷）",
+                    i, len(pages), slug, candidate_labels.get(slug, "?"),
+                )
+                continue
+            if isinstance(exc, poedb_mods.ModStructureError):
+                pages_failed += 1
+                failures.append((slug, f"{type(exc).__name__}: {exc}"))
+                logger.error("[%d/%d] %-32s 失败：%s", i, len(pages), slug, exc)
+                continue
             conn.execute("SAVEPOINT mod_affix_page_audit")
             try:
                 count, digest = _replace_mod_page(conn, slug, [])
@@ -1570,15 +1657,15 @@ def run_poedb_mods(*, force: bool = False, rebuild: bool = False) -> int:
                 conn.execute("RELEASE mod_affix_page_audit")
                 pages_failed += 1
                 failures.append((slug, f"{type(exc).__name__}: verified empty replace failed"))
-                logger.error("[%d/%d] %-32s 空页替换失败：%s", i, len(slugs), slug, exc)
+                logger.error("[%d/%d] %-32s 空页替换失败：%s", i, len(pages), slug, exc)
                 continue
             pages_nodata += 1
-            logger.info("[%d/%d] %-32s 无常规词缀池（身份已核对）", i, len(slugs), slug)
+            logger.info("[%d/%d] %-32s 无常规词缀池（身份已核对）", i, len(pages), slug)
             continue
         except Exception as exc:
             pages_failed += 1
             failures.append((slug, f"{type(exc).__name__}: {exc}"))
-            logger.error("[%d/%d] %-32s 失败：%s", i, len(slugs), slug, exc)
+            logger.error("[%d/%d] %-32s 失败：%s", i, len(pages), slug, exc)
             continue
 
         # 去重冲突必须为 0，否则说明主键设计有误、正在丢数据
@@ -1586,7 +1673,7 @@ def run_poedb_mods(*, force: bool = False, rebuild: bool = False) -> int:
             conflicts += stats.dedup_conflicts
             logger.error(
                 "[%d/%d] %s 出现 %d 处去重冲突（实质字段不同却同键），拒绝写入该页",
-                i, len(slugs), slug, stats.dedup_conflicts,
+                i, len(pages), slug, stats.dedup_conflicts,
             )
             pages_failed += 1
             failures.append((slug, f"去重冲突 {stats.dedup_conflicts} 处"))
@@ -1611,11 +1698,13 @@ def run_poedb_mods(*, force: bool = False, rebuild: bool = False) -> int:
             conn.execute("RELEASE mod_affix_page_audit")
             pages_failed += 1
             failures.append((slug, f"{type(exc).__name__}: page replace/audit failed"))
-            logger.error("[%d/%d] %-32s 整页替换或审计失败：%s", i, len(slugs), slug, exc)
+            logger.error("[%d/%d] %-32s 整页替换或审计失败：%s", i, len(pages), slug, exc)
             continue
+        if stats.textless:
+            textless_by_page[slug] = stats.textless
         total_records += written
         pages_ok += 1
-        logger.info("[%d/%d] %-32s %5d 条（%d 组）", i, len(slugs), slug,
+        logger.info("[%d/%d] %-32s %5d 条（%d 组）", i, len(pages), slug,
                     written, len(stats.categories))
 
     if conflicts:
@@ -1632,12 +1721,18 @@ def run_poedb_mods(*, force: bool = False, rebuild: bool = False) -> int:
         "UPDATE ingest_run SET finished_at=datetime('now'), total=?, succeeded=?, "
         "failed=?, skipped=?, elapsed_ms=?, note=? WHERE run_id=?",
         (
-            len(slugs), pages_ok, pages_failed, pages_nodata, elapsed_ms,
+            len(pages), pages_ok, pages_failed, pages_nodata, elapsed_ms,
             json.dumps(
                 {
                     "snapshot_mode": POOL_SNAPSHOT_MODE,
                     "records": total_records,
                     "no_mods_pages": pages_nodata,
+                    "declared_pages": len(declared_slugs),
+                    "candidate_pages": len(candidates),
+                    # 候选页里查无载荷的（索引页居多）。留档是为了下次能一眼看出
+                    # 「残差有没有变」——它变多就意味着枢纽页又多了没人认领的链接。
+                    "candidate_not_mod_pages": sorted(not_mod_pages),
+                    "textless_rows": sum(textless_by_page.values()),
                     "pages": page_audits,
                     "failures": failures[:10],
                 },
@@ -1647,6 +1742,7 @@ def run_poedb_mods(*, force: bool = False, rebuild: bool = False) -> int:
             run_id,
         ),
     )
+    _record_mod_textless_gaps(conn, textless_by_page)
     conn.commit()
 
     # 词表须在渲染前刷新：底材类别名（含单字「弓」「爪」）刚入库，

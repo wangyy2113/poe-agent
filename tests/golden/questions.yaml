@@ -554,13 +554,44 @@ cases:
       卡片里的 `Link` 就是图鉴连接关系，159 张全有。这条同时说明一件事：
       一页的价值要看 DOM——同域另两页（Maps / Atlas）几乎没有可用内容
 
-  - id: gap_map_mods
+  - id: desc_map_mods
     query: 地图词缀有哪些
+    kind: description
+    expect_any_hit: true
+    note: >-
+      **这条第六十轮从 `kind: gap` 翻成了描述类**：361 条 `异界地图` 词缀入库
+      （掉落池 301 / 腐化 55 / 深渊 5），来自 `Maps_low/mid/top/uber_tier`
+      与 `Maps_old` 五页，与其它底材类别同一张表、同一套 T 级卡片
+    lesson: >-
+      先前那句「地图词缀未采集」记的是 `Maps` 页那 12 条未翻译的 stat id，
+      **而真正的来源是另外五页**——它们就并排列在词缀枢纽页上，
+      只是链接不带 `#ModifiersCalc` 片段，被 `discover_mod_class_pages`
+      的正则静默丢掉：147 个 `<li>` 链接里只有 101 个带片段。
+      旧代码唯一的守卫是「一个都没发现就报错」，它拦得住整页改版、
+      **拦不住少认了 46 个**。教训是这一维一直被写成「上游没有」，
+      而实际是「我们从没去看过那几页」——**「查不到」与「没去看过」
+      在用户那边分不开**，判据见 `poedb_index.HubCandidate`。
+
+  - id: gap_map_scourge_mods
+    query: 地图上的魔血能给什么
     kind: gap
     expect_gap: true
     note: >-
-      地图词缀未采集：`Maps` 页那 12 条只有未翻译的内部 stat id
-      （`map implicit item drop quantity +%`），不能当中文答案输出
+      成对哨兵：魔血（Scourge）那 185 条在 POEDB 载荷里 `str` **就是空的**
+      （实测 `"str": ""`），没有可展示文本因而未入库
+    lesson: >-
+      上一条放宽时把宽泛的「词缀有哪些」从 `missing_dimension_hints` 里删了，
+      于是补了「魔血」这个**专指**哨兵。它只挂在地图域，
+      非地图的魔血问题（其它底材共 6,557 条）走不到这里（实测
+      `胸甲上的魔血词缀有哪些` 仍照常作答）。
+      **这条用例的问法是量出来的，不是想出来的**：本来写的是
+      「地图上的魔血**词缀**有哪些」，实测它 `is_gap=False` ——
+      因为 `is_gap = uncovered and not covered`，而**任何带「词缀」的问题
+      都会让 `mod_affix`（已采集）成为 covered**，一个领域覆盖到就不拦
+      （复合问题按需求要「有据的部分照答」）。同一个哨兵换成不含「词缀」的
+      四种问法全部正确拒答。教训：**判断闸门有没有生效要走
+      `_apply_dimension_gate` 的真实路径**，我先前拿 `bool(uncovered)`
+      当判据，它把这条用例报成「拦住了」——**测量本身错了一次**。
 
   - id: num_max_resistance_cap
     query: 抗性上限是多少
