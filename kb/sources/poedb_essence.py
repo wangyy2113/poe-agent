@@ -54,6 +54,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 from dataclasses import dataclass
 
@@ -112,6 +114,28 @@ class Essence:
     @property
     def item_class_count(self) -> int:
         return sum(len(m.item_classes) for m in self.mods)
+
+    @property
+    def content_hash(self) -> str:
+        """**逐件**内容哈希，与通货 / 圣甲虫 / 地图同一条约定。
+
+        第五十九轮入库时这一列写的是 `res.content_hash`——那是**整页**的哈希，
+        于是 105 行全都一样（实测 `count(distinct content_hash) = 1`，
+        而通货 113/113、圣甲虫 118/118、地图 159/159 都是逐行不同）。
+        存整页哈希等于这一列没有分辨力：上游改了其中一件，也看不出是哪一件变了。
+
+        **保底词缀要进哈希**：它们渲染在卡片上，只哈希标量字段的话，
+        上游改了某个装备类别的保底词缀，这一列不会变。
+        """
+        payload = json.dumps(
+            [
+                self.key, self.name_zh, self.slug, self.tier,
+                self.stack_max, self.level_cap, self.base_effect,
+                [[m.group_index, list(m.item_classes), m.text] for m in self.mods],
+            ],
+            ensure_ascii=False, separators=(",", ":"),
+        )
+        return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 def _pane(tree: HTMLParser) -> tuple[object, int | None]:

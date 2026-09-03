@@ -289,3 +289,58 @@ class TestRouting(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestContentHash(unittest.TestCase):
+    """逐件内容哈希（2026-09-03 第六十二轮补）。
+
+    第五十九轮入库时这一列写的是 `res.content_hash`——那是**整页**哈希，
+    于是 105 行全写成同一个值（实测 `count(distinct)=1`，而通货 113/113、
+    圣甲虫 118/118、地图 159/159 都是逐行不同）；实体那一侧更彻底，
+    `Entity(...)` 整个漏了 `content_hash=`，105 个精华实体全是空串，
+    增量判据把它们当成「每次都变了」，`selfcheck.py` 一直在报。
+
+    两条判据都要钉住：**逐件不同**，以及**保底词缀参与哈希**——
+    后者是最容易漏的那一半，因为它渲染在卡片上却不是标量字段。
+    """
+
+    def test_不同精华的哈希不同(self) -> None:
+        items = parse_essences(page(
+            card("憎恨之低语精华", "Whispered_Essence_of_Hatred", 1),
+            card("憎恨之呢喃精华", "Muttering_Essence_of_Hatred", 2),
+            card("憎恨之啼泣精华", "Weeping_Essence_of_Hatred", 3),
+            declared=3,
+        ))
+        hashes = {i.content_hash for i in items}
+        self.assertEqual(3, len(hashes), "整页哈希会让这三件写成同一个值")
+
+    def test_保底词缀变了哈希就变(self) -> None:
+        """词缀渲染在卡片上却不是标量字段——只哈希标量就会漏掉它。"""
+        before = parse_essences(page(card(
+            "憎恨之低语精华", "Whispered_Essence_of_Hatred", 1,
+            extra="弓: 此物品上装备的弓技能石等级+2"), declared=1))[0]
+        after = parse_essences(page(card(
+            "憎恨之低语精华", "Whispered_Essence_of_Hatred", 1,
+            extra="弓: 此物品上装备的弓技能石等级+3"), declared=1))[0]
+        self.assertEqual(before.name_zh, after.name_zh, "只有词缀该变")
+        self.assertNotEqual(before.content_hash, after.content_hash)
+
+    def test_同样的输入哈希稳定(self) -> None:
+        """否则每次采集都会被判成「变了」，增量就永远不生效。"""
+        made = [parse_essences(page(card("憎恨之低语精华",
+                                         "Whispered_Essence_of_Hatred", 1),
+                                    declared=1))[0].content_hash
+                for _ in range(2)]
+        self.assertEqual(made[0], made[1])
+
+    def test_实体哈希把回填的英文名算进去(self) -> None:
+        """`name_en` 由 `verify_essence.py --write` 事后回填，而卡片要渲染它——
+        只用源哈希的话，回填之后卡片变了、哈希没变。"""
+        from kb.pipeline import _essence_entity_hash  # noqa: PLC0415
+
+        self.assertNotEqual(
+            _essence_entity_hash("abc", None),
+            _essence_entity_hash("abc", "Whispering Essence of Hatred"),
+        )
+        self.assertNotEqual(_essence_entity_hash("abc", "X"),
+                            _essence_entity_hash("def", "X"))
