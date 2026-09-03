@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import logging
 import math
@@ -82,8 +83,6 @@ def _existing_hashes(conn, entity_type: str) -> dict[str, str]:
 
 def _entity_hash(entity: Entity) -> str:
     """实体内容哈希：只覆盖会影响卡片与索引的字段。"""
-    import hashlib
-
     payload = json.dumps(
         {
             "name_zh": entity.name_zh,
@@ -2209,6 +2208,18 @@ def _scarab_entity(item: poedb_scarab.Scarab, priority: int, fetched_at: str) ->
 MIN_ESSENCES = 90
 
 
+def _essence_entity_hash(row_hash: str | None, name_en: str | None) -> str:
+    """精华实体的内容哈希 = 逐件源哈希 × 事后回填的 `name_en`。
+
+    分两层是因为两者的写入时机不同：源哈希由采集写入（`Essence.content_hash`），
+    `name_en` 由 `scripts/verify_essence.py --write` 对完账再回填，
+    而卡片上两者都要渲染。只取源哈希的话，回填之后卡片变了、哈希没变。
+    """
+    payload = json.dumps([row_hash or "", name_en or ""],
+                         ensure_ascii=False, separators=(",", ":"))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
 def reindex_essence_cards(conn) -> tuple[int, int]:  # noqa: ANN001
     """按 `poedb_essence` 的当前内容重建精华卡片。
 
@@ -2219,7 +2230,7 @@ def reindex_essence_cards(conn) -> tuple[int, int]:  # noqa: ANN001
     priority = int(cfg.priority_of(Source.POEDB.value))
     rows = list(conn.execute(
         "SELECT metadata_id,name_zh,name_en,slug,tier,stack_max,level_cap,base_effect,"
-        "       url,fetched_at FROM poedb_essence ORDER BY name_zh"
+        "       url,fetched_at,content_hash FROM poedb_essence ORDER BY name_zh"
     ))
     mods: dict[str, list[dict[str, str]]] = {}
     for mid, classes, text in conn.execute(
@@ -2242,9 +2253,15 @@ def reindex_essence_cards(conn) -> tuple[int, int]:  # noqa: ANN001
             },
             ref=SourceRef(source=Source.POEDB.value, url=url,
                           priority=priority, fetched_at=fetched_at),
+            # 先前**整个漏了这一项**，于是 105 个精华实体的 content_hash 全是空串，
+            # 增量判据把它们当成「每次都变了」（`selfcheck.py` 一直在报）。
+            # 这里在逐件源哈希之上再叠 `name_en`：它由
+            # `verify_essence.py --write` 事后回填，而卡片上要渲染它——
+            # 只用源哈希的话，回填完卡片变了、哈希却没变。
+            content_hash=_essence_entity_hash(row_hash, name_en),
         )
         for (mid, name_zh, name_en, slug, tier, stack_max, level_cap, base_effect,
-             url, fetched_at) in rows
+             url, fetched_at, row_hash) in rows
     ]
     return _reindex_entity_type(
         conn, EntityType.ESSENCE, entities, render_stackable.to_chunks
@@ -2306,9 +2323,12 @@ def run_poedb_essence(*, force: bool = False, allow_shrink: bool = False) -> int
             ) VALUES (?,?,NULL,?,?,?,?,?,?,?,?,?,?,datetime('now'))
             """,
             [
+                # `i.content_hash` 而不是 `res.content_hash`：后者是**整页**哈希，
+                # 105 行会写成同一个值、这一列就没有分辨力（第五十九轮的写法）。
+                # 与通货 / 圣甲虫 / 地图三处对齐，判据见 `Essence.content_hash`。
                 (i.key, i.name_zh, i.slug, i.tier, i.stack_max, i.level_cap, i.base_effect,
                  Source.POEDB.value, priority, f"{poedb_essence.ESSENCE_URL}#{i.slug}",
-                 res.content_hash, res.fetched_at)
+                 i.content_hash, res.fetched_at)
                 for i in items
             ],
         )
@@ -2350,6 +2370,22 @@ def run_poedb_essence(*, force: bool = False, allow_shrink: bool = False) -> int
     conn.commit()
     logger.info("精华采集完成：%d 件、保底词缀 %d 行（卡片 %d、别名 %d），耗时 %dms",
                 len(items), mod_rows, chunks, aliases, elapsed_ms)
+
+    # `name_en` 在上面的 INSERT 里写死为 NULL——它由 `verify_essence.py --write`
+    # 对完账再回填。所以重跑本采集会把英文名**连同卡片上的它**一起抹掉。
+    # 2026-09-03 实测踩到：卡片首行从
+    # 「# 憎恨之低语精华（Whispering Essence of Hatred）」变回「# 憎恨之低语精华」，
+    # 而唯一露出来的信号是一条录制过期。**提醒而不是静默**，
+    # 与上面唯一装备详情页那处同一条。
+    if conn.execute(
+        "SELECT 1 FROM source_conflict WHERE kind='essence_review' LIMIT 1"
+    ).fetchone():
+        logger.warning(
+            "本轮重写了精华快照，name_en 已被清空、卡片上的英文名随之消失——"
+            "请紧接着重跑 scripts/verify_essence.py --write"
+        )
+        print("[注意] 精华快照已重写，name_en 被清空，"
+              "请重跑 scripts/verify_essence.py --write")
     return 0
 
 

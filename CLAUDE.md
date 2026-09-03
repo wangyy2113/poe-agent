@@ -143,7 +143,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 1370 项，秒级
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 1374 项，秒级
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选
@@ -622,6 +622,18 @@ POEDB 页面仍是旧版」：`号召` PoB 侧是 `ConvocationNew`（各级需�
   PoB 侧给 `Essence of Desolation` 也是 8。**页面自己前后不一致**，
   存页面原值并把分歧登记进 `source_conflict`（`kind='essence_review'` 1 条，
   待人工核对，不作为跨来源冲突呈现）。约束该描述数据，不该描述我以为的范围。
+- **`content_hash` 要逐件算，而且第六十二轮才补上。** 入库那一轮这一列写的是
+  `res.content_hash`——那是**整页**哈希，105 行全一样（实测 `count(distinct)=1`，
+  而通货 113/113、圣甲虫 118/118、地图 159/159 都逐行不同）；实体那一侧更彻底，
+  `Entity(...)` 整个漏了 `content_hash=`，105 个精华实体全是空串。
+  **保底词缀必须进哈希**（它渲染在卡片上却不是标量字段），实体哈希还要再叠
+  事后回填的 `name_en`。`selfcheck.py` 从入库当天就在报这件事——
+  **信号一直在，只是没人消费**，与 `DomainSpec.pob_files` 那两轮同族。
+- **重跑精华采集会把 `name_en` 连同卡片上的英文名一起抹掉。** INSERT 里它写死为
+  NULL，由 `verify_essence.py --write` 事后回填。实测卡片首行会从
+  「# 憎恨之低语精华（Whispering Essence of Hatred）」变回「# 憎恨之低语精华」，
+  而唯一露出来的信号只有一条录制过期。现在采集结束会**显式提醒**重跑对账脚本，
+  与唯一装备详情页那处同一条。
 
 机制分界在 tier 4 与 5 之间，写在效果原文里、不由代码推断：
 **tier 0–4 的 41 件**只能升级白装且限等级（15/35/45/60/75），
