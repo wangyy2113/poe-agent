@@ -1262,6 +1262,39 @@ def _list_lead_in(history: list[SentenceVerdict]) -> SentenceVerdict | None:
             continue
         if verdict.ok and verdict.labels and _is_list_lead_in(verdict):
             return verdict
+        # 引导句**自己没有标记**却通过了校验——那是「加粗标签」豁免那一类
+        # （`**词缀文本：**`）。它不是断言，所以不该在这里终止查找：
+        # 实测模型的自然写法是把标记放在小节标题上，正文清单跟在一个纯标签后面。
+        # 继续向前找**这一节的绑定上下文**，判据见 `_section_binding`。
+        if verdict.ok and not verdict.labels and _is_list_lead_in(verdict):
+            return _section_binding(history)
+        return None
+    return None
+
+
+def _section_binding(history: list[SentenceVerdict]) -> SentenceVerdict | None:
+    """纯标签引导句之上，这一小节的绑定来源。
+
+    只穿过**结构行**（空行、表格行、纯标签），碰到任何别的东西就停——
+    也就是说它找的是「同一个小节里已经绑定好的那句」，而不是「往前数到有标记为止」。
+    实测形态：
+
+        ### 1. 合成的（MapUberModSynthMiniboss）[[E2]]   ← 绑定上下文
+        | T 级 | 词缀名 | … |                            ← 表格行（已继承 E2）
+        **词缀文本：**                                   ← 纯标签，自己没有标记
+        - 地图首领伴随着一个虚空忆境首领                     ← 要继承的清单
+
+    数值回填照旧跑，所以继承来的编号救不了编造的数字。
+    """
+    for verdict in reversed(history):
+        if not verdict.text.strip():
+            continue
+        if _is_table_line(verdict.text) or _is_list_lead_in(verdict):
+            if verdict.ok and verdict.labels:
+                return verdict
+            continue
+        if verdict.ok and verdict.labels:
+            return verdict
         return None
     return None
 

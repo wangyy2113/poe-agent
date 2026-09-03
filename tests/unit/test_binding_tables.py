@@ -467,3 +467,98 @@ class IndexColumnHeaderTest(unittest.TestCase):
             set(),
             binding._index_column_numbers("| # | 词缀 |\n| --- | --- |\n| 1 | 甲 |"),
         )
+
+
+SECTION_EVIDENCE = [
+    ev("E2",
+       "# 异界地图 · MapUberModSynthMiniboss\n"
+       "| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n"
+       "| T1/1 | 合成的 | 地图首领伴随着一个虚空忆境首领 / "
+       "该区域物品掉落数量提高 13% / 怪物群规模扩大 20% | 1 | 50（3.2468%） |")
+]
+
+
+class ListUnderPlainLabelInheritsSectionTest(unittest.TestCase):
+    """纯标签引导句下的清单，继承**本小节**的绑定（2026-09-03 第六十一轮）。
+
+    来历：地图词缀入库后，`desc_map_mods` 一条录制里 **31 句事实句拦了 27 句**，
+    而 `确定误拦 = 0`——拦得对，但结果是**表格活下来、词缀文本全没了**。
+    模型的写法是把标记放在小节标题上，正文清单跟在一个纯标签后面：
+
+        ### 1. 合成的（MapUberModSynthMiniboss）[[E2]]   ← 绑定上下文
+        | T 级 | 词缀名 | … |                            ← 表格行（已继承 E2）
+        **词缀文本：**                                   ← 纯标签，自己没有标记
+        - 地图首领伴随着一个虚空忆境首领                     ← 先前被拦
+
+    `**词缀文本：**` 本身**通过**校验（加粗标签豁免），但它没有编号可给下面的清单，
+    于是 `_list_lead_in` 在它那里停住、整份正文被判无据。
+
+    放宽的边界是 `_section_binding` **只穿过结构行**（空行 / 表格行 / 纯标签），
+    碰到任何别的东西就停——所以它不是「往前数到有标记为止」，
+    更不是第三十九轮被否掉的那个「整行带标记就全继承」。
+    离线重放 152 条录制实测：**放行 20 句、新增拦截 0 句**，确定误拦仍为 0。
+    """
+
+    SECTION = (
+        "### 1. 合成的（MapUberModSynthMiniboss）[[E2]]\n\n"
+        "| T 级 | 词缀名 | 物品等级 |\n"
+        "|---|---|---|\n"
+        "| T1/1 | 合成的 | 1 |\n\n"
+        "**词缀文本：**\n"
+        "- 地图首领伴随着一个虚空忆境首领\n"
+        "- 该区域物品掉落数量提高 13%\n"
+    )
+
+    def test_清单继承小节标题的绑定(self) -> None:
+        res = verify(self.SECTION, SECTION_EVIDENCE)
+        self.assertEqual(0, res.blocked, [v.reason for v in res.verdicts if not v.ok])
+        item = next(v for v in res.verdicts if "虚空忆境" in v.text)
+        self.assertEqual(("E2",), item.labels)
+
+    def test_编造的数字仍然拦得住(self) -> None:
+        """**这是整个放宽的安全前提**：继承只给编号，数值回填照旧跑。"""
+        text = self.SECTION.replace("提高 13%", "提高 99%")
+        res = verify(text, SECTION_EVIDENCE)
+        self.assertEqual(1, res.blocked)
+        self.assertIn("99", next(v.reason for v in res.verdicts if not v.ok))
+
+    def test_中间夹着模型自己的话就不继承(self) -> None:
+        """只穿过结构行。夹一句散文进去，继承链必须断——
+        否则「小节标题标一个引用」就等于 license 整节，那正是被否掉的那个放宽。"""
+        text = (
+            "### 1. 合成的[[E2]]\n\n"
+            "因为火焰属于元素，这条也能产出火焰词缀。\n\n"
+            "**词缀文本：**\n"
+            "- 地图首领伴随着一个虚空忆境首领\n"
+        )
+        res = verify(text, SECTION_EVIDENCE)
+        self.assertGreaterEqual(res.blocked, 2, "散文与清单都不该被放行")
+
+    def test_小节没有绑定时清单照旧拦(self) -> None:
+        text = "### 1. 合成的\n\n**词缀文本：**\n- 地图首领伴随着一个虚空忆境首领\n"
+        self.assertGreaterEqual(verify(text, SECTION_EVIDENCE).blocked, 1)
+
+    def test_被拦的句子不能当继承来源(self) -> None:
+        text = (
+            "### 1. 合成的[[E99]]\n\n"      # 编号无效 → 被拦
+            "**词缀文本：**\n"
+            "- 地图首领伴随着一个虚空忆境首领\n"
+        )
+        res = verify(text, SECTION_EVIDENCE)
+        self.assertGreaterEqual(res.blocked, 2)
+
+    def test_流式与批量一致(self) -> None:
+        """两侧必须同结果——这是整个闸门最容易漏改的成对点。
+
+        **只比非空白句**，与 `eval_run.replay_case` 同一口径：纯空白句的归属
+        （批量把 `\\n\\n` 并进上一句、流式单独成句）不影响用户看到的内容，
+        项目自己的指标也把它单列成「仅空白字符不同」。混进来会让真分叉被噪声盖住。
+        """
+        res = verify(self.SECTION, SECTION_EVIDENCE)
+        batch = [(v.kind, v.ok, v.labels) for v in res.verdicts if v.text.strip()]
+        self.assertEqual(0, res.blocked)
+        for size in (1, 7, 40):
+            streamed = stream(self.SECTION, SECTION_EVIDENCE, size)
+            got = [(v.kind, v.ok, v.labels) for v in streamed.verdicts if v.text.strip()]
+            self.assertEqual(batch, got, f"切片 {size} 与批量不一致")
+            self.assertEqual(res.blocked, streamed.blocked, f"切片 {size} 拦截数不一致")
