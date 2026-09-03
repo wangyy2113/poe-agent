@@ -150,15 +150,23 @@ class ModExtractStats:
     deduped: int = 0
     #: 去重时实质字段冲突的条数。**这个必须为 0**，否则就是在丢数据。
     dedup_conflicts: int = 0
+    #: 上游 `str` 字段为空、因而没有任何可展示文本的条数。
+    #: 2026-09-02 实测：地图页的魔血词缀（`scourgeup` / `scourgedown`）在 POEDB
+    #: 载荷里就是 `"str": ""`——不是抽取器丢了，是上游没给。
+    #: 这类行**不入库**：一条没有文本的词缀当不了证据，渲染进卡片就是一张空行，
+    #: 而出口闸门的数值回填校验又要拿证据原文比对。与怪物词缀那 63 条
+    #: 「只有未翻译的内部 stat id」同一条规矩，按成因登记进台账而不是硬塞。
+    textless: int = 0
     categories: dict[str, int] = field(default_factory=dict)
     failures: list[tuple[str, str]] = field(default_factory=list)
     dup_samples: list[tuple[str, str, str]] = field(default_factory=list)
     conflict_samples: list[tuple[str, str, str]] = field(default_factory=list)
+    textless_samples: list[tuple[str, str]] = field(default_factory=list)
 
     @property
     def success_ratio(self) -> float:
-        """成功率只看「构建失败」，去重不算失败。"""
-        denom = self.total - self.deduped
+        """成功率只看「构建失败」，去重与上游空文本都不算失败。"""
+        denom = self.total - self.deduped - self.textless
         return self.succeeded / denom if denom else 0.0
 
     @property
@@ -557,6 +565,14 @@ def extract_mods(
                 )
             except Exception as exc:
                 stats.fail(f"{category}[{idx}]", f"{type(exc).__name__}: {exc}")
+                continue
+
+            # 上游没给文本的行不入库，理由见 `ModExtractStats.textless`。
+            # 放在去重之前：它们的 key 也可能互相撞，先挡掉才不会污染去重统计。
+            if not mod.text_zh.strip():
+                stats.textless += 1
+                if len(stats.textless_samples) < 10:
+                    stats.textless_samples.append((category, mod.name_zh))
                 continue
 
             if mod.key in seen:

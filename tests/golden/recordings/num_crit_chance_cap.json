@@ -2,13 +2,13 @@
   "format_version": 1,
   "case_id": "num_crit_chance_cap",
   "query": "暴击率上限是多少",
-  "recorded_at": "2026-09-02T10:41:56+08:00",
+  "recorded_at": "2026-09-03T15:24:49+08:00",
   "model": "glm-5.2",
   "tokens": {
-    "prompt": 16545,
-    "output": 101,
-    "reasoning": 53,
-    "total": 16646
+    "prompt": 17129,
+    "output": 78,
+    "reasoning": 38,
+    "total": 17207
   },
   "tool_calls": [
     "kb_search",
@@ -18,12 +18,12 @@
   "out_of_scope": false,
   "precision_route": "",
   "gap_answer": "",
-  "final_answer": "〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕这个值是 Path of Building 硬编码的（`CritChanceCap` 的基础值就是 100），而非社区常说的 95%[[E9]]。\n\n> 只算暴击率与**平均伤害倍率**（不需要伤害数值），不算 DPS——这一击有多大要 PoB 的 effectiveness 公式与整条攻击链，本库刻意没有伤害列；也不含幸运暴击、命中判定与暴击对异常的加成\n\n> **括号内的百分比是该档在同组内的生成权重占比**，不等于任何通货或具体工艺的一次使用成功率，也不等于期望消耗。\n\n> 检索以降级通道完成（fts）：向量检索与重排未启用（网关无 embedding 模型），当前走 BM25 + 实体精确匹配",
+  "final_answer": "〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕Path of Building 在 `CritChanceCap` 中硬编码的基础值就是 100[[E9]]。\n\n> 只算暴击率与**平均伤害倍率**（不需要伤害数值），不算 DPS——这一击有多大要 PoB 的 effectiveness 公式与整条攻击链，本库刻意没有伤害列；也不含幸运暴击、命中判定与暴击对异常的加成\n\n> **括号内的百分比是该档在同组内的生成权重占比**，不等于任何通货或具体工艺的一次使用成功率，也不等于期望消耗。\n\n> 检索以降级通道完成（fts）：向量检索与重排未启用（网关无 embedding 模型），当前走 BM25 + 实体精确匹配",
   "blocked_claims": 1,
-  "elapsed_ms": 3348,
-  "evidence_fingerprint": "sha256:0238e764a2e9ef043b8cef82c8a23fb8",
+  "elapsed_ms": 2466,
+  "evidence_fingerprint": "sha256:75c852a716aaf20589cb132fec66e23b",
   "_warning": "raw_answer 是未过出口闸门的模型原文，含可能无据的断言，不得当作事实引用",
-  "raw_answer": "暴击率上限是 **100%**。这个值是 Path of Building 硬编码的（`CritChanceCap` 的基础值就是 100），而非社区常说的 95%[[E9]]。",
+  "raw_answer": "暴击率上限是 **100%**，并非社区常说的 95%。Path of Building 在 `CritChanceCap` 中硬编码的基础值就是 100[[E9]]。",
   "evidence": [
     {
       "label": "E1",
@@ -85,7 +85,7 @@
       "url": "https://poedb.tw/cn/Corvine_Charm#ModifiersCalc",
       "source": "POEDB",
       "source_priority": 1,
-      "text": "# 暗鸦咒符 · AnimalCharmAdditionalCriticalStrikeChanceAtMaximumPowerCharges\n底材类别：暗鸦咒符 ｜ 词缀组：AnimalCharmAdditionalCriticalStrikeChanceAtMaximumPowerCharges ｜ 类型：前缀 ｜ 来源渠道：1 个\n\n本词缀组在该底材上共 2 条，来自 1 个来源：Base。\n互斥规则：与本组（AnimalCharmAdditionalCriticalStrikeChanceAtMaximumPowerCharges）有相同词缀组的其他词缀不能同时存在于一件装备上。\n\n## Base · 前缀 · 2 档\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/2 | 暗影大师的 | 当暴击球达到上限时，+(0.61-1)% 暴击率 | 60 | 250（0.9244%） |\n| T2/2 | 暗影大师的 | 当暴击球达到上限时，+(0.4-0.6)% 暴击率 | 1 | 500（1.8488%） |\n\n置信度说明：\n- T 级按 POEDB 的算法推导——在同一来源类别与词缀组内，把物品等级去重后降序排名，物品等级最高者为 T1（算法已复刻并通过不变量校验）\n\n来源：POEDB → 暗鸦咒符 · AnimalCharmAdditionalCriticalStrikeChanceAtMaximumPowerCharges\nhttps://poedb.tw/cn/Corvine_Charm#ModifiersCalc",
+      "text": "# 暗鸦咒符 · AnimalCharmAdditionalCriticalStrikeChanceAtMaximumPowerCharges\n底材类别：暗鸦咒符 ｜ 词缀组：AnimalCharmAdditionalCriticalStrikeChanceAtMaximumPowerCharges ｜ 类型：前缀 ｜ 来源渠道：1 个\n\n本词缀组在该底材上共 2 条，来自 1 个来源：Base。\n互斥规则：与本组（AnimalCharmAdditionalCriticalStrikeChanceAtMaximumPowerCharges）有相同词缀组的其他词缀不能同时存在于一件装备上。\n\n## Base · 前缀 · 2 档\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/2 | 刺客大师的 | 当暴击球达到上限时，+(0.61-1)% 暴击率 | 60 | 250（0.9244%） |\n| T2/2 | 刺客大师的 | 当暴击球达到上限时，+(0.4-0.6)% 暴击率 | 1 | 500（1.8488%） |\n\n置信度说明：\n- T 级按 POEDB 的算法推导——在同一来源类别与词缀组内，把物品等级去重后降序排名，物品等级最高者为 T1（算法已复刻并通过不变量校验）\n\n来源：POEDB → 暗鸦咒符 · AnimalCharmAdditionalCriticalStrikeChanceAtMaximumPowerCharges\nhttps://poedb.tw/cn/Corvine_Charm#ModifiersCalc",
       "can_support_facts": true,
       "claim_scope": "general",
       "claim_data": {}
@@ -98,7 +98,7 @@
       "url": "https://poedb.tw/cn/Lupine_Charm#ModifiersCalc",
       "source": "POEDB",
       "source_priority": 1,
-      "text": "# 幽狼咒符 · AnimalCharmAdditionalCriticalStrikeChanceAtMaximumPowerCharges\n底材类别：幽狼咒符 ｜ 词缀组：AnimalCharmAdditionalCriticalStrikeChanceAtMaximumPowerCharges ｜ 类型：前缀 ｜ 来源渠道：1 个\n\n本词缀组在该底材上共 2 条，来自 1 个来源：Base。\n互斥规则：与本组（AnimalCharmAdditionalCriticalStrikeChanceAtMaximumPowerCharges）有相同词缀组的其他词缀不能同时存在于一件装备上。\n\n## Base · 前缀 · 2 档\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/2 | 暗影大师的 | 当暴击球达到上限时，+(0.61-1)% 暴击率 | 60 | 250（0.9016%） |\n| T2/2 | 暗影大师的 | 当暴击球达到上限时，+(0.4-0.6)% 暴击率 | 1 | 500（1.8031%） |\n\n置信度说明：\n- T 级按 POEDB 的算法推导——在同一来源类别与词缀组内，把物品等级去重后降序排名，物品等级最高者为 T1（算法已复刻并通过不变量校验）\n\n来源：POEDB → 幽狼咒符 · AnimalCharmAdditionalCriticalStrikeChanceAtMaximumPowerCharges\nhttps://poedb.tw/cn/Lupine_Charm#ModifiersCalc",
+      "text": "# 幽狼咒符 · AnimalCharmAdditionalCriticalStrikeChanceAtMaximumPowerCharges\n底材类别：幽狼咒符 ｜ 词缀组：AnimalCharmAdditionalCriticalStrikeChanceAtMaximumPowerCharges ｜ 类型：前缀 ｜ 来源渠道：1 个\n\n本词缀组在该底材上共 2 条，来自 1 个来源：Base。\n互斥规则：与本组（AnimalCharmAdditionalCriticalStrikeChanceAtMaximumPowerCharges）有相同词缀组的其他词缀不能同时存在于一件装备上。\n\n## Base · 前缀 · 2 档\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/2 | 刺客大师的 | 当暴击球达到上限时，+(0.61-1)% 暴击率 | 60 | 250（0.9016%） |\n| T2/2 | 刺客大师的 | 当暴击球达到上限时，+(0.4-0.6)% 暴击率 | 1 | 500（1.8031%） |\n\n置信度说明：\n- T 级按 POEDB 的算法推导——在同一来源类别与词缀组内，把物品等级去重后降序排名，物品等级最高者为 T1（算法已复刻并通过不变量校验）\n\n来源：POEDB → 幽狼咒符 · AnimalCharmAdditionalCriticalStrikeChanceAtMaximumPowerCharges\nhttps://poedb.tw/cn/Lupine_Charm#ModifiersCalc",
       "can_support_facts": true,
       "claim_scope": "general",
       "claim_data": {}

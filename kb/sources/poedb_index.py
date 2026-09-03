@@ -17,6 +17,8 @@ import logging
 import re
 from dataclasses import dataclass, field
 
+from selectolax.parser import HTMLParser
+
 from kb.fetcher import Fetcher
 
 logger = logging.getLogger(__name__)
@@ -112,17 +114,67 @@ class HarvestStats:
     failures: list[tuple[str, str]] = field(default_factory=list)
 
 
-def discover_mod_class_pages(fetcher: Fetcher, *, force: bool = False) -> list[str]:
-    """从词缀枢纽页提取全部「底材类别」页 slug（实测 101 个）。
+#: 枢纽页 `<li>` 里指向站点功能而非游戏内容的链接。只排除这一个，
+#: 其余「看着像索引页」的一律留在残差里由抽取器判定——见 `HubCandidate`。
+_HUB_NON_CONTENT_SLUGS: frozenset[str] = frozenset({"patreon"})
 
-    不硬编码清单：POEDB 新增底材类别（新联盟常见）时能自动跟上。
+_HUB_LI_LINK = re.compile(r"^/cn/([A-Za-z_0-9%\-]+)(#ModifiersCalc)?$")
+
+
+@dataclass(frozen=True)
+class HubCandidate:
+    """枢纽页上**没有** `#ModifiersCalc` 片段、也不属于已知索引页的链接。
+
+    为什么需要它（2026-09-02 实测）：枢纽页 147 个 `<li>` 链接里只有 **101 个**
+    带该片段，而地图词缀五页与已入库的
+    `Mavens_Invitation%3A_The_Feared#ModifiersCalc` 是**并排的兄弟节点**，
+    只是被写成了不带片段的形式：
+
+        <li><a href="/cn/Mavens_Invitation%3A_The_Feared#ModifiersCalc">…</a></li>
+        <li><a href="/cn/Maps_low_tier">异界地图(Low)</a></li>
+
+    于是 `discover_mod_class_pages` 的正则把它们静默丢掉，地图 / 保险箱 /
+    六分仪 / 瓦尔容器的词缀**一条都没入库**（`mod_affix` 74 个 item class 里
+    这几类全部为 0），而「地图词缀有哪些」在评测里被记成**检索缺口**——
+    读起来像是上游没有这份数据，实际是我们从没去看过那几页。
+
+    旧代码唯一的守卫是「一个都没发现就报错」：它拦得住整页改版，
+    **拦不住少认了 46 个**。这正是本项目反复记的那条——
+    `if not slugs` 这种全量守卫对**部分漏掉**是瞎的。
+
+    残差 = `<li>` 链接 − 带片段的 − `INDEX_PAGES` − `PARENT_CLASS_PAGES`
+    − 站点功能链接。**刻意不再列第二份「哪些页有词缀」的硬编码清单**：
+    那份清单与枢纽页迟早分叉，而分叉的方向恰好就是这次这种「静默少认」。
+    页面到底有没有词缀，由抽取器拿 `new ModsView(` 载荷判定——
+    `declared=False` 的页取不到载荷是**正常结果**（它本来就可能只是索引页），
+    不是 `declared=True` 那种「声明了有却找不到」的结构告警。
     """
+
+    slug: str
+    label_zh: str
+
+
+def _fetch_hub(fetcher: Fetcher, *, force: bool) -> str:
     res = fetcher.fetch(f"{BASE}/{MODIFIERS_HUB}", force=force)
     if not res.ok:
         raise RuntimeError(f"取词缀枢纽页失败 HTTP {res.status_code}")
-    slugs = sorted({
-        m for m in re.findall(r'href="/cn/([A-Za-z_0-9%\-]+)#ModifiersCalc"', res.text)
-    })
+    return res.text
+
+
+def discover_mod_class_pages(fetcher: Fetcher, *, force: bool = False) -> list[str]:
+    """从词缀枢纽页提取**声明了**词缀区块的「底材类别」页 slug（实测 101 个）。
+
+    不硬编码清单：POEDB 新增底材类别（新联盟常见）时能自动跟上。
+
+    注意它只认带 `#ModifiersCalc` 片段的写法——枢纽页上还有一批**不带片段
+    但确实有词缀**的页，那些由 `discover_candidate_mod_pages` 负责，
+    原因见 `HubCandidate`。
+    """
+    return _declared_mod_pages(_fetch_hub(fetcher, force=force))
+
+
+def _declared_mod_pages(html: str) -> list[str]:
+    slugs = sorted(set(re.findall(r'href="/cn/([A-Za-z_0-9%\-]+)#ModifiersCalc"', html)))
     if not slugs:
         raise RuntimeError(
             "枢纽页未发现任何 #ModifiersCalc 链接，POEDB 结构可能已变更；"
@@ -130,6 +182,32 @@ def discover_mod_class_pages(fetcher: Fetcher, *, force: bool = False) -> list[s
         )
     logger.info("发现 %d 个词缀类别页", len(slugs))
     return slugs
+
+
+def discover_candidate_mod_pages(
+    fetcher: Fetcher, *, force: bool = False
+) -> list[HubCandidate]:
+    """枢纽页上未被片段声明、也未被已知索引页认领的残差链接（实测 22 个）。
+
+    这些是「可能有词缀但从没被抓过」的候选，判定权交给抽取器，理由见 `HubCandidate`。
+    """
+    return _candidate_mod_pages(_fetch_hub(fetcher, force=force))
+
+
+def _candidate_mod_pages(html: str) -> list[HubCandidate]:
+    declared = set(re.findall(r'href="/cn/([A-Za-z_0-9%\-]+)#ModifiersCalc"', html))
+    known = {p.slug for p in INDEX_PAGES} | set(PARENT_CLASS_PAGES)
+    seen: dict[str, str] = {}
+    for node in HTMLParser(html).css("li a"):
+        matched = _HUB_LI_LINK.match(str(node.attributes.get("href") or "").strip())
+        if matched is None:
+            continue
+        slug = matched.group(1)
+        if slug in declared or slug in known or slug in _HUB_NON_CONTENT_SLUGS:
+            continue
+        seen.setdefault(slug, node.text(strip=True))
+    logger.info("枢纽页残差链接 %d 个（未声明词缀区块、也不是已知索引页）", len(seen))
+    return [HubCandidate(slug=s, label_zh=seen[s]) for s in sorted(seen)]
 
 
 def harvest(
@@ -149,11 +227,16 @@ def harvest(
     # 权威英文名只在英文版上，漏抓它就等于 L2 补全跑不了离线。
     targets: list[tuple[str, str, str]] = [(p.slug, p.category, BASE) for p in INDEX_PAGES]
     if include_mod_pages:
-        for slug in discover_mod_class_pages(fetcher, force=force):
+        hub = _fetch_hub(fetcher, force=force)
+        for slug in _declared_mod_pages(hub):
             targets.append((slug, "装备/词缀", BASE))
         # 父级类别页：唯一装备列表只在这些不带属性后缀的页面上
         for slug in PARENT_CLASS_PAGES:
             targets.append((slug, "装备/类别传奇", BASE))
+        # 残差候选页：枢纽页列了但没声明词缀区块的（地图 / 保险箱 / 六分仪 …）。
+        # 抓下来才能离线判定它到底有没有词缀，理由见 `HubCandidate`。
+        for candidate in _candidate_mod_pages(hub):
+            targets.append((candidate.slug, "装备/词缀候选", BASE))
     # 英文语言版索引页：权威英文名与英文底材名的来源
     targets.append(("Unique_item", "装备/英文名", EN_BASE))
 
