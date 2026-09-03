@@ -79,6 +79,15 @@ PoB Community 的 PoE1 版（库里 `game_version` 全是 `3.29`；POE2 用 0.x 
   放宽只到「续写」为止：普通句子、链式继承（跟着上一个列表项）、`>` 引用块都不继承。
   逐条看完 42 句候选之后只有「引导句 + 清单」是真的续写，其余拦得对
   （判据见 `binding._is_list_lead_in` / `_list_lead_in`）。
+  **第六十一轮补上第三种：纯标签引导句下的清单，继承本小节的绑定**
+  （`binding._section_binding`）。模型的自然写法是把标记放在小节标题上，
+  正文清单跟在一个 `**词缀文本：**` 这样的纯标签后面——那个标签**自己通过**
+  校验（加粗标签豁免）却没有编号可给清单，于是 `_list_lead_in` 在它那里停住、
+  整份正文被判无据（实测 `desc_map_mods` 31 句拦 27 句，**表格活下来、
+  词缀文本全没了**）。边界是**只穿过结构行**（空行 / 表格行 / 纯标签），
+  碰到散文就停——所以它不是「往前数到有标记为止」，更不是第三十九轮被否掉的
+  「整行带标记就全继承」。离线重放 152 条录制：**放行 20 句、新增拦截 0 句**，
+  确定误拦仍为 0，引用有效率 68% → 71%。
 - **排版单位内部不分句**：绑定标记 `[[E1;E2]]` 与 **Markdown 加粗跨度 `**…**`**
   都不在内部切。理由是同一条：切开会让标记与它的句子分家——
   `**能。多重投射(辅) 可以辅助冰霜脉冲。**[[E9]]` 在 `。` 上切会得到三段，
@@ -134,7 +143,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 1364 项，秒级
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 1370 项，秒级
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选
