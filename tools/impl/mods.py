@@ -286,6 +286,179 @@ def mod_tiers(item_class: str, mod_query: str, source: str | None = None) -> Too
     )
 
 
+# ── 工具 1b：某底材类别上一共有哪些词缀（总量与分布）─────────────────
+
+#: 词缀组清单一次最多列几组。静默截断等同于漏答，超出必须写出还剩多少。
+MAX_SUMMARY_GROUPS = 25
+
+
+def _render_class_summary(
+    class_zh: str, scope: str, url: str, total: int, distinct_groups: int,
+    by_source: list[dict[str, Any]], by_gen: list[dict[str, Any]],
+    shown: list[dict[str, Any]], ladders_total: int, remaining: int,
+) -> str:
+    """总览证据。
+
+    **三个数字必须各自叫对名字**：词缀条数、`correct_group` 去重后的词缀组数、
+    以及梯度条目数（词缀组 × 来源渠道 × 生成位）。实测异界地图是
+    361 / 99 / 101——把后两个混成一个「词缀组数」就是一个说不清出处的数字，
+    而它恰好长得很像对的。T 级只在同一个梯度内可比，所以清单按梯度列。
+    """
+    lines = [
+        f"# {class_zh} 的词缀总览",
+        f"统计范围：{scope}。",
+        f"本库共 **{total} 条**词缀、**{distinct_groups} 个**词缀组，"
+        f"分成 **{ladders_total} 个**梯度（词缀组 × 来源渠道 × 生成位）。",
+        "",
+        "## 按来源渠道",
+        "| 来源渠道 | 词缀条数 | 词缀组数 |",
+        "| --- | --- | --- |",
+    ]
+    lines += [f"| {r['label']} | {r['rows']} | {r['groups']} |" for r in by_source]
+    lines += ["", "## 按生成位", "| 生成位 | 词缀条数 |", "| --- | --- |"]
+    lines += [f"| {r['label']} | {r['rows']} |" for r in by_gen]
+    lines += ["", f"## 梯度清单（列 {len(shown)} 个，按档数降序）",
+              "| 词缀组 | 生成位 | 来源渠道 | 档数 |", "| --- | --- | --- | --- |"]
+    lines += [
+        f"| {r['group']} | {r['gen_label']} | {r['label']} | {r['rows']} |"
+        for r in shown
+    ]
+    if remaining:
+        lines += ["", f"（以上仅列 {len(shown)} 个梯度，还有 {remaining} 个未列出）"]
+    lines += ["", f"来源：POEDB → {class_zh}", url]
+    return "\n".join(lines)[:MAX_EVIDENCE_CHARS]
+
+
+@REGISTRY.register(
+    name="mod_class_summary",
+    description=(
+        "查某个底材类别上**一共有哪些词缀**：总条数、词缀组数、按来源渠道"
+        "（掉落池 / 精华 / 工艺台 / 腐化 …）与前后缀的分布，外加词缀组清单。"
+        "问「X 有哪些词缀 / X 的词缀一共多少条 / X 的词缀池多大」时用它。\n"
+        "**它给的是总量与分布，不是逐条数值**——某一条词缀的 T 级梯度与权重用 "
+        "`mod_tiers`。清单超出上限时返回里带 truncated 与剩余组数。"
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "item_class": {
+                "type": "string",
+                "description": "底材类别，中文名或 POEDB 页面名，如「异界地图」「腰带」"
+                "「胸甲」。护甲类中文名会对应多个页面，工具会全查并说明",
+            },
+            "source": {
+                "type": "string",
+                "description": "可选，限定来源渠道，如「Base」「精华」「腐化」。不填则统计全部",
+            },
+        },
+        "required": ["item_class"],
+        "additionalProperties": False,
+    },
+)
+def mod_class_summary(item_class: str, source: str | None = None) -> ToolResult:
+    """总量与分布。
+
+    为什么单独开一个工具而不让 `kb_search` 干：**它答不了「一共有多少」**。
+    `kb_search` 是相关度检索，`top_k` 之外的低分项按设计丢掉（实测每次命中 20 条、
+    只把 8 条给模型），所以它既不知道总数、也不该报「截断」——报了就是每答必喊狼来了。
+    而 `mod_tiers` 要求同时给 `item_class` 与 `mod_query`，答的是**某一条**词缀的梯度。
+
+    于是「地图词缀有哪些」这类问题落在两者中间：2026-09-03 实测那一轮的答案里，
+    模型自己写了「本库共 361 条，本次证据只覆盖 4 条」——**一句完全正确的话，
+    因为不在任何证据里而被出口闸门拦掉**，用户看到 4 条词缀却不知道还有 357 条。
+    这个工具把那个总数变成**可引用的证据**，顺带走 `_answer_notes` 已有的截断附注。
+    """
+    conn = dbmod.get_conn()
+    pages, scope = _resolve_pages(conn, item_class)
+    if not pages:
+        return ToolResult(
+            ok=True,
+            data={"found": False, "reason": scope, "known_classes": _known_classes(conn)},
+        )
+
+    where = f"item_class_page IN ({','.join('?' * len(pages))})"
+    args: list[Any] = list(pages)
+    if source:
+        where += " AND (category = ? OR category_label = ?)"
+        args += [source, source]
+
+    total, groups = conn.execute(
+        f"SELECT count(*), count(DISTINCT correct_group) FROM mod_affix WHERE {where}",
+        args,
+    ).fetchone()
+    if not total:
+        return ToolResult(
+            ok=True,
+            data={"found": False,
+                  "reason": f"{scope} 上没有词缀"
+                            + (f"（来源限定 {source}）" if source else "")},
+        )
+
+    by_source = [
+        {"channel": r[0], "label": r[1] or r[0], "rows": r[2], "groups": r[3]}
+        for r in conn.execute(
+            f"SELECT category, category_label, count(*), count(DISTINCT correct_group) "
+            f"FROM mod_affix WHERE {where} GROUP BY category, category_label "
+            f"ORDER BY count(*) DESC", args)
+    ]
+    by_gen = [
+        {"gen": r[0], "label": r[1] or "其他", "rows": r[2]}
+        for r in conn.execute(
+            f"SELECT gen_type, gen_label, count(*) FROM mod_affix WHERE {where} "
+            f"GROUP BY gen_type, gen_label ORDER BY count(*) DESC", args)
+    ]
+    all_groups = [
+        {"group": r[0] or "未分组", "gen_label": r[1] or "其他",
+         "label": r[2] or r[3], "rows": r[4]}
+        for r in conn.execute(
+            f"SELECT correct_group, gen_label, category_label, category, count(*) "
+            f"FROM mod_affix WHERE {where} "
+            f"GROUP BY correct_group, gen_label, category_label, category "
+            f"ORDER BY count(*) DESC, correct_group", args)
+    ]
+    shown = all_groups[:MAX_SUMMARY_GROUPS]
+    remaining = len(all_groups) - len(shown)
+    head = conn.execute(
+        f"SELECT url, item_class_zh FROM mod_affix WHERE {where} AND url <> '' LIMIT 1", args
+    ).fetchone()
+    url = head[0] if head else ""
+    # 类别名取**库里的**中文名，不用用户输入的写法：他可能给的是页面 slug
+    # （`Maps_top_tier`），照抄进证据标题会让引用读起来像另一件东西。
+    class_zh = (head[1] if head and head[1] else item_class.strip()) or item_class
+
+    return ToolResult(
+        ok=True,
+        data={
+            "found": True,
+            "scope": scope,
+            "pages_searched": pages,
+            "mods_total": total,
+            # 三个数字各自叫对名字，理由见 `_render_class_summary`
+            "distinct_groups": groups,
+            "ladders_total": len(all_groups),
+            "by_source": by_source,
+            "by_gen": by_gen,
+            "groups": shown,
+            # `_answer_notes` 认的是这三个键，命名照它来——附注由代码生成，
+            # 模型转述这类数字只能无绑定地说，然后被自己的闸门拦掉。
+            "total": len(all_groups),
+            "returned": len(shown),
+            "truncated": bool(remaining),
+        },
+        citations=[
+            _citation(
+                cid=f"mod_class_summary:{'+'.join(pages)}:{source or 'all'}",
+                title=f"{class_zh} 的词缀总览（共 {total} 条）",
+                url=url,
+                text=_render_class_summary(
+                    class_zh, scope, url, total, groups, by_source, by_gen,
+                    shown, len(all_groups), remaining),
+            )
+        ],
+        meta={"channel": "structured", "table": "mod_affix"},
+    )
+
+
 # ── 工具 2：一条词缀能从哪些渠道获得 ──────────────────────────────
 
 @REGISTRY.register(
