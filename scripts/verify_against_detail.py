@@ -32,33 +32,6 @@ from kb.sources.poedb_unique import compare_detail, parse_detail_page  # noqa: E
 SAMPLE_SEED = 20260804
 
 
-def _record_gap(conn, question: str, missing_point: str, category: str) -> None:  # noqa: ANN001
-    """把核对发现的缺口记进台账。
-
-    为什么核对脚本要写台账：差异不是「跑完看一眼」就算了的事。按设计，
-    每条缺据都要进 `knowledge_gap`，按命中次数排序即成为后续采集优先级
-    （需求 1.3）。只打印在终端里，下次就没人记得了。
-    """
-    # 与 orchestrator/loop._record_gaps 用同一种 upsert：两处写同一张表，
-    # 语义分叉会让 hit_count 的含义取决于是谁写的。
-    # `source='verify'`：核对脚本的写入不是用户流量。`GAP_SOURCES` 早就声明了这一档，
-    # 却一直没人写——于是 `COALESCE(source,'chat')` 把脚本自己的发现算成了用户在问
-    # （第三十一轮补，和四个导入脚本的 `source='import'` 是同一处漏）。
-    conn.execute(
-        """
-        INSERT INTO knowledge_gap(question, missing_point, guessed_category,
-                                  source, hit_count, first_seen, last_seen)
-        VALUES (?,?,?,'verify',1,datetime('now'),datetime('now'))
-        ON CONFLICT(question, missing_point) DO UPDATE SET
-            hit_count = hit_count + 1,
-            last_seen = datetime('now'),
-            guessed_category = COALESCE(excluded.guessed_category,
-                                        knowledge_gap.guessed_category)
-        """,
-        (question, missing_point, category),
-    )
-
-
 def _load_entities(conn, slugs: list[str], count: int) -> list[dict]:
     if slugs:
         placeholders = ",".join("?" * len(slugs))
@@ -165,14 +138,21 @@ def main() -> int:
             diffs.append(
                 f"详情页有而列表页缺 {len(diff.detail_only)} 条: {list(diff.detail_only[:3])}"
             )
-            # 详情页有、我们没有 → 真实缺口，记台账驱动后续合并
-            for m in diff.detail_only:
-                _record_gap(
-                    conn,
-                    f"{ent['name_zh']}（{ent['slug']}）的完整词缀",
-                    f"详情页有而列表页没有的词条：{m}",
-                    "unique_item/detail_only_mod",
-                )
+        # 详情页有、我们没有 → 真实缺口，记台账驱动后续合并。
+        #
+        # **无条件登记，哪怕这一件没有差异**：`record_ingest_gaps` 按
+        # (question, kind, source) 整组替换，所以修好之后重跑本脚本会把旧行清掉。
+        # 先前这一段裹在 `if diff.detail_only:` 里，于是第三十四轮把词条合并进库之后，
+        # 那些早已修掉的行**永远留在台账里**——实测 11 条挂在「真实用户缺口」的头部，
+        # 而且因为旧的那份 UPSERT 在 `ON CONFLICT` 时不更新 `source`，
+        # 它们一直被算成 `chat`（用户流量），把采集优先级带偏。
+        dbmod.record_ingest_gaps(
+            conn,
+            question=f"{ent['name_zh']}（{ent['slug']}）的完整词缀",
+            category="unique_item/detail_only_mod",
+            points=[(f"详情页有而列表页没有的词条：{m}", 1) for m in diff.detail_only],
+            source="verify",
+        )
 
         print(f"    词缀：列表 {len(list_mods)} 条 / 详情 {len(detail.factual_mod_texts)} 条")
         print(f"    英文名（详情页权威）：{detail.name_en or '(未取到)'}")

@@ -511,3 +511,90 @@ class CoverageNoteTest(unittest.TestCase):
         self.assertEqual(
             conn.execute("SELECT kind FROM knowledge_gap WHERE question='real'")
             .fetchone()[0], "ingest_gap", "真待办不能被误伤")
+
+
+class VerifySourceTest(unittest.TestCase):
+    """核对脚本的发现要归到 `verify`，而且要能退场（第六十四轮）。
+
+    这是「测量工具本身失真」的第四次，也是第三十/三十一轮那两次的**残留**：
+
+    `scripts/verify_against_detail.py` 的 INSERT 里第三十一轮就带上了
+    `source='verify'`，但它那份 UPSERT 的 `ON CONFLICT` 子句**没有更新 source**，
+    于是第三十一轮之前建的行永远停在 `chat` 上。实测两条后果都很具体：
+    台账里 `source='verify'` **一行都没有**；而「排除评测流量后的真实用户缺口」
+    头部 11 条全是这个脚本的输出——它们在第三十四轮详情页合并时就已经修掉了。
+    """
+
+    def setUp(self) -> None:
+        self.conn = _conn(_NEW_SCHEMA)
+
+    def tearDown(self) -> None:
+        self.conn.close()
+
+    def _write(self, points: list[tuple[str, int]], source: str = "verify") -> int:
+        return dbmod.record_ingest_gaps(
+            self.conn, question="索魂钩（The_Wellhook）的完整词缀",
+            category="unique_item/detail_only_mod", points=points, source=source,
+        )
+
+    def _rows(self, source: str | None = None) -> list[sqlite3.Row]:
+        sql = "SELECT missing_point, source, kind FROM knowledge_gap"
+        args: tuple = ()
+        if source:
+            sql += " WHERE source=?"
+            args = (source,)
+        return self.conn.execute(sql + " ORDER BY missing_point", args).fetchall()
+
+    def test_来源标verify(self) -> None:
+        self._write([("详情页有而列表页没有的词条：可以钓到深渊鱼", 1)])
+        self.assertEqual(["verify"], [r["source"] for r in self._rows()])
+
+    def test_修好之后整组退场(self) -> None:
+        """**这条是本轮的核心**：脚本现在**无条件**登记，
+        所以词条合并进库、`detail_only` 变空之后，重跑就把旧行清掉。
+        先前那段裹在 `if diff.detail_only:` 里，于是修好的行永远留在台账里。"""
+        self._write([("详情页有而列表页没有的词条：不可改变", 1)])
+        self.assertEqual(1, len(self._rows()))
+        self._write([])                      # 已合并 → 没有差异了
+        self.assertEqual([], self._rows())
+
+    def test_不动同一问题下别的来源(self) -> None:
+        """整组替换的粒度是 (question, kind, source)，越界会互相清空。"""
+        self._write([("详情页有而列表页没有的词条：A", 1)], source="import")
+        self._write([("详情页有而列表页没有的词条：B", 1)], source="verify")
+        self.assertEqual(1, len(self._rows("import")))
+        self.assertEqual(1, len(self._rows("verify")))
+
+    def test_迁移把历史行从chat改判为verify(self) -> None:
+        self.conn.execute(
+            "INSERT INTO knowledge_gap(question, missing_point, guessed_category, "
+            "kind, source, hit_count, first_seen, last_seen) VALUES "
+            "('索魂钩（The_Wellhook）的完整词缀','详情页有而列表页没有的词条：可以钓到深渊鱼',"
+            " 'unique_item/detail_only_mod','retrieval_gap','chat',7,"
+            " datetime('now'), datetime('now'))"
+        )
+        dbmod._migrate_gap_verify_source(self.conn)
+        row = self._rows()[0]
+        self.assertEqual("verify", row["source"])
+        self.assertEqual("ingest_gap", row["kind"])
+        # 只改归属不动命中次数——台账是审计记录
+        self.assertEqual(
+            7, self.conn.execute("SELECT hit_count FROM knowledge_gap").fetchone()[0]
+        )
+
+    def test_第三十一轮那条迁移不许把verify改回import(self) -> None:
+        """**回归**：那条 UPDATE 的注释写着「`ingest_gap` 只有采集/导入脚本会写，
+        所以这个判据是充分的」——核对脚本也开始写 `ingest_gap` 之后那句话就不成立了。
+        而它每次 `init_db` 都跑，实测会把刚改对的 11 条一路改回 `import`。"""
+        self.conn.execute(
+            "INSERT INTO knowledge_gap(question, missing_point, kind, source, hit_count, "
+            "first_seen, last_seen) "
+            "VALUES ('索魂钩的完整词缀','详情页有而列表页没有的词条：X','ingest_gap','verify',1,"
+            " datetime('now'), datetime('now'))"
+        )
+        dbmod._migrate_gap_source(self.conn)
+        self.assertEqual("verify", self._rows()[0]["source"])
+
+
+if __name__ == "__main__":  # pragma: no cover
+    unittest.main()

@@ -143,7 +143,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 1386 项，秒级
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 1391 项，秒级
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选
@@ -1088,6 +1088,24 @@ Lua 后者覆盖前者，解析器同样取后者——**行号锚点也因此�
 第三条正是第三十轮修评测流量时漏掉的另一半——`COALESCE(source,'chat')`
 把脚本自己的写入算成了用户在问。迁移**只改归属不动 `hit_count`**：那些数得由各自的
 导入脚本下次重写时纠正，在迁移里猜条数只会造出第二个失真的数。
+
+**第六十四轮发现那一轮只修了一半：`source='verify'` 一行都没有。**
+`scripts/verify_against_detail.py` 的 INSERT 里确实带着 `verify`，但它那份 UPSERT 的
+`ON CONFLICT` 子句**不更新 `source`**——于是第三十一轮之前建的行永远停在 `chat` 上，
+每次重跑只给它们 `hit_count` +1。实测后果：**「排除评测流量后的真实用户缺口」
+头部 11 条全是这个脚本的输出，而它们在第三十四轮详情页合并时就已经修掉了**
+（「不可改变」现在就在中规中矩的卡片上）。修完之后真实用户缺口只剩 **2 条**。
+
+同一处还有两个连带缺陷：
+
+- **那些行从来不会退场。** 登记裹在 `if diff.detail_only:` 里，所以「现在没有差异了」
+  这个事实永远写不进台账。改成**无条件**调 `record_ingest_gaps`（`points` 为空就是
+  整组清空），修好的自然消失——与四个导入脚本同一条路径。
+- **第三十一轮那条迁移会把 `verify` 改回 `import`。** 它的判据是
+  「`ingest_gap` 只有采集/导入脚本会写，所以这个判据是充分的」——**核对脚本也开始写
+  `ingest_gap` 之后那句话就不成立了**，而它每次 `init_db` 都跑（实测把刚改对的 11 条
+  一路改回去）。判据换成显式白名单：只认领没人认领的，不动别的脚本自己声明的来源。
+  **迁移里的注释也是一种因果结论，同样会过期。**
 
 一处数据缺口会直接影响判断：
 
