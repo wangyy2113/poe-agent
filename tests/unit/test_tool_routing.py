@@ -109,6 +109,32 @@ class PreferredRouteTest(unittest.TestCase):
             with self.subTest(q=q):
                 self.assertEqual("mod_tiers", loop._preferred_tool_route(q))
 
+    def test_总览问法路由到_mod_class_summary(self) -> None:
+        """「一共有哪些词缀」`kb_search` 答不了——它是相关度检索，
+        `top_k` 之外按设计丢掉，既不知道总数也说不出还剩多少。"""
+        for q in ("地图词缀有哪些", "腰带有哪些词缀", "异界地图的词缀一共有多少",
+                  "胸甲的词缀池有多大"):
+            with self.subTest(q=q):
+                self.assertEqual("mod_class_summary", loop._preferred_tool_route(q))
+
+    def test_具体梯度问法胜过总览问法(self) -> None:
+        """**成对点**：`mod_class_summary` 必须排在 `mod_tiers` 后面。
+        「…精华词缀有哪些**档位**」同时含「词缀有哪些」与「档位」，
+        它问的是某一条词缀的梯度——首个命中即返回，排错顺序就会被总览工具抢走
+        （实测被 `test_词缀阶梯问法不被抢走` 拦下过）。"""
+        for q in ("戒指上冰霜伤害提高的精华词缀有哪些档位",
+                  "腰带上的力量词缀一共有几档"):
+            with self.subTest(q=q):
+                self.assertEqual("mod_tiers", loop._preferred_tool_route(q))
+
+    def test_属性来源枚举不被总览抢走(self) -> None:
+        """`stat_sources` 问的是「某属性能从哪来」，跨渠道；总览问的是某底材的全貌。
+        两者都含「有哪些」，靠「词缀」这个词区分不开——所以总览的判据是
+        **「词缀」紧邻「有哪些」**，而属性题的说法是「渠道 / 来源」。"""
+        for q in ("法术压制能从哪些渠道获得", "闪避值有哪些来源"):
+            with self.subTest(q=q):
+                self.assertNotEqual("mod_class_summary", loop._preferred_tool_route(q))
+
     def test_enumeration_questions_route_to_stat_sources(self) -> None:
         for q in ("法术压制能从哪些渠道获得", "生命再生能从哪些渠道获得",
                   "闪避值有哪些来源"):

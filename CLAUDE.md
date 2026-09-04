@@ -143,7 +143,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 1374 项，秒级
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 1386 项，秒级
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选
@@ -160,7 +160,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 .venv/bin/python scripts/eval_run.py --record        # 重录真实响应（**要凭证、烧 token**）
 ```
 
-黄金问答集是 `tests/golden/questions.yaml`（144 条，六类），基线与全部结论在
+黄金问答集是 `tests/golden/questions.yaml`（145 条，六类），基线与全部结论在
 `tests/golden/BASELINE.md`——**动闸门前先读它**，里面记了多个已修缺陷与三条已知未修边界，
 以及两次「测量本身写错」的教训。
 
@@ -270,7 +270,8 @@ POE1/POE2 边界顺带落在同一张表上：poe.ninja 两款游戏都服务，
 `bench_recipe_catalog`（工艺台目录）→ `harvest_craft_catalog`（收获定向工艺目录与命能费用）→
 `essence_lookup`（精华物品本身：按名 / 按等阶 / 按有无等级上限枚举）→
 `metamod_interaction_matrix`（逐字矩阵单元格）→
-`mod_tiers`（T 级梯度）→ `skill_gem_levels`（宝石逐级字面值）→
+`mod_tiers`（T 级梯度）→ `mod_class_summary`（某底材上一共有哪些词缀：总量 / 分布 / 梯度清单）→
+`skill_gem_levels`（宝石逐级字面值）→
 `spectre_stats`（幽魂倍率 / 抗性 / 排名）→ `boss_skill_damage`（Boss 技能某等级打多少 / 穿透 / Uber 差异）→
 `passive_path`（点到某天赋要几点 + 逐节点路径）→
 `cluster_jewel_info`（星团珠宝尺寸 / 基石 / 是否在主树外）→
@@ -291,6 +292,19 @@ POE1/POE2 边界顺带落在同一张表上：poe.ninja 两款游戏都服务，
 手写「尚未采集 X」这类清单——那种句子在数据入库当天就变成假话，未采集声明应由
 `kb/coverage.py` 的 (inventory × status) 差集派生。枚举类工具静默截断等同于漏答，超出上限
 必须写出还剩多少。
+
+**`kb_search` 答不了「一共有多少」，而这件事第六十三轮才补上出口。** 它是相关度检索，
+`top_k` 之外按设计丢掉（实测每次命中 20 条、只把 `MAX_EVIDENCE=8` 条给模型），所以它
+既不知道总数、**也不该报截断**——`truncated` 一直挂着就等于每答必喊狼来了。
+而 `mod_tiers` 要求同时给 `item_class` 与 `mod_query`，答的是**某一条**词缀的梯度。
+「地图词缀有哪些」正落在两者中间：实测那一轮模型自己写了
+「本库共 361 条，本次证据只覆盖 4 条」——**一句完全正确的话，因为不在任何证据里
+而被出口闸门拦掉**，用户看到 4 条词缀、不知道还有 357 条。
+`mod_class_summary` 把总量与分布做成**可引用的证据**（361 条 / 99 个词缀组 /
+101 个梯度，三个数字各自叫对名字——混成一个「词缀组数」就是个说不清出处的数字），
+并复用 `_answer_notes` 已有的截断附注。它**必须排在 `mod_tiers` 后面**：
+首个命中即返回，而「…精华词缀有哪些**档位**」同时含两边的意图词，
+该归梯度工具（既有用例当场拦下过）。**具体梯度问法胜过总览问法。**
 
 ## 数据层
 

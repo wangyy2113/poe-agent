@@ -2,27 +2,28 @@
   "format_version": 1,
   "case_id": "desc_map_mods",
   "query": "地图词缀有哪些",
-  "recorded_at": "2026-09-03T15:24:46+08:00",
+  "recorded_at": "2026-09-04T17:15:34+08:00",
   "model": "glm-5.2",
   "tokens": {
-    "prompt": 16474,
-    "output": 1505,
-    "reasoning": 770,
-    "total": 17979
+    "prompt": 28927,
+    "output": 1905,
+    "reasoning": 518,
+    "total": 30832
   },
   "tool_calls": [
-    "kb_search"
+    "kb_search",
+    "mod_class_summary"
   ],
   "evidence_gap": false,
   "out_of_scope": false,
   "precision_route": "",
   "gap_answer": "",
-  "final_answer": "〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕---\n\n## 前缀词缀\n\n### 1. 合成的（MapUberModSynthMiniboss）[[E2]]\n\n| T 级 | 物品等级 | 生成权重 | 占比 |\n|---|---|---|---|\n| T1/1 | 1 | 50 | 3.2468% |\n\n**词缀文本：**\n〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕---\n\n### 2. 紧绷的（MapUberModVines）[[E3]]\n\n| T 级 | 物品等级 | 生成权重 | 占比 |\n|---|---|---|---|\n| T1/1 | 1 | 50 | 3.2468% |\n\n**词缀文本：**\n〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕---\n\n### 3. 压制的（MapMonstersChanceToSuppressSpells）[[E5]]\n\n| T 级 | 物品等级 | 生成权重 | 占比 |\n|---|---|---|---|\n| T1/1 | 1 | 60 | 3.8961% |\n\n**词缀文本：**\n〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕---\n\n## 后缀词缀\n\n### 4. 支配之（MapUberModShrineBuff）[[E7]]\n\n| T 级 | 物品等级 | 生成权重 | 占比 |\n|---|---|---|---|\n| T1/1 | 1 | 50 | 3.7037% |\n\n**词缀文本：**\n〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕---\n\n## 覆盖说明\n\n〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕如需查询更多词缀，建议提供更具体的筛选条件（如某条词缀文本片段、前缀/后缀、来源渠道等），以便精确检索。\n\n> **括号内的百分比是该档在同组内的生成权重占比**，不等于任何通货或具体工艺的一次使用成功率，也不等于期望消耗。\n\n> 检索以降级通道完成（fts, mod_intent）：向量检索与重排未启用（网关无 embedding 模型），当前走 BM25 + 实体精确匹配",
-  "blocked_claims": 27,
-  "elapsed_ms": 25193,
-  "evidence_fingerprint": "sha256:73cbcb40e9f5ba19e01cb45809367305",
+  "final_answer": "# 异界地图词缀总览\n\n异界地图（Maps）的词缀分布在 5 个 POEDB 页面上（Maps_low_tier、Maps_mid_tier、Maps_top_tier、Maps_uber_tier、Maps_old），本库共收录 **361 条词缀**，归入 **99 个词缀组**，构成 **101 个梯度**（词缀组 × 来源渠道 × 生成位）[[E9]]。\n\n---\n\n## 按来源渠道\n\n| 来源渠道 | 词缀条数 | 词缀组数 |\n|---|---|---|\n| Base（常规掉落池） | 301 | 88 |\n| 已腐化（Corrupted） | 55 | 11 |\n| 地心探索（Delve） | 5 | 1 |\n\n[[E9]]\n\n## 按生成位\n\n| 生成位 | 词缀条数 |\n|---|---|\n| 前缀 | 176 |\n| 后缀 | 130 |\n| 其他（已腐化隐式等） | 55 |\n\n[[E9]]\n\n---\n\n〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕以下仅列 25 个梯度，**还有 76 个未列出**[[E9]]：\n\n### Base · 前缀\n\n〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕### Base · 后缀\n\n〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕### Base · 前缀（地心探索来源）\n\n〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕### 已腐化 · 其他\n\n| 词缀组 | 档数 |\n|---|---|\n| MapCorruptBossCorrupt | 5 |\n| MapCorruptSideArea | 5 |\n| MapCorruptSoulGainPrevention | 5 |\n| MapCorruptVessel | 5 |\n| MapCorruptionAtlasEffect | 5 |\n| MapCorruptionRandomAtlasNotables | 5 |\n| MapCorruptionRandomScarab | 5 |\n| MapItemDropQuantity | 5 |\n| MapItemDropRarity | 5 |\n| MapModEffect | 5 |\n| MapPackSize | 5 |\n\n[[E9]]\n\n---\n\n## Uber 阶层（Maps_uber_tier）具体词缀示例\n\n〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕物品掉落数量 +13%、稀有度 +8%、怪物群规模 +20% | 50（3.2468%）[[E2]] |\n〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕物品掉落数量 +13%、稀有度 +8%、怪物群规模 +5%、地图总增 40% | 50（3.2468%）[[E3]] |\n〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕物品掉落数量 +13%、稀有度 +8%、怪物群规模 +5%、地图总增 35% | 60（3.8961%）[[E5]] |\n〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕物品掉落数量 +13%、稀有度 +8%、怪物群规模 +5%、地图总增 35% | 50（3.7037%）[[E7]] |\n\n---\n\n## 与地图修改相关的其他机制\n\n**Atlas 天赋树 · 往日遗骸（Remnants of the Past）**：14 阶以上地图的最终首领有 +3% 几率掉落裂界守卫地图，+3% 几率掉落塑界守卫地图[[E1]]。\n\n〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕无法修改菌潮地图或异界图鉴上位于虚空石插槽后方的地图[[E8]]。\n\n**唯一装备 · 扭转命运（Twist of Fate）**：与 Atlas 基石同名的小型雕像，效果完全一致——已腐化的稀有地图在打开时获得无法预测的修改并加 1-3 个额外随机词缀[[E6]]。\n\n〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕每拥有一个不同的恩典地图，地图中找到的地图就有 +1% 几率拥有特殊基底属性[[E4]]。\n\n---\n\n## 未覆盖说明\n\n- 上述梯度清单**仅列出 25 个，尚有 76 个词缀组未展开**[[E9]]。〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕\n\n> **本轮枚举被截断**：`mod_class_summary` 命中 101 项，只返回了 25 项。上面的清单不完整，剩余 76 项未列出——需要完整清单请缩小查询范围（指定底材类别或来源渠道）后再问。\n\n> **括号内的百分比是该档在同组内的生成权重占比**，不等于任何通货或具体工艺的一次使用成功率，也不等于期望消耗。\n\n> 检索以降级通道完成（fts, mod_intent）：向量检索与重排未启用（网关无 embedding 模型），当前走 BM25 + 实体精确匹配",
+  "blocked_claims": 15,
+  "elapsed_ms": 39917,
+  "evidence_fingerprint": "sha256:24b4b846f5ae0a7d0d0cfbe7d598262f",
   "_warning": "raw_answer 是未过出口闸门的模型原文，含可能无据的断言，不得当作事实引用",
-  "raw_answer": "根据检索到的证据，以下是目前能列出的**异界地图词缀**。需要注意的是，本知识库共采集了 **361 条**异界地图词缀，但本次检索到的证据仅覆盖其中 4 条，以下仅依据这些证据列出：\n\n---\n\n## 前缀词缀\n\n### 1. 合成的（MapUberModSynthMiniboss）[[E2]]\n\n| T 级 | 物品等级 | 生成权重 | 占比 |\n|---|---|---|---|\n| T1/1 | 1 | 50 | 3.2468% |\n\n**词缀文本：**\n- 地图首领伴随着一个虚空忆境首领\n- 该区域物品掉落数量提高 13%\n- 该地图的物品稀有度提高 8%\n- 怪物群规模扩大 20%\n\n**来源：** Base\n\n---\n\n### 2. 紧绷的（MapUberModVines）[[E3]]\n\n| T 级 | 物品等级 | 生成权重 | 占比 |\n|---|---|---|---|\n| T1/1 | 1 | 50 | 3.2468% |\n\n**词缀文本：**\n- 怪物击中时施加 2 缓速藤蔓\n- 该区域物品掉落数量提高 13%\n- 该地图的物品稀有度提高 8%\n- 怪物群规模扩大 5%\n- 区域内找到的地图总增 40%\n\n**来源：** Base\n\n---\n\n### 3. 压制的（MapMonstersChanceToSuppressSpells）[[E5]]\n\n| T 级 | 物品等级 | 生成权重 | 占比 |\n|---|---|---|---|\n| T1/1 | 1 | 60 | 3.8961% |\n\n**词缀文本：**\n- 怪物有 +100% 的几率压制法术伤害\n- 该区域物品掉落数量提高 13%\n- 该地图的物品稀有度提高 8%\n- 怪物群规模扩大 5%\n- 区域内找到的地图总增 35%\n\n**来源：** Base\n\n---\n\n## 后缀词缀\n\n### 4. 支配之（MapUberModShrineBuff）[[E7]]\n\n| T 级 | 物品等级 | 生成权重 | 占比 |\n|---|---|---|---|\n| T1/1 | 1 | 50 | 3.7037% |\n\n**词缀文本：**\n- 传奇怪物拥有 1 个随机神龛增益\n- 该区域物品掉落数量提高 13%\n- 该地图的物品稀有度提高 8%\n- 怪物群规模扩大 5%\n- 区域内找到的地图总增 35%\n\n**来源：** Base\n\n---\n\n## 覆盖说明\n\n以上仅列出了本次检索证据中包含的 4 条词缀。本知识库实际采集了 **361 条**异界地图词缀，来源于 `Maps_low/mid/top/uber_tier` 与 `Maps_old` 五个页面（掉落池 301 条 / 腐化 55 条 / 深渊 5 条）。如需查询更多词缀，建议提供更具体的筛选条件（如某条词缀文本片段、前缀/后缀、来源渠道等），以便精确检索。",
+  "raw_answer": "# 异界地图词缀总览\n\n异界地图（Maps）的词缀分布在 5 个 POEDB 页面上（Maps_low_tier、Maps_mid_tier、Maps_top_tier、Maps_uber_tier、Maps_old），本库共收录 **361 条词缀**，归入 **99 个词缀组**，构成 **101 个梯度**（词缀组 × 来源渠道 × 生成位）[[E9]]。\n\n---\n\n## 按来源渠道\n\n| 来源渠道 | 词缀条数 | 词缀组数 |\n|---|---|---|\n| Base（常规掉落池） | 301 | 88 |\n| 已腐化（Corrupted） | 55 | 11 |\n| 地心探索（Delve） | 5 | 1 |\n\n[[E9]]\n\n## 按生成位\n\n| 生成位 | 词缀条数 |\n|---|---|\n| 前缀 | 176 |\n| 后缀 | 130 |\n| 其他（已腐化隐式等） | 55 |\n\n[[E9]]\n\n---\n\n## 已列出的 25 个词缀组（梯度清单）\n\n以下仅列 25 个梯度，**还有 76 个未列出**[[E9]]：\n\n### Base · 前缀\n\n| 词缀组 | 档数 |\n|---|---|\n| MapMonsterPacks | 56 |\n| MapMonsterMultipleProjectiles | 5 |\n| MapBossPossessed | 4 |\n| MapHexproof | 4 |\n| MapMonsterChain | 4 |\n\n### Base · 后缀\n\n| 词缀组 | 档数 |\n|---|---|\n| MapGroundEffect | 15 |\n| MapMonstersEnduranceChargeOnHit | 5 |\n| MapMonstersFrenzyChargeOnHit | 5 |\n| MapMonstersPowerChargeOnHit | 5 |\n| MapPlayerReducedRegen | 5 |\n| MapPoisoning | 5 |\n| MapBloodlinesModOnMagics | 4 |\n| MapMonsterCriticalStrikesAndDamage | 4 |\n\n### Base · 前缀（地心探索来源）\n\n| 词缀组 | 档数 |\n|---|---|\n| MapMonsterPacks | 5 |\n\n### 已腐化 · 其他\n\n| 词缀组 | 档数 |\n|---|---|\n| MapCorruptBossCorrupt | 5 |\n| MapCorruptSideArea | 5 |\n| MapCorruptSoulGainPrevention | 5 |\n| MapCorruptVessel | 5 |\n| MapCorruptionAtlasEffect | 5 |\n| MapCorruptionRandomAtlasNotables | 5 |\n| MapCorruptionRandomScarab | 5 |\n| MapItemDropQuantity | 5 |\n| MapItemDropRarity | 5 |\n| MapModEffect | 5 |\n| MapPackSize | 5 |\n\n[[E9]]\n\n---\n\n## Uber 阶层（Maps_uber_tier）具体词缀示例\n\n证据中收录了以下来自 Uber 阶层页面的具体词缀，它们均只有 1 档（T1/1）、物品等级 1：\n\n| 词缀组 | 类型 | 词缀名 | 词缀文本摘要 | 生成权重 |\n|---|---|---|---|---|\n| MapUberModSynthMiniboss | 前缀 | 合成的 | 地图首领伴随虚空忆境首领；物品掉落数量 +13%、稀有度 +8%、怪物群规模 +20% | 50（3.2468%）[[E2]] |\n| MapUberModVines | 前缀 | 紧绷的 | 怪物击中施加 2 缓速藤蔓；物品掉落数量 +13%、稀有度 +8%、怪物群规模 +5%、地图总增 40% | 50（3.2468%）[[E3]] |\n| MapMonstersChanceToSuppressSpells | 前缀 | 压制的 | 怪物有 +100% 几率压制法术伤害；物品掉落数量 +13%、稀有度 +8%、怪物群规模 +5%、地图总增 35% | 60（3.8961%）[[E5]] |\n| MapUberModShrineBuff | 后缀 | 支配之 | 传奇怪物拥有 1 个随机神龛增益；物品掉落数量 +13%、稀有度 +8%、怪物群规模 +5%、地图总增 35% | 50（3.7037%）[[E7]] |\n\n---\n\n## 与地图修改相关的其他机制\n\n**Atlas 天赋树 · 往日遗骸（Remnants of the Past）**：14 阶以上地图的最终首领有 +3% 几率掉落裂界守卫地图，+3% 几率掉落塑界守卫地图[[E1]]。\n\n**Atlas 天赋树 · 基石·扭转命运（Twist of Fate）**：已腐化的稀有地图在打开时获得无法预测的修改，获得 1-3 个额外的随机地图词缀；无法修改菌潮地图或异界图鉴上位于虚空石插槽后方的地图[[E8]]。\n\n**唯一装备 · 扭转命运（Twist of Fate）**：与 Atlas 基石同名的小型雕像，效果完全一致——已腐化的稀有地图在打开时获得无法预测的修改并加 1-3 个额外随机词缀[[E6]]。\n\n**唯一装备 · 暗影塑形（Shadow Shaping）**：小型雕像，掉落的地图不会是偏好地图；每拥有一个不同的恩典地图，地图中找到的地图就有 +1% 几率拥有特殊基底属性[[E4]]。\n\n---\n\n## 未覆盖说明\n\n- 上述梯度清单**仅列出 25 个，尚有 76 个词缀组未展开**[[E9]]。如需查看某个具体词缀组的完整 T 级梯度（物品等级与生成权重），可以告诉我词缀名或关键词，我用 `mod_tiers` 逐条查。\n- 知识库覆盖范围记录显示，魔血（Scourge）地图词缀 185 条因上游数据无文本而**未采集**；已腐化隐式中有 20 条仅有未翻译的内部 stat id，同样未入库。",
   "evidence": [
     {
       "label": "E1",
@@ -124,6 +125,19 @@
       "source": "POEDB",
       "source_priority": 1,
       "text": "# 基石·扭转命运（Twist of Fate）\n基石 ｜ Atlas 天赋树 3.29\n\n- 你的已腐化的稀有地图在打开地图时获得无法预测的修改\n- 以该方式修改的地图具有 1-3 个额外的随机地图词缀\n\n> （无法修改菌潮地图或异界图鉴上位于虚空石插槽后方的地图）\n\n来源：POEDB → Atlas 天赋树 · 扭转命运（Twist of Fate）\nhttps://poedb.tw/cn/atlas-skill-tree/",
+      "can_support_facts": true,
+      "claim_scope": "general",
+      "claim_data": {}
+    },
+    {
+      "label": "E9",
+      "chunk_id": "mod_class_summary:Maps_low_tier+Maps_mid_tier+Maps_old+Maps_top_tier+Maps_uber_tier:all",
+      "entity_id": null,
+      "title": "异界地图 的词缀总览（共 361 条）",
+      "url": "https://poedb.tw/cn/Maps_low_tier#ModifiersCalc",
+      "source": "POEDB",
+      "source_priority": 1,
+      "text": "# 异界地图 的词缀总览\n统计范围：类别「异界地图」对应 5 个 POEDB 页面。\n本库共 **361 条**词缀、**99 个**词缀组，分成 **101 个**梯度（词缀组 × 来源渠道 × 生成位）。\n\n## 按来源渠道\n| 来源渠道 | 词缀条数 | 词缀组数 |\n| --- | --- | --- |\n| Base | 301 | 88 |\n| 已腐化 | 55 | 11 |\n| 地心探索 | 5 | 1 |\n\n## 按生成位\n| 生成位 | 词缀条数 |\n| --- | --- |\n| 前缀 | 176 |\n| 后缀 | 130 |\n| 其他 | 55 |\n\n## 梯度清单（列 25 个，按档数降序）\n| 词缀组 | 生成位 | 来源渠道 | 档数 |\n| --- | --- | --- | --- |\n| MapMonsterPacks | 前缀 | Base | 56 |\n| MapGroundEffect | 后缀 | Base | 15 |\n| MapCorruptBossCorrupt | 其他 | 已腐化 | 5 |\n| MapCorruptSideArea | 其他 | 已腐化 | 5 |\n| MapCorruptSoulGainPrevention | 其他 | 已腐化 | 5 |\n| MapCorruptVessel | 其他 | 已腐化 | 5 |\n| MapCorruptionAtlasEffect | 其他 | 已腐化 | 5 |\n| MapCorruptionRandomAtlasNotables | 其他 | 已腐化 | 5 |\n| MapCorruptionRandomScarab | 其他 | 已腐化 | 5 |\n| MapItemDropQuantity | 其他 | 已腐化 | 5 |\n| MapItemDropRarity | 其他 | 已腐化 | 5 |\n| MapModEffect | 其他 | 已腐化 | 5 |\n| MapMonsterMultipleProjectiles | 前缀 | Base | 5 |\n| MapMonsterPacks | 前缀 | 地心探索 | 5 |\n| MapMonstersEnduranceChargeOnHit | 后缀 | Base | 5 |\n| MapMonstersFrenzyChargeOnHit | 后缀 | Base | 5 |\n| MapMonstersPowerChargeOnHit | 后缀 | Base | 5 |\n| MapPackSize | 其他 | 已腐化 | 5 |\n| MapPlayerReducedRegen | 后缀 | Base | 5 |\n| MapPoisoning | 后缀 | Base | 5 |\n| MapBloodlinesModOnMagics | 后缀 | Base | 4 |\n| MapBossPossessed | 前缀 | Base | 4 |\n| MapHexproof | 前缀 | Base | 4 |\n| MapMonsterChain | 前缀 | Base | 4 |\n| MapMonsterCriticalStrikesAndDamage | 后缀 | Base | 4 |\n\n（以上仅列 25 个梯度，还有 76 个未列出）\n\n来源：POEDB → 异界地图\nhttps://poedb.tw/cn/Maps_low_tier#ModifiersCalc",
       "can_support_facts": true,
       "claim_scope": "general",
       "claim_data": {}
