@@ -1475,6 +1475,7 @@ def _migrate(conn: sqlite3.Connection) -> None:
             "ON knowledge_gap(question, missing_point)"
         )
         _migrate_gap_kind(conn)
+        _migrate_gap_verify_source(conn)
         _migrate_base_item_all_categories(conn)
         _migrate_conflict_cause(conn)
         _migrate_reservation_columns(conn)
@@ -1532,8 +1533,16 @@ def record_ingest_gaps(
     category: str,
     points: Sequence[tuple[str, int]],
     kind: str = "ingest_gap",
+    source: str = "import",
 ) -> int:
-    """登记一次采集的未入库项（`source='import'`）。
+    """登记一次采集/核对发现的未入库项。
+
+    `source` 默认 `import`（采集脚本）。**核对脚本要显式传 `verify`**——
+    第六十四轮实测：`scripts/verify_against_detail.py` 自己写的那份 UPSERT
+    虽然 INSERT 里带了 `source='verify'`，但 `ON CONFLICT` 子句**没更新 source**，
+    于是第三十一轮之前建的行永远停在 `chat` 上，每次重跑只给它们的 `hit_count` +1。
+    实测后果：台账里 `source='verify'` **一行都没有**，而「真实用户缺口」
+    排头的 11 条全是这个脚本的输出，且它们在第三十四轮就已经被修掉了。
 
     `kind` 默认 `ingest_gap`（**是采集待办**）。上游那一页本来就没有这一段时，
     调用方要显式传 `kind='coverage_note'`——那是覆盖率度量、不是待办，
@@ -1559,22 +1568,22 @@ def record_ingest_gaps(
         str(row["missing_point"]): str(row["first_seen"])
         for row in conn.execute(
             "SELECT missing_point, first_seen FROM knowledge_gap "
-            "WHERE question=? AND kind=? AND source='import'",
-            (question, kind),
+            "WHERE question=? AND kind=? AND source=?",
+            (question, kind, source),
         )
     }
     oldest = min(previous.values(), default=None)
     conn.execute(
-        "DELETE FROM knowledge_gap WHERE question=? AND kind=? AND source='import'",
-        (question, kind),
+        "DELETE FROM knowledge_gap WHERE question=? AND kind=? AND source=?",
+        (question, kind, source),
     )
     for missing_point, magnitude in points:
         text = missing_point[:500]
         conn.execute(
             "INSERT INTO knowledge_gap(question, missing_point, guessed_category, kind, "
             "source, hit_count, first_seen, last_seen) "
-            "VALUES (?,?,?,?,'import',?,COALESCE(?,datetime('now')),datetime('now'))",
-            (question, text, category, kind,
+            "VALUES (?,?,?,?,?,?,COALESCE(?,datetime('now')),datetime('now'))",
+            (question, text, category, kind, source,
              max(int(magnitude), 1), previous.get(text, oldest)),
         )
     return len(points)
@@ -1642,14 +1651,20 @@ def _migrate_gap_source(conn: sqlite3.Connection) -> None:
         logger.debug("黄金问答集不可用，跳过评测流量标记：%s", exc)
 
     # 3) 导入脚本写的行归到 `source='import'`（第三十一轮）。
-    #    `ingest_gap` 只有采集/导入脚本会写，所以这个判据是充分的。原先四处都留空，
-    #    `COALESCE(source,'chat')` 于是把脚本自己的写入算成用户流量——第三十轮修评测
-    #    流量时漏掉的正是这一半。**只改归属不改 hit_count**：那些行的命中次数是
-    #    「导入跑了几次」，含义得由各自的导入脚本下次重写时纠正
+    #    原先四处都留空，`COALESCE(source,'chat')` 于是把脚本自己的写入算成用户流量
+    #    ——第三十轮修评测流量时漏掉的正是这一半。**只改归属不改 hit_count**：
+    #    那些行的命中次数是「导入跑了几次」，含义得由各自的导入脚本下次重写时纠正
     #    （见 `record_ingest_gaps`），在迁移里猜条数只会造出第二个失真的数。
+    #
+    #    **`verify` 要排除掉**（第六十四轮）。这里原本的判据是
+    #    「`ingest_gap` 只有采集/导入脚本会写，所以这个判据是充分的」——
+    #    那句话在核对脚本也开始写 `ingest_gap` 之后就**不成立了**，
+    #    而这条 UPDATE 每次 `init_db` 都跑，于是它会把刚改对的 `verify`
+    #    一路改回 `import`（实测：迁移把 11 条改成 verify，这一句立刻又抹掉）。
+    #    判据换成显式白名单：只认领「没人认领的」，不动别的脚本自己声明的来源。
     marked = conn.execute(
         "UPDATE knowledge_gap SET source='import' "
-        "WHERE kind='ingest_gap' AND COALESCE(source,'') <> 'import'"
+        "WHERE kind='ingest_gap' AND COALESCE(source,'') NOT IN ('import','verify')"
     ).rowcount
     if marked:
         logger.info("缺口台账迁移：%d 条导入脚本写的条目归到 source='import'", marked)
@@ -1749,6 +1764,46 @@ def _migrate_gap_kind(conn: sqlite3.Connection) -> None:
             "（不再计入采集优先级）", updated,
         )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_gap_kind ON knowledge_gap(kind)")
+
+
+def _migrate_gap_verify_source(conn: sqlite3.Connection) -> None:
+    """把核对脚本写的行从 `chat` 改判成 `verify`（第六十四轮）。
+
+    这是「测量工具本身失真」的第四次，而且是第三十轮/第三十一轮那两次的**残留**：
+
+    `scripts/verify_against_detail.py` 的 INSERT 里第三十一轮就带上了
+    `source='verify'`，但它那份 UPSERT 的 `ON CONFLICT` 子句**没有更新 source**。
+    于是第三十一轮之前建的行永远停在 `chat` 上，每次重跑只给它们 `hit_count` +1。
+    实测后果两条都很具体：
+
+      * 台账里 `source='verify'` **一行都没有**；
+      * 「排除评测流量后的真实用户缺口」头部 11 条全是这个脚本的输出，
+        而它们在第三十四轮详情页合并时就已经被修掉了
+        （实测「不可改变」现在就在中规中矩的卡片上）。
+
+    判据是这个脚本写下的**逐字格式**，不做猜测：
+    `guessed_category='unique_item/detail_only_mod'`，或者
+    missing_point 以「详情页有而列表页没有的词条：」开头。
+
+    **只改归属，不动 `hit_count`、不删行**——台账是审计记录（与第三十一轮同一条）。
+    行本身的退场交给脚本下次重跑：它现在**无条件**调 `record_ingest_gaps`，
+    按 (question, kind, source) 整组替换，修好的自然清空。
+    """
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(knowledge_gap)")}
+    if "source" not in cols:
+        return
+    moved = conn.execute(
+        "UPDATE knowledge_gap SET source='verify', kind='ingest_gap' "
+        "WHERE COALESCE(source,'chat')='chat' AND ("
+        "  guessed_category='unique_item/detail_only_mod'"
+        "  OR missing_point LIKE '详情页有而列表页没有的词条：%')"
+    ).rowcount
+    if moved:
+        conn.commit()
+        logger.info(
+            "缺口台账迁移：%d 条核对脚本的发现已从 chat 改判为 verify/ingest_gap"
+            "（先前被算成用户流量，把采集优先级带偏）", moved,
+        )
 
 
 def _migrate_base_item_all_categories(conn: sqlite3.Connection) -> None:
