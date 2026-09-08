@@ -122,6 +122,8 @@ class PobBuild:
     main_socket_group: int | None = None
     #: `<Calcs><Input name="skill_number">`：生成 PlayerStat 时选中的技能组（1-based）。
     calcs_skill_group: int | None = None
+    #: 当前激活天赋方案的树版本（规范成 `3.29`）；这是 Build 游戏版本的可核对代理。
+    tree_version: str = ""
     #: 所有 PlayerStat 的原始文本；覆盖范围字段中的 `All` 等非数字值。
     player_stat_text: dict[str, str] = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
@@ -299,8 +301,17 @@ def parse_build(xml: str) -> PobBuild:
     # 天赋树与珠宝都在 `<Tree><Spec>` 里：`nodes` 是已分配节点，
     # **珠宝不在 `Items` 的 Slot 里**——它们插在树的 `<Sockets>` 上
     # （实测 OccVortex：Slot 里一件珠宝都没有，树上有 3 颗）。
-    spec = root.find("Tree/Spec")
+    tree = root.find("Tree")
+    spec = None
+    if tree is not None:
+        specs = tree.findall("Spec")
+        active_spec = _int_or_none(tree.get("activeSpec")) or 1
+        if 0 < active_spec <= len(specs):
+            spec = specs[active_spec - 1]
+        elif specs:
+            spec = specs[0]
     if spec is not None:
+        out.tree_version = (spec.get("treeVersion") or "").replace("_", ".")
         out.passive_nodes = tuple(
             n.strip() for n in (spec.get("nodes") or "").split(",") if n.strip()
         )

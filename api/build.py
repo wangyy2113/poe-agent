@@ -14,6 +14,7 @@
 `analysis_done=true` 表示这些项目均已检查，**不表示本库重算了 Build**。输出分析中，
 单体只对应当前 Calcs 技能，清图只列覆盖指标，Boss 必须有显式敌人档位。
 防御来源只拆装备文本中能逐字核对的部分；优化建议只由已知且低于明确上限的指标触发。
+需求 8.9 的版本核对读取当前激活天赋方案的 `treeVersion`，与本地数据表版本比较。
 
 `player_stats` 那一段**是 PoB 自己算的快照**，不是本库算的，也不是知识库证据——
 它反映用户自己那份 PoB 的版本与配置。字段名与 `source_note` 都写清这一点，
@@ -34,6 +35,7 @@ from kb.fetcher import Fetcher, Poe2SourceRejected
 from parsers.build_advice import build_suggestions
 from parsers.build_report import build_health_report
 from parsers.build_sources import build_defence_sources
+from parsers.build_version import check_build_version
 from parsers.pob_build import PobParseError, bridge_gems, decode_share_code, parse_build
 from parsers.pob_link import PobLinkError, looks_like_link, resolve_download_url
 
@@ -109,6 +111,15 @@ class BuildSuggestionOut(BaseModel):
     assumptions: str
 
 
+class BuildVersionOut(BaseModel):
+    build_version: str = ""
+    system_version: str = ""
+    known: bool = False
+    matches: bool | None = None
+    message: str = ""
+    basis: str = ""
+
+
 class BuildResponse(BaseModel):
     level: int | None = None
     class_name: str = ""
@@ -132,6 +143,7 @@ class BuildResponse(BaseModel):
     defence_sources_note: str = ""
     suggestions: list[BuildSuggestionOut] = []
     suggestions_note: str = ""
+    version_check: BuildVersionOut
     report_notes: list[str] = []
     analysis_done: bool = True
     analysis_note: str = ""
@@ -207,6 +219,7 @@ def analyze_build(req: BuildRequest, caller: str = Depends(require_user)) -> Bui
     report = build_health_report(dbmod.get_conn(), build)
     sources = build_defence_sources(build)
     suggestions = build_suggestions(build)
+    version = check_build_version(dbmod.get_conn(), build)
     bridged = sum(1 for g in build.skill_groups for x in g.gems if x.gem_id)
     total_gems = sum(len(g.gems) for g in build.skill_groups)
     logger.info(
@@ -261,6 +274,7 @@ def analyze_build(req: BuildRequest, caller: str = Depends(require_user)) -> Bui
             "建议只由已知 PlayerStat 短板触发；预期收益是当前值到目标值的可复核差额。"
             "项目尚未接入赛季经济数据，因此成本按改造规模分档，不提供虚构的通货报价。"
         ),
+        version_check=BuildVersionOut(**version.__dict__),
         report_notes=report.notes,
         analysis_done=True,
         analysis_note=_ANALYSIS_NOTE,

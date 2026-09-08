@@ -25,6 +25,8 @@ class FrontendBuildContractTest(unittest.TestCase):
         self.assertIn("data.defence_sources", app)
         self.assertIn("优化建议（低 / 高预算）", app)
         self.assertIn("data.suggestions", app)
+        self.assertIn("版本核对", app)
+        self.assertIn("data.version_check", app)
         self.assertNotIn("PoB 码解析尚未实现", app)
 
     def test_all_backend_whitelist_sites_are_recognizable(self) -> None:
