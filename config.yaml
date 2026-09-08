@@ -12,6 +12,12 @@ server:
   # 显式前缀在直连与路径保留型代理（nginx proxy_pass 不改 path）下都成立。
   # 置空则不加前缀。
   base_path: "/poe_agent"
+  # 普通业务接口按 API Key 使用进程内令牌桶限流；未配置 API_KEYS 的本机开发模式
+  # 共用 anonymous 桶。单进程是本项目约束，因此不引入 Redis 等外部服务。
+  rate_limit:
+    enabled: true
+    requests_per_minute: 60
+    burst: 10
 
 paths:
   db: "data/poe.db"

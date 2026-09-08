@@ -55,6 +55,7 @@ POE1 的机制耦合极深，一个错误的小前提会让整条结论反向。
 | **问答** | `POST /chat`：强制检索 → 充分性判定 → 生成 → 出口绑定校验 → 装配引用 |
 | **流式问答** | `POST /chat/stream`：SSE，**按句**校验通过才下发，未校验内容不外发 |
 | **OpenAI 兼容** | `POST /v1/chat/completions`：支持文本消息、非流式与标准 SSE `[DONE]`；内部仍强制检索与出口校验 |
+| **鉴权与限流** | 普通接口使用 `API_KEYS`，管理接口独立使用 `ADMIN_TOKEN`；普通接口按 Key 令牌桶限流，超限返回 429 与 `Retry-After` |
 | **出口闸门** | 逐句校验事实断言是否绑定有效证据，未通过由代码拦截；31 项单测覆盖 |
 | **聊天界面** | `static/` 单页前端，无构建步骤、无 Node、无第三方 JS |
 | **会话历史** | 最近 30 个会话保存在浏览器列表中，可从 SQLite 回放消息并重命名；自定义标题不会被后续消息覆盖 |
@@ -182,7 +183,8 @@ http://127.0.0.1:8787/poe_agent/
 会进入确定性的 Build 体检，不调用 LLM；其中的数值取自输入本身，本库只做判读。
 顶部“导入角色”按钮可按角色名读取当前 GGG OAuth 账号中的 PoE1 PC 角色。
 
-左上角可切换历史会话（存 `localStorage`，标题取首条用户消息），点「新对话」重开。
+左上角可切换历史会话（列表存 `localStorage`，消息与标题存 SQLite），也可重命名当前
+会话；点「新对话」重开。
 
 ### 方式二：浏览器打开交互式 API 文档
 
@@ -222,6 +224,11 @@ curl -s -X POST http://127.0.0.1:8787/poe_agent/chat \
 [E2] 来源：POEDB → 猎首【仿品】（Replica Headhunter）
      https://poedb.tw/cn/Replica_Headhunter
 ```
+
+对外提供服务时应在 `.env` 配置逗号分隔的 `API_KEYS`，并在普通业务请求中发送
+`Authorization: Bearer <key>`。`config.yaml` 的 `server.rate_limit` 默认允许每个 Key
+持续 60 次/分钟、最多突发 10 次；超限返回 HTTP 429 和 `Retry-After`。未配置
+`API_KEYS` 的本机开发模式无需鉴权，但所有请求共用一个 `anonymous` 限流桶。
 
 句末的 `[[E1]]` 是**证据绑定标记**，不是装饰。出口闸门会逐句检查：
 
