@@ -442,7 +442,10 @@ PoB 的 `src/Data/` 是 GGG 客户端 `.dat` 的机器导出，在**数值与结
     非流式取 `LLMResponse.model`，流式的 `StreamEvent` 原本不带模型名，改为在
     `usage` 事件上带出网关分片里回报的实际模型。验证脚本加了断言防回归——
     这个字段正是用来区分「换了模型」和「出了 bug」的，空着等于白留
-  - 待补：`/v1/chat/completions` OpenAI 兼容端点
+  - `/v1/chat/completions` OpenAI 兼容端点已完成（2026-09-08）：支持文本消息、非流式
+    `chat.completion` 与流式 `chat.completion.chunk` / `[DONE]`；`include_usage`、引用、
+    轨迹、缺据与拦截元数据均有明确出口。只消费最后一条非空 user 文本，外部 system
+    消息不进入 Agent 系统提示，所有正文仍经过相同检索与出口闸门
   - _需求: 5.1, 5.2, 5.4_
 
 - [x] 3.9 鉴权（限流待补）—— **已完成鉴权部分（`api/deps.py`）**

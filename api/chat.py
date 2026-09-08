@@ -1,4 +1,4 @@
-"""`/chat` 与 `/chat/stream`：问答接口（任务 3.8）。
+"""`/chat`、`/chat/stream` 与 OpenAI Chat Completions 兼容接口（任务 3.8）。
 
 流式的粒度是**句**而不是字。按需求 5.1 与设计 11.1，出口的断言绑定校验必须
 按句缓冲、校验通过才下发——逐字推送等于把未校验内容先给了用户，之后没法撤回。
@@ -9,8 +9,9 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 import uuid
-from typing import Any, Iterator
+from typing import Any, Iterator, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -39,6 +40,35 @@ class ConversationUpdate(BaseModel):
         return value.strip() if isinstance(value, str) else value
 
 
+class OpenAITextPart(BaseModel):
+    type: Literal["text"]
+    text: str
+
+
+class OpenAIMessage(BaseModel):
+    role: str = Field(min_length=1, max_length=32)
+    content: str | list[OpenAITextPart]
+    name: str | None = Field(default=None, max_length=64)
+
+
+class OpenAIStreamOptions(BaseModel):
+    include_usage: bool = False
+
+
+class OpenAIChatRequest(BaseModel):
+    """OpenAI Chat Completions 的文本子集。
+
+    `model` 是客户端需要填写的逻辑名称；实际使用的上游模型由服务端配置与凭证池
+    决定，并通过响应的 `poe_agent.upstream_model` 扩展字段明确返回。
+    """
+
+    model: str = Field(default="poe-agent", min_length=1, max_length=200)
+    messages: list[OpenAIMessage] = Field(min_length=1, max_length=100)
+    stream: bool = False
+    stream_options: OpenAIStreamOptions | None = None
+    conversation_id: str | None = Field(default=None, max_length=128)
+
+
 class CitationOut(BaseModel):
     label: str
     source: str
@@ -64,6 +94,237 @@ class ChatResponse(BaseModel):
     model: str
     tokens: dict[str, int]
     elapsed_ms: int
+
+
+def _openai_question(messages: list[OpenAIMessage]) -> str:
+    """只取最后一条用户文本；系统提示与历史回答不能覆盖本 Agent 的安全约束。"""
+    for message in reversed(messages):
+        if message.role != "user":
+            continue
+        if isinstance(message.content, str):
+            question = message.content.strip()
+        else:
+            question = "".join(part.text for part in message.content).strip()
+        if not question:
+            break
+        if len(question) > 2000:
+            raise HTTPException(status_code=400, detail="最后一条用户消息不能超过 2000 个字符")
+        return question
+    raise HTTPException(status_code=400, detail="messages 必须包含一条非空的 user 文本消息")
+
+
+def _openai_usage(tokens: dict[str, int]) -> dict[str, Any]:
+    return {
+        "prompt_tokens": int(tokens.get("prompt", 0)),
+        "completion_tokens": int(tokens.get("output", 0)),
+        "total_tokens": int(tokens.get("total", 0)),
+        "completion_tokens_details": {
+            "reasoning_tokens": int(tokens.get("reasoning", 0)),
+        },
+    }
+
+
+def _citation_block(items: list[dict[str, Any]]) -> str:
+    if not items:
+        return ""
+    lines = "\n".join(
+        f"[{item['label']}] 来源：{item['source']} → {item['title']}\n    {item['url']}"
+        for item in items
+    )
+    return f"\n\n---\n**引用**\n{lines}"
+
+
+def _openai_chunk(
+    completion_id: str,
+    created: int,
+    model: str,
+    *,
+    delta: dict[str, str] | None = None,
+    finish_reason: str | None = None,
+    choices: bool = True,
+    usage: dict[str, Any] | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> str:
+    payload: dict[str, Any] = {
+        "id": completion_id,
+        "object": "chat.completion.chunk",
+        "created": created,
+        "model": model,
+        "choices": ([{
+            "index": 0,
+            "delta": delta or {},
+            "finish_reason": finish_reason,
+        }] if choices else []),
+    }
+    if usage is not None:
+        payload["usage"] = usage
+    if metadata is not None:
+        payload["poe_agent"] = metadata
+    return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+
+def _openai_stream(
+    req: OpenAIChatRequest,
+    question: str,
+    conversation_id: str,
+    created: int,
+) -> Iterator[str]:
+    completion_id = f"chatcmpl-{uuid.uuid4().hex}"
+    trace_id = ""
+    answer_parts: list[str] = []
+    citations: list[dict[str, Any]] = []
+    done: dict[str, Any] = {}
+    try:
+        for event in stream_turn(question, conversation_id=conversation_id):
+            kind = event.get("type")
+            if kind == "meta":
+                trace_id = str(event.get("trace_id") or "")
+                if trace_id:
+                    completion_id = f"chatcmpl-{trace_id}"
+                yield _openai_chunk(
+                    completion_id,
+                    created,
+                    req.model,
+                    delta={"role": "assistant", "content": ""},
+                    metadata={
+                        "trace_id": trace_id,
+                        "conversation_id": conversation_id,
+                    },
+                )
+            elif kind in {"sentence", "blocked", "gap"}:
+                text = str(event.get("text") or "")
+                if text:
+                    answer_parts.append(text)
+                    yield _openai_chunk(
+                        completion_id, created, req.model, delta={"content": text}
+                    )
+            elif kind == "note":
+                text = str(event.get("text") or "")
+                if text:
+                    rendered = f"\n\n{text}" if text.startswith("推导（取自证据") else f"\n\n> {text}"
+                    answer_parts.append(rendered)
+                    yield _openai_chunk(
+                        completion_id, created, req.model, delta={"content": rendered}
+                    )
+            elif kind == "citations":
+                citations = list(event.get("items") or [])
+            elif kind == "error":
+                payload = {
+                    "error": {
+                        "message": str(event.get("message") or "生成失败"),
+                        "type": "server_error",
+                        "param": None,
+                        "code": "generation_failed",
+                    }
+                }
+                yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+                return
+            elif kind == "done":
+                done = event
+
+        citation_text = _citation_block(citations)
+        if citation_text:
+            answer_parts.append(citation_text)
+            yield _openai_chunk(
+                completion_id, created, req.model, delta={"content": citation_text}
+            )
+
+        metadata = {
+            "trace_id": trace_id or str(done.get("trace_id") or ""),
+            "conversation_id": conversation_id,
+            "evidence_gap": bool(done.get("evidence_gap", False)),
+            "blocked_claims": int(done.get("blocked_claims", 0)),
+            "upstream_model": str(done.get("model") or ""),
+            "citations": citations,
+        }
+        yield _openai_chunk(
+            completion_id,
+            created,
+            req.model,
+            finish_reason="stop",
+            metadata=metadata,
+        )
+        if req.stream_options and req.stream_options.include_usage:
+            yield _openai_chunk(
+                completion_id,
+                created,
+                req.model,
+                choices=False,
+                usage=_openai_usage(done.get("tokens") or {}),
+            )
+        yield "data: [DONE]\n\n"
+    finally:
+        text = "".join(answer_parts)
+        if text.strip():
+            _save_message(conversation_id, "assistant", text)
+
+
+@router.post("/v1/chat/completions", response_model=None)
+def openai_chat_completions(
+    req: OpenAIChatRequest,
+    caller: str = Depends(require_user),
+) -> Any:
+    """OpenAI Chat Completions 文本兼容层；仍走本项目的检索与出口闸门。"""
+    question = _openai_question(req.messages)
+    conversation_id = req.conversation_id or uuid.uuid4().hex
+    created = int(time.time())
+    _ensure_conversation(conversation_id, question)
+
+    if req.stream:
+        _save_message(conversation_id, "user", question)
+        return StreamingResponse(
+            _openai_stream(req, question, conversation_id, created),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )
+
+    result = run_turn(question, conversation_id=conversation_id)
+    text = result.full_text()
+    _save_message(conversation_id, "user", question)
+    _save_message(conversation_id, "assistant", text)
+    citations = [
+        {
+            "label": item.label,
+            "source": item.source,
+            "title": item.title,
+            "url": item.url,
+            "priority": item.priority,
+        }
+        for item in result.citations
+    ]
+    logger.info(
+        "v1/chat/completions 完成 caller=%s trace=%s 缺据=%s 拦截=%d token=%d 耗时=%dms",
+        caller,
+        result.trace_id,
+        result.evidence_gap,
+        result.blocked,
+        result.tokens.get("total", 0),
+        result.elapsed_ms,
+    )
+    return {
+        "id": f"chatcmpl-{result.trace_id}",
+        "object": "chat.completion",
+        "created": created,
+        "model": req.model,
+        "choices": [{
+            "index": 0,
+            "message": {"role": "assistant", "content": text},
+            "finish_reason": "stop",
+        }],
+        "usage": _openai_usage(result.tokens),
+        "poe_agent": {
+            "trace_id": result.trace_id,
+            "conversation_id": conversation_id,
+            "evidence_gap": result.evidence_gap,
+            "blocked_claims": result.blocked,
+            "upstream_model": result.model,
+            "citations": citations,
+        },
+    }
 
 
 @router.post("/chat", response_model=ChatResponse)
@@ -149,12 +410,7 @@ def chat_stream(req: ChatRequest, caller: str = Depends(require_user)) -> Stream
         finally:
             # 落盘完整回答，供会话历史回看。引用附在末尾，与非流式一致。
             text = "".join(parts)
-            if citations:
-                lines = "\n".join(
-                    f"[{c['label']}] 来源：{c['source']} → {c['title']}\n    {c['url']}"
-                    for c in citations
-                )
-                text += f"\n\n---\n**引用**\n{lines}"
+            text += _citation_block(citations)
             if text.strip():
                 _save_message(conversation_id, "assistant", text)
 
