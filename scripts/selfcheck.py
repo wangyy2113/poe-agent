@@ -38,6 +38,7 @@ def main() -> int:
     print(f"  日志        : {cfg.logs_dir}")
     print(f"  向量启用    : {cfg.get('retrieval.vector.enabled')}")
     print(f"  重排启用    : {cfg.get('retrieval.rerank.enabled')}")
+    print(f"  截图视觉模型: {cfg.get('llm.vision_model') or '未配置（截图识别不可用）'}")
     print(f"  min_score   : {cfg.get('retrieval.min_score')}")
     print(f"  POEDB 优先级: {cfg.priority_of('POEDB')}  未知来源: {cfg.priority_of('某站')}")
     print(f"  别名解析    : glm -> {cfg.resolve_model('glm')}")

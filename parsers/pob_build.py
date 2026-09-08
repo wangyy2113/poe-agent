@@ -130,6 +130,13 @@ class PobBuild:
     passive_nodes_basis: str = ""
     #: 所有 PlayerStat 的原始文本；覆盖范围字段中的 `All` 等非数字值。
     player_stat_text: dict[str, str] = field(default_factory=dict)
+    #: 面板数值的来源口径。空值表示标准 PoB `<PlayerStat>`；截图等输入必须显式覆盖，
+    #: 避免报告把视觉转录误称为 PoB 自己算出的快照。
+    player_stats_basis: str = ""
+    #: 装备、技能、万神殿等结构是否是完整快照。官方树链接与单张截图只是部分输入，
+    #: 缺少对象时只能报未知，不能把“没拍到”说成“没有”。
+    structure_complete: bool = True
+    structure_basis: str = ""
     warnings: list[str] = field(default_factory=list)
 
     @property

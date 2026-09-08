@@ -44,6 +44,9 @@ llm:
     haiku: "claude-haiku-4-5"
   # 需要二次判断的场景用廉价模型，不占主模型预算
   gate_model: "claude-haiku-4-5"
+  # 可选：支持 OpenAI image_url 消息的视觉模型。留空时截图入口返回明确的 503，
+  # 不会把普通文本模型冒充 OCR。模型只做转录，结果必须由用户确认后才进入分析。
+  vision_model: ""
 
 retrieval:
   top_k: 20

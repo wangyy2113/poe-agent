@@ -50,6 +50,19 @@ class FrontendBuildContractTest(unittest.TestCase):
         self.assertIn("data.input_type === 'character_api'", app)
         self.assertIn("读取官方角色 API", app)
 
+    def test_screenshot_upload_requires_confirmation_before_analysis(self) -> None:
+        page = (ROOT / "static/index.html").read_text(encoding="utf-8")
+        app = (ROOT / "static/app.js").read_text(encoding="utf-8")
+        self.assertIn('id="upload-image"', page)
+        self.assertIn('accept="image/png,image/jpeg,image/webp"', page)
+        self.assertIn("fetch(`${API}/screenshot/recognize`", app)
+        self.assertIn("视觉模型只做转录", app)
+        self.assertIn("确认文字并分析装备", app)
+        self.assertIn("确认字段并体检 Build", app)
+        self.assertIn("fetch(`${API}/build/screenshot`", app)
+        self.assertIn("confirmed: true", app)
+        self.assertIn("data.input_type === 'screenshot'", app)
+
     def test_readme_no_longer_claims_build_is_unimplemented(self) -> None:
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         self.assertNotIn("PoB 码只能识别不能解析", readme)

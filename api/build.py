@@ -1,9 +1,9 @@
 """`/build`：PoB、官方天赋树与官方角色 API 导入（需求 8.1 的入口）。
 
-路由层只做校验与编排，三类输入分别由 `parsers/pob_build.py`、
-`parsers/passive_tree_link.py` 与 `parsers/character_api.py` 解析；之后统一进入报告链路。
+路由层只做校验与编排：PoB、天赋树、角色 API 与用户确认后的截图字段分别由对应
+解析器转换为同一个 `PobBuild`，之后统一进入报告链路。
 
-**这条链路全程不调用 LLM**（与 `/item` 同一条先例）：输出是代码装配的，
+**本模块的分析链路不调用 LLM**（截图 OCR 在独立的 `/screenshot/recognize`）：输出是代码装配的，
 同一份分享码永远得到同一份结果。也正因如此它不过出口绑定闸门——
 闸门防的是模型编造，这里没有模型。
 
@@ -24,9 +24,10 @@
 from __future__ import annotations
 
 import logging
+import math
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from api.deps import require_user
 from core import db as dbmod
@@ -43,6 +44,12 @@ from parsers.passive_tree_link import (
     PassiveTreeLinkError,
     looks_like_passive_tree_link,
     passive_tree_build,
+)
+from parsers.screenshot import (
+    NUMERIC_STAT_KEYS,
+    TEXT_STAT_KEYS,
+    ScreenshotBuildFields,
+    screenshot_build,
 )
 
 logger = logging.getLogger(__name__)
@@ -68,6 +75,62 @@ class BuildRequest(BaseModel):
         supplied = bool(self.code.strip()) + bool(self.character_name.strip())
         if supplied != 1:
             raise ValueError("code 与 character_name 必须且只能提供一个")
+        return self
+
+
+class ScreenshotBuildRequest(BaseModel):
+    """用户确认后的截图可见字段。
+
+    这是浏览器回传的普通用户输入，不能因为最初来自视觉模型就信任；键名与数值范围
+    在这里重新校验。`confirmed` 把“先确认再分析”落实成 API 契约。
+    """
+
+    confirmed: bool = False
+    level: int | None = Field(default=None, ge=1, le=100)
+    class_name: str = Field(default="", max_length=100)
+    ascend_class_name: str = Field(default="", max_length=100)
+    main_skill: str = Field(default="", max_length=200)
+    player_stats: dict[str, float] = Field(default_factory=dict, max_length=80)
+    player_stat_text: dict[str, str] = Field(default_factory=dict, max_length=20)
+    enemy_is_boss: str = Field(default="", max_length=20)
+
+    @field_validator("player_stats", mode="before")
+    @classmethod
+    def reject_non_numeric_stats(cls, value):  # noqa: ANN001
+        if isinstance(value, dict) and any(
+            isinstance(item, bool) or not isinstance(item, (int, float))
+            for item in value.values()
+        ):
+            raise ValueError("截图数值字段必须是 JSON number，不能是字符串或布尔值")
+        return value
+
+    @model_validator(mode="after")
+    def validate_confirmed_fields(self) -> "ScreenshotBuildRequest":
+        if not self.confirmed:
+            raise ValueError("截图识别结果必须经用户确认后才能进入 Build 体检")
+        bad_numeric = sorted(set(self.player_stats) - NUMERIC_STAT_KEYS)
+        bad_text = sorted(set(self.player_stat_text) - TEXT_STAT_KEYS)
+        if bad_numeric or bad_text:
+            raise ValueError(f"截图包含不受支持的字段：{bad_numeric + bad_text}")
+        if any(
+            not math.isfinite(value) or abs(value) > 1_000_000_000_000_000
+            for value in self.player_stats.values()
+        ):
+            raise ValueError("截图数值必须是合理范围内的有限数字")
+        if any(len(value) > 100 for value in self.player_stat_text.values()):
+            raise ValueError("截图文本指标超过 100 字符")
+        if self.enemy_is_boss not in {"", "Boss", "Pinnacle", "Uber", "Shaper", "Sirus"}:
+            raise ValueError("enemy_is_boss 不是受支持的 PoB 敌人档位")
+        if not any((
+            self.level,
+            self.class_name.strip(),
+            self.ascend_class_name.strip(),
+            self.main_skill.strip(),
+            self.player_stats,
+            self.player_stat_text,
+            self.enemy_is_boss,
+        )):
+            raise ValueError("截图没有任何可确认的 Build 字段")
         return self
 
 
@@ -191,6 +254,15 @@ _CHARACTER_ANALYSIS_NOTE = (
     "官方角色 API 提供角色身份、已装备物品、插槽宝石、珠宝与天赋，但不提供 PoB 的"
     "PlayerStat 或配置快照；因此可核对输入结构，DPS、EHP、Max Hit、抗性等最终面板"
     "保持未知，不从局部数据估算。"
+)
+_SCREENSHOT_STATS_NOTE = (
+    "以上数值取自你确认的截图转录。视觉模型只负责 OCR，**不是 PoB 计算结果**；"
+    "截图未显示的数值不会补全。"
+)
+_SCREENSHOT_ANALYSIS_NOTE = (
+    "需求 8.4 的 16 项、8.5 的防御补充与 8.6 的输出场景均已逐项核对；"
+    "本轮只使用你确认的截图可见字段。未拍到、看不清或无法精确映射的项目均为“未知”，"
+    "不从职业、技能或局部面板推算完整 Build。"
 )
 
 
@@ -317,6 +389,47 @@ def analyze_build(req: BuildRequest, caller: str = Depends(require_user)) -> Bui
             detail={"error": "pob_parse_failed", "reason": str(exc)},
         ) from exc
 
+    return _build_response(
+        build,
+        input_type=input_type,
+        caller=caller,
+        tree_link=tree_link,
+        character_meta=character_meta,
+    )
+
+
+@router.post("/build/screenshot", response_model=BuildResponse)
+def analyze_screenshot_build(
+    req: ScreenshotBuildRequest,
+    caller: str = Depends(require_user),
+) -> BuildResponse:
+    """分析用户已确认的截图字段；没有确认标记时 Pydantic 会直接拒绝。"""
+    fields = ScreenshotBuildFields(
+        level=req.level,
+        class_name=req.class_name.strip(),
+        ascend_class_name=req.ascend_class_name.strip(),
+        main_skill=req.main_skill.strip(),
+        player_stats=dict(req.player_stats),
+        player_stat_text={key: value.strip() for key, value in req.player_stat_text.items()},
+        enemy_is_boss=req.enemy_is_boss,
+    )
+    build = screenshot_build(fields)
+    logger.info(
+        "截图 Build 已确认 caller=%s 字段=%d 文本字段=%d",
+        caller, len(fields.player_stats), len(fields.player_stat_text),
+    )
+    return _build_response(build, input_type="screenshot", caller=caller)
+
+
+def _build_response(
+    build,
+    *,
+    input_type: str,
+    caller: str,
+    tree_link=None,
+    character_meta=None,
+) -> BuildResponse:  # noqa: ANN001
+    """四类 Build 输入共用同一份确定性报告装配，避免入口间口径漂移。"""
     report = build_health_report(dbmod.get_conn(), build)
     sources = build_defence_sources(build)
     suggestions = build_suggestions(build)
@@ -365,7 +478,10 @@ def analyze_build(req: BuildRequest, caller: str = Depends(require_user)) -> Bui
         ],
         config={k: str(v) for k, v in build.config.items()},
         player_stats=build.player_stats,
-        player_stats_note=_STATS_NOTE if build.player_stats else "",
+        player_stats_note=(
+            _SCREENSHOT_STATS_NOTE if input_type == "screenshot" and build.player_stats
+            else _STATS_NOTE if build.player_stats else ""
+        ),
         report=[_check_out(c) for c in report.items],
         output_report=[_check_out(c) for c in report.output_items],
         defence_sources=[DefenceSourceOut(**line.__dict__) for line in sources.lines],
@@ -393,7 +509,9 @@ def analyze_build(req: BuildRequest, caller: str = Depends(require_user)) -> Bui
         report_notes=report.notes,
         analysis_done=True,
         analysis_note=(
-            _CHARACTER_ANALYSIS_NOTE if input_type == "character_api" else _ANALYSIS_NOTE
+            _CHARACTER_ANALYSIS_NOTE if input_type == "character_api"
+            else _SCREENSHOT_ANALYSIS_NOTE if input_type == "screenshot"
+            else _ANALYSIS_NOTE
         ),
         warnings=build.warnings,
     )

@@ -356,6 +356,38 @@ footer {
   white-space: nowrap;
 }
 
+.pc-transcript {
+  width: 100%;
+  min-height: 130px;
+  max-height: 260px;
+  resize: vertical;
+  margin: 8px 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--fg);
+  font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.pc-fields {
+  max-height: 210px;
+  overflow: auto;
+  margin: 8px 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: pre-wrap;
+}
+
+.pc-warning {
+  margin: 0 0 10px;
+  color: var(--block-border);
+  font-size: 12.5px;
+}
+
 .pc-note {
   margin: 0 0 10px;
   color: var(--fg-dim);
