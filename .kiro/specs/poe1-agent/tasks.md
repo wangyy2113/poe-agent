@@ -808,7 +808,8 @@ V1 完成的判定标准（逐条实测，不以「无报错」代替验证）�
 - [ ] 角色 API 导入与截图识别
 - [x] 官方天赋树链接解析 v1（2026-09-08）：`/build` 与聊天页接受
   `pathofexile.com/passive-skill-tree` / `fullscreen-passive-skill-tree`，按 PoB
-  `PassiveSpec.DecodeURL` 格式在本地解出职业、升华位域、普通节点、星团节点与大师选择；
+  官方 6.2 / `PassiveSpec.DecodeURL` 格式在本地解出职业、升华/Bloodline 位域、
+  普通节点、星团节点与大师选择；
   不抓取 URL。链接未携带的装备、技能、配置与 PlayerStat 保持未知；暂不支持第三方
   poeplanner / poeskilltree 短链
 - _需求: 4, 8, 9, 11, 12, 13_

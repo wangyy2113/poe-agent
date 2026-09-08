@@ -1,8 +1,13 @@
 """官方 PoE1 天赋树链接解析。
 
-二进制格式逐字移植自 PoB `Classes/PassiveSpec.lua:DecodeURL/EncodeURL`：4 字节格式版本、
-职业、升华位域、普通节点、星团节点、可选的大师效果。只接受 pathofexile.com 官方域名，
-全程本地解码，不抓取用户提供的 URL。
+二进制格式以 GGG 官方开发者文档为准，并与 PoB
+`Classes/PassiveSpec.lua:DecodeURL/EncodeURL` 交叉核对：4 字节格式版本、职业、升华位域、
+普通节点、星团节点、可选的大师效果。只接受 pathofexile.com 官方域名，全程本地解码，
+不抓取用户提供的 URL。
+
+3.27 的官方格式版本称为 6.2，但线上的 uint32 仍写 6；变化落在升华字节：低 2 位是
+职业升华，高 6 位是 Bloodline（历史上也曾承载 Wildwood 升华）。因此这里必须右移
+整个字节，不能只掩码 0x0c，否则编号 4--63 会被静默截断。
 """
 
 from __future__ import annotations
@@ -20,12 +25,16 @@ class PassiveTreeLinkError(ValueError):
     pass
 
 
+SOURCE = "https://www.pathofexile.com/developer/docs/reference#extra-PassiveSkillTreeUrl"
+
+
 @dataclass(frozen=True)
 class PassiveTreeLink:
     serialization_version: int
     tree_version: str
     class_id: int
     ascendancy_id: int
+    #: 高 6 位：3.27+ 是 Bloodline，历史版本可能是 Wildwood 升华。
     secondary_ascendancy_id: int
     nodes: tuple[str, ...]
     cluster_nodes: tuple[str, ...]
@@ -106,7 +115,7 @@ def parse_passive_tree_link(link: str) -> PassiveTreeLink:
         raise PassiveTreeLinkError(f"未知职业编号 {class_id}")
     ascendancy_bits = data[5] if version >= 4 else 0
     ascendancy_id = ascendancy_bits & 3
-    secondary_ascendancy_id = (ascendancy_bits & 12) >> 2
+    secondary_ascendancy_id = ascendancy_bits >> 2
 
     cluster_nodes: tuple[int, ...] = ()
     mastery_effects: tuple[tuple[str, str], ...] = ()
@@ -165,8 +174,11 @@ def passive_tree_build(link: str) -> tuple[PobBuild, PassiveTreeLink]:
     build.warnings.append(
         "输入仅包含天赋树：装备、技能、配置与 PlayerStat 均未提供，相关体检项会显示未知。"
     )
-    if tree.ascendancy_id:
+    if tree.ascendancy_id or tree.secondary_ascendancy_id:
+        ids = f"职业升华 {tree.ascendancy_id}"
+        if tree.secondary_ascendancy_id:
+            ids += f"、副升华/血统 {tree.secondary_ascendancy_id}"
         build.warnings.append(
-            f"链接只提供升华编号 {tree.ascendancy_id}；未在跨版本情况下猜测升华名称。"
+            f"链接只提供编号（{ids}）；未在跨版本情况下猜测升华或血统名称。"
         )
     return build, tree

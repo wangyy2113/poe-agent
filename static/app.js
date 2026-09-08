@@ -585,7 +585,7 @@ function renderBuild(data) {
     lines.push(
       `- 链接编码版本：${buildText(data.tree_serialization_version)}`,
       `- 升华编号：${buildText(data.ascendancy_id)}`,
-      `- 第二升华编号：${buildText(data.secondary_ascendancy_id)}`
+      `- 副升华 / 血统编号：${buildText(data.secondary_ascendancy_id)}`
     );
   }
   if (data.version_check && data.version_check.basis) {
