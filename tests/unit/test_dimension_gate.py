@@ -453,3 +453,45 @@ class SubsumedCoverageTest(DimensionGapTest):
         self.assertIn("spectre", [s.key for s in v.uncovered])
         self.assertTrue(v.covered)
         self.assertFalse(v.is_gap)
+
+
+class FossilDomainTest(DimensionGapTest):
+    """化石域：权重乘数第六十五轮入库，成功率与共鸣器组合规则照旧拒答。
+
+    这一轮**从 `missing_dimension_hints` 里删掉了「乘数」**，所以这个类的两半
+    必须成对写：删早了会让有据的问题被拒（错误拒答），删多了会让没数据的那两维漏出。
+    """
+
+    def setUp(self) -> None:
+        super().setUp()
+        # 权重乘数入库后 fossil 仍是 partial——缺的换成了成功率与共鸣器组合规则
+        self.rows.append(_status("fossil", "partial", 1983))
+
+    # ── 该放的放行 ──
+
+    def test_权重乘数第六十五轮起放行(self) -> None:
+        """判据看的是 **`fossil` 有没有进 `uncovered`**，不是 `is_gap`。
+
+        **第一版拿 `is_gap` 当判据，而它在这里测不出任何东西**：`mod_affix.hints`
+        里有「权重」，任何带这两个字的问题都会让已全量入库的它成为 covered，
+        于是 `is_gap = uncovered and not covered` 恒为 False——把「乘数」加回
+        `missing_dimension_hints` 再跑，`is_gap` 一动不动。
+        同一版的第二条问法更糟：整句里**根本没有「乘数」**，测的不是这次的改动。
+
+        所以两条问法都必须含「乘数」，并断言在 `uncovered` 那一维上。
+        实测回退（把「乘数」加回去）时两条都翻成 `uncovered=['fossil']`——
+        **先确认测量本身是对的，再看它指向哪里。**
+        """
+        for q in ("炽炎化石的权重乘数是多少", "原始化石对生命的乘数是多少"):
+            with self.subTest(q=q):
+                self.assertNotIn("fossil", [s.key for s in self._verdict(q).uncovered])
+
+    # ── 该拦的拦住 ──
+
+    def test_成功率与共鸣器组合规则照旧拒答(self) -> None:
+        """有了权重**不等于**有了成功率——这是这个域最容易被误答的一维。"""
+        for q in ("用化石打造的成功率有多高", "共鸣器和化石怎么搭配"):
+            with self.subTest(q=q):
+                v = self._verdict(q)
+                self.assertTrue(v.is_gap, q)
+                self.assertIn("fossil", [s.key for s in v.uncovered])

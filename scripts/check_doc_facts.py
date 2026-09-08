@@ -207,6 +207,18 @@ FACTS: tuple[Fact, ...] = (
     Fact("CLAUDE.md 收获种子怪物条数", "CLAUDE.md",
          r"`poedb_harvest_seed` \*\*([\d,]+)\*\* 个种子怪物",
          _count("poedb_harvest_seed")),
+    Fact("CLAUDE.md 标签权重行数", "CLAUDE.md",
+         r"`poedb_tag_weight` \*\*([\d,]+)\*\* 行", _count("poedb_tag_weight")),
+    # 化石那一类单独钉：它才是这张表补上的那一维（`fossil` 域声明未采集的乘数），
+    # 总行数对得上而化石那部分掉了，是这张表最可能出现的失真。
+    Fact("CLAUDE.md 化石标签权重行数", "CLAUDE.md",
+         r"化石 ([\d,]+) 行 / [\d,]+ 件",
+         _count_where("poedb_tag_weight", "kind='化石'")),
+    Fact("CLAUDE.md 化石件数", "CLAUDE.md",
+         r"化石 [\d,]+ 行 / ([\d,]+) 件",
+         lambda conn: conn.execute(
+             "SELECT count(DISTINCT name_zh) FROM poedb_tag_weight WHERE kind='化石'"
+         ).fetchone()[0]),
     Fact("CLAUDE.md 精华件数", "CLAUDE.md",
          r"`poedb_essence` \*\*([\d,]+)\*\* 件精华", _count("poedb_essence")),
     Fact("CLAUDE.md 精华保底词缀行数", "CLAUDE.md",

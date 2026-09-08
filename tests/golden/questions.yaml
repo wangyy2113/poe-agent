@@ -442,6 +442,41 @@ cases:
       `poedb_currency.name_en` 的前缀逐字相同。第四种「神圣白晶命能」
       不在这张表里，工具查不到时会明说。
 
+  # ── 化石的标签权重乘数（2026-09-08 第六十五轮入库）──────────────
+  - id: num_fossil_tag_weight
+    query: 炽炎化石对火焰和冰霜的权重乘数分别是多少
+    kind: numeric
+    expect_values: ["0", "10"]
+    note: >-
+      同一页第三张表（`Type ｜ Name ｜ Tags`，61 行）。`冰霜 x0` 与 `火焰 x10`
+      是**页面自己给的数字**，不是推断出来的
+    lesson: >-
+      证据里的乘数**不能渲染成 `x10.0`**：页面写的是 `x10`，模型照页面复述时
+      数值回填会因为多出来的那一位小数点在证据里找不到，
+      于是一句完全正确的话被自己的闸门拦掉（判据在 `_fmt_multiplier`）。
+
+  - id: route_fossil_tag_weight
+    query: 哪个化石能提高火焰词缀的权重
+    kind: tool_route
+    expect_tool: tag_weight_lookup
+    lesson: >-
+      **裸的「化石」不能进意图词**：化石的词缀池早就入库成 1983 条
+      `category='delve'`，「某个化石能开出哪些词缀」是词缀卡与 `mod_tiers` 的活。
+      分界是**问的是哪一侧**——给定化石问它的词缀池归词缀表，
+      给定标签问哪个化石偏向它才归这张权重表。
+
+  - id: gap_fossil_success_rate
+    query: 用化石打造的成功率有多高
+    kind: gap
+    expect_gap: true
+    note: >-
+      **有了权重不等于有了成功率**：这一维页面没给，也没有第二来源。
+      共鸣器的组合规则同样未采集
+    lesson: >-
+      这条是 `num_fossil_tag_weight` 的成对点。第六十五轮把「乘数」从
+      `missing_dimension_hints` 里删掉，删早了会让有据的问题被拒、
+      删多了会让这两维漏出，所以两条必须一起看。
+
   # ── 精华物品本身（2026-09-02 第五十九轮入库）────────────────────
   - id: desc_essence_item_itself
     query: 憎恨之低语精华有什么用

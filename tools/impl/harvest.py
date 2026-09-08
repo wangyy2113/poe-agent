@@ -288,3 +288,127 @@ def harvest_seed_lookup(query: str) -> ToolResult:
         }],
         meta={"channel": "structured", "table": "poedb_harvest_seed"},
     )
+
+
+# ── 按标签改词缀权重（化石 / 催化剂 / 花园工艺站 / 两条元词缀，第六十五轮）──
+
+#: 一次最多列几行。静默截断等同于漏答。
+MAX_TAG_WEIGHT_ROWS = 40
+
+#: 边界。由代码放进 `data`，不让模型转述。
+_TAG_WEIGHT_BOUNDARY = (
+    "权重乘数取自 POEDB 收获页的 `Type ｜ Name ｜ Tags` 表。"
+    "**只有化石与那两条工艺台元词缀给了数字**；催化剂与花园工艺站页面只列标签、"
+    "没给乘数，本库因此留空——不要把留空读成「乘数是 1」。"
+    "`x0` 是「这一类词缀不会出现」这个确定事实。"
+    "**这张表不含成功率、也不含共鸣器的组合规则**（那一维未采集），"
+    "而标签名中英混排（`冰霜` 与 `bleed`）是页面原值，本库不自行翻译。"
+)
+
+
+@REGISTRY.register(
+    name="tag_weight_lookup",
+    description=(
+        "查**按词缀标签改权重**的东西：某个化石屏蔽/放大哪些标签的词缀、"
+        "想放大某个标签该用哪个化石、某个催化剂或花园工艺站对应什么标签。"
+        "问「炽炎化石有什么用 / 哪个化石能提高火焰词缀 / 化石的权重乘数」时用它。\n"
+        "**不回答成功率与共鸣器组合规则**——那一维本库未采集。"
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "query": {
+                "type": "string",
+                "description": "化石/催化剂/工艺站名（如「炽炎化石」），或标签（如「火焰」「施法」）。",
+            },
+        },
+        "required": ["query"],
+        "additionalProperties": False,
+    },
+)
+def tag_weight_lookup(query: str) -> ToolResult:
+    q = (query or "").strip()
+    # 校验与 `harvest_craft_catalog` 逐条相同——**同一个概念不写第二份判据**。
+    if not q:
+        return ToolResult(ok=False, error="query 不能为空")
+    if len(q) > MAX_QUERY_CHARS:
+        return ToolResult(ok=False, error=f"query 最多允许 {MAX_QUERY_CHARS} 个字符")
+    if not any(char.isalnum() for char in q):
+        return ToolResult(ok=False, error="query 必须包含文字或数字，不能只给通配符或标点")
+
+    conn = dbmod.get_conn()
+
+    # **必须走 `_escape_like`**，而这张表是最需要它的一张：标签名本身带下划线
+    # （`physical_damage` / `chaos_damage`），不转义的话用户输入里的 `_` 会变成
+    # 「任意一个字符」的通配符，`%` 更是直接匹配全部 61 行。
+    like = f"%{_escape_like(q)}%"
+    rows = [dict(r) for r in conn.execute(
+        "SELECT kind, name_zh, tag, multiplier, url, source, source_priority "
+        "FROM poedb_tag_weight "
+        "WHERE name_zh LIKE ? ESCAPE '\\' OR tag LIKE ? ESCAPE '\\' "
+        "ORDER BY kind, name_zh, row_index",
+        (like, like),
+    )]
+    if not rows:
+        known = conn.execute("SELECT count(*) FROM poedb_tag_weight").fetchone()[0]
+        return ToolResult(
+            ok=True,
+            data={
+                "found": False,
+                "reason": (
+                    f"按标签改权重的表里没有「{q}」（共 {known} 行：化石 / 催化 / "
+                    "花园工艺站 / 两条工艺台元词缀）。**这不等于它没有效果**——"
+                    "这张表只收 POEDB 收获页列出的那些。"
+                ),
+                "boundary": _TAG_WEIGHT_BOUNDARY,
+            },
+        )
+
+    shown = rows[:MAX_TAG_WEIGHT_ROWS]
+    lines = [f"### 「{q}」相关的标签权重乘数（共 {len(rows)} 行）", "",
+             "| 类型 | 名称 | 词缀标签 | 权重乘数 |", "| --- | --- | --- | --- |"]
+    for r in shown:
+        mult = "（页面未给）" if r["multiplier"] is None else _fmt_multiplier(r["multiplier"])
+        lines.append(f"| {r['kind']} | {r['name_zh']} | {r['tag']} | {mult} |")
+    if len(rows) > len(shown):
+        lines.append("")
+        lines.append(f"（以上仅列 {len(shown)} 行，还有 {len(rows) - len(shown)} 行未列出）")
+    lines += ["", _TAG_WEIGHT_BOUNDARY]
+    return ToolResult(
+        ok=True,
+        data={
+            "found": True,
+            "total": len(rows),
+            "shown": len(shown),
+            "truncated": len(rows) > len(shown),
+            "rows": [
+                {"kind": r["kind"], "name": r["name_zh"], "tag": r["tag"],
+                 "multiplier": r["multiplier"],
+                 "blocks": r["multiplier"] == 0.0}
+                for r in shown
+            ],
+            "boundary": _TAG_WEIGHT_BOUNDARY,
+        },
+        citations=[{
+            "chunk_id": f"tag_weight:{q}",
+            "entity_id": None,
+            "title": f"{q} 的标签权重乘数（POEDB 收获页）",
+            "url": rows[0]["url"],
+            "source": rows[0]["source"],
+            "source_priority": int(rows[0]["source_priority"]),
+            "can_support_facts": True,
+            "text": "\n".join(lines),
+            "channel": "structured",
+        }],
+        meta={"channel": "structured", "table": "poedb_tag_weight"},
+    )
+
+
+def _fmt_multiplier(value: float) -> str:
+    """`10.0 → x10`、`0.15 → x0.15`、`0.0 → x0（屏蔽）`。
+
+    整数不留 `.0`：证据里出现 `x10.0` 而页面写的是 `x10`，
+    数值回填校验会因为这一位小数点找不到而拦掉一句正确的话。
+    """
+    text = f"{value:g}"
+    return f"x{text}（屏蔽这一类词缀）" if value == 0 else f"x{text}"
