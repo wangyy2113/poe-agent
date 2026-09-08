@@ -4,15 +4,21 @@
 它不解释这些选项如何改变装备状态，也不据此判断某件装备当前能否执行该工艺——
 与 `poedb_crafting.py`（工艺工作台）同一条边界。
 
-## 这一页有三张表，只取第一张
+## 这一页有三张表，三张都取（分三轮才取全）
 
-`/cn/Horticrafting` 实测（2026-08-27）：
+`/cn/Horticrafting` 实测：
 
-| 表 | 行数 | 内容 | 本模块 |
+| 表 | 行数 | 内容 | 取它的那一轮 |
 | --- | --- | --- | --- |
-| 0 | 74 | `描述 ｜ 消耗` —— 定向工艺目录 | **取** |
-| 1 | 51 | `怪物 ｜ 阶级 ｜ Colour` —— 作物与掉落来源 | 不取，调用方登记条数 |
-| 2 | 41 | `Type ｜ Name ｜ Tags` —— 催化 10 / 化石 18 / 工艺台 2 / 花园工艺站 11 | 不取，粒度混杂 |
+| 0 | 74 | `描述 ｜ 消耗` —— 定向工艺目录 | 第三十六轮 |
+| 1 | 51 | `怪物 ｜ 阶级 ｜ Colour` —— 种子怪物按颜色掉命能 | 第五十八轮 |
+| 2 | 41 | `Type ｜ Name ｜ Tags` —— 按标签改词缀权重，四类混排 | 第六十五轮 |
+
+**后两张各挂了二十多轮，两次都是因为名字被写错了。** 表 1 在台账里叫
+「作物与掉落来源」（真表头是 `怪物 ｜ 阶级 ｜ Colour`）；表 2 叫「催化剂等参考表」，
+本模块注释还写过「催化剂与它们的标签，属于另一个域，这里仍然不取」——
+而它化石那 18 行的 `Tags` **就是 `fossil` 域声明未采集的权重乘数**。
+**注释与台账里的名字都会骗人，动手前先看真实表头。**
 
 所以**按表头定位而不是按下标取表**：上游加一张表，下标就会指错，
 而指错之后仍然「抽得出内容」——那是最难发现的一类错。
@@ -73,9 +79,23 @@ EXPECTED_HEADERS = ("描述", "消耗")
 #: 种子生成的怪物、它的阶级、以及**颜色**。颜色决定掉哪种命能，
 #: 所以它是命能的获取途径（第五十八轮入库）。
 SEED_HEADERS = ("怪物", "阶级", "Colour")
-#: 催化剂等混排参考表。同样被叫成过「相关物品」——实测是 `Type ｜ Name ｜ Tags`，
-#: 内容是催化剂与它们的标签，**属于另一个域**，这里仍然不取。
+#: 标签权重乘数表。它被叫错过两次——台账里写「催化剂等参考表」、
+#: 注释里写「催化剂与它们的标签，属于另一个域」。**实测三列是 `Type ｜ Name ｜ Tags`，
+#: 四类混排**（化石 18 / 花园工艺站 11 / 催化 10 / 工艺工作台 2），
+#: 而 `Tags` 列在化石那 18 行上**就是权重乘数**（`炽炎化石 → 冰霜x0,火焰x10`）——
+#: 也就是 `fossil` 域 `partial_note` 里一直写着「未采集」的那一维。
+#: 第六十五轮入库，理由与判据见 `parse_tag_weights`。
 MISC_HEADERS = ("Type", "Name", "Tags")
+
+#: `Tags` 单元格里跟在每个 `<span class="badge">` 后面的乘数：` x0` / ` x10` / ` x0.15`。
+#: **必须逐个 span 取标签，不能对整格 `text()` 做切分**：实测「有害催化剂」那格是
+#: 两个相邻 span（`physical_damage` 与 `chaos_damage`）且中间没有分隔符，
+#: 整格取文本会粘成 `physical_damagechaos_damage` 这一个假标签。
+_TAG_MULT_RE = re.compile(r"^[,\s]*x\s*([0-9]+(?:\.[0-9]+)?)")
+
+#: 给了乘数的两类。催化剂与花园工艺站页面**只给标签、不给数字**，
+#: 那两类的 `multiplier` 留 None——补 1 会把「页面没说」写成「乘数是 1」。
+TAG_WEIGHT_KINDS_WITH_MULTIPLIER = ("化石", "工艺工作台")
 
 #: `<a>通货</a> x50` 里跟在链接后面的数量。**数量在后**，与工艺台相反。
 _AMOUNT_RE = re.compile(r"^\s*x\s*(\d+)\s*$", re.I)
@@ -285,12 +305,10 @@ def extract_harvest_crafts(
     if not crafts:
         raise HarvestStructureError("定向工艺主表里没有解析到任何一行")
 
-    # 种子怪物表第五十八轮起单独入库（见 `parse_seeds`），不再算「有意跳过」。
-    # 催化剂那张仍然不取：它属于另一个域。
-    other = _find_table(tree, MISC_HEADERS, what="催化剂等参考表")
-    if other is not None:
-        stats.not_taken["催化剂等参考表"] = sum(
-            1 for tr in other.css("tr") if tr.css("td"))
+    # 这一页三张表现在都入库了：定向工艺（本函数）、种子怪物（`parse_seeds`，
+    # 第五十八轮）、标签权重乘数（`parse_tag_weights`，第六十五轮）。
+    # 所以 `not_taken` 空着——**它空着才是对的**，不是忘了填：
+    # 这个字段的用途是「有意省略了多少行」，页面全取完之后就该没有条目。
     return crafts, stats
 
 
@@ -335,4 +353,91 @@ def parse_seeds(html: str, *, page_url: str = HORTICRAFTING_URL) -> tuple[Harves
                 f"种子怪物 {monster!r} 的阶级 {tier_raw!r} 不是数字"
             ) from None
         out.append(HarvestSeed(monster_zh=monster, tier=tier, colour=colour))
+    return tuple(out)
+
+
+@dataclass(frozen=True)
+class TagWeight:
+    """一条「这个东西把某个词缀标签的权重乘以多少」。
+
+    `kind` 逐字取自页面的 `Type` 列，四类共用一张表是**因为页面就是一张表**——
+    它们的共同语义正是「按标签改词缀权重」：
+
+        化石       炽炎化石 → 冰霜 x0、火焰 x10      （屏蔽冰霜、火焰权重 ×10）
+        工艺工作台   不能附加武器攻击相关属性修正 → 攻击 x0
+        催化       有害催化剂 → physical_damage / chaos_damage   （只给标签）
+        花园工艺站   荒野幼熊 → 施法                              （只给标签）
+    """
+
+    kind: str
+    name_zh: str
+    tag: str
+    #: 乘数。**只有化石与工艺工作台给了数字**；另两类页面没给，留 None。
+    #: `x0` 是「这类词缀不会出现」这个确定的事实，与 None（页面没说）不是一回事。
+    multiplier: float | None
+
+    @property
+    def blocks(self) -> bool:
+        """乘数为 0 = 这一类词缀被屏蔽。`None` 不算屏蔽（页面没给数字）。"""
+        return self.multiplier == 0.0
+
+
+def _parse_tag_cell(cell: Node) -> tuple[tuple[str, float | None], ...]:
+    """`Tags` 单元格 → ((标签, 乘数), …)，按页面顺序。
+
+    逐个 `span` 取标签、把紧跟其后的文本节点当乘数，理由见 `_TAG_MULT_RE`。
+    """
+    out: list[list] = []
+    for node in cell.iter(include_text=True):
+        if node.tag == "span":
+            out.append([node.text(strip=True), None])
+        elif node.tag == "-text" and out and out[-1][1] is None:
+            matched = _TAG_MULT_RE.match(node.text() or "")
+            if matched:
+                out[-1][1] = float(matched.group(1))
+    return tuple((tag, mult) for tag, mult in out if tag)
+
+
+def parse_tag_weights(
+    html: str, *, page_url: str = HORTICRAFTING_URL
+) -> tuple[TagWeight, ...]:
+    """解析标签权重乘数表。没有这张表就返回空元组。
+
+    这一维补的是 `fossil` 域 `partial_note` 里那句「化石对权重的乘数未采集」。
+    **它一直在这一页上**，而台账把这张表记成「催化剂等参考表」、
+    本模块的注释又写着「属于另一个域，这里仍然不取」——
+    于是它挂了近三十轮。**注释与台账里的名字都会骗人，动手前先看真实表头**
+    （与第五十八轮种子怪物表被叫成「作物与掉落来源」是同一个错）。
+
+    三条实测判据：
+
+    * **标签逐个 `span` 取**，不对整格切分文本（见 `_TAG_MULT_RE`）；
+    * **只有化石与工艺工作台有乘数**，另两类留 None 而不是补 1；
+    * **标签名中英混排**（`冰霜` 与 `bleed` / `physical_damage`）——
+      页面就是这样，英文那些在 `<i>` 里，本库存页面原值、不自己翻译。
+
+    只有 PoB 侧没有第二来源：`Data/ModDelve.lua` 是化石的**词缀池**
+    （早已入库成 `category='delve'`），不含权重乘数。
+    """
+    tree = HTMLParser(html)
+    table = _find_table(tree, MISC_HEADERS, what="标签权重乘数表")
+    if table is None:
+        return ()
+    out: list[TagWeight] = []
+    for row in table.css("tbody tr"):
+        cells = row.css("td")
+        if len(cells) != len(MISC_HEADERS):
+            continue
+        kind, name = _text(cells[0]), _text(cells[1])
+        if not kind or not name:
+            continue
+        pairs = _parse_tag_cell(cells[2])
+        if not pairs:
+            raise HarvestStructureError(
+                f"{kind}「{name}」的 Tags 格里解析不出任何标签（{page_url}）"
+            )
+        for tag, mult in pairs:
+            out.append(
+                TagWeight(kind=kind, name_zh=name, tag=tag, multiplier=mult)
+            )
     return tuple(out)

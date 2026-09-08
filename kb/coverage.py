@@ -510,11 +510,22 @@ DOMAINS: tuple[DomainSpec, ...] = (
         category=Category.CRAFTING,
         authority_url=f"{POEDB_BASE}/Modifiers",
         count_sql="SELECT count(*) FROM mod_affix WHERE category='delve'",
-        tools=("stat_sources",),
+        tools=("tag_weight_lookup", "stat_sources"),
         hints=("化石", "共鸣器", "地心探索"),
-        question_hints=("化石能出什么词缀",),
-        partial_note="化石**词缀池**已入库；化石对权重的乘数与共鸣器组合规则未采集",
-        missing_dimension_hints=("乘数", "共鸣器组合", "组合规则", "怎么搭配", "成功率"),
+        question_hints=("化石能出什么词缀", "某个化石屏蔽或放大哪些词缀标签"),
+        partial_note=(
+            "化石**词缀池**已入库（1,978 条 `category='delve'`）；"
+            "**按标签的权重乘数第六十五轮补上**（`poedb_tag_weight`，化石 18 件共 37 行，"
+            "如 `炽炎化石 → 冰霜 x0、火焰 x10`，走 `tag_weight_lookup`）；"
+            "**未采集**：共鸣器的组合规则、以及一次使用的成功率"
+        ),
+        missing_dimension_hints=(
+            # 「乘数」第六十五轮**删掉了**：`poedb_tag_weight` 入库后
+            # 「炽炎化石的权重乘数是多少」答得出来，留着就等于让闸门把有据的问题拒掉。
+            # **「成功率」留着**——那一维确实没有，而且它是这个域最容易被误答的一维
+            # （有了权重不等于有了成功率，这条边界与 affix_pool_odds 同一句）。
+            "共鸣器组合", "组合规则", "怎么搭配", "成功率",
+        ),
     ),
     DomainSpec(
         key="crafting_bench",

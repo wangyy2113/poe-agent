@@ -840,6 +840,10 @@ MIN_HARVEST_CRAFTS = 60
 #: 收获费用引用的通货。与 `poedb_currency` 对账用的问题键。
 HARVEST_GAP_QUESTION = "收获（古灵庄园）页面上未采集的表"
 
+#: 标签权重乘数的绝对下限。实测展开后 61 行（化石 37 / 催化 11 / 花园工艺站 11 /
+#: 工艺工作台 2），留出上游删项余量。
+MIN_TAG_WEIGHTS = 45
+
 
 def _check_harvest_currencies(conn, crafts) -> list[str]:  # noqa: ANN001
     """费用通货必须都能对上已入库的 `poedb_currency`。
@@ -883,8 +887,12 @@ def _record_harvest_gaps(conn, not_taken: dict[str, int]) -> int:  # noqa: ANN00
         (f"[other_table] 收获页上的「{label}」表有 {rows} 行未入库", rows)
         for label, rows in sorted(not_taken.items())
     ]
-    if not points:
-        return 0
+    # **`points` 为空也要写**：`record_ingest_gaps` 按 (question, kind, source)
+    # 整组替换，空清单就是「这一页已经没有省略的表了」这个事实。
+    # 先前这里 `if not points: return 0` 直接返回，于是第六十五轮把第三张表入库之后，
+    # 那条「催化剂等参考表有 41 行未入库」**仍然留在台账里**——
+    # 与第六十四轮 `verify_against_detail` 那个 `if diff.detail_only:` 是同一个形态：
+    # **早退让「已经修好了」这个事实写不进台账。**
     return dbmod.record_ingest_gaps(
         conn,
         question=HARVEST_GAP_QUESTION,
@@ -995,6 +1003,34 @@ def run_poedb_harvest(*, force: bool = False, allow_shrink: bool = False) -> int
             ],
         )
         logger.info("收获种子怪物入库 %d 个", len(seeds))
+        # 标签权重乘数表（第六十五轮）：同一页第三张表，四类混排。
+        # 它补的是 `fossil` 域声明未采集的「化石对权重的乘数」——那一维一直在这一页上，
+        # 只是台账把这张表记成「催化剂等参考表」，理由见 `parse_tag_weights`。
+        weights = poedb_harvest.parse_tag_weights(
+            res.text, page_url=poedb_harvest.HORTICRAFTING_URL)
+        if len(weights) < MIN_TAG_WEIGHTS:
+            raise RuntimeError(
+                f"标签权重乘数只解析到 {len(weights)} 行（下限 {MIN_TAG_WEIGHTS}），"
+                "疑似上游改版；拒绝写入以免留下半张表"
+            )
+        conn.execute("DELETE FROM poedb_tag_weight")
+        conn.executemany(
+            "INSERT INTO poedb_tag_weight(kind, name_zh, tag, multiplier, row_index, "
+            "source, source_priority, url, fetched_at, updated_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,datetime('now'))",
+            [
+                (w.kind, w.name_zh, w.tag, w.multiplier, i, Source.POEDB.value,
+                 priority, poedb_harvest.HORTICRAFTING_URL, res.fetched_at)
+                for i, w in enumerate(weights)
+            ],
+        )
+        by_kind = Counter(w.kind for w in weights)
+        logger.info(
+            "标签权重乘数入库 %d 行（%s），其中给了乘数的 %d 行、屏蔽（x0）的 %d 行",
+            len(weights), dict(sorted(by_kind.items())),
+            sum(1 for w in weights if w.multiplier is not None),
+            sum(1 for w in weights if w.blocks),
+        )
         gap_rows = _record_harvest_gaps(conn, stats.not_taken)
         conn.execute("RELEASE harvest_snapshot")
     except Exception:

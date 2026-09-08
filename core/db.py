@@ -660,6 +660,38 @@ CREATE TABLE IF NOT EXISTS poedb_harvest_seed (
 );
 CREATE INDEX IF NOT EXISTS idx_harvest_seed_colour ON poedb_harvest_seed(colour);
 
+-- ── 按标签改词缀权重（同一页第三张表，第六十五轮）──
+-- `Type ｜ Name ｜ Tags` 四类混排：化石 / 工艺工作台 / 催化 / 花园工艺站。
+-- 一张表是因为**页面就是一张表**，而四类的共同语义正是「按标签改词缀权重」。
+--
+-- 这张表补的是 `fossil` 域 `partial_note` 里那句「化石对权重的乘数未采集」——
+-- 它**一直在这一页上**，只是台账把它记成「催化剂等参考表」、抽取器注释又写着
+-- 「属于另一个域，这里仍然不取」，于是挂了近三十轮（判据见 `parse_tag_weights`）。
+--
+-- `multiplier` **可空**：只有化石与工艺工作台给了数字，催化与花园工艺站页面
+-- 只给标签。补 1 会把「页面没说」写成「乘数是 1」——那是个看起来很合理的假值。
+-- 而 `multiplier = 0` 是「这类词缀不会出现」这个**确定的事实**，与 NULL 不是一回事。
+--
+-- `tag` 中英混排（`冰霜` 与 `bleed` / `physical_damage`）是**页面原值**：
+-- 英文那些在 `<i>` 里、上游没给中文，本库不自己翻译。
+CREATE TABLE IF NOT EXISTS poedb_tag_weight (
+    kind            TEXT NOT NULL CHECK(kind <> ''),   -- 化石 / 工艺工作台 / 催化 / 花园工艺站
+    name_zh         TEXT NOT NULL CHECK(name_zh <> ''),
+    tag             TEXT NOT NULL CHECK(tag <> ''),
+    -- 页面没给数字时为 NULL；0 表示屏蔽这一类词缀
+    multiplier      REAL CHECK(multiplier IS NULL OR multiplier >= 0),
+    row_index       INTEGER NOT NULL,
+    source          TEXT NOT NULL,
+    source_priority INTEGER NOT NULL,
+    url             TEXT NOT NULL CHECK(url <> ''),
+    fetched_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL,
+    -- 同一个东西可以改多个标签，所以主键要带 tag
+    PRIMARY KEY(kind, name_zh, tag)
+);
+CREATE INDEX IF NOT EXISTS idx_tag_weight_tag ON poedb_tag_weight(tag);
+CREATE INDEX IF NOT EXISTS idx_tag_weight_kind ON poedb_tag_weight(kind);
+
 -- ── 获取途径（POEDB 详情页的 `Acquisition` 区块，第五十四轮）──
 -- 「哪张命运卡能出头猎」「托沃卧怎么合」这类问题在这之前一条都答不了。
 --

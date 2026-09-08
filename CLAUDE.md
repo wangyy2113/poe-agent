@@ -143,7 +143,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 1391 项，秒级
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 1422 项，秒级
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选
@@ -160,7 +160,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 .venv/bin/python scripts/eval_run.py --record        # 重录真实响应（**要凭证、烧 token**）
 ```
 
-黄金问答集是 `tests/golden/questions.yaml`（145 条，六类），基线与全部结论在
+黄金问答集是 `tests/golden/questions.yaml`（148 条，六类），基线与全部结论在
 `tests/golden/BASELINE.md`——**动闸门前先读它**，里面记了多个已修缺陷与三条已知未修边界，
 以及两次「测量本身写错」的教训。
 
@@ -268,6 +268,7 @@ POE1/POE2 边界顺带落在同一张表上：poe.ninja 两款游戏都服务，
 
 `affix_pool_odds`（胸甲同侧普通词缀条件概率）→ `check_mod_combination`（三态可行性）→
 `bench_recipe_catalog`（工艺台目录）→ `harvest_craft_catalog`（收获定向工艺目录与命能费用）→
+`tag_weight_lookup`（化石/催化剂/工艺站按词缀标签改权重的乘数）→
 `essence_lookup`（精华物品本身：按名 / 按等阶 / 按有无等级上限枚举）→
 `metamod_interaction_matrix`（逐字矩阵单元格）→
 `mod_tiers`（T 级梯度）→ `mod_class_summary`（某底材上一共有哪些词缀：总量 / 分布 / 梯度清单）→
@@ -760,7 +761,41 @@ POEDB 页面仍是旧版」：`号召` PoB 侧是 `ConvocationNew`（各级需�
 **错的名字来自我自己代码里的硬编码标签**（`CROP_HEADERS` / `"作物与掉落来源"`）——
 注释和台账里的名字同样会骗人，动手前先看真实表头。
 
-同页仍有 **41 行催化剂等参考表**（`Type/Name/Tags`）有意不取并按行数登记进台账。
+`poedb_tag_weight` **61** 行**按标签改词缀权重**（第六十五轮）：同页第三张表
+`Type ｜ Name ｜ Tags`，四类混排（化石 37 行 / 18 件、催化 11、花园工艺站 11、
+工艺工作台 2）。补的是 `fossil` 域 `partial_note` 里那句「化石对权重的乘数未采集」——
+**它一直在这一页上**，走 `tag_weight_lookup`（无卡片）。
+
+**这一页三张表现在都入库了，而后两张各挂了二十多轮，两次都是因为名字被写错**：
+表 1 叫成「作物与掉落来源」（上一段），表 2 叫成「催化剂等参考表」，
+抽取器注释还写着「催化剂与它们的标签，**属于另一个域**，这里仍然不取」——
+而化石那 18 行的 `Tags` 就是本库自己声明未采集的那一维。
+**注释与台账里的名字都会骗人，动手前先看真实表头**（同一个错，第二次）。
+
+四条实测判据：
+
+- **标签逐个 `<span>` 取，不对整格 `text()` 切分**：「有害催化剂」那格两个 span
+  相邻、中间只有 `<br>`，没有任何文本分隔符。实测整格取文本得到
+  `physical_damagechaos_damage` —— 一个粘起来的、库里永远查不到的假标签。
+- **只有化石与工艺工作台给了数字**，催化与花园工艺站页面只列标签，`multiplier`
+  留 NULL。**补 1 会把「页面没说」写成「乘数是 1」**；而 `x0` 是
+  「这一类词缀不会出现」这个**确定的事实**，与 NULL 不是一回事。
+- **证据里的乘数不能渲染成 `x10.0`**：页面写 `x10`，模型照页面复述时数值回填
+  会因为多出来的那一位小数点在证据里找不到，于是一句完全正确的话被自己的闸门拦掉
+  （与第二十轮减抗那次同型，判据在 `_fmt_multiplier`）。
+- **裸的「化石」不能进意图词**：化石的**词缀池**早就入库成 1983 条
+  `category='delve'`，「某个化石能开出哪些词缀」是词缀卡与 `mod_tiers` 的活。
+  分界是**问的是哪一侧**——给定化石问它的词缀池归词缀表，给定标签问哪个化石偏向它
+  才归这张权重表（`哪个化石能开出最大生命词缀` → `原始化石 x10` / `致密化石 x0`）。
+
+`missing_dimension_hints` 里的**「乘数」因此删掉、「成功率」留着**：有了权重
+不等于有了成功率，而共鸣器的组合规则同样未采集。两者成对钉在
+`tests/unit/test_dimension_gate.FossilDomainTest` 里。
+
+**同一轮修掉一个「早退让修好写不进台账」**：`_record_harvest_gaps` 原先
+`if not points: return 0`，于是第三张表入库之后那条「催化剂等参考表有 41 行未入库」
+**仍然留在台账里**——与第六十四轮 `verify_against_detail` 的 `if diff.detail_only:`
+是同一个形态。现在无条件调 `record_ingest_gaps`，空清单就是整组清空。
 
 `pantheon_soul` **32** 层神力（12 位神祇、41 条词缀）——本库**唯一一张双源合成表**：
 PoB `Data/Pantheons.lua` 出结构、英文名、数值与 GGG stat id，POEDB 逐神页
