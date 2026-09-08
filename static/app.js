@@ -22,7 +22,8 @@ const $ = (id) => document.getElementById(id);
 const el = {
   main: $('main'), thread: $('thread'), empty: $('empty'),
   input: $('input'), send: $('send'), pasteCard: $('paste-card'),
-  newChat: $('new-chat'), characterImport: $('import-character'), convs: $('conversations'),
+  newChat: $('new-chat'), renameChat: $('rename-chat'),
+  characterImport: $('import-character'), convs: $('conversations'),
   imageUpload: $('upload-image'), imageInput: $('image-input'),
 };
 
@@ -920,11 +921,16 @@ function savedConversations() {
 
 function refreshConversations() {
   if (!conversationId) return;
-  const list = savedConversations().filter((c) => c.id !== conversationId);
+  const saved = savedConversations();
+  const current = saved.find((c) => c.id === conversationId);
+  const list = saved.filter((c) => c.id !== conversationId);
   const firstUser = el.thread.querySelector('.msg.user .body');
   list.unshift({
     id: conversationId,
-    title: (firstUser ? firstUser.textContent : '新对话').slice(0, 40),
+    title: current && current.customTitle
+      ? current.title
+      : (firstUser ? firstUser.textContent : '新对话').slice(0, 60),
+    customTitle: Boolean(current && current.customTitle),
   });
   localStorage.setItem(STORE, JSON.stringify(list.slice(0, 30)));
   renderConversationList();
@@ -932,11 +938,13 @@ function refreshConversations() {
 
 function renderConversationList() {
   const list = savedConversations();
-  el.convs.innerHTML = list.length
+  const placeholder = conversationId ? '' : '<option value="" selected>（新对话）</option>';
+  el.convs.innerHTML = placeholder + (list.length
     ? list.map((c) =>
         `<option value="${c.id}"${c.id === conversationId ? ' selected' : ''}>${escapeHtml(c.title)}</option>`
       ).join('')
-    : '<option value="">（无历史会话）</option>';
+    : (conversationId ? '<option value="">（无历史会话）</option>' : ''));
+  el.renameChat.disabled = !conversationId;
 }
 
 async function loadConversation(id) {
@@ -960,7 +968,53 @@ async function loadConversation(id) {
       el.thread.appendChild(wrap);
     }
   }
+  const firstUser = (data.messages || []).find((m) => m.role === 'user');
+  const generatedTitle = (firstUser ? firstUser.content : '新对话').slice(0, 60);
+  const saved = savedConversations();
+  const current = saved.find((c) => c.id === id);
+  const list = saved.filter((c) => c.id !== id);
+  list.unshift({
+    id,
+    title: data.title || generatedTitle,
+    customTitle: Boolean(current && current.customTitle)
+      || Boolean(data.title && data.title !== generatedTitle),
+  });
+  localStorage.setItem(STORE, JSON.stringify(list.slice(0, 30)));
+  renderConversationList();
   el.main.scrollTop = el.main.scrollHeight;
+}
+
+async function renameConversation() {
+  if (!conversationId || busy) return;
+  const current = savedConversations().find((c) => c.id === conversationId);
+  const title = window.prompt('输入新的会话标题（最多 60 个字符）：', current?.title || '');
+  if (title === null) return;
+  const normalized = title.trim();
+  if (!normalized || normalized.length > 60) {
+    window.alert('会话标题需为 1–60 个字符。');
+    return;
+  }
+  busy = true;
+  try {
+    const resp = await fetch(`${API}/conversations/${conversationId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: normalized }),
+    });
+    const data = await resp.json().catch(() => null);
+    if (!resp.ok) {
+      window.alert((data && data.detail) || `重命名失败（HTTP ${resp.status}）`);
+      return;
+    }
+    const list = savedConversations().filter((c) => c.id !== conversationId);
+    list.unshift({ id: conversationId, title: data.title, customTitle: true });
+    localStorage.setItem(STORE, JSON.stringify(list.slice(0, 30)));
+    renderConversationList();
+  } catch (err) {
+    window.alert(`重命名失败：${String(err.message || err)}`);
+  } finally {
+    busy = false;
+  }
 }
 
 /* ── 输入框 ───────────────────────────────────────────── */
@@ -1001,6 +1055,7 @@ el.newChat.addEventListener('click', () => {
   el.input.focus();
 });
 
+el.renameChat.addEventListener('click', renameConversation);
 el.convs.addEventListener('change', (e) => loadConversation(e.target.value));
 
 document.querySelectorAll('.samples button').forEach((b) => {
