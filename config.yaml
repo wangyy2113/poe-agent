@@ -18,6 +18,9 @@ server:
     enabled: true
     requests_per_minute: 60
     burst: 10
+  # 可选的管理端来源地址白名单，支持单个 IP 和 CIDR。空列表表示关闭这层限制，仍需
+  # ADMIN_TOKEN。只读取 TCP peer，不信任可由调用方伪造的 X-Forwarded-For。
+  admin_allowed_ips: []
 
 paths:
   db: "data/poe.db"
