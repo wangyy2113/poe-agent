@@ -54,6 +54,7 @@ POE1 的机制耦合极深，一个错误的小前提会让整条结论反向。
 | 充分依据判定 | 依据不足时返回 `sufficient=false` 与缺失信息点，**不**进入生成 |
 | **问答** | `POST /chat`：强制检索 → 充分性判定 → 生成 → 出口绑定校验 → 装配引用 |
 | **流式问答** | `POST /chat/stream`：SSE，**按句**校验通过才下发，未校验内容不外发 |
+| **OpenAI 兼容** | `POST /v1/chat/completions`：支持文本消息、非流式与标准 SSE `[DONE]`；内部仍强制检索与出口校验 |
 | **出口闸门** | 逐句校验事实断言是否绑定有效证据，未通过由代码拦截；31 项单测覆盖 |
 | **聊天界面** | `static/` 单页前端，无构建步骤、无 Node、无第三方 JS |
 | **会话历史** | 最近 30 个会话保存在浏览器列表中，可从 SQLite 回放消息并重命名；自定义标题不会被后续消息覆盖 |
@@ -67,7 +68,6 @@ POE1 的机制耦合极深，一个错误的小前提会让整条结论反向。
 
 **还没实现**
 
-- `POST /v1/chat/completions`（OpenAI 兼容端点）
 - 市场价值与经济数据（所以装备分析里「值不值得裂界」一律输出「数据不足」）
 - **DPS**：命中率、攻速、暴击倍率、基础伤害都有了，但整条加成链（增加的伤害 / 更多的伤害 / 伤害转化 / 抗性穿透）没有采集，所以仍然拒答。伤害转化下的 Max Hit、冰冻时长曲线同样还没有
 
@@ -295,6 +295,22 @@ curl -N -X POST http://127.0.0.1:8787/poe_agent/chat/stream \
 判定函数**，不是另写一套增量规则。两份规则迟早分叉，届时同一个回答走流式和非流式会得到
 不同结果，哪个对都说不清。单测把这条钉住（`tests/unit/test_streaming_gate.py`）：
 10 组文本 × 4 种切片粒度，拦截数、分类、输出三项必须与批量校验完全一致。
+
+**OpenAI Chat Completions 兼容接口** —— `POST /v1/chat/completions`。适用于 OpenAI SDK
+和只认标准 Chat Completions 协议的客户端；实际路径仍服从 `server.base_path`，默认是
+`/poe_agent/v1/chat/completions`。
+
+```bash
+curl -s http://127.0.0.1:8787/poe_agent/v1/chat/completions \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"poe-agent","messages":[{"role":"user","content":"猎首有什么词缀？"}]}'
+```
+
+设置 `"stream": true` 后返回标准 `chat.completion.chunk` SSE，并以 `data: [DONE]`
+结束；`stream_options.include_usage=true` 时在结束前增加 usage 帧。兼容层只使用最后一条
+非空 `user` 文本，外部 `system` 消息不会覆盖本 Agent 的检索和安全约束。请求里的
+`model` 是客户端逻辑名称；实际网关模型、`trace_id`、会话 ID、缺据状态、拦截数和结构化
+引用放在 `poe_agent` 扩展字段中。若要延续服务端会话记录，可额外传 `conversation_id`。
 
 **装备分析** —— `POST /item`，把游戏内复制的装备文本变成结构化报告。
 
