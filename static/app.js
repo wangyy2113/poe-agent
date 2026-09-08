@@ -453,7 +453,9 @@ async function handleEvent(ev, msg) {
 /* PoB 分享码是 URL-safe Base64 的 zlib 数据，长且只含 [A-Za-z0-9_-]。
  * 阈值取 80：短于此的多半是别的东西，宁可漏判也不要把普通文本当成码。 */
 const POB_CODE_RE = /^[A-Za-z0-9_-]{80,}={0,2}$/;
-const POB_LINK_RE = /^https?:\/\/(?:www\.)?(?:pobb\.in|pastebin\.com|poe\.ninja\/pob)\/\S+$/i;
+/* 与后端 `parsers/pob_link.py` 的白名单保持同一覆盖面。这里只负责识别并弹确认卡，
+ * 真正的安全边界仍由后端逐站点白名单执行。 */
+const POB_LINK_RE = /^https?:\/\/(?:www\.)?(?:pobb\.in|pastebin\.com|pastebinp\.com|pob\.codes\/b|poe\.ninja\/(?:poe1\/)?pob|maxroll\.gg\/poe\/pob|rentry\.co|poedb\.tw\/pob)\/\S+$/i;
 /* 装备文本的判据：段落分隔线 + 固定开头两行之一。
  * 只看分隔线不够——Markdown 里的 --- 也会命中。 */
 const ITEM_HEAD_RE = /^(?:Item Class|Rarity|物品类别|物品類別|稀有度)\s*[:：]/im;
@@ -479,18 +481,18 @@ function hidePasteCard() {
 }
 
 function showPasteCard(kind, text) {
-  const known = kind === 'item';
+  const isItem = kind === 'item';
   el.pasteCard.hidden = false;
   el.pasteCard.innerHTML =
-    `<div class="pc-head"><span class="pc-tag">${known ? '识别为装备文本' : '识别为 PoB 码'}</span>` +
+    `<div class="pc-head"><span class="pc-tag">${isItem ? '识别为装备文本' : '识别为 PoB Build'}</span>` +
     `<button class="pc-close" title="取消">×</button></div>` +
     `<div class="pc-body">${escapeHtml(pasteSummary(text))}</div>` +
-    (known
-      ? '<div class="pc-actions"><button class="pc-primary">解析并分析</button>' +
-        '<button class="pc-ghost">当作普通提问发送</button></div>'
-      : '<div class="pc-note">PoB 码解析尚未实现（排在 V2）。现在可以当作普通提问发送，' +
-        '但请注意：知识库里没有 PoB 数据，很可能得到缺据声明。</div>' +
-        '<div class="pc-actions"><button class="pc-ghost">当作普通提问发送</button></div>');
+    (!isItem
+      ? '<div class="pc-note">将解析 Build 并展示 16 项体检。数值取自这份 PoB 自带的快照，' +
+        '本项目只做判读，不会把它冒充为本地重算结果。</div>'
+      : '') +
+    `<div class="pc-actions"><button class="pc-primary">${isItem ? '解析并分析' : '解析并体检'}</button>` +
+    '<button class="pc-ghost">当作普通提问发送</button></div>';
 
   el.pasteCard.querySelector('.pc-close').onclick = hidePasteCard;
   const asText = el.pasteCard.querySelector('.pc-ghost');
@@ -506,7 +508,8 @@ function showPasteCard(kind, text) {
   if (primary) {
     primary.onclick = () => {
       hidePasteCard();
-      analyzeItem(text);
+      if (isItem) analyzeItem(text);
+      else analyzeBuild(text);
     };
   }
 }
@@ -552,6 +555,122 @@ async function analyzeItem(text) {
     busy = false;
     el.send.disabled = false;
     refreshConversations();
+  }
+}
+
+/** 把用户 Build 里的自由文本压成 Markdown 表格安全的单行。
+ * HTML 安全仍由 `markdown()` 的先转义保证；这里处理的是竖线破坏列结构。 */
+function buildText(value, fallback = '—') {
+  const text = String(value ?? '').replace(/\s+/g, ' ').replace(/\|/g, '｜').trim();
+  return text || fallback;
+}
+
+/** `/build` 的结构化响应 → 前端报告。全程不调 LLM，不产生推断。 */
+function renderBuild(data) {
+  const identity = [data.class_name, data.ascend_class_name].filter(Boolean).join(' / ') || '未知职业';
+  const lines = [
+    '# PoB Build 体检',
+    '',
+    `- 职业：${buildText(identity)}`,
+    `- 等级：${buildText(data.level)}`,
+    `- 盗贼选择：${buildText(data.bandit)}`,
+    `- 万神殿：${buildText([data.pantheon_major, data.pantheon_minor].filter(Boolean).join(' / '))}`,
+    '',
+    '## 16 项体检',
+    '',
+    '| 项目 | 数值 | 判定 | 依据 |',
+    '| --- | --- | --- | --- |',
+  ];
+
+  for (const check of data.report || []) {
+    lines.push(
+      `| ${buildText(check.label)} | ${check.known ? buildText(check.value) : '未知'} | ` +
+      `${check.known ? buildText(check.verdict) : buildText(check.missing_reason)} | ` +
+      `${buildText(check.basis)} |`
+    );
+  }
+
+  if (data.analysis_note) lines.push('', `> ${buildText(data.analysis_note)}`);
+  if (data.player_stats_note) lines.push('', `> ${buildText(data.player_stats_note)}`);
+
+  lines.push('', '## 技能组');
+  const groups = data.skill_groups || [];
+  if (!groups.length) lines.push('', '- 未解析到技能组');
+  for (const [index, group] of groups.entries()) {
+    const flags = [group.slot, group.is_main ? '主技能' : '', group.enabled ? '' : '已禁用']
+      .filter(Boolean).join(' · ');
+    lines.push('', `### ${index + 1}. ${buildText(flags, '未命名技能组')}`);
+    const gems = group.gems || [];
+    if (!gems.length) lines.push('', '- 未解析到宝石');
+    for (const gem of gems) {
+      const name = gem.name_zh
+        ? `${buildText(gem.name_zh)}（${buildText(gem.name_en)}）`
+        : buildText(gem.name_en, '未知宝石');
+      const attrs = [
+        gem.level == null ? '' : `${gem.level} 级`,
+        gem.quality == null ? '' : `${gem.quality}% 品质`,
+        gem.enabled ? '' : '已禁用',
+        gem.gem_id ? '' : '未桥接中文数据',
+      ].filter(Boolean).join('，');
+      lines.push(`- ${name}${attrs ? `：${attrs}` : ''}`);
+    }
+  }
+
+  lines.push('', '## 装备');
+  const items = data.items || [];
+  if (!items.length) lines.push('', '- 未解析到装备');
+  for (const item of items) {
+    const title = [item.slot, item.name, item.base_type].filter(Boolean).map((x) => buildText(x)).join(' · ');
+    const attrs = [
+      item.rarity,
+      item.item_level == null ? '' : `物品等级 ${item.item_level}`,
+      `${(item.implicits || []).length} 条隐式`,
+      `${(item.explicits || []).length} 条显式`,
+    ].filter(Boolean).map((x) => buildText(x)).join('，');
+    lines.push(`- ${buildText(title, '未命名装备')}：${attrs}`);
+    if (item.error) lines.push(`  - 解析警告：${buildText(item.error)}`);
+  }
+
+  const notes = [...(data.report_notes || []), ...(data.warnings || [])];
+  if (notes.length) {
+    lines.push('', '## 注意事项', '');
+    for (const note of notes) lines.push(`- ${buildText(note)}`);
+  }
+  return lines.join('\n');
+}
+
+/** 调 `/build` 解析 PoB 分享码或白名单链接，并显示确定性的体检报告。 */
+async function analyzeBuild(code) {
+  if (busy) return;
+  busy = true;
+  el.send.disabled = true;
+  addUserMessage(`【PoB Build】${pasteSummary(code)}`);
+  const msg = addAssistantMessage();
+  msg.setStatus('解析 PoB Build');
+  try {
+    const resp = await fetch(`${API}/build`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code }),
+    });
+    const data = await resp.json().catch(() => null);
+    if (!resp.ok) {
+      const detail = data && data.detail;
+      msg.appendParseFailure(
+        typeof detail === 'object'
+          ? { reason: detail.reason || '无法解析这份 PoB Build' }
+          : { reason: detail || `HTTP ${resp.status}` }
+      );
+    } else {
+      await msg.appendMarkdown(renderBuild(data));
+    }
+  } catch (err) {
+    msg.appendError(String(err.message || err));
+  } finally {
+    msg.finish(null);
+    busy = false;
+    el.send.disabled = false;
+    el.input.focus();
   }
 }
 
