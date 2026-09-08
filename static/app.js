@@ -488,7 +488,7 @@ function showPasteCard(kind, text) {
     `<button class="pc-close" title="取消">×</button></div>` +
     `<div class="pc-body">${escapeHtml(pasteSummary(text))}</div>` +
     (!isItem
-      ? '<div class="pc-note">将解析 Build 并展示 16 项体检。数值取自这份 PoB 自带的快照，' +
+      ? '<div class="pc-note">将解析 Build，展示核心 16 项与防御补充体检。数值取自这份 PoB 自带的快照，' +
         '本项目只做判读，不会把它冒充为本地重算结果。</div>'
       : '') +
     `<div class="pc-actions"><button class="pc-primary">${isItem ? '解析并分析' : '解析并体检'}</button>` +
@@ -576,7 +576,7 @@ function renderBuild(data) {
     `- 盗贼选择：${buildText(data.bandit)}`,
     `- 万神殿：${buildText([data.pantheon_major, data.pantheon_minor].filter(Boolean).join(' / '))}`,
     '',
-    '## 16 项体检',
+    '## 核心 16 项与防御补充体检',
     '',
     '| 项目 | 数值 | 判定 | 依据 |',
     '| --- | --- | --- | --- |',

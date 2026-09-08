@@ -220,6 +220,134 @@ class RequirementCoverageTest(unittest.TestCase):
         src = inspect.getsource(build_report)
         self.assertNotIn("= len(_CHECKS)", src)
 
+    def test_需求_8_5_四类防御补充一个不缺(self) -> None:
+        from parsers.build_report import (
+            REQUIREMENT_8_5_ITEMS,
+            uncovered_defence_requirements,
+        )
+
+        self.assertEqual(REQUIREMENT_8_5_ITEMS, ("最大抗性", "吸纳", "偷取", "回复"))
+        self.assertEqual(uncovered_defence_requirements(), ())
+
+
+class DefenceExpansionTest(unittest.TestCase):
+    """需求 8.5：只消费 PoB 快照里确实存在的值，缺失时不反推。"""
+
+    def setUp(self) -> None:
+        import sqlite3
+
+        from calc import constants
+        from core.db import SCHEMA
+
+        constants.reset_cache()
+        self.conn = sqlite3.connect(":memory:")
+        self.conn.row_factory = sqlite3.Row
+        self.conn.executescript(SCHEMA)
+        self.conn.executemany(
+            "INSERT INTO game_constant VALUES (?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'))",
+            [
+                (key, "pobMisc", None, 0, "scalar", value, None,
+                 "Path of Building", 2, "https://example/blob/Data.lua",
+                 "PoB test", "test")
+                for key, value in (
+                    (constants.MAX_RESIST_CAP, 90.0),
+                    (constants.BLOCK_CHANCE_CAP, 90.0),
+                    (constants.SUPPRESSION_CHANCE_CAP, 100.0),
+                )
+            ],
+        )
+        self.conn.commit()
+        constants.load(self.conn, force=True)
+
+    def tearDown(self) -> None:
+        from calc import constants
+
+        constants.reset_cache()
+        self.conn.close()
+
+    def _report(self, stats: dict[str, float]):
+        from parsers.build_report import build_health_report
+        from parsers.pob_build import PobBuild
+
+        return build_health_report(self.conn, PobBuild(player_stats=stats))
+
+    def test_超抗为正时才能从快照反推最大抗性(self) -> None:
+        report = self._report({
+            "FireResist": 76, "FireResistOverCap": 12,
+            "ColdResist": 75, "ColdResistOverCap": 0,
+        })
+        fire = report.by_key("fire_max_resist")
+        cold = report.by_key("cold_max_resist")
+        self.assertTrue(fire.known)
+        self.assertEqual(fire.value, "76%")
+        self.assertIn("已被上限夹住", fire.verdict)
+        self.assertFalse(cold.known, "OverCap=0 时不能猜最大抗性就是当前抗性")
+        self.assertEqual(cold.value, "")
+
+    def test_显式最大抗性字段优先(self) -> None:
+        item = self._report({"FireResist": 70, "FireResistMax": 79}).by_key(
+            "fire_max_resist"
+        )
+        self.assertTrue(item.known)
+        self.assertEqual(item.value, "79%")
+        self.assertIn("FireResistMax", item.basis)
+
+    def test_新版法压字段优先于旧字段(self) -> None:
+        item = self._report({
+            "EffectiveSpellSuppressionChance": 92,
+            "SpellSuppressionChance": 40,
+        }).by_key("spell_suppression")
+        self.assertEqual(item.value, "92%")
+        self.assertIn("EffectiveSpellSuppressionChance", item.basis)
+
+    def test_格挡同时展示攻击与法术并兼容新旧字段(self) -> None:
+        item = self._report({
+            "EffectiveBlockChance": 70,
+            "SpellBlockChance": 55,
+        }).by_key("block")
+        self.assertEqual(item.value, "攻击 70%；法术 55%")
+        self.assertIn("EffectiveBlockChance", item.basis)
+        self.assertIn("SpellBlockChance", item.basis)
+
+    def test_max_hit_逐伤害类型展示(self) -> None:
+        item = self._report({
+            "PhysicalMaximumHitTaken": 12000,
+            "FireMaximumHitTaken": 30000,
+            "ChaosMaximumHitTaken": 8000,
+        }).by_key("max_hit")
+        self.assertEqual(item.value, "物理 12000；火焰 30000；混沌 8000")
+        self.assertNotIn("冰霜", item.value, "缺失类型不能补零或类推")
+
+    def test_偷取字段保留_leech_与_on_hit_合并口径(self) -> None:
+        item = self._report({
+            "LifeLeechGainRate": 120.5,
+            "ManaLeechGainRate": 0,
+            "EnergyShieldLeechGainRate": 8,
+        }).by_key("leech")
+        self.assertTrue(item.known)
+        self.assertIn("生命 120.5/秒", item.value)
+        self.assertIn("Leech 与 On Hit", item.basis)
+
+    def test_回复优先净值并兼容旧版再生字段(self) -> None:
+        item = self._report({
+            "NetLifeRegen": -20,
+            "LifeRegenRecovery": 300,
+            "ManaRegen": 45,
+        }).by_key("recovery")
+        self.assertIn("生命 -20/秒", item.value)
+        self.assertNotIn("生命 300/秒", item.value)
+        self.assertIn("魔力 45/秒", item.value)
+        self.assertIn("旧版 build", item.basis)
+
+    def test_吸纳字段缺失时保持未知(self) -> None:
+        missing = self._report({"LifeRegen": 10}).by_key("recoup")
+        self.assertFalse(missing.known)
+        self.assertEqual(missing.value, "")
+
+        known = self._report({"LifeRecoup": 20, "EnergyShieldRecoup": 10}).by_key("recoup")
+        self.assertTrue(known.known)
+        self.assertEqual(known.value, "生命 20%；能量护盾 10%")
+
 
 class HealthReportTest(unittest.TestCase):
     def setUp(self) -> None:

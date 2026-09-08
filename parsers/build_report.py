@@ -2,6 +2,8 @@
 
 需求 8.4 的原文是「检查并报告下列全部项目，**不得遗漏**」，共 16 项；
 8.4.7 补的那句才是关键：**「IF 某项数据缺失 THEN SHALL 标注为『未知』而非填入估计值」**。
+需求 8.5 另要求防御分析覆盖最大抗性、吸纳、偷取与回复；这四类也沿用同一条
+「只判不算」边界。
 
 ## 核心设计：只判不算
 
@@ -116,6 +118,44 @@ def _resist(key: str, label: str, stat: str, *, elemental: bool) -> Callable:
     return check
 
 
+def _max_resist(key: str, label: str, stat: str) -> Callable:
+    """读取最大抗性；老版 PoB 未导出时只做可证明的反推。
+
+    `XResistOverCap > 0` 证明该抗性已经被上限夹住，此时 `XResist` 就是该份
+    build 的有效最大抗性。OverCap 为 0 时，当前抗性可能恰好到顶、也可能未满，
+    两者无法区分，所以必须报未知。
+    """
+    def check(_conn, build: PobBuild) -> CheckItem:  # noqa: ANN001
+        stats = build.player_stats
+        direct = f"{stat}Max"
+        if direct in stats:
+            return CheckItem(
+                key=key, label=label, value=f"{_fmt(stats[direct])}%",
+                basis=f"直接取自 build 的 `{direct}`",
+            )
+
+        over_key = f"{stat}OverCap"
+        if stat in stats and stats.get(over_key, 0) > 0:
+            return CheckItem(
+                key=key, label=label, value=f"{_fmt(stats[stat])}%",
+                verdict="当前抗性已被上限夹住",
+                basis=(
+                    f"build 未导出 `{direct}`；但 `{over_key}` 大于 0，证明当前抗性已到顶，"
+                    f"因此有效最大抗性等于 `{stat}`"
+                ),
+            )
+
+        return CheckItem(
+            key=key, label=label, value="", known=False,
+            missing_reason=(
+                f"这份 build 没有 `{direct}`，且 `{over_key}` 不大于 0，"
+                "无法从快照区分『恰好到顶』与『尚未满抗』，本库不猜最大抗性。"
+            ),
+        )
+
+    return check
+
+
 def _plain(key: str, label: str, stat: str, *, unit: str = "", note: str = "") -> Callable:
     def check(_conn, build: PobBuild) -> CheckItem:  # noqa: ANN001
         if stat not in build.player_stats:
@@ -128,16 +168,23 @@ def _plain(key: str, label: str, stat: str, *, unit: str = "", note: str = "") -
     return check
 
 
-def _capped(key: str, label: str, stat: str, const_key: str) -> Callable:
+def _capped(
+    key: str,
+    label: str,
+    stat: str | tuple[str, ...],
+    const_key: str,
+) -> Callable:
     def check(_conn, build: PobBuild) -> CheckItem:  # noqa: ANN001
-        if stat not in build.player_stats:
-            return _missing(key, label, stat)
-        value = build.player_stats[stat]
+        candidates = (stat,) if isinstance(stat, str) else stat
+        hit = next((name for name in candidates if name in build.player_stats), None)
+        if hit is None:
+            return _missing(key, label, " / ".join(candidates))
+        value = build.player_stats[hit]
         cap = constants.get(const_key)
         return CheckItem(
             key=key, label=label, value=f"{_fmt(value)}%",
             verdict="已达上限" if value >= cap else f"距上限 {_fmt(cap)}% 还差 {_fmt(cap - value)}%",
-            basis=f"上限 {_fmt(cap)}% 取自 `game_constant.{const_key}`",
+            basis=f"数值取自 `{hit}`；上限 {_fmt(cap)}% 取自 `game_constant.{const_key}`",
         )
 
     return check
@@ -164,6 +211,146 @@ def _armour(_conn, build: PobBuild) -> CheckItem:  # noqa: ANN001
         # 与 `num_armour_reduction` / `gap_armour_without_damage` 那对用例同一条规矩
         basis="护甲**不是固定百分比减伤**（`护甲/(护甲+5×这一击的伤害)`），"
               "不给出这一击多大就没有减伤百分比可言，本库不替你假定一个伤害值。",
+    )
+
+
+def _max_hit(_conn, build: PobBuild) -> CheckItem:  # noqa: ANN001
+    fields = (
+        ("物理", "PhysicalMaximumHitTaken"),
+        ("火焰", "FireMaximumHitTaken"),
+        ("冰霜", "ColdMaximumHitTaken"),
+        ("闪电", "LightningMaximumHitTaken"),
+        ("混沌", "ChaosMaximumHitTaken"),
+    )
+    values = [
+        f"{label} {_fmt(build.player_stats[name])}"
+        for label, name in fields if name in build.player_stats
+    ]
+    if not values:
+        return _missing(
+            "max_hit", "Max Hit",
+            "PhysicalMaximumHitTaken / FireMaximumHitTaken / ColdMaximumHitTaken / "
+            "LightningMaximumHitTaken / ChaosMaximumHitTaken",
+        )
+    return CheckItem(
+        key="max_hit", label="Max Hit", value="；".join(values),
+        basis="按 PoB 快照逐伤害类型展示；没有的类型不补零、不从其它类型类推。",
+    )
+
+
+def _block(_conn, build: PobBuild) -> CheckItem:  # noqa: ANN001
+    fields = (
+        ("攻击", ("EffectiveBlockChance", "BlockChance")),
+        ("法术", ("EffectiveSpellBlockChance", "SpellBlockChance")),
+    )
+    values: list[str] = []
+    found: list[tuple[str, float]] = []
+    used: list[str] = []
+    for label, candidates in fields:
+        hit = next((name for name in candidates if name in build.player_stats), None)
+        if hit is None:
+            continue
+        chance = build.player_stats[hit]
+        values.append(f"{label} {_fmt(chance)}%")
+        found.append((label, chance))
+        used.append(hit)
+    if not values:
+        return _missing(
+            "block", "格挡",
+            "EffectiveBlockChance / EffectiveSpellBlockChance（旧版为 BlockChance / SpellBlockChance）",
+        )
+    cap = constants.get(constants.BLOCK_CHANCE_CAP)
+    return CheckItem(
+        key="block", label="格挡", value="；".join(values),
+        verdict="；".join(
+            f"{label}{'已达' if chance >= cap else '未达'}硬上限 {_fmt(cap)}%"
+            for label, chance in found
+        ),
+        basis=f"数值取自 {' / '.join(f'`{name}`' for name in used)}；"
+              f"硬上限 {_fmt(cap)}% 取自 `game_constant.{constants.BLOCK_CHANCE_CAP}`",
+    )
+
+
+def _stat_group(
+    build: PobBuild,
+    fields: tuple[tuple[str, tuple[str, ...]], ...],
+) -> tuple[list[str], list[str]]:
+    """按优先级读取一组 PoB 字段，返回展示值与实际采用的字段名。"""
+    values: list[str] = []
+    used: list[str] = []
+    for label, candidates in fields:
+        hit = next((name for name in candidates if name in build.player_stats), None)
+        if hit is None:
+            continue
+        values.append(f"{label} {_fmt(build.player_stats[hit])}/秒")
+        used.append(hit)
+    return values, used
+
+
+def _leech(_conn, build: PobBuild) -> CheckItem:  # noqa: ANN001
+    fields = (
+        ("生命", ("LifeLeechGainRate",)),
+        ("魔力", ("ManaLeechGainRate",)),
+        ("能量护盾", ("EnergyShieldLeechGainRate",)),
+    )
+    values, used = _stat_group(build, fields)
+    if not values:
+        return _missing(
+            "leech", "偷取", "LifeLeechGainRate / ManaLeechGainRate / EnergyShieldLeechGainRate",
+        )
+    return CheckItem(
+        key="leech", label="偷取/击中回复", value="；".join(values),
+        verdict="存在回复来源" if any(build.player_stats[name] > 0 for name in used)
+                else "PoB 快照中的三种速率均为 0",
+        basis=(
+            "取自 PoB 导出的 `*LeechGainRate`。该字段是 Leech 与 On Hit 的合计速率，"
+            "分享码没有把两者拆开，因此不把合计值冒充为纯偷取。"
+        ),
+    )
+
+
+def _recovery(_conn, build: PobBuild) -> CheckItem:  # noqa: ANN001
+    fields = (
+        ("生命", ("NetLifeRegen", "LifeRegenRecovery", "LifeRegen")),
+        ("魔力", ("NetManaRegen", "ManaRegenRecovery", "ManaRegen")),
+        ("能量护盾", ("NetEnergyShieldRegen", "EnergyShieldRegenRecovery", "EnergyShieldRegen")),
+    )
+    values, used = _stat_group(build, fields)
+    if not values:
+        return _missing(
+            "recovery", "回复", "NetLifeRegen / NetManaRegen / NetEnergyShieldRegen",
+        )
+    legacy = any(name in {"LifeRegen", "ManaRegen", "EnergyShieldRegen"} for name in used)
+    basis = "优先取 PoB 的净回复（`Net*Regen`），其次取受回复率修正后的 `*RegenRecovery`。"
+    if legacy:
+        basis += "这份旧版 build 只导出 `*Regen`，展示的是再生而非完整净回复。"
+    return CheckItem(
+        key="recovery", label="回复/再生", value="；".join(values), basis=basis,
+    )
+
+
+def _recoup(_conn, build: PobBuild) -> CheckItem:  # noqa: ANN001
+    fields = (
+        ("生命", ("LifeRecoup",)),
+        ("魔力", ("ManaRecoup",)),
+        ("能量护盾", ("EnergyShieldRecoup",)),
+    )
+    values: list[str] = []
+    for label, candidates in fields:
+        name = candidates[0]
+        if name in build.player_stats:
+            values.append(f"{label} {_fmt(build.player_stats[name])}%")
+    if not values:
+        return CheckItem(
+            key="recoup", label="吸纳", value="", known=False,
+            missing_reason=(
+                "这份 build 的 PlayerStat 没有 `LifeRecoup / ManaRecoup / EnergyShieldRecoup`。"
+                "标准 PoB 分享码通常不导出这些隐藏计算字段；不从装备或天赋文本反推。"
+            ),
+        )
+    return CheckItem(
+        key="recoup", label="吸纳", value="；".join(values),
+        basis="取自 build 的 `*Recoup`，表示对应资源在吸纳持续时间内收回的伤害比例。",
     )
 
 
@@ -270,6 +457,9 @@ REQUIREMENT_8_4_ITEMS: tuple[str, ...] = (
     "闪避", "格挡", "药剂", "保留", "诅咒", "万神殿", "珠宝", "天赋树", "升华",
 )
 
+#: 需求 8.5 点名的四类防御补充。最大抗性按四种伤害类型拆行展示。
+REQUIREMENT_8_5_ITEMS: tuple[str, ...] = ("最大抗性", "吸纳", "偷取", "回复")
+
 #: 每一项检查覆盖需求里的哪一项。元素抗性拆成三条**更细**而不是更少，
 #: 三条一起覆盖需求的「抗性」。单测据此断言 16 项一个不缺。
 _COVERS: dict[str, str] = {
@@ -281,23 +471,34 @@ _COVERS: dict[str, str] = {
     "passive_tree": "天赋树", "ascendancy": "升华",
 }
 
+_DEFENCE_COVERS: dict[str, str] = {
+    "fire_max_resist": "最大抗性",
+    "cold_max_resist": "最大抗性",
+    "lightning_max_resist": "最大抗性",
+    "chaos_max_resist": "最大抗性",
+    "recoup": "吸纳",
+    "leech": "偷取",
+    "recovery": "回复",
+}
+
 _CHECKS: tuple[tuple[str, Callable], ...] = (
     ("dps", _dps),
     ("effective_hp", _plain("effective_hp", "Effective HP", "TotalEHP")),
-    ("max_hit", _plain("max_hit", "Max Hit", "PhysicalMaximumHitTaken")),
+    ("max_hit", _max_hit),
     ("fire_resist", _resist("fire_resist", "火焰抗性", "FireResist", elemental=True)),
     ("cold_resist", _resist("cold_resist", "冰霜抗性", "ColdResist", elemental=True)),
     ("lightning_resist",
      _resist("lightning_resist", "闪电抗性", "LightningResist", elemental=True)),
     ("chaos_resist", _resist("chaos_resist", "混沌抗性", "ChaosResist", elemental=False)),
     ("spell_suppression",
-     _capped("spell_suppression", "法术压制", "SpellSuppressionChance",
+     _capped("spell_suppression", "法术压制",
+             ("EffectiveSpellSuppressionChance", "SpellSuppressionChance"),
              constants.SUPPRESSION_CHANCE_CAP)),
     ("armour", _armour),
     ("evasion", _plain("evasion", "闪避值", "Evasion",
                        note="闪避率上限 95%（`game_constant.pobMisc.EvadeChanceCap`）；"
                             "闪避**值**本身没有上限")),
-    ("block", _capped("block", "格挡", "BlockChance", constants.BLOCK_CHANCE_CAP)),
+    ("block", _block),
     ("flasks", _flasks),
     ("reservation", _plain("reservation", "保留", "ManaReserved", unit="")),
     ("curses", _curses),
@@ -305,6 +506,14 @@ _CHECKS: tuple[tuple[str, Callable], ...] = (
     ("jewels", _jewels),
     ("passive_tree", _passive_tree),
     ("ascendancy", _ascendancy),
+    ("fire_max_resist", _max_resist("fire_max_resist", "火焰最大抗性", "FireResist")),
+    ("cold_max_resist", _max_resist("cold_max_resist", "冰霜最大抗性", "ColdResist")),
+    ("lightning_max_resist",
+     _max_resist("lightning_max_resist", "闪电最大抗性", "LightningResist")),
+    ("chaos_max_resist", _max_resist("chaos_max_resist", "混沌最大抗性", "ChaosResist")),
+    ("recoup", _recoup),
+    ("leech", _leech),
+    ("recovery", _recovery),
 )
 
 
@@ -318,11 +527,18 @@ def uncovered_requirements() -> tuple[str, ...]:
     return tuple(item for item in REQUIREMENT_8_4_ITEMS if item not in covered)
 
 
+def uncovered_defence_requirements() -> tuple[str, ...]:
+    """需求 8.5 的四类防御补充是否都有对应检查。"""
+    covered = {_DEFENCE_COVERS.get(key, "") for key, _fn in _CHECKS}
+    return tuple(item for item in REQUIREMENT_8_5_ITEMS if item not in covered)
+
+
 def build_health_report(conn, build: PobBuild) -> BuildReport:  # noqa: ANN001
     """按需求 8.4 逐项检查。缺的标「未知」，**不填估计值**。"""
     report = BuildReport(items=[fn(conn, build) for _key, fn in _CHECKS])
     report.notes.append(
-        "报告里的数值**取自你粘贴的 build**（PoB 自己算的），本库只做核对与判读，"
+        "需求 8.4 的 16 项与需求 8.5 的防御补充（最大抗性、吸纳、偷取、回复）"
+        "均已检查。报告里的数值**取自你粘贴的 build**（PoB 自己算的），本库只做核对与判读，"
         "**没有重算任何一项**；判据（上限、规则）来自本库的游戏常量表，逐条注明出处。"
     )
     if report.unknown_count:

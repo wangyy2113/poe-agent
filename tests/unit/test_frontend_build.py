@@ -1,7 +1,8 @@
 """聊天页的 PoB Build 入口契约。
 
 前端没有 Node 构建链，关键行为因此用源码契约钉住：识别后的主按钮必须调用 `/build`，
-并且不能重新出现「尚未实现」的旧提示。后端解析与 16 项体检由 test_pob_build.py 覆盖。
+并且不能重新出现「尚未实现」的旧提示。后端解析、核心 16 项与防御补充体检由
+test_pob_build.py 覆盖。
 """
 
 from pathlib import Path
@@ -17,6 +18,7 @@ class FrontendBuildContractTest(unittest.TestCase):
         self.assertIn("else analyzeBuild(text);", app)
         self.assertIn("fetch(`${API}/build`", app)
         self.assertIn("解析并体检", app)
+        self.assertIn("核心 16 项与防御补充体检", app)
         self.assertNotIn("PoB 码解析尚未实现", app)
 
     def test_all_backend_whitelist_sites_are_recognizable(self) -> None:
