@@ -1,4 +1,4 @@
-"""`/build`：PoB 分享码解析（第四十八轮，需求 8.4 的入口）。
+"""`/build`：PoB 分享码与官方天赋树链接解析（需求 8.1 的入口）。
 
 路由层只做校验与编排，业务在 `parsers/pob_build.py`：
     分享码 → `decode_share_code` → `parse_build` → `bridge_gems`
@@ -38,6 +38,11 @@ from parsers.build_sources import build_defence_sources
 from parsers.build_version import check_build_version
 from parsers.pob_build import PobParseError, bridge_gems, decode_share_code, parse_build
 from parsers.pob_link import PobLinkError, looks_like_link, resolve_download_url
+from parsers.passive_tree_link import (
+    PassiveTreeLinkError,
+    looks_like_passive_tree_link,
+    passive_tree_build,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["Build"])
@@ -47,7 +52,7 @@ class BuildRequest(BaseModel):
     code: str = Field(
         min_length=1, max_length=200000,
         description=(
-            "PoB 的分享码，或**已知分享站**的链接"
+            "PoB 的分享码、**已知分享站**的链接，或 pathofexile.com 官方天赋树链接"
             "（pobb.in / pastebin.com / pob.codes / poe.ninja / Maxroll / rentry.co …）。"
             "只认白名单里的站点：服务端会拿这个地址去发请求。"
         ),
@@ -121,6 +126,7 @@ class BuildVersionOut(BaseModel):
 
 
 class BuildResponse(BaseModel):
+    input_type: str = "pob"
     level: int | None = None
     class_name: str = ""
     ascend_class_name: str = ""
@@ -144,6 +150,10 @@ class BuildResponse(BaseModel):
     suggestions: list[BuildSuggestionOut] = []
     suggestions_note: str = ""
     version_check: BuildVersionOut
+    tree_serialization_version: int | None = None
+    ascendancy_id: int | None = None
+    secondary_ascendancy_id: int | None = None
+    mastery_effects: dict[str, str] = {}
     report_notes: list[str] = []
     analysis_done: bool = True
     analysis_note: str = ""
@@ -194,10 +204,21 @@ def _resolve_code(raw: str) -> str:
 
 @router.post("/build", response_model=BuildResponse)
 def analyze_build(req: BuildRequest, caller: str = Depends(require_user)) -> BuildResponse:
+    input_type = "pob"
+    tree_link = None
     try:
-        code = _resolve_code(req.code)
-        xml = decode_share_code(code)
-        build = bridge_gems(dbmod.get_conn(), parse_build(xml))
+        if looks_like_passive_tree_link(req.code):
+            input_type = "passive_tree"
+            build, tree_link = passive_tree_build(req.code)
+        else:
+            code = _resolve_code(req.code)
+            xml = decode_share_code(code)
+            build = bridge_gems(dbmod.get_conn(), parse_build(xml))
+    except PassiveTreeLinkError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"error": "passive_tree_parse_failed", "reason": str(exc)},
+        ) from exc
     except (PobLinkError, Poe2SourceRejected) as exc:
         raise HTTPException(
             status_code=422,
@@ -229,6 +250,7 @@ def analyze_build(req: BuildRequest, caller: str = Depends(require_user)) -> Bui
     )
 
     return BuildResponse(
+        input_type=input_type,
         level=build.level,
         class_name=build.class_name,
         ascend_class_name=build.ascend_class_name,
@@ -275,6 +297,10 @@ def analyze_build(req: BuildRequest, caller: str = Depends(require_user)) -> Bui
             "项目尚未接入赛季经济数据，因此成本按改造规模分档，不提供虚构的通货报价。"
         ),
         version_check=BuildVersionOut(**version.__dict__),
+        tree_serialization_version=(tree_link.serialization_version if tree_link else None),
+        ascendancy_id=(tree_link.ascendancy_id if tree_link else None),
+        secondary_ascendancy_id=(tree_link.secondary_ascendancy_id if tree_link else None),
+        mastery_effects=dict(tree_link.mastery_effects) if tree_link else {},
         report_notes=report.notes,
         analysis_done=True,
         analysis_note=_ANALYSIS_NOTE,

@@ -37,6 +37,11 @@ class FrontendBuildContractTest(unittest.TestCase):
         ):
             self.assertIn(marker, app)
 
+    def test_official_passive_tree_link_is_recognized(self) -> None:
+        app = (ROOT / "static/app.js").read_text(encoding="utf-8")
+        self.assertIn("pathofexile\\.com\\/(?:fullscreen-)?passive-skill-tree", app)
+        self.assertIn("data.input_type === 'passive_tree'", app)
+
     def test_readme_no_longer_claims_build_is_unimplemented(self) -> None:
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         self.assertNotIn("PoB 码只能识别不能解析", readme)

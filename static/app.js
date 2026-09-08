@@ -441,7 +441,7 @@ async function handleEvent(ev, msg) {
 
 /* ── 粘贴识别（需求 6.3/6.4）────────────────────────────
  *
- * 三条分流：装备文本 / PoB 码 / 普通文本。
+ * 四条分流：装备文本 / PoB 码 / 官方天赋树链接 / 普通文本。
  *
  * 识别后**先给卡片让用户确认**，不直接分析。两个理由：
  *   1. 识别可能判错。判错了直接分析等于用户莫名收到一份不相干的报告，
@@ -455,7 +455,8 @@ async function handleEvent(ev, msg) {
 const POB_CODE_RE = /^[A-Za-z0-9_-]{80,}={0,2}$/;
 /* 与后端 `parsers/pob_link.py` 的白名单保持同一覆盖面。这里只负责识别并弹确认卡，
  * 真正的安全边界仍由后端逐站点白名单执行。 */
-const POB_LINK_RE = /^https?:\/\/(?:www\.)?(?:pobb\.in|pastebin\.com|pastebinp\.com|pob\.codes\/b|poe\.ninja\/(?:poe1\/)?pob|maxroll\.gg\/poe\/pob|rentry\.co|poedb\.tw\/pob)\/\S+$/i;
+const POB_LINK_RE = /^https?:\/\/(?:www\.)?(?:(?:pobb\.in|pastebin\.com|pastebinp\.com|pob\.codes\/b|poe\.ninja\/(?:poe1\/)?pob|maxroll\.gg\/poe\/pob|rentry\.co|poedb\.tw\/pob)\/\S+|pathofexile\.com\/(?:fullscreen-)?passive-skill-tree\/\S+)$/i;
+const PASSIVE_TREE_LINK_RE = /^https?:\/\/(?:www\.)?pathofexile\.com\/(?:fullscreen-)?passive-skill-tree\/\S+$/i;
 /* 装备文本的判据：段落分隔线 + 固定开头两行之一。
  * 只看分隔线不够——Markdown 里的 --- 也会命中。 */
 const ITEM_HEAD_RE = /^(?:Item Class|Rarity|物品类别|物品類別|稀有度)\s*[:：]/im;
@@ -463,6 +464,7 @@ const ITEM_HEAD_RE = /^(?:Item Class|Rarity|物品类别|物品類別|稀有度)
 function detectPasteKind(text) {
   const trimmed = text.trim();
   if (!trimmed) return 'text';
+  if (PASSIVE_TREE_LINK_RE.test(trimmed)) return 'tree';
   if (POB_CODE_RE.test(trimmed) || POB_LINK_RE.test(trimmed)) return 'pob';
   if (/^-{3,}$/m.test(trimmed) && ITEM_HEAD_RE.test(trimmed)) return 'item';
   return 'text';
@@ -482,9 +484,10 @@ function hidePasteCard() {
 
 function showPasteCard(kind, text) {
   const isItem = kind === 'item';
+  const isTree = kind === 'tree';
   el.pasteCard.hidden = false;
   el.pasteCard.innerHTML =
-    `<div class="pc-head"><span class="pc-tag">${isItem ? '识别为装备文本' : '识别为 PoB Build'}</span>` +
+    `<div class="pc-head"><span class="pc-tag">${isItem ? '识别为装备文本' : isTree ? '识别为 PoE 天赋树' : '识别为 PoB Build'}</span>` +
     `<button class="pc-close" title="取消">×</button></div>` +
     `<div class="pc-body">${escapeHtml(pasteSummary(text))}</div>` +
     (!isItem
@@ -569,7 +572,7 @@ function buildText(value, fallback = '—') {
 function renderBuild(data) {
   const identity = [data.class_name, data.ascend_class_name].filter(Boolean).join(' / ') || '未知职业';
   const lines = [
-    '# PoB Build 体检',
+    data.input_type === 'passive_tree' ? '# PoE 天赋树体检' : '# PoB Build 体检',
     '',
     `- 职业：${buildText(identity)}`,
     `- 等级：${buildText(data.level)}`,
@@ -578,6 +581,13 @@ function renderBuild(data) {
     `- 版本核对：${buildText(data.version_check && data.version_check.message)}`,
   ];
 
+  if (data.input_type === 'passive_tree') {
+    lines.push(
+      `- 链接编码版本：${buildText(data.tree_serialization_version)}`,
+      `- 升华编号：${buildText(data.ascendancy_id)}`,
+      `- 第二升华编号：${buildText(data.secondary_ascendancy_id)}`
+    );
+  }
   if (data.version_check && data.version_check.basis) {
     lines.push(`- 版本依据：${buildText(data.version_check.basis)}`);
   }
@@ -697,9 +707,10 @@ async function analyzeBuild(code) {
   if (busy) return;
   busy = true;
   el.send.disabled = true;
-  addUserMessage(`【PoB Build】${pasteSummary(code)}`);
+  const isTree = PASSIVE_TREE_LINK_RE.test(code.trim());
+  addUserMessage(`${isTree ? '【PoE 天赋树】' : '【PoB Build】'}${pasteSummary(code)}`);
   const msg = addAssistantMessage();
-  msg.setStatus('解析 PoB Build');
+  msg.setStatus(isTree ? '解析 PoE 天赋树' : '解析 PoB Build');
   try {
     const resp = await fetch(`${API}/build`, {
       method: 'POST',
