@@ -92,8 +92,9 @@ python scripts/setup.py          # Windows: python scripts\setup.py
 #    POE_OAUTH_TOKEN=<可选；角色导入需要 account:characters scope>
 #    POE_OAUTH_USER_AGENT=<OAuth clientId/version (contact: 联系方式)>
 
-# 3) 自检：确认 SQLite / FTS5 / 向量扩展 / 凭证配置就绪
+# 3) 自检：确认运行环境就绪，并检查跨平台代码约束
 .venv/bin/python scripts/selfcheck.py
+.venv/bin/python scripts/check_portability.py
 
 # 4) 建知识库（首次会抓 POEDB，之后走本地缓存）
 .venv/bin/python -m kb.pipeline --category all
@@ -564,6 +565,7 @@ PoB 排 P2 而不是 P1：它在数值上更接近一手，但不含中文名与
 | `scripts/verify_chat.py` | `/chat`、`/chat/stream`、`/item` 端到端验证，58 项（`--gap-only` 31 项，不需要凭证） |
 | `scripts/check_spec_refs.py` | 校验 spec 里的需求交叉引用 |
 | `scripts/check_doc_facts.py` | 核对文档里的数字断言（单测项数、库内行数）与实际状态是否一致 |
+| `scripts/check_portability.py` | AST 平台中立性检查：平台专有模块、shell 依赖、路径 API 与文本编码 |
 
 | `scripts/eval_run.py` | 黄金问答集评测：检索侧指标 / 录制回放 / 出口闸门指标 / 人工审计清单 |
 | `scripts/import_pob_bases.py` | 导入 PoB 底材注册表，18 个装备类别（默认不联网；`--dry-run` 清点、`--category` 单类、`--fetch` 缺页补抓） |
@@ -602,7 +604,7 @@ PoB 排 P2 而不是 P1：它在数值上更接近一手，但不含中文名与
 .venv/bin/python -m unittest discover -s tests -t .
 ```
 
-目前 1434 项，其中与「无据不答」直接相关的：
+目前 1521 项，其中与「无据不答」直接相关的：
 
 | 组 | 项数 | 重点 |
 | --- | --- | --- |
