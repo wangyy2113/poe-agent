@@ -72,6 +72,60 @@ class ShareCodeTest(unittest.TestCase):
             parse_build("<Foo><Bar/></Foo>")
         self.assertIn("PathOfBuilding", str(ctx.exception))
 
+    def test_主技能组与计算技能组不能混为一谈(self) -> None:
+        """`mainSocketGroup` 是 Build 主技能，`Calcs.skill_number` 才绑定 PlayerStat。"""
+        xml = (
+            "<PathOfBuilding><Build level='90' className='Witch' mainSocketGroup='2'>"
+            "<PlayerStat stat='CombinedDPS' value='123'/></Build>"
+            "<Calcs><Input name='skill_number' number='1'/></Calcs><Skills>"
+            "<Skill mainActiveSkill='1'><Gem nameSpec='Arc' skillId='Arc'/></Skill>"
+            "<Skill mainActiveSkill='1'><Gem nameSpec='Fireball' skillId='Fireball'/></Skill>"
+            "</Skills></PathOfBuilding>"
+        )
+        build = parse_build(xml)
+        self.assertEqual(build.main_group.active_gem.name_en, "Fireball")
+        self.assertEqual(build.calcs_group.active_gem.name_en, "Arc")
+        self.assertFalse(build.skill_groups[0].is_main)
+        self.assertTrue(build.skill_groups[1].is_main)
+
+    def test_主动技能下标跳过辅助宝石(self) -> None:
+        xml = (
+            "<PathOfBuilding><Build level='90' className='Witch' mainSocketGroup='1'/>"
+            "<Skills><Skill mainActiveSkill='2'>"
+            "<Gem nameSpec='Added Cold' skillId='SupportAddedCold' "
+            "gemId='Metadata/Items/Gems/SupportGemAddedColdDamage'/>"
+            "<Gem nameSpec='Arc' skillId='Arc'/><Gem nameSpec='Vaal Arc' skillId='VaalArc'/>"
+            "</Skill></Skills></PathOfBuilding>"
+        )
+        group = parse_build(xml).main_group
+        self.assertEqual(group.active_gem.name_en, "Vaal Arc")
+
+    def test_计算页主动技能下标优先(self) -> None:
+        xml = (
+            "<PathOfBuilding><Build level='90' className='Witch' mainSocketGroup='1'/>"
+            "<Calcs><Input name='skill_number' number='1'/></Calcs><Skills>"
+            "<Skill mainActiveSkill='1' mainActiveSkillCalcs='2'>"
+            "<Gem nameSpec='Arc' skillId='Arc'/><Gem nameSpec='Vaal Arc' skillId='VaalArc'/>"
+            "</Skill></Skills></PathOfBuilding>"
+        )
+        group = parse_build(xml).calcs_group
+        self.assertEqual(group.active_gem.name_en, "Arc")
+        self.assertEqual(group.calcs_active_gem.name_en, "Vaal Arc")
+
+    def test_新版技能集只读取当前激活的一套(self) -> None:
+        xml = (
+            "<PathOfBuilding><Build level='90' className='Witch' mainSocketGroup='1'/>"
+            "<Skills activeSkillSet='2'>"
+            "<SkillSet id='1'><Skill mainActiveSkill='1'>"
+            "<Gem nameSpec='Arc' skillId='Arc'/></Skill></SkillSet>"
+            "<SkillSet id='2'><Skill mainActiveSkill='1'>"
+            "<Gem nameSpec='Fireball' skillId='Fireball'/></Skill></SkillSet>"
+            "</Skills></PathOfBuilding>"
+        )
+        build = parse_build(xml)
+        self.assertEqual(len(build.skill_groups), 1)
+        self.assertEqual(build.main_group.active_gem.name_en, "Fireball")
+
 
 class PobItemDialectTest(unittest.TestCase):
     """PoB 存档方言：没有 `--------`，用 `Implicits: N` 标边界。"""
@@ -347,6 +401,114 @@ class DefenceExpansionTest(unittest.TestCase):
         known = self._report({"LifeRecoup": 20, "EnergyShieldRecoup": 10}).by_key("recoup")
         self.assertTrue(known.known)
         self.assertEqual(known.value, "生命 20%；能量护盾 10%")
+
+
+class OutputAnalysisTest(unittest.TestCase):
+    """需求 8.6：三种场景分开，且不把一个配置快照冒充三份结果。"""
+
+    def _items(
+        self,
+        stats: dict[str, float],
+        *,
+        config: dict[str, str] | None = None,
+        stat_text: dict[str, str] | None = None,
+    ):
+        import sqlite3
+
+        from parsers.build_report import build_health_report
+        from parsers.pob_build import BuildGem, PobBuild, SkillGroup
+
+        build = PobBuild(
+            player_stats=stats,
+            player_stat_text=stat_text or {key: str(value) for key, value in stats.items()},
+            config=config or {},
+            main_socket_group=1,
+            calcs_skill_group=1,
+            skill_groups=[SkillGroup(
+                is_main=True,
+                active_skill_index=1,
+                gems=(BuildGem(name_en="Arc", name_zh="电弧", skill_id="Arc"),),
+            )],
+        )
+        conn = sqlite3.connect(":memory:")
+        try:
+            return build_health_report(conn, build).output_items
+        finally:
+            conn.close()
+
+    @staticmethod
+    def _by_key(items, key: str):  # noqa: ANN001
+        return next(item for item in items if item.key == key)
+
+    def test_三种输出场景固定齐全(self) -> None:
+        from parsers.build_report import REQUIREMENT_8_6_ITEMS, uncovered_output_requirements
+
+        self.assertEqual(REQUIREMENT_8_6_ITEMS, ("单体", "清图", "Boss"))
+        self.assertEqual(uncovered_output_requirements(), ())
+        items = self._items({"CombinedDPS": 123})
+        self.assertEqual(
+            [item.key for item in items],
+            ["output_single_target", "output_clear", "output_boss"],
+        )
+
+    def test_单体绑定当前计算技能并优先_full_dps(self) -> None:
+        items = self._items({"FullDPS": 456, "CombinedDPS": 123})
+        item = self._by_key(items, "output_single_target")
+        self.assertEqual(item.value, "电弧；456（FullDPS）")
+        self.assertIn("当前保存", item.verdict)
+
+    def test_dps_为零仍是已知值(self) -> None:
+        item = self._by_key(self._items({"TotalDPS": 0}), "output_single_target")
+        self.assertTrue(item.known)
+        self.assertIn("0（TotalDPS）", item.value)
+
+    def test_boss_只有显式配置时才给值(self) -> None:
+        missing = self._by_key(self._items({"CombinedDPS": 123}), "output_boss")
+        self.assertFalse(missing.known)
+        self.assertEqual(missing.value, "")
+        self.assertIn("enemyIsBoss", missing.missing_reason)
+
+        ordinary = self._by_key(
+            self._items({"CombinedDPS": 123}, config={"enemyIsBoss": "None"}),
+            "output_boss",
+        )
+        self.assertFalse(ordinary.known)
+
+        pinnacle = self._by_key(
+            self._items({"CombinedDPS": 123}, config={"enemyIsBoss": "Pinnacle"}),
+            "output_boss",
+        )
+        self.assertTrue(pinnacle.known)
+        self.assertIn("守卫者/巅峰 Boss", pinnacle.value)
+        self.assertIn("enemyIsBoss=Pinnacle", pinnacle.basis)
+
+        legacy = self._by_key(
+            self._items({"CombinedDPS": 123}, config={"enemyIsBoss": "Shaper"}),
+            "output_boss",
+        )
+        self.assertTrue(legacy.known)
+        self.assertIn("旧版 Shaper", legacy.value)
+
+    def test_清图只列覆盖指标且不拿_dps_猜(self) -> None:
+        missing = self._by_key(self._items({"CombinedDPS": 999}), "output_clear")
+        self.assertFalse(missing.known)
+        self.assertIn("不能只凭单体 DPS", missing.missing_reason)
+
+        known = self._by_key(
+            self._items(
+                {"CombinedDPS": 999, "AreaOfEffectRadiusMetres": 2.4},
+                stat_text={
+                    "CombinedDPS": "999",
+                    "AreaOfEffectRadiusMetres": "2.4",
+                    "ChainMaxString": "All",
+                },
+            ),
+            "output_clear",
+        )
+        self.assertTrue(known.known)
+        self.assertIn("范围半径 2.4 米", known.value)
+        self.assertIn("连锁 All", known.value)
+        self.assertIn("不据此给强/弱评级", known.verdict)
 
 
 class HealthReportTest(unittest.TestCase):

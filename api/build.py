@@ -7,10 +7,11 @@
 同一份分享码永远得到同一份结果。也正因如此它不过出口绑定闸门——
 闸门防的是模型编造，这里没有模型。
 
-需求 8.4 的 16 项体检与 8.5 的防御补充（最大抗性、吸纳、偷取、回复）已经接入，
+需求 8.4 的 16 项体检、8.5 的防御补充与 8.6 的三类输出分析已经接入，
 但遵守「**只判不算**」边界：值取自分享码里的 `PlayerStat`，本库只用有出处的
 常量与规则判读；缺失项标为「未知」，不会估计。因此返回里
-`analysis_done=true` 表示这些项目均已检查，**不表示本库重算了 Build**。
+`analysis_done=true` 表示这些项目均已检查，**不表示本库重算了 Build**。输出分析中，
+单体只对应当前 Calcs 技能，清图只列覆盖指标，Boss 必须有显式敌人档位。
 
 `player_stats` 那一段**是 PoB 自己算的快照**，不是本库算的，也不是知识库证据——
 它反映用户自己那份 PoB 的版本与配置。字段名与 `source_note` 都写清这一点，
@@ -101,6 +102,8 @@ class BuildResponse(BaseModel):
     player_stats_note: str = ""
     #: 需求 8.4 的逐项体检。**只判不算**：值取自 build，判据取自本库常量
     report: list[CheckOut] = []
+    #: 需求 8.6：单体 / 清图 / Boss 分开，且显式绑定当前 PoB 配置
+    output_report: list[CheckOut] = []
     report_notes: list[str] = []
     analysis_done: bool = True
     analysis_note: str = ""
@@ -113,11 +116,19 @@ _STATS_NOTE = (
     "本库的计算器结论不与它混排。"
 )
 _ANALYSIS_NOTE = (
-    "需求 8.4 的 16 项与 8.5 的防御补充已逐项核对（见 `report`），"
+    "需求 8.4 的 16 项、8.5 的防御补充与 8.6 的输出场景已逐项核对，"
     "但**本库没有重算任何一项**："
     "数值取自你的 build，本库只做判读；缺的一律标「未知」而不填估计值。"
     "**DPS 只是复述你 PoB 的数**——本库缺整条加成链，算不了 DPS。"
 )
+
+
+def _check_out(check) -> CheckOut:  # noqa: ANN001
+    return CheckOut(
+        key=check.key, label=check.label, value=check.value, known=check.known,
+        missing_reason=check.missing_reason, verdict=check.verdict,
+        basis=check.basis, source=check.source,
+    )
 
 
 def _resolve_code(raw: str) -> str:
@@ -210,14 +221,8 @@ def analyze_build(req: BuildRequest, caller: str = Depends(require_user)) -> Bui
         config={k: str(v) for k, v in build.config.items()},
         player_stats=build.player_stats,
         player_stats_note=_STATS_NOTE if build.player_stats else "",
-        report=[
-            CheckOut(
-                key=c.key, label=c.label, value=c.value, known=c.known,
-                missing_reason=c.missing_reason, verdict=c.verdict,
-                basis=c.basis, source=c.source,
-            )
-            for c in report.items
-        ],
+        report=[_check_out(c) for c in report.items],
+        output_report=[_check_out(c) for c in report.output_items],
         report_notes=report.notes,
         analysis_done=True,
         analysis_note=_ANALYSIS_NOTE,

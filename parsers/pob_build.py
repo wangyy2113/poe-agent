@@ -54,6 +54,9 @@ class BuildGem:
     level: int | None = None
     quality: int | None = None
     enabled: bool = True
+    #: PoB XML 里的内部技能 id；用于区分主动技能与辅助宝石，不拿名字猜。
+    skill_id: str = ""
+    is_support: bool = False
     #: 桥接到 `pob_skill_gem` 的结果；桥不上就是 None（**留原文，不猜**）
     gem_id: str | None = None
     name_zh: str = ""
@@ -66,7 +69,23 @@ class SkillGroup:
     slot: str = ""
     enabled: bool = True
     is_main: bool = False
+    #: `mainActiveSkill` 是本组“主动技能列表”里的 1-based 下标，不是全部宝石下标。
+    active_skill_index: int | None = None
+    #: `mainActiveSkillCalcs` 是 Calcs 页在本组内选中的主动技能下标。
+    active_skill_calcs_index: int | None = None
     gems: tuple[BuildGem, ...] = ()
+
+    @property
+    def active_gem(self) -> BuildGem | None:
+        active = [gem for gem in self.gems if gem.enabled and not gem.is_support]
+        index = self.active_skill_index or 1
+        return active[index - 1] if 0 < index <= len(active) else None
+
+    @property
+    def calcs_active_gem(self) -> BuildGem | None:
+        active = [gem for gem in self.gems if gem.enabled and not gem.is_support]
+        index = self.active_skill_calcs_index or self.active_skill_index or 1
+        return active[index - 1] if 0 < index <= len(active) else None
 
 
 @dataclass(frozen=True)
@@ -99,11 +118,24 @@ class PobBuild:
     passive_nodes: tuple[str, ...] = ()
     #: 树上**插着珠宝**的插槽数（珠宝不在 `Items` 的 Slot 里，在树的 `<Sockets>` 里）
     tree_jewels: int = 0
+    #: `<Build mainSocketGroup>`：PoB 左侧栏选作 Build 主技能的技能组（1-based）。
+    main_socket_group: int | None = None
+    #: `<Calcs><Input name="skill_number">`：生成 PlayerStat 时选中的技能组（1-based）。
+    calcs_skill_group: int | None = None
+    #: 所有 PlayerStat 的原始文本；覆盖范围字段中的 `All` 等非数字值。
+    player_stat_text: dict[str, str] = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
 
     @property
     def main_group(self) -> SkillGroup | None:
         return next((g for g in self.skill_groups if g.is_main), None)
+
+    @property
+    def calcs_group(self) -> SkillGroup | None:
+        index = self.calcs_skill_group
+        if index is not None and 0 < index <= len(self.skill_groups):
+            return self.skill_groups[index - 1]
+        return self.main_group
 
 
 def decode_share_code(code: str) -> str:
@@ -149,18 +181,33 @@ def _int_or_none(value: str | None) -> int | None:
         return None
 
 
-def _parse_skills(root: ET.Element) -> list[SkillGroup]:
+def _parse_skills(root: ET.Element, main_socket_group: int | None) -> list[SkillGroup]:
     groups: list[SkillGroup] = []
     node = root.find("Skills")
     if node is None:
         return groups
-    for skill in node.findall("Skill"):
+    skill_nodes = node.findall("Skill")
+    if not skill_nodes:
+        # 当前 PoB 把技能组包在多个 `<SkillSet>` 中；PlayerStat 与主技能下标都绑定
+        # 当前激活的那一套。旧版则把 `<Skill>` 直接放在 `<Skills>` 下。
+        active_set = node.get("activeSkillSet") or "1"
+        skill_set = next(
+            (item for item in node.findall("SkillSet") if item.get("id") == active_set),
+            None,
+        )
+        if skill_set is None:
+            skill_set = node.find("SkillSet")
+        skill_nodes = skill_set.findall("Skill") if skill_set is not None else []
+    for group_index, skill in enumerate(skill_nodes, start=1):
         gems = tuple(
             BuildGem(
                 name_en=(g.get("nameSpec") or "").strip(),
                 level=_int_or_none(g.get("level")),
                 quality=_int_or_none(g.get("quality")),
                 enabled=(g.get("enabled") or "true").lower() != "false",
+                skill_id=g.get("skillId") or "",
+                is_support=(g.get("skillId") or "").startswith("Support")
+                or "SupportGem" in (g.get("gemId") or ""),
             )
             for g in skill.findall("Gem")
             if (g.get("nameSpec") or "").strip()
@@ -168,7 +215,9 @@ def _parse_skills(root: ET.Element) -> list[SkillGroup]:
         groups.append(SkillGroup(
             slot=skill.get("slot") or "",
             enabled=(skill.get("enabled") or "true").lower() != "false",
-            is_main=skill.get("mainActiveSkill") not in (None, "", "nil"),
+            is_main=group_index == main_socket_group,
+            active_skill_index=_int_or_none(skill.get("mainActiveSkill")),
+            active_skill_calcs_index=_int_or_none(skill.get("mainActiveSkillCalcs")),
             gems=gems,
         ))
     return groups
@@ -220,11 +269,14 @@ def parse_build(xml: str) -> PobBuild:
         bandit=build_node.get("bandit") or "",
         pantheon_major=build_node.get("pantheonMajorGod") or "",
         pantheon_minor=build_node.get("pantheonMinorGod") or "",
+        main_socket_group=_int_or_none(build_node.get("mainSocketGroup")),
     )
     for stat in build_node.findall("PlayerStat"):
         name, value = stat.get("stat"), stat.get("value")
         if not name:
             continue
+        if value is not None:
+            out.player_stat_text[name] = value
         try:
             out.player_stats[name] = float(value)  # type: ignore[arg-type]
         except (TypeError, ValueError):
@@ -238,7 +290,10 @@ def parse_build(xml: str) -> PobBuild:
             out.config[key] = (
                 inp.get("string") or inp.get("number") or inp.get("boolean") or ""
             )
-    out.skill_groups = _parse_skills(root)
+    calcs_skill = root.find("Calcs/Input[@name='skill_number']")
+    if calcs_skill is not None:
+        out.calcs_skill_group = _int_or_none(calcs_skill.get("number"))
+    out.skill_groups = _parse_skills(root, out.main_socket_group)
     out.items = _parse_items(root, out.warnings)
 
     # 天赋树与珠宝都在 `<Tree><Spec>` 里：`nodes` 是已分配节点，
@@ -280,11 +335,14 @@ def bridge_gems(conn, build: PobBuild) -> PobBuild:  # noqa: ANN001
                 continue
             gems.append(BuildGem(
                 name_en=gem.name_en, level=gem.level, quality=gem.quality,
-                enabled=gem.enabled, gem_id=hit[0], name_zh=hit[1],
+                enabled=gem.enabled, skill_id=gem.skill_id, is_support=gem.is_support,
+                gem_id=hit[0], name_zh=hit[1],
             ))
         groups.append(SkillGroup(
             slot=group.slot, enabled=group.enabled,
-            is_main=group.is_main, gems=tuple(gems),
+            is_main=group.is_main, active_skill_index=group.active_skill_index,
+            active_skill_calcs_index=group.active_skill_calcs_index,
+            gems=tuple(gems),
         ))
     build.skill_groups = groups
     if missing:

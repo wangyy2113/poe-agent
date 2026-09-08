@@ -590,6 +590,17 @@ function renderBuild(data) {
     );
   }
 
+  lines.push('', '## 输出分析：单体 / 清图 / Boss', '');
+  lines.push('| 场景 | 当前快照 | 判定 | 依据 |');
+  lines.push('| --- | --- | --- | --- |');
+  for (const check of data.output_report || []) {
+    lines.push(
+      `| ${buildText(check.label)} | ${check.known ? buildText(check.value) : '未知'} | ` +
+      `${check.known ? buildText(check.verdict) : buildText(check.missing_reason)} | ` +
+      `${buildText(check.basis)} |`
+    );
+  }
+
   if (data.analysis_note) lines.push('', `> ${buildText(data.analysis_note)}`);
   if (data.player_stats_note) lines.push('', `> ${buildText(data.player_stats_note)}`);
 
