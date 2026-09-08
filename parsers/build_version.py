@@ -48,6 +48,7 @@ def _system_version(conn) -> tuple[str, str]:  # noqa: ANN001
 
 def check_build_version(conn, build: PobBuild) -> BuildVersionCheck:  # noqa: ANN001
     build_version = _normalise(build.tree_version)
+    build_basis = build.tree_version_basis or "当前 `<Tree activeSpec>` 对应 `<Spec treeVersion>`"
     system_version, system_basis = _system_version(conn)
     if not build_version:
         return BuildVersionCheck(
@@ -55,7 +56,7 @@ def check_build_version(conn, build: PobBuild) -> BuildVersionCheck:  # noqa: AN
             message=(
                 "这份 Build 没有导出当前天赋树的 `treeVersion`，无法判断是否与本地数据同版。"
             ),
-            basis="Build 版本应取当前 `<Tree activeSpec>` 对应 `<Spec treeVersion>`",
+            basis=f"Build 版本应取{build_basis}",
         )
     if not system_version:
         return BuildVersionCheck(
@@ -67,9 +68,14 @@ def check_build_version(conn, build: PobBuild) -> BuildVersionCheck:  # noqa: AN
     if matches:
         message = f"Build 天赋树版本 {build_version} 与本地数据版本一致。"
     else:
+        preserved = (
+            "PlayerStat 仍是原 PoB 的快照"
+            if build.player_stats or not build.tree_version_basis else
+            "输入携带的原始字段保持不变"
+        )
         message = (
             f"Build 天赋树版本 {build_version} 与本地数据版本 {system_version} 不一致；"
-            "PlayerStat 仍是原 PoB 的快照，但本地宝石桥接、规则判读与优化建议可能存在版本偏差。"
+            f"{preserved}，但本地宝石桥接、规则判读与优化建议可能存在版本偏差。"
         )
     return BuildVersionCheck(
         build_version=build_version,
@@ -78,7 +84,7 @@ def check_build_version(conn, build: PobBuild) -> BuildVersionCheck:  # noqa: AN
         matches=matches,
         message=message,
         basis=(
-            "Build 取当前激活 `<Spec treeVersion>`；本地版本取 " + system_basis
+            "Build 版本取" + build_basis + "；本地版本取 " + system_basis
             + " 的占多数版本"
         ),
     )

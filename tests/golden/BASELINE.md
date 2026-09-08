@@ -5182,3 +5182,27 @@ GGG 官方文档把 3.27 起的链接格式称为 6.2，但编码头里的 uint3
 | 单测 | 1,467 | **1,469**（+1 官方示例、+1 Bloodline 高位） |
 | 检索侧 / 出口闸门 | 124/124、145/145 | **未改动** |
 | LLM token | 0 | **0**（链接本地解析） |
+
+---
+
+## 2026-09-08（第七十三轮）· GGG OAuth 角色 API 导入 v1
+
+按 GGG 当前官方 `account:characters` 契约接入 `GET /character` 与
+`GET /character/<name>`。请求主机固定为 `api.pathofexile.com`，角色名只作为经过 URL
+编码的路径段；Bearer token 仅从服务端 `POE_OAUTH_TOKEN` 读取，不写日志、不落 HTTP
+缓存、不返回浏览器。User-Agent 强制使用 GGG 要求的
+`OAuth clientId/version (contact: contact)` 格式。仅支持 PoE1 PC realm，并显式拒绝
+PoE2 与主机重定向。
+
+角色响应中的已装备物品、插槽连接组、天赋珠宝、普通/星团节点、大师选择、盗贼、
+万神殿、升华/Bloodline 与游戏版本进入现有 Build 报告。背包与 rucksack 不属于已装备
+状态，明确排除。官方 API 不提供 PoB PlayerStat、配置或主技能选择，这些维度保持未知，
+不从局部装备与天赋反推面板。
+
+### 指标
+
+| | 上一轮 | 本轮 |
+| --- | --- | --- |
+| 单测 | 1,469 | **1,479**（+8 角色 API/映射、+1 端到端路由、+1 前端入口契约） |
+| 检索侧 / 出口闸门 | 124/124、145/145 | **未改动** |
+| LLM token | 0 | **0**（官方结构化 API 导入） |

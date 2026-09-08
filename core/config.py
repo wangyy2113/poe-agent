@@ -38,6 +38,10 @@ class Secrets(BaseSettings):
     admin_token: str = ""
     api_keys: str = ""
 
+    # ── GGG 官方角色 API（OAuth scope: account:characters）──
+    poe_oauth_token: str = ""
+    poe_oauth_user_agent: str = ""
+
     model_config = {
         "env_file": (".env", ".env.local"),
         "env_file_encoding": "utf-8",

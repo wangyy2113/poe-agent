@@ -1,7 +1,7 @@
-"""`/build`：PoB 分享码与官方天赋树链接解析（需求 8.1 的入口）。
+"""`/build`：PoB、官方天赋树与官方角色 API 导入（需求 8.1 的入口）。
 
-路由层只做校验与编排，业务在 `parsers/pob_build.py`：
-    分享码 → `decode_share_code` → `parse_build` → `bridge_gems`
+路由层只做校验与编排，三类输入分别由 `parsers/pob_build.py`、
+`parsers/passive_tree_link.py` 与 `parsers/character_api.py` 解析；之后统一进入报告链路。
 
 **这条链路全程不调用 LLM**（与 `/item` 同一条先例）：输出是代码装配的，
 同一份分享码永远得到同一份结果。也正因如此它不过出口绑定闸门——
@@ -9,12 +9,12 @@
 
 需求 8.4 的 16 项体检、8.5 的防御补充、8.6 的三类输出分析与 8.7 的
 双档优化建议已经接入，
-但遵守「**只判不算**」边界：值取自分享码里的 `PlayerStat`，本库只用有出处的
+但遵守「**只判不算**」边界：值只取输入本身携带的字段，本库只用有出处的
 常量与规则判读；缺失项标为「未知」，不会估计。因此返回里
 `analysis_done=true` 表示这些项目均已检查，**不表示本库重算了 Build**。输出分析中，
 单体只对应当前 Calcs 技能，清图只列覆盖指标，Boss 必须有显式敌人档位。
 防御来源只拆装备文本中能逐字核对的部分；优化建议只由已知且低于明确上限的指标触发。
-需求 8.9 的版本核对读取当前激活天赋方案的 `treeVersion`，与本地数据表版本比较。
+需求 8.9 的版本核对读取对应输入携带的版本字段，与本地数据表版本比较。
 
 `player_stats` 那一段**是 PoB 自己算的快照**，不是本库算的，也不是知识库证据——
 它反映用户自己那份 PoB 的版本与配置。字段名与 `source_note` 都写清这一点，
@@ -26,16 +26,17 @@ from __future__ import annotations
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from api.deps import require_user
 from core import db as dbmod
-from core.config import get_config
+from core.config import get_config, get_secrets
 from kb.fetcher import Fetcher, Poe2SourceRejected
 from parsers.build_advice import build_suggestions
 from parsers.build_report import build_health_report
 from parsers.build_sources import build_defence_sources
 from parsers.build_version import check_build_version
+from parsers.character_api import CharacterApiClient, CharacterApiError, character_build
 from parsers.pob_build import PobParseError, bridge_gems, decode_share_code, parse_build
 from parsers.pob_link import PobLinkError, looks_like_link, resolve_download_url
 from parsers.passive_tree_link import (
@@ -50,13 +51,24 @@ router = APIRouter(tags=["Build"])
 
 class BuildRequest(BaseModel):
     code: str = Field(
-        min_length=1, max_length=200000,
+        default="", max_length=200000,
         description=(
             "PoB 的分享码、**已知分享站**的链接，或 pathofexile.com 官方天赋树链接"
             "（pobb.in / pastebin.com / pob.codes / poe.ninja / Maxroll / rentry.co …）。"
-            "只认白名单里的站点：服务端会拿这个地址去发请求。"
+            "托管链接只认白名单站点并由服务端抓取；官方天赋树链接只做本地解码。"
         ),
     )
+    character_name: str = Field(
+        default="", max_length=100,
+        description="当前 POE_OAUTH_TOKEN 所属账号中的 PoE1 PC 角色名。",
+    )
+
+    @model_validator(mode="after")
+    def exactly_one_input(self) -> "BuildRequest":
+        supplied = bool(self.code.strip()) + bool(self.character_name.strip())
+        if supplied != 1:
+            raise ValueError("code 与 character_name 必须且只能提供一个")
+        return self
 
 
 class GemOut(BaseModel):
@@ -154,6 +166,10 @@ class BuildResponse(BaseModel):
     ascendancy_id: int | None = None
     secondary_ascendancy_id: int | None = None
     mastery_effects: dict[str, str] = {}
+    character_name: str = ""
+    character_league: str = ""
+    character_realm: str = ""
+    alternate_ascendancy_name: str = ""
     report_notes: list[str] = []
     analysis_done: bool = True
     analysis_note: str = ""
@@ -170,6 +186,11 @@ _ANALYSIS_NOTE = (
     "但**本库没有重算任何一项**："
     "数值取自你的 build，本库只做判读；缺的一律标「未知」而不填估计值。"
     "**DPS 只是复述你 PoB 的数**——本库缺整条加成链，算不了 DPS。"
+)
+_CHARACTER_ANALYSIS_NOTE = (
+    "官方角色 API 提供角色身份、已装备物品、插槽宝石、珠宝与天赋，但不提供 PoB 的"
+    "PlayerStat 或配置快照；因此可核对输入结构，DPS、EHP、Max Hit、抗性等最终面板"
+    "保持未知，不从局部数据估算。"
 )
 
 
@@ -202,18 +223,77 @@ def _resolve_code(raw: str) -> str:
     return fetcher.fetch(url).text.strip()
 
 
+def _character_client() -> CharacterApiClient:
+    cfg = get_config()
+    secrets = get_secrets()
+    return CharacterApiClient(
+        token=secrets.poe_oauth_token,
+        user_agent=secrets.poe_oauth_user_agent,
+        timeout=float(cfg.get("crawl.timeout_seconds", 60)),
+    )
+
+
+def _raise_character_error(exc: CharacterApiError) -> None:
+    raise HTTPException(
+        status_code=exc.status_code,
+        detail={"error": exc.code, "reason": exc.reason},
+    ) from exc
+
+
+class CharacterSummaryOut(BaseModel):
+    name: str
+    class_name: str = ""
+    level: int | None = None
+    league: str = ""
+    realm: str = "pc"
+
+
+class CharacterListResponse(BaseModel):
+    characters: list[CharacterSummaryOut] = []
+    source: str = "GGG official API"
+
+
+@router.get("/build/characters", response_model=CharacterListResponse)
+def list_characters(caller: str = Depends(require_user)) -> CharacterListResponse:
+    try:
+        entries = _character_client().list_characters()
+    except CharacterApiError as exc:
+        _raise_character_error(exc)
+    characters = [
+        CharacterSummaryOut(
+            name=str(entry.get("name") or ""),
+            class_name=str(entry.get("class") or ""),
+            level=entry.get("level") if isinstance(entry.get("level"), int) else None,
+            league=str(entry.get("league") or ""),
+            realm=str(entry.get("realm") or "pc"),
+        )
+        for entry in entries
+        if entry.get("name") and str(entry.get("realm") or "pc") == "pc"
+    ]
+    logger.info("角色列表 caller=%s PoE1 PC 角色=%d", caller, len(characters))
+    return CharacterListResponse(characters=characters)
+
+
 @router.post("/build", response_model=BuildResponse)
 def analyze_build(req: BuildRequest, caller: str = Depends(require_user)) -> BuildResponse:
     input_type = "pob"
     tree_link = None
+    character_meta = None
     try:
-        if looks_like_passive_tree_link(req.code):
+        if req.character_name.strip():
+            input_type = "character_api"
+            payload = _character_client().get_character(req.character_name)
+            build, character_meta = character_build(payload)
+            build = bridge_gems(dbmod.get_conn(), build)
+        elif looks_like_passive_tree_link(req.code):
             input_type = "passive_tree"
             build, tree_link = passive_tree_build(req.code)
         else:
             code = _resolve_code(req.code)
             xml = decode_share_code(code)
             build = bridge_gems(dbmod.get_conn(), parse_build(xml))
+    except CharacterApiError as exc:
+        _raise_character_error(exc)
     except PassiveTreeLinkError as exc:
         raise HTTPException(
             status_code=422,
@@ -300,9 +380,20 @@ def analyze_build(req: BuildRequest, caller: str = Depends(require_user)) -> Bui
         tree_serialization_version=(tree_link.serialization_version if tree_link else None),
         ascendancy_id=(tree_link.ascendancy_id if tree_link else None),
         secondary_ascendancy_id=(tree_link.secondary_ascendancy_id if tree_link else None),
-        mastery_effects=dict(tree_link.mastery_effects) if tree_link else {},
+        mastery_effects=(
+            dict(tree_link.mastery_effects) if tree_link else
+            dict(character_meta.mastery_effects) if character_meta else {}
+        ),
+        character_name=character_meta.name if character_meta else "",
+        character_league=character_meta.league if character_meta else "",
+        character_realm=character_meta.realm if character_meta else "",
+        alternate_ascendancy_name=(
+            character_meta.alternate_ascendancy if character_meta else ""
+        ),
         report_notes=report.notes,
         analysis_done=True,
-        analysis_note=_ANALYSIS_NOTE,
+        analysis_note=(
+            _CHARACTER_ANALYSIS_NOTE if input_type == "character_api" else _ANALYSIS_NOTE
+        ),
         warnings=build.warnings,
     )

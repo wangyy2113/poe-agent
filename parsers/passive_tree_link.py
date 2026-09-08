@@ -169,7 +169,9 @@ def passive_tree_build(link: str) -> tuple[PobBuild, PassiveTreeLink]:
     build = PobBuild(
         class_name=_CLASS_NAMES[tree.class_id],
         tree_version=tree.tree_version,
+        tree_version_basis="官方天赋树链接路径中的版本段",
         passive_nodes=(*tree.nodes, *tree.cluster_nodes),
+        passive_nodes_basis="官方天赋树链接的普通节点与星团节点编码",
     )
     build.warnings.append(
         "输入仅包含天赋树：装备、技能、配置与 PlayerStat 均未提供，相关体检项会显示未知。"

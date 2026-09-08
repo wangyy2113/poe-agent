@@ -805,7 +805,12 @@ V1 完成的判定标准（逐条实测，不以「无报错」代替验证）�
   - [ ] Operation semantics / state transition：按通货、精华、化石、Harvest、隐匿、Eldritch 等分别建立有据状态转移，不能从 normal raw odds 外推
   - [ ] Economy adapter 与 Planner：接入价格、比较最快/最经济路线、逐步期望消耗；上述输入未齐前不得输出完整路线
 - [ ] Boss Agent：机制、防御门槛、药剂、流程；可结合已导入 Build
-- [ ] 角色 API 导入与截图识别
+- [x] 官方角色 API 导入 v1（2026-09-08）：接入 OAuth `account:characters` 的当前
+  `GET /character[/<realm>]/<name>` 契约；支持列出账号角色，并将 PoE1 PC 角色的已装备物品、
+  插槽连接组、珠宝、天赋、大师选择、盗贼、万神殿、升华/Bloodline 与版本送入现有 Build
+  体检。固定官方 API 主机，token 不下发、不落缓存，User-Agent 强制符合 GGG OAuth 格式；
+  背包排除，PlayerStat 与主技能保持未知
+- [ ] 截图识别
 - [x] 官方天赋树链接解析 v1（2026-09-08）：`/build` 与聊天页接受
   `pathofexile.com/passive-skill-tree` / `fullscreen-passive-skill-tree`，按 PoB
   官方 6.2 / `PassiveSpec.DecodeURL` 格式在本地解出职业、升华/Bloodline 位域、

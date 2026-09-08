@@ -124,6 +124,10 @@ class PobBuild:
     calcs_skill_group: int | None = None
     #: 当前激活天赋方案的树版本（规范成 `3.29`）；这是 Build 游戏版本的可核对代理。
     tree_version: str = ""
+    #: 版本值来自哪里；非 PoB 输入必须显式覆盖，避免报告谎称来自 `<Tree><Spec>`。
+    tree_version_basis: str = ""
+    #: 天赋节点来自哪里；非 PoB 输入必须显式覆盖。
+    passive_nodes_basis: str = ""
     #: 所有 PlayerStat 的原始文本；覆盖范围字段中的 `All` 等非数字值。
     player_stat_text: dict[str, str] = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)

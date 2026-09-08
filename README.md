@@ -59,7 +59,7 @@ POE1 的机制耦合极深，一个错误的小前提会让整条结论反向。
 | **装备解析** | 游戏内 Ctrl+C / Ctrl+Alt+C 文本 → 结构化装备；中英文都认 |
 | **词缀 T 级** | 按底材类别 + 数值区间定档；查不到就标「未匹配」并说明原因 |
 | **装备分析** | `POST /item`：基础信息、词缀档位、可制作方向，全程不调 LLM |
-| **PoB Build 体检** | PoB 分享码、白名单托管链接或官方天赋树链接 → 核心体检、防御来源、输出分析与双档建议；天赋树链接在本地解析普通/星团节点、大师选择、职业、升华与 Bloodline 编号，其未携带的装备和面板项保持「未知」；当前树版本与本地数据自动核对；API 与聊天页均可用 |
+| **Build 体检** | PoB 分享码、白名单托管链接、官方天赋树或 GGG OAuth 角色 API → 核心体检、防御来源、输出分析与双档建议；只使用各输入实际携带的字段，缺失的面板项保持「未知」；当前版本与本地数据自动核对；API 与聊天页均可用 |
 | LLM 客户端 | 直连 LiteLLM 网关，多 Key 故障转移、分级冷却、推理模型适配 |
 | 缺口台账 | `knowledge_gap` 按频次排序即采集优先级；**评测流量与永久越界（POE2）不计入**（否则前两名会是本该拒答的黄金用例），`/admin/stats` 同时列出被排除的条目数 |
 | 执行轨迹 | 每轮落库，含拦截原因与 Token 明细，`/admin/traces` 可追溯 |
@@ -88,6 +88,8 @@ python scripts/setup.py          # Windows: python scripts\setup.py
 #    LLM_BASE_URL=<你的 LiteLLM 网关地址>
 #    LLM_API_KEY=<virtual key>
 #    ADMIN_TOKEN=<自己起一个，管理端点用，别和用户 Key 共用>
+#    POE_OAUTH_TOKEN=<可选；角色导入需要 account:characters scope>
+#    POE_OAUTH_USER_AGENT=<OAuth clientId/version (contact: 联系方式)>
 
 # 3) 自检：确认 SQLite / FTS5 / 向量扩展 / 凭证配置就绪
 .venv/bin/python scripts/selfcheck.py
@@ -178,6 +180,7 @@ http://127.0.0.1:8787/poe_agent/
 一份不相干的报告；而且你粘贴的可能只是问题的一部分（贴完装备还想补一句「值多少钱」），
 直接触发就把下文吞了。PoB 分享码、白名单托管链接和 `pathofexile.com` 官方天赋树链接
 会进入确定性的 Build 体检，不调用 LLM；其中的数值取自输入本身，本库只做判读。
+顶部“导入角色”按钮可按角色名读取当前 GGG OAuth 账号中的 PoE1 PC 角色。
 
 左上角可切换历史会话（存 `localStorage`，标题取首条用户消息），点「新对话」重开。
 
@@ -348,7 +351,8 @@ curl -s -o /dev/null -w '%{http_code}\n' -X POST http://127.0.0.1:8787/poe_agent
 # 422
 ```
 
-**PoB Build 体检** —— `POST /build`，接受分享码、白名单托管链接或官方天赋树链接。
+**Build 体检** —— `POST /build`，接受分享码、白名单托管链接、官方天赋树链接，
+或当前 GGG OAuth 账号中的 PoE1 PC 角色名。
 
 ```bash
 curl -s -X POST http://127.0.0.1:8787/poe_agent/build \
@@ -359,10 +363,17 @@ curl -s -X POST http://127.0.0.1:8787/poe_agent/build \
 curl -s -X POST http://127.0.0.1:8787/poe_agent/build \
   -H 'Content-Type: application/json' \
   -d '{"code": "https://www.pathofexile.com/passive-skill-tree/3.29.0/你的编码"}'
+
+# 角色导入：先在 .env 配置 POE_OAUTH_TOKEN 与 GGG 规定格式的 POE_OAUTH_USER_AGENT
+curl -s http://127.0.0.1:8787/poe_agent/build/characters
+curl -s -X POST http://127.0.0.1:8787/poe_agent/build \
+  -H 'Content-Type: application/json' \
+  -d '{"character_name": "你的角色名"}'
 ```
 
-返回职业、技能组、装备、PoB 自带的 `PlayerStat`，以及需求 8.4 规定的 16 项体检、
-需求 8.5 的防御补充（最大抗性、吸纳、偷取、回复）和需求 8.6 的三类输出分析。
+返回输入中可取得的职业、技能组、装备与天赋；PoB 输入还会返回其自带的 `PlayerStat`。
+所有输入都进入需求 8.4 的 16 项体检、需求 8.5 的防御补充（最大抗性、吸纳、偷取、
+回复）和需求 8.6 的三类输出分析。
 单体栏只复述 Calcs 当前技能的输出快照；清图栏只展示范围、投射物、穿透、分裂、
 连锁与弹跳等确实存在的覆盖字段；Boss 栏只有在 `enemyIsBoss` 明确保存为新版
 `Boss/Pinnacle/Uber` 或旧版 `Shaper/Sirus` 时才给值，不把普通怪快照冒充 Boss 输出。
@@ -377,6 +388,9 @@ PoB breakdown 时明确标成尚未拆分，不把它们当作 0。对已知且�
 有出处的规则判读；缺项明确标为“未知”，不会尝试部分重算或估计。
 天赋树链接只携带职业编号、升华/Bloodline 编号、节点与大师选择，不含装备、技能组、
 配置或 PlayerStat；因此这些缺失维度会显示“未知”，不会由树节点反推一份虚构的完整 Build。
+角色 API 使用 GGG 当前官方 `GET /character/<name>`，token 只保存在服务端且不落缓存；
+导入已装备物品、插槽连接组、珠宝、天赋、盗贼、万神殿与版本。背包不属于已装备 Build，
+不会混入体检；官方响应不含 PoB PlayerStat 和主技能选择，这些维度同样保持“未知”。
 
 **检索知识库** —— 调试与评测用，返回原始命中。
 
@@ -645,6 +659,9 @@ logs/                   按日期命名的日志（不入版本库）
 - **Build 版本核对使用当前激活天赋方案。** 多套天赋树时按 `<Tree activeSpec>` 选择，
   不再固定读取第一套。若 Build 没有 `treeVersion` 或本地库没有版本标记，会明确显示
   “无法判断”，不会默认当成同版。
+- **角色 API 需要用户自己的 GGG OAuth token。** 当前只支持 PoE1 PC realm，且不会
+  自动刷新 token；`POE_OAUTH_USER_AGENT` 必须符合 GGG 的
+  `OAuth clientId/version (contact: contact)` 格式。截图 Build 导入仍未实现。
 - **会话历史只存在浏览器 `localStorage` 里**（上限 30 条）。换浏览器或清缓存就看不到
   列表了——消息本身在 `data/poe.db` 里，但没有按用户维度检索会话的接口。
   会话重命名也还没做。
