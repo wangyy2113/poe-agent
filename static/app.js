@@ -601,6 +601,44 @@ function renderBuild(data) {
     );
   }
 
+  lines.push('', '## 防御来源（装备侧可核对部分）', '');
+  const sources = data.defence_sources || [];
+  if (!sources.length) {
+    lines.push('- 未从装备文本识别到可逐字核对的防御来源。');
+  } else {
+    lines.push('| 类别 | 部位 / 装备 | 来源类型 | 原文 |');
+    lines.push('| --- | --- | --- | --- |');
+    for (const source of sources) {
+      const owner = [source.slot, source.item_name].filter(Boolean).join(' / ');
+      lines.push(
+        `| ${buildText(source.label)} | ${buildText(owner)} | ` +
+        `${buildText(source.origin)} | ${buildText(source.detail)} |`
+      );
+    }
+  }
+  if (data.defence_sources_note) lines.push('', `> ${buildText(data.defence_sources_note)}`);
+  if ((data.defence_sources_unresolved || []).length) {
+    lines.push('', '尚不能拆分的来源：');
+    for (const note of data.defence_sources_unresolved) lines.push(`- ${buildText(note)}`);
+  }
+
+  lines.push('', '## 优化建议（低 / 高预算）', '');
+  const suggestions = data.suggestions || [];
+  if (!suggestions.length) {
+    lines.push('- 当前已知指标没有触发确定性建议；未知项不视为合格，也不会被猜成短板。');
+  } else {
+    lines.push('| 已知短板 | 预算 | 建议 | 预期收益 | 大致成本 | 假设 |');
+    lines.push('| --- | --- | --- | --- | --- | --- |');
+    for (const item of suggestions) {
+      lines.push(
+        `| ${buildText(item.weakness)} | ${buildText(item.tier)} | ${buildText(item.action)} | ` +
+        `${buildText(item.expected_gain)} | ${buildText(item.estimated_cost)} | ` +
+        `${buildText(item.assumptions)} |`
+      );
+    }
+  }
+  if (data.suggestions_note) lines.push('', `> ${buildText(data.suggestions_note)}`);
+
   if (data.analysis_note) lines.push('', `> ${buildText(data.analysis_note)}`);
   if (data.player_stats_note) lines.push('', `> ${buildText(data.player_stats_note)}`);
 

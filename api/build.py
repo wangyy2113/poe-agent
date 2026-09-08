@@ -7,11 +7,13 @@
 同一份分享码永远得到同一份结果。也正因如此它不过出口绑定闸门——
 闸门防的是模型编造，这里没有模型。
 
-需求 8.4 的 16 项体检、8.5 的防御补充与 8.6 的三类输出分析已经接入，
+需求 8.4 的 16 项体检、8.5 的防御补充、8.6 的三类输出分析与 8.7 的
+双档优化建议已经接入，
 但遵守「**只判不算**」边界：值取自分享码里的 `PlayerStat`，本库只用有出处的
 常量与规则判读；缺失项标为「未知」，不会估计。因此返回里
 `analysis_done=true` 表示这些项目均已检查，**不表示本库重算了 Build**。输出分析中，
 单体只对应当前 Calcs 技能，清图只列覆盖指标，Boss 必须有显式敌人档位。
+防御来源只拆装备文本中能逐字核对的部分；优化建议只由已知且低于明确上限的指标触发。
 
 `player_stats` 那一段**是 PoB 自己算的快照**，不是本库算的，也不是知识库证据——
 它反映用户自己那份 PoB 的版本与配置。字段名与 `source_note` 都写清这一点，
@@ -29,7 +31,9 @@ from api.deps import require_user
 from core import db as dbmod
 from core.config import get_config
 from kb.fetcher import Fetcher, Poe2SourceRejected
+from parsers.build_advice import build_suggestions
 from parsers.build_report import build_health_report
+from parsers.build_sources import build_defence_sources
 from parsers.pob_build import PobParseError, bridge_gems, decode_share_code, parse_build
 from parsers.pob_link import PobLinkError, looks_like_link, resolve_download_url
 
@@ -87,6 +91,24 @@ class CheckOut(BaseModel):
     source: str = ""
 
 
+class DefenceSourceOut(BaseModel):
+    category: str
+    label: str
+    slot: str = ""
+    item_name: str = ""
+    origin: str
+    detail: str
+
+
+class BuildSuggestionOut(BaseModel):
+    weakness: str
+    tier: str
+    action: str
+    expected_gain: str
+    estimated_cost: str
+    assumptions: str
+
+
 class BuildResponse(BaseModel):
     level: int | None = None
     class_name: str = ""
@@ -104,6 +126,12 @@ class BuildResponse(BaseModel):
     report: list[CheckOut] = []
     #: 需求 8.6：单体 / 清图 / Boss 分开，且显式绑定当前 PoB 配置
     output_report: list[CheckOut] = []
+    #: 装备文本中可逐字核对的防御来源；不重算、不冒充完整 PoB breakdown
+    defence_sources: list[DefenceSourceOut] = []
+    defence_sources_unresolved: list[str] = []
+    defence_sources_note: str = ""
+    suggestions: list[BuildSuggestionOut] = []
+    suggestions_note: str = ""
     report_notes: list[str] = []
     analysis_done: bool = True
     analysis_note: str = ""
@@ -177,6 +205,8 @@ def analyze_build(req: BuildRequest, caller: str = Depends(require_user)) -> Bui
         ) from exc
 
     report = build_health_report(dbmod.get_conn(), build)
+    sources = build_defence_sources(build)
+    suggestions = build_suggestions(build)
     bridged = sum(1 for g in build.skill_groups for x in g.gems if x.gem_id)
     total_gems = sum(len(g.gems) for g in build.skill_groups)
     logger.info(
@@ -223,6 +253,14 @@ def analyze_build(req: BuildRequest, caller: str = Depends(require_user)) -> Bui
         player_stats_note=_STATS_NOTE if build.player_stats else "",
         report=[_check_out(c) for c in report.items],
         output_report=[_check_out(c) for c in report.output_items],
+        defence_sources=[DefenceSourceOut(**line.__dict__) for line in sources.lines],
+        defence_sources_unresolved=sources.unresolved,
+        defence_sources_note=sources.note,
+        suggestions=[BuildSuggestionOut(**item.__dict__) for item in suggestions],
+        suggestions_note=(
+            "建议只由已知 PlayerStat 短板触发；预期收益是当前值到目标值的可复核差额。"
+            "项目尚未接入赛季经济数据，因此成本按改造规模分档，不提供虚构的通货报价。"
+        ),
         report_notes=report.notes,
         analysis_done=True,
         analysis_note=_ANALYSIS_NOTE,
