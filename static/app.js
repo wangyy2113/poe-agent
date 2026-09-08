@@ -575,12 +575,16 @@ function renderBuild(data) {
     `- 等级：${buildText(data.level)}`,
     `- 盗贼选择：${buildText(data.bandit)}`,
     `- 万神殿：${buildText([data.pantheon_major, data.pantheon_minor].filter(Boolean).join(' / '))}`,
-    '',
-    '## 核心 16 项与防御补充体检',
-    '',
-    '| 项目 | 数值 | 判定 | 依据 |',
-    '| --- | --- | --- | --- |',
+    `- 版本核对：${buildText(data.version_check && data.version_check.message)}`,
   ];
+
+  if (data.version_check && data.version_check.basis) {
+    lines.push(`- 版本依据：${buildText(data.version_check.basis)}`);
+  }
+
+  lines.push('', '## 核心 16 项与防御补充体检', '');
+  lines.push('| 项目 | 数值 | 判定 | 依据 |');
+  lines.push('| --- | --- | --- | --- |');
 
   for (const check of data.report || []) {
     lines.push(
