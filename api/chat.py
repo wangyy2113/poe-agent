@@ -12,9 +12,9 @@ import logging
 import uuid
 from typing import Any, Iterator
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from api.deps import require_user
 from core import db as dbmod
@@ -28,6 +28,15 @@ router = APIRouter(tags=["问答"])
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=2000)
     conversation_id: str | None = None
+
+
+class ConversationUpdate(BaseModel):
+    title: str = Field(min_length=1, max_length=60)
+
+    @field_validator("title", mode="before")
+    @classmethod
+    def normalize_title(cls, value: Any) -> Any:
+        return value.strip() if isinstance(value, str) else value
 
 
 class CitationOut(BaseModel):
@@ -189,8 +198,17 @@ def _save_message(conversation_id: str, role: str, content: str) -> None:
 
 
 @router.get("/conversations/{conversation_id}")
-def conversation(conversation_id: str) -> dict[str, Any]:
+def conversation(
+    conversation_id: str,
+    caller: str = Depends(require_user),
+) -> dict[str, Any]:
     conn = dbmod.get_conn()
+    conv = conn.execute(
+        "SELECT title FROM conversation WHERE conversation_id = ?",
+        (conversation_id,),
+    ).fetchone()
+    if conv is None:
+        raise HTTPException(status_code=404, detail="会话不存在")
     msgs = [
         dict(r)
         for r in conn.execute(
@@ -199,4 +217,27 @@ def conversation(conversation_id: str) -> dict[str, Any]:
             (conversation_id,),
         )
     ]
-    return {"conversation_id": conversation_id, "messages": msgs}
+    return {
+        "conversation_id": conversation_id,
+        "title": conv["title"] or "新对话",
+        "messages": msgs,
+    }
+
+
+@router.patch("/conversations/{conversation_id}")
+def rename_conversation(
+    conversation_id: str,
+    req: ConversationUpdate,
+    caller: str = Depends(require_user),
+) -> dict[str, str]:
+    conn = dbmod.get_conn()
+    cursor = conn.execute(
+        "UPDATE conversation SET title = ?, updated_at = datetime('now') "
+        "WHERE conversation_id = ?",
+        (req.title, conversation_id),
+    )
+    if cursor.rowcount == 0:
+        raise HTTPException(status_code=404, detail="会话不存在")
+    conn.commit()
+    logger.info("会话重命名 caller=%s conversation=%s", caller, conversation_id)
+    return {"conversation_id": conversation_id, "title": req.title}
