@@ -17,6 +17,10 @@ EXAMPLE = (
     "https://www.pathofexile.com/passive-skill-tree/3.15.0/"
     "AAAABgMADI6-HwKSwQQHLJwtH9-wTLNfKoP3ES3r5AAA"
 )
+OFFICIAL_V5_EXAMPLE = (
+    "https://www.pathofexile.com/passive-skill-tree/3.15.0/"
+    "AAAABQMADAQHES0fAiycLR9Ms18qg_eOvpLB37Dr5AA="
+)
 
 
 def _url(data: bytes, version: str = "3.29.0") -> str:
@@ -36,6 +40,13 @@ class PassiveTreeLinkTest(unittest.TestCase):
         self.assertEqual(tree.cluster_nodes, ())
         self.assertEqual(tree.mastery_effects, ())
 
+    def test_ggg_开发者文档里的_v5_样例(self) -> None:
+        tree = parse_passive_tree_link(OFFICIAL_V5_EXAMPLE)
+        self.assertEqual(tree.serialization_version, 5)
+        self.assertEqual(tree.class_id, 3)
+        self.assertEqual(len(tree.nodes), 12)
+        self.assertEqual(tree.nodes[:3], ("1031", "4397", "7938"))
+
     def test_星团节点与大师效果按_pob_字节序解析(self) -> None:
         data = (
             (6).to_bytes(4, "big")
@@ -51,6 +62,16 @@ class PassiveTreeLinkTest(unittest.TestCase):
         self.assertEqual(tree.nodes, ("100", "200"))
         self.assertEqual(tree.cluster_nodes, ("65543",))
         self.assertEqual(tree.mastery_effects, (("200", "55"),))
+
+    def test_v62_升华高六位完整保留_bloodline_编号(self) -> None:
+        data = (
+            (6).to_bytes(4, "big")
+            + bytes([0, (6 << 2) | 3, 0])  # Scion；第三升华；Nameless Bloodline
+            + bytes([0, 0])  # 无星团节点、无大师效果
+        )
+        tree = parse_passive_tree_link(_url(data, "3.27.0"))
+        self.assertEqual(tree.ascendancy_id, 3)
+        self.assertEqual(tree.secondary_ascendancy_id, 6)
 
     def test_转换成部分_build_时不伪造缺失字段(self) -> None:
         build, tree = passive_tree_build(EXAMPLE)
