@@ -87,10 +87,11 @@
   - 处理：把可用的 LiteLLM virtual key 填进 `.env`；有多个时用 `LLM_API_KEYS`（`key[:model]` 逗号分隔，按优先级），故障转移逻辑已就绪
   - _需求: 5.5, 16.2_
 
-- [ ] 0.7 平台中立性检查
+- [x] 0.7 平台中立性检查 —— **已完成（2026-09-08，`scripts/check_portability.py`）**
   - 代码层禁止项自查：硬编码解释器路径、字符串拼路径、`os.fork`/`fcntl`/`resource`/`pwd`/`grp`/`termios`、shell 调用 `ps`/`grep`/`awk`/`kill`/`nohup`、未指定 encoding 的 `open()`
   - HTTP 缓存文件名用 URL 哈希，避免 Windows `MAX_PATH` 260 超长
-  - 加一条测试或检查脚本，把上述禁止项做成可自动化的静态检查
+  - AST 静态检查覆盖生产 Python 文件，并拒绝 `os.path.join`、`subprocess(..., shell=True)`、`pkill` 等同类回归；文本 I/O 必须显式指定 encoding，二进制 I/O 不误报
+  - 单元测试同时钉住检查器规则与 URL 缓存名的稳定性、短长度、无 Windows 非法字符契约
   - _需求: 16.12_
 
 ---
