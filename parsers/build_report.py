@@ -518,7 +518,7 @@ def _ascendancy(_conn, build: PobBuild) -> CheckItem:  # noqa: ANN001
                          basis="取自 build 的 ascendClassName")
     return CheckItem(
         key="ascendancy", label="升华",
-        value=f"{build.class_name} / {build.ascend_class_name}",
+        value=" / ".join(filter(None, (build.class_name, build.ascend_class_name))),
         basis="取自 build 的 className / ascendClassName",
     )
 
@@ -578,7 +578,8 @@ def _passive_tree(_conn, build: PobBuild) -> CheckItem:  # noqa: ANN001
         key="passive_tree", label="天赋树",
         value=f"已分配 {len(build.passive_nodes)} 个节点"
               + (f"（角色 {build.level} 级）" if build.level else ""),
-        basis="节点数取自 build 的 `<Spec nodes>`。**本轮不校验点数是否合法、"
+        basis=(build.passive_nodes_basis or "节点数取自 build 的 `<Spec nodes>`")
+              + "。**本轮不校验点数是否合法、"
               "也不解析每个节点给什么**——那要接天赋树图，另开一轮",
     )
 

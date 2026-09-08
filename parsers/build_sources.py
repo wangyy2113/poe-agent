@@ -158,14 +158,19 @@ def build_defence_sources(build: PobBuild) -> DefenceSources:
                 ))
 
     if build.passive_nodes:
-        out.unresolved.append("天赋树：分享码有节点 id，但本地节点图没有逐节点属性 breakdown")
+        out.unresolved.append("天赋树：输入有节点 id，但本地节点图没有逐节点属性 breakdown")
     if build.skill_groups:
-        out.unresolved.append("技能与辅助：分享码有宝石配置，但没有逐效果对最终防御的贡献值")
+        out.unresolved.append("技能与辅助：输入有宝石配置，但没有逐效果对最终防御的贡献值")
     if build.config:
         out.unresolved.append("配置与条件效果：会影响 PlayerStat，但分享码不保存逐项贡献 breakdown")
-    out.unresolved.append("升华、药剂及其它条件来源：只在 PoB 最终计算中合并，当前无法逐项归因")
+    out.unresolved.append("升华、药剂及其它条件来源：当前输入没有逐项防御贡献，无法归因")
     out.note = (
         "这里只列装备文本中可逐字核对的防御来源，不求和，也不声称这些行等于最终面板；"
-        "最终数值仍以 PlayerStat 为准。未列出的来源不是 0，而是分享码没有提供 breakdown。"
+        + (
+            "最终数值仍以 PlayerStat 为准。"
+            if build.player_stats else
+            "当前输入没有 PlayerStat，无法与最终面板对账。"
+        )
+        + "未列出的来源不是 0，而是输入没有提供 breakdown。"
     )
     return out

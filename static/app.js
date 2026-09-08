@@ -22,7 +22,7 @@ const $ = (id) => document.getElementById(id);
 const el = {
   main: $('main'), thread: $('thread'), empty: $('empty'),
   input: $('input'), send: $('send'), pasteCard: $('paste-card'),
-  newChat: $('new-chat'), convs: $('conversations'),
+  newChat: $('new-chat'), characterImport: $('import-character'), convs: $('conversations'),
 };
 
 let conversationId = null;
@@ -571,8 +571,11 @@ function buildText(value, fallback = '—') {
 /** `/build` 的结构化响应 → 前端报告。全程不调 LLM，不产生推断。 */
 function renderBuild(data) {
   const identity = [data.class_name, data.ascend_class_name].filter(Boolean).join(' / ') || '未知职业';
+  const heading = data.input_type === 'passive_tree'
+    ? '# PoE 天赋树体检'
+    : data.input_type === 'character_api' ? '# PoE 官方角色体检' : '# PoB Build 体检';
   const lines = [
-    data.input_type === 'passive_tree' ? '# PoE 天赋树体检' : '# PoB Build 体检',
+    heading,
     '',
     `- 职业：${buildText(identity)}`,
     `- 等级：${buildText(data.level)}`,
@@ -586,6 +589,14 @@ function renderBuild(data) {
       `- 链接编码版本：${buildText(data.tree_serialization_version)}`,
       `- 升华编号：${buildText(data.ascendancy_id)}`,
       `- 副升华 / 血统编号：${buildText(data.secondary_ascendancy_id)}`
+    );
+  }
+  if (data.input_type === 'character_api') {
+    lines.push(
+      `- 角色：${buildText(data.character_name)}`,
+      `- 联盟：${buildText(data.character_league)}`,
+      `- Realm：${buildText(data.character_realm)}`,
+      `- 副升华 / Bloodline：${buildText(data.alternate_ascendancy_name)}`
     );
   }
   if (data.version_check && data.version_check.basis) {
@@ -702,20 +713,25 @@ function renderBuild(data) {
   return lines.join('\n');
 }
 
-/** 调 `/build` 解析 PoB 分享码或白名单链接，并显示确定性的体检报告。 */
-async function analyzeBuild(code) {
+/** 调 `/build` 解析 PoB、天赋树或 OAuth 账号中的角色，并显示确定性的体检报告。 */
+async function analyzeBuild(code = '', characterName = '') {
   if (busy) return;
   busy = true;
   el.send.disabled = true;
-  const isTree = PASSIVE_TREE_LINK_RE.test(code.trim());
-  addUserMessage(`${isTree ? '【PoE 天赋树】' : '【PoB Build】'}${pasteSummary(code)}`);
+  const isCharacter = Boolean(characterName.trim());
+  const isTree = !isCharacter && PASSIVE_TREE_LINK_RE.test(code.trim());
+  addUserMessage(
+    isCharacter
+      ? `【官方角色 API】${characterName.trim()}`
+      : `${isTree ? '【PoE 天赋树】' : '【PoB Build】'}${pasteSummary(code)}`
+  );
   const msg = addAssistantMessage();
-  msg.setStatus(isTree ? '解析 PoE 天赋树' : '解析 PoB Build');
+  msg.setStatus(isCharacter ? '读取官方角色 API' : isTree ? '解析 PoE 天赋树' : '解析 PoB Build');
   try {
     const resp = await fetch(`${API}/build`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ code }),
+      body: JSON.stringify(isCharacter ? { character_name: characterName.trim() } : { code }),
     });
     const data = await resp.json().catch(() => null);
     if (!resp.ok) {
@@ -806,6 +822,11 @@ el.input.addEventListener('keydown', (e) => {
   }
 });
 el.send.addEventListener('click', () => send(el.input.value));
+
+el.characterImport.addEventListener('click', () => {
+  const name = window.prompt('输入当前 GGG OAuth 账号中的 PoE1 PC 角色名：');
+  if (name && name.trim()) analyzeBuild('', name.trim());
+});
 
 el.newChat.addEventListener('click', () => {
   if (busy) return;

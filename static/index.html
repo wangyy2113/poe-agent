@@ -15,6 +15,7 @@
   <div class="brand">POE1-Agent<span>无据不答</span></div>
   <nav>
     <select id="conversations" class="ghost" title="切换会话"></select>
+    <button id="import-character" class="ghost" title="从 GGG 官方角色 API 导入">导入角色</button>
     <button id="new-chat" class="ghost">新对话</button>
   </nav>
 </header>
@@ -38,7 +39,7 @@
   <!-- 粘贴识别卡片（需求 6.3/6.4）：识别出装备文本或 PoB 码时先让用户确认再分析 -->
   <div class="paste-card" id="paste-card" hidden></div>
   <div class="composer">
-    <textarea id="input" rows="1" placeholder="输入问题，或粘贴装备文本 / PoB 分享码"></textarea>
+    <textarea id="input" rows="1" placeholder="输入问题，或粘贴装备文本 / PoB / 天赋树链接"></textarea>
     <button class="send" id="send" title="发送">↑</button>
   </div>
   <div class="hint">

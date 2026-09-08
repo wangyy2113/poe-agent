@@ -58,6 +58,14 @@ def main() -> int:
         for key, model in specs:
             print(f"    - {mask(key)}  绑定模型={model or '(沿用默认)'}")
         print(f"  ADMIN_TOKEN  : {'已设置' if sec.admin_token else '未设置（/admin 将拒绝全部请求）'}")
+        print(
+            "  POE OAuth     : "
+            + (
+                "已设置"
+                if sec.poe_oauth_token and sec.poe_oauth_user_agent.startswith("OAuth ")
+                else "未完整设置 token / 合规 User-Agent（角色 API 导入不可用）"
+            )
+        )
     except Exception as exc:  # 缺必填项时 pydantic 会抛
         print(f"  !! 读取失败: {type(exc).__name__}: {exc}")
         ok = False

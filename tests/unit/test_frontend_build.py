@@ -42,6 +42,14 @@ class FrontendBuildContractTest(unittest.TestCase):
         self.assertIn("pathofexile\\.com\\/(?:fullscreen-)?passive-skill-tree", app)
         self.assertIn("data.input_type === 'passive_tree'", app)
 
+    def test_character_api_has_explicit_frontend_entry(self) -> None:
+        page = (ROOT / "static/index.html").read_text(encoding="utf-8")
+        app = (ROOT / "static/app.js").read_text(encoding="utf-8")
+        self.assertIn('id="import-character"', page)
+        self.assertIn("{ character_name: characterName.trim() }", app)
+        self.assertIn("data.input_type === 'character_api'", app)
+        self.assertIn("读取官方角色 API", app)
+
     def test_readme_no_longer_claims_build_is_unimplemented(self) -> None:
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         self.assertNotIn("PoB 码只能识别不能解析", readme)
