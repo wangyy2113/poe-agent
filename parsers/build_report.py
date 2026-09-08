@@ -35,7 +35,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Callable
 
 from calc import constants
@@ -77,15 +77,49 @@ class BuildReport:
         return sum(1 for i in self.items if not i.known)
 
 
-def _missing(key: str, label: str, stat: str) -> CheckItem:
-    """统一的「未知」构造。**`value` 一定是空的**——这是 8.4.7 的硬要求。"""
+def _stats_origin(build: PobBuild) -> str:
+    return build.player_stats_basis or "这份 build 的 PlayerStat"
+
+
+def _stats_source(build: PobBuild) -> str:
+    return build.player_stats_basis or FROM_BUILD
+
+
+def _snapshot_label(build: PobBuild) -> str:
+    return "已确认的截图转录" if build.player_stats_basis else "PoB 快照"
+
+
+def _unknown_structure(build: PobBuild, key: str, label: str, field: str) -> CheckItem:
     return CheckItem(
-        key=key, label=label, value="", known=False,
+        key=key,
+        label=label,
+        value="",
+        known=False,
         missing_reason=(
+            f"{build.structure_basis or '这份输入不是完整 Build'}，"
+            f"没有可核对的{field}；本库不把“未提供”判成“没有”。"
+        ),
+        source=build.structure_basis or "部分 Build 输入",
+    )
+
+
+def _missing(build: PobBuild, key: str, label: str, stat: str) -> CheckItem:
+    """统一的「未知」构造。**`value` 一定是空的**——这是 8.4.7 的硬要求。"""
+    if build.player_stats_basis:
+        reason = (
+            f"{build.player_stats_basis}中没有可核对的 `{stat}`。"
+            "截图之外的数值本库不补全、不估计。"
+        )
+    else:
+        reason = (
             f"这份 build 的 PlayerStat 里没有 `{stat}`。"
             "常见原因是导出它的 PoB 版本还没有这一项（例如法术压制是 3.16 才加的），"
             "本库**不据此估计**。"
-        ),
+        )
+    return CheckItem(
+        key=key, label=label, value="", known=False,
+        missing_reason=reason,
+        source=_stats_source(build),
     )
 
 
@@ -100,7 +134,7 @@ def _resist(key: str, label: str, stat: str, *, elemental: bool) -> Callable:
     def check(_conn, build: PobBuild) -> CheckItem:  # noqa: ANN001
         stats = build.player_stats
         if stat not in stats:
-            return _missing(key, label, stat)
+            return _missing(build, key, label, stat)
         value = stats[stat]
         over = stats.get(f"{stat}OverCap")
         cap = constants.get(constants.MAX_RESIST_CAP)
@@ -153,9 +187,10 @@ def _max_resist(key: str, label: str, stat: str) -> Callable:
         return CheckItem(
             key=key, label=label, value="", known=False,
             missing_reason=(
-                f"这份 build 没有 `{direct}`，且 `{over_key}` 不大于 0，"
-                "无法从快照区分『恰好到顶』与『尚未满抗』，本库不猜最大抗性。"
+                f"{_stats_origin(build)}没有 `{direct}`，且 `{over_key}` 不大于 0，"
+                "无法从现有字段区分『恰好到顶』与『尚未满抗』，本库不猜最大抗性。"
             ),
+            source=_stats_source(build),
         )
 
     return check
@@ -164,7 +199,7 @@ def _max_resist(key: str, label: str, stat: str) -> Callable:
 def _plain(key: str, label: str, stat: str, *, unit: str = "", note: str = "") -> Callable:
     def check(_conn, build: PobBuild) -> CheckItem:  # noqa: ANN001
         if stat not in build.player_stats:
-            return _missing(key, label, stat)
+            return _missing(build, key, label, stat)
         return CheckItem(
             key=key, label=label,
             value=f"{_fmt(build.player_stats[stat])}{unit}", basis=note,
@@ -183,7 +218,7 @@ def _capped(
         candidates = (stat,) if isinstance(stat, str) else stat
         hit = next((name for name in candidates if name in build.player_stats), None)
         if hit is None:
-            return _missing(key, label, " / ".join(candidates))
+            return _missing(build, key, label, " / ".join(candidates))
         value = build.player_stats[hit]
         cap = constants.get(const_key)
         return CheckItem(
@@ -202,10 +237,12 @@ def _dps(_conn, build: PobBuild) -> CheckItem:  # noqa: ANN001
         if stat in stats:
             return CheckItem(
                 key="dps", label="DPS", value=f"{_fmt(stats[stat])}（{stat}）",
-                basis="**本库不计算 DPS**（缺整条加成链：增伤/更多/转化/穿透）。"
-                      "这个数是你的 PoB 算的，本库只是复述。",
+                basis=(
+                    "**本库不计算 DPS**（缺整条加成链：增伤/更多/转化/穿透）。"
+                    f"这个数来自{_snapshot_label(build)}，本库只是复述。"
+                ),
             )
-    return _missing("dps", "DPS", "FullDPS / CombinedDPS / TotalDPS / TotalDotDPS")
+    return _missing(build, "dps", "DPS", "FullDPS / CombinedDPS / TotalDPS / TotalDotDPS")
 
 
 _DPS_FIELDS: tuple[str, ...] = (
@@ -245,7 +282,7 @@ def _single_target_output(build: PobBuild) -> CheckItem:
     hit = _dps_snapshot(build)
     if hit is None:
         return _missing(
-            "output_single_target", "单体输出（当前配置）", " / ".join(_DPS_FIELDS)
+            build, "output_single_target", "单体输出（当前配置）", " / ".join(_DPS_FIELDS)
         )
     stat, value = hit
     skill = _selected_skill(build)
@@ -253,9 +290,12 @@ def _single_target_output(build: PobBuild) -> CheckItem:
     shown += f"{_fmt(value)}（{stat}）"
     return CheckItem(
         key="output_single_target", label="单体输出（当前配置）", value=shown,
-        verdict="仅代表这份 PoB 当前保存的技能与配置",
+        verdict=(
+            "仅代表你确认的截图中可见的技能与配置"
+            if build.player_stats_basis else "仅代表这份 PoB 当前保存的技能与配置"
+        ),
         basis=(
-            f"输出直接取自 PlayerStat `{stat}`；"
+            f"输出取自{_snapshot_label(build)}映射的 `{stat}`；"
             "本库不重算伤害，也不把当前快照外推到另一套敌人或技能配置。"
         ),
     )
@@ -265,16 +305,22 @@ def _boss_output(build: PobBuild) -> CheckItem:
     boss = str(build.config.get("enemyIsBoss", ""))
     if boss not in _BOSS_LABELS:
         state = "未显式保存 `enemyIsBoss`" if not boss else f"`enemyIsBoss={boss}` 不是 Boss 档"
+        action = (
+            "请上传包含明确敌人档位的截图后重新确认。"
+            if build.player_stats_basis
+            else "请在 PoB 配置页明确选择 Boss / Pinnacle / Uber 后重新导出。"
+        )
         return CheckItem(
             key="output_boss", label="Boss 输出", value="", known=False,
             missing_reason=(
                 f"这份 build {state}；当前 PlayerStat 不能冒充 Boss 输出。"
-                "请在 PoB 配置页明确选择 Boss / Pinnacle / Uber 后重新导出。"
+                + action
             ),
+            source=_stats_source(build),
         )
     hit = _dps_snapshot(build)
     if hit is None:
-        return _missing("output_boss", "Boss 输出", " / ".join(_DPS_FIELDS))
+        return _missing(build, "output_boss", "Boss 输出", " / ".join(_DPS_FIELDS))
     stat, value = hit
     skill = _selected_skill(build)
     parts = [_BOSS_LABELS[boss]]
@@ -285,7 +331,8 @@ def _boss_output(build: PobBuild) -> CheckItem:
         key="output_boss", label="Boss 输出", value="；".join(parts),
         verdict=f"敌人档位已明确为 {_BOSS_LABELS[boss]}",
         basis=(
-            f"敌人假设直接取自 Config `enemyIsBoss={boss}`，输出取自 PlayerStat `{stat}`；"
+            f"敌人档位与输出取自{_snapshot_label(build)}映射的 "
+            f"`enemyIsBoss={boss}` / `{stat}`；"
             "不换档重算。"
         ),
     )
@@ -313,6 +360,14 @@ def _clear_output(build: PobBuild) -> CheckItem:
         values.append(f"{label} {raw}{suffix}")
         used.append(hit)
     if not values:
+        if build.player_stats_basis:
+            return _missing(
+                build,
+                "output_clear",
+                "清图能力",
+                "AreaOfEffectRadiusMetres / ProjectileCount / PierceCountString / "
+                "ForkCountString / ChainMaxString / SplitCountString / BounceCount",
+            )
         return CheckItem(
             key="output_clear", label="清图能力", value="", known=False,
             missing_reason=(
@@ -327,7 +382,8 @@ def _clear_output(build: PobBuild) -> CheckItem:
         key="output_clear", label="清图能力", value=shown,
         verdict="仅展示覆盖快照，不据此给强/弱评级",
         basis=(
-            "逐项取自 " + " / ".join(f"`{name}`" for name in used)
+            f"逐项取自{_snapshot_label(build)}映射的 "
+            + " / ".join(f"`{name}`" for name in used)
             + "；清图还受怪物密度、移动、爆炸与技能机制影响，本库不从这些字段外推。"
         ),
     )
@@ -339,7 +395,7 @@ def _output_analysis(build: PobBuild) -> list[CheckItem]:
 
 def _armour(_conn, build: PobBuild) -> CheckItem:  # noqa: ANN001
     if "Armour" not in build.player_stats:
-        return _missing("armour", "护甲", "Armour")
+        return _missing(build, "armour", "护甲", "Armour")
     return CheckItem(
         key="armour", label="护甲", value=_fmt(build.player_stats["Armour"]),
         # 与 `num_armour_reduction` / `gap_armour_without_damage` 那对用例同一条规矩
@@ -362,13 +418,13 @@ def _max_hit(_conn, build: PobBuild) -> CheckItem:  # noqa: ANN001
     ]
     if not values:
         return _missing(
-            "max_hit", "Max Hit",
+            build, "max_hit", "Max Hit",
             "PhysicalMaximumHitTaken / FireMaximumHitTaken / ColdMaximumHitTaken / "
             "LightningMaximumHitTaken / ChaosMaximumHitTaken",
         )
     return CheckItem(
         key="max_hit", label="Max Hit", value="；".join(values),
-        basis="按 PoB 快照逐伤害类型展示；没有的类型不补零、不从其它类型类推。",
+        basis=f"按{_snapshot_label(build)}逐伤害类型展示；没有的类型不补零、不从其它类型类推。",
     )
 
 
@@ -390,7 +446,7 @@ def _block(_conn, build: PobBuild) -> CheckItem:  # noqa: ANN001
         used.append(hit)
     if not values:
         return _missing(
-            "block", "格挡",
+            build, "block", "格挡",
             "EffectiveBlockChance / EffectiveSpellBlockChance（旧版为 BlockChance / SpellBlockChance）",
         )
     cap = constants.get(constants.BLOCK_CHANCE_CAP)
@@ -430,15 +486,15 @@ def _leech(_conn, build: PobBuild) -> CheckItem:  # noqa: ANN001
     values, used = _stat_group(build, fields)
     if not values:
         return _missing(
-            "leech", "偷取", "LifeLeechGainRate / ManaLeechGainRate / EnergyShieldLeechGainRate",
+            build, "leech", "偷取", "LifeLeechGainRate / ManaLeechGainRate / EnergyShieldLeechGainRate",
         )
     return CheckItem(
         key="leech", label="偷取/击中回复", value="；".join(values),
         verdict="存在回复来源" if any(build.player_stats[name] > 0 for name in used)
-                else "PoB 快照中的三种速率均为 0",
+                else f"{_snapshot_label(build)}中的三种速率均为 0",
         basis=(
-            "取自 PoB 导出的 `*LeechGainRate`。该字段是 Leech 与 On Hit 的合计速率，"
-            "分享码没有把两者拆开，因此不把合计值冒充为纯偷取。"
+            f"取自{_snapshot_label(build)}映射的 `*LeechGainRate`。该字段按 PoB 口径是 "
+            "Leech 与 On Hit 的合计速率；输入没有把两者拆开，因此不把合计值冒充为纯偷取。"
         ),
     )
 
@@ -452,10 +508,13 @@ def _recovery(_conn, build: PobBuild) -> CheckItem:  # noqa: ANN001
     values, used = _stat_group(build, fields)
     if not values:
         return _missing(
-            "recovery", "回复", "NetLifeRegen / NetManaRegen / NetEnergyShieldRegen",
+            build, "recovery", "回复", "NetLifeRegen / NetManaRegen / NetEnergyShieldRegen",
         )
     legacy = any(name in {"LifeRegen", "ManaRegen", "EnergyShieldRegen"} for name in used)
-    basis = "优先取 PoB 的净回复（`Net*Regen`），其次取受回复率修正后的 `*RegenRecovery`。"
+    basis = (
+        f"优先取{_snapshot_label(build)}映射的净回复（`Net*Regen`），"
+        "其次取受回复率修正后的 `*RegenRecovery`。"
+    )
     if legacy:
         basis += "这份旧版 build 只导出 `*Regen`，展示的是再生而非完整净回复。"
     return CheckItem(
@@ -475,6 +534,10 @@ def _recoup(_conn, build: PobBuild) -> CheckItem:  # noqa: ANN001
         if name in build.player_stats:
             values.append(f"{label} {_fmt(build.player_stats[name])}%")
     if not values:
+        if build.player_stats_basis:
+            return _missing(
+                build, "recoup", "吸纳", "LifeRecoup / ManaRecoup / EnergyShieldRecoup"
+            )
         return CheckItem(
             key="recoup", label="吸纳", value="", known=False,
             missing_reason=(
@@ -484,7 +547,10 @@ def _recoup(_conn, build: PobBuild) -> CheckItem:  # noqa: ANN001
         )
     return CheckItem(
         key="recoup", label="吸纳", value="；".join(values),
-        basis="取自 build 的 `*Recoup`，表示对应资源在吸纳持续时间内收回的伤害比例。",
+        basis=(
+            f"取自{_snapshot_label(build)}映射的 `*Recoup`，"
+            "表示对应资源在吸纳持续时间内收回的伤害比例。"
+        ),
     )
 
 
@@ -501,19 +567,26 @@ def _pantheon(conn, build: PobBuild) -> CheckItem:  # noqa: ANN001
         ).fetchone()
         picks.append(f"{label}：{row[0] if row else key}")
     if not picks:
+        if not build.structure_complete:
+            return _unknown_structure(build, "pantheon", "万神殿", "万神殿选择")
         return CheckItem(
             key="pantheon", label="万神殿", value="未启用任何神力",
             verdict="两个位置都空着", basis="取自 build 的 pantheonMajorGod / MinorGod",
         )
     value = "；".join(picks)
     if unopened:
-        value += f"（{'、'.join(unopened)}未启用）"
+        if build.structure_complete:
+            value += f"（{'、'.join(unopened)}未启用）"
+        else:
+            value += f"（{'、'.join(unopened)}未在输入中显示）"
     return CheckItem(key="pantheon", label="万神殿", value=value,
                      basis="神祇键桥接到 `pantheon_soul.god_key`（与 PoB 的键逐字一致）")
 
 
 def _ascendancy(_conn, build: PobBuild) -> CheckItem:  # noqa: ANN001
     if not build.ascend_class_name or build.ascend_class_name == "None":
+        if not build.structure_complete:
+            return _unknown_structure(build, "ascendancy", "升华", "升华名称")
         return CheckItem(key="ascendancy", label="升华", value="未选择升华",
                          basis="取自 build 的 ascendClassName")
     return CheckItem(
@@ -526,6 +599,8 @@ def _ascendancy(_conn, build: PobBuild) -> CheckItem:  # noqa: ANN001
 def _flasks(_conn, build: PobBuild) -> CheckItem:  # noqa: ANN001
     hits = [i for i in build.items if "flask" in i.slot.lower()]
     if not hits:
+        if not build.structure_complete:
+            return _unknown_structure(build, "flasks", "药剂", "完整药剂栏")
         return CheckItem(key="flasks", label="药剂", value="没有药剂",
                          basis="按 build 的 Slot 名统计")
     names = [i.parsed.name or i.parsed.base_type for i in hits if i.parsed]
@@ -542,6 +617,8 @@ def _jewels(_conn, build: PobBuild) -> CheckItem:  # noqa: ANN001
     实测 OccVortex：Slot 里一件珠宝都没有，而树上插着 3 颗——
     按 Slot 名找会得出「没有珠宝」这个错结论。
     """
+    if not build.tree_jewels and not build.structure_complete:
+        return _unknown_structure(build, "jewels", "珠宝", "完整天赋珠宝插槽")
     return CheckItem(
         key="jewels", label="珠宝",
         value=f"树上插着 {build.tree_jewels} 颗" if build.tree_jewels else "树上没有珠宝",
@@ -554,6 +631,8 @@ def _curses(conn, build: PobBuild) -> CheckItem:  # noqa: ANN001
     """按已入库的 `tags` 判定诅咒，**不靠名字猜**。"""
     ids = [g.gem_id for grp in build.skill_groups for g in grp.gems if g.gem_id]
     if not ids:
+        if not build.structure_complete:
+            return _unknown_structure(build, "curses", "诅咒", "完整技能组")
         return CheckItem(key="curses", label="诅咒", value="没有可识别的诅咒宝石",
                          basis="按 `pob_skill_gem.tags` 里的 `curse` 判定")
     rows = conn.execute(
@@ -561,6 +640,8 @@ def _curses(conn, build: PobBuild) -> CheckItem:  # noqa: ANN001
         f"({','.join('?' * len(ids))})", ids
     ).fetchall()
     names = [r[0] for r in rows if "curse" in json.loads(r[1] or "[]")]
+    if not names and not build.structure_complete:
+        return _unknown_structure(build, "curses", "诅咒", "完整技能组")
     return CheckItem(
         key="curses", label="诅咒",
         value="、".join(names) if names else "没有诅咒宝石",
@@ -572,7 +653,11 @@ def _passive_tree(_conn, build: PobBuild) -> CheckItem:  # noqa: ANN001
     if not build.passive_nodes:
         return CheckItem(
             key="passive_tree", label="天赋树", value="", known=False,
-            missing_reason="build 的 `<Tree><Spec nodes>` 里没有已分配节点",
+            missing_reason=(
+                f"{build.passive_nodes_basis}，无法核对完整天赋树"
+                if build.passive_nodes_basis
+                else "build 的 `<Tree><Spec nodes>` 里没有已分配节点"
+            ),
         )
     return CheckItem(
         key="passive_tree", label="天赋树",
@@ -688,20 +773,35 @@ def build_health_report(conn, build: PobBuild) -> BuildReport:  # noqa: ANN001
         items=[fn(conn, build) for _key, fn in _CHECKS],
         output_items=_output_analysis(build),
     )
-    report.notes.append(
-        "需求 8.4 的 16 项与需求 8.5 的防御补充（最大抗性、吸纳、偷取、回复）"
-        "均已检查。报告里的数值**取自你粘贴的 build**（PoB 自己算的），本库只做核对与判读，"
-        "**没有重算任何一项**；判据（上限、规则）来自本库的游戏常量表，逐条注明出处。"
-    )
+    if build.player_stats_basis:
+        report.items = [
+            replace(item, source=_stats_source(build)) if item.source == FROM_BUILD else item
+            for item in report.items
+        ]
+        report.output_items = [
+            replace(item, source=_stats_source(build)) if item.source == FROM_BUILD else item
+            for item in report.output_items
+        ]
+        report.notes.append(
+            "需求 8.4 的 16 项与需求 8.5 的防御补充（最大抗性、吸纳、偷取、回复）"
+            f"均已检查。报告里的面板数值**{build.player_stats_basis}**；本库只做核对与判读，"
+            "**没有重算或补全任何一项**；判据（上限、规则）来自本库的游戏常量表。"
+        )
+    else:
+        report.notes.append(
+            "需求 8.4 的 16 项与需求 8.5 的防御补充（最大抗性、吸纳、偷取、回复）"
+            "均已检查。报告里的数值**取自你粘贴的 build**（PoB 自己算的），本库只做核对与判读，"
+            "**没有重算任何一项**；判据（上限、规则）来自本库的游戏常量表，逐条注明出处。"
+        )
     report.notes.append(
         "需求 8.6 的输出分析已区分单体、清图与 Boss：单体只复述当前技能快照；"
-        "清图只列 PoB 已导出的覆盖指标；Boss 只有在 `enemyIsBoss` 明确为 "
+        f"清图只列{_snapshot_label(build)}已有的覆盖指标；Boss 只有在 `enemyIsBoss` 明确为 "
         "Boss / Pinnacle / Uber（旧版为 Shaper / Sirus）时才展示当前值。"
         "三者都不切换配置重算。"
     )
     if report.unknown_count:
         report.notes.append(
-            f"其中 {report.unknown_count} 项标为「未知」：这份 build 里没有对应数值，"
+            f"其中 {report.unknown_count} 项标为「未知」：输入里没有对应数值或完整结构，"
             "本库**不据此估计**（需求 8.4.7）。"
         )
     return report

@@ -23,6 +23,7 @@ const el = {
   main: $('main'), thread: $('thread'), empty: $('empty'),
   input: $('input'), send: $('send'), pasteCard: $('paste-card'),
   newChat: $('new-chat'), characterImport: $('import-character'), convs: $('conversations'),
+  imageUpload: $('upload-image'), imageInput: $('image-input'),
 };
 
 let conversationId = null;
@@ -573,7 +574,8 @@ function renderBuild(data) {
   const identity = [data.class_name, data.ascend_class_name].filter(Boolean).join(' / ') || '未知职业';
   const heading = data.input_type === 'passive_tree'
     ? '# PoE 天赋树体检'
-    : data.input_type === 'character_api' ? '# PoE 官方角色体检' : '# PoB Build 体检';
+    : data.input_type === 'character_api' ? '# PoE 官方角色体检'
+    : data.input_type === 'screenshot' ? '# PoE 截图 Build 体检' : '# PoB Build 体检';
   const lines = [
     heading,
     '',
@@ -754,6 +756,160 @@ async function analyzeBuild(code = '', characterName = '') {
   }
 }
 
+/* ── 截图识别（需求 6.5 / 8.1）─────────────────────────
+ * 图片先交给已配置的视觉模型做受限 OCR，结果必须由用户确认；确认后的装备文本走
+ * `/item`，Build 字段走 `/build/screenshot`。视觉模型不直接给游戏结论。
+ */
+
+function readDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(new Error('读取图片失败'));
+    reader.readAsDataURL(file);
+  });
+}
+
+function showScreenshotFailure(reason) {
+  el.pasteCard.hidden = false;
+  el.pasteCard.innerHTML =
+    '<div class="pc-head"><span class="pc-tag">截图识别失败</span>' +
+    '<button class="pc-close" title="关闭">×</button></div>' +
+    `<div class="pc-note">${escapeHtml(reason)}</div>`;
+  el.pasteCard.querySelector('.pc-close').onclick = hidePasteCard;
+}
+
+function screenshotBuildSummary(build) {
+  const rows = [];
+  if (build.level != null) rows.push(`等级：${build.level}`);
+  if (build.class_name) rows.push(`职业：${build.class_name}`);
+  if (build.ascend_class_name) rows.push(`升华：${build.ascend_class_name}`);
+  if (build.main_skill) rows.push(`主技能：${build.main_skill}`);
+  for (const [key, value] of Object.entries(build.player_stats || {})) {
+    rows.push(`${key}：${value}`);
+  }
+  for (const [key, value] of Object.entries(build.player_stat_text || {})) {
+    rows.push(`${key}：${value}`);
+  }
+  if (build.enemy_is_boss) rows.push(`敌人档位：${build.enemy_is_boss}`);
+  return rows;
+}
+
+function showScreenshotCard(data, filename) {
+  const kind = data.kind;
+  const title = kind === 'item' ? '识别为装备截图'
+    : kind === 'build' ? '识别为 Build 截图' : '无法确定截图类型';
+  const uncertainty = (data.uncertain || []).length
+    ? `<div class="pc-warning">待核对：${escapeHtml(data.uncertain.join('；'))}</div>` : '';
+  let body = '';
+  let action = '';
+  if (kind === 'item') {
+    body = `<textarea class="pc-transcript" aria-label="截图转录文本">${escapeHtml(data.transcript || '')}</textarea>`;
+    action = '<button class="pc-primary">确认文字并分析装备</button>';
+  } else if (kind === 'build') {
+    const rows = screenshotBuildSummary(data.build || {});
+    body = `<div class="pc-fields">${rows.map((row) => `<div>${escapeHtml(row)}</div>`).join('')}</div>`;
+    action = '<button class="pc-primary">确认字段并体检 Build</button>';
+  } else {
+    body = `<div class="pc-fields">${escapeHtml(data.transcript || '没有识别出可用文字')}</div>`;
+  }
+  el.pasteCard.hidden = false;
+  el.pasteCard.innerHTML =
+    `<div class="pc-head"><span class="pc-tag">${title} · ${escapeHtml(filename)}</span>` +
+    '<button class="pc-close" title="取消">×</button></div>' + body + uncertainty +
+    '<div class="pc-note">视觉模型只做转录，可能出错；确认后才进入确定性分析。图片不会写入本地数据库。</div>' +
+    (action ? `<div class="pc-actions">${action}<button class="pc-ghost">取消</button></div>` : '');
+
+  el.pasteCard.querySelector('.pc-close').onclick = hidePasteCard;
+  const cancel = el.pasteCard.querySelector('.pc-ghost');
+  if (cancel) cancel.onclick = hidePasteCard;
+  const primary = el.pasteCard.querySelector('.pc-primary');
+  if (primary) {
+    primary.onclick = () => {
+      if (kind === 'item') {
+        const transcript = el.pasteCard.querySelector('.pc-transcript').value.trim();
+        if (!transcript) return;
+        hidePasteCard();
+        analyzeItem(transcript);
+      } else {
+        hidePasteCard();
+        analyzeScreenshotBuild(data.build || {}, filename);
+      }
+    };
+  }
+}
+
+async function recognizeScreenshot(file) {
+  if (busy) return;
+  if (file.size > 5 * 1024 * 1024) {
+    showScreenshotFailure('图片超过 5 MB 上限');
+    return;
+  }
+  busy = true;
+  el.send.disabled = true;
+  el.imageUpload.disabled = true;
+  el.pasteCard.hidden = false;
+  el.pasteCard.innerHTML = '<div class="pc-tag">正在识别截图…</div>';
+  try {
+    const dataUrl = await readDataUrl(file);
+    const resp = await fetch(`${API}/screenshot/recognize`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ data_url: dataUrl, filename: file.name }),
+    });
+    const data = await resp.json().catch(() => null);
+    if (!resp.ok) {
+      const detail = data && data.detail;
+      showScreenshotFailure(
+        typeof detail === 'object' ? detail.reason || `HTTP ${resp.status}`
+          : detail || `HTTP ${resp.status}`
+      );
+    } else {
+      showScreenshotCard(data, file.name);
+    }
+  } catch (err) {
+    showScreenshotFailure(String(err.message || err));
+  } finally {
+    busy = false;
+    el.send.disabled = false;
+    el.imageUpload.disabled = false;
+    el.imageInput.value = '';
+  }
+}
+
+async function analyzeScreenshotBuild(build, filename) {
+  if (busy) return;
+  busy = true;
+  el.send.disabled = true;
+  addUserMessage(`【Build 截图】${filename}`);
+  const msg = addAssistantMessage();
+  msg.setStatus('核对截图可见字段');
+  try {
+    const resp = await fetch(`${API}/build/screenshot`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...build, confirmed: true }),
+    });
+    const data = await resp.json().catch(() => null);
+    if (!resp.ok) {
+      const detail = data && data.detail;
+      msg.appendParseFailure({
+        reason: typeof detail === 'object' ? detail.reason || '截图字段无法体检'
+          : detail || `HTTP ${resp.status}`,
+      });
+    } else {
+      await msg.appendMarkdown(renderBuild(data));
+    }
+  } catch (err) {
+    msg.appendError(String(err.message || err));
+  } finally {
+    msg.finish(null);
+    busy = false;
+    el.send.disabled = false;
+    el.input.focus();
+  }
+}
+
 /* ── 会话 ─────────────────────────────────────────────── */
 
 const STORE = 'poe_agent_convs';
@@ -822,6 +978,14 @@ el.input.addEventListener('keydown', (e) => {
   }
 });
 el.send.addEventListener('click', () => send(el.input.value));
+
+el.imageUpload.addEventListener('click', () => {
+  if (!busy) el.imageInput.click();
+});
+el.imageInput.addEventListener('change', () => {
+  const file = el.imageInput.files && el.imageInput.files[0];
+  if (file) recognizeScreenshot(file);
+});
 
 el.characterImport.addEventListener('click', () => {
   const name = window.prompt('输入当前 GGG OAuth 账号中的 PoE1 PC 角色名：');
