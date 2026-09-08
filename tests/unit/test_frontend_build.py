@@ -19,6 +19,8 @@ class FrontendBuildContractTest(unittest.TestCase):
         self.assertIn("fetch(`${API}/build`", app)
         self.assertIn("解析并体检", app)
         self.assertIn("核心 16 项与防御补充体检", app)
+        self.assertIn("输出分析：单体 / 清图 / Boss", app)
+        self.assertIn("data.output_report", app)
         self.assertNotIn("PoB 码解析尚未实现", app)
 
     def test_all_backend_whitelist_sites_are_recognizable(self) -> None:

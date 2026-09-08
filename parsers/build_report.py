@@ -1,9 +1,13 @@
-"""Build 体检报告（第四十九轮，需求 8.4）。
+"""Build 体检报告（需求 8.4 / 8.5 / 8.6）。
 
 需求 8.4 的原文是「检查并报告下列全部项目，**不得遗漏**」，共 16 项；
 8.4.7 补的那句才是关键：**「IF 某项数据缺失 THEN SHALL 标注为『未知』而非填入估计值」**。
 需求 8.5 另要求防御分析覆盖最大抗性、吸纳、偷取与回复；这四类也沿用同一条
 「只判不算」边界。
+
+需求 8.6 把输出拆为单体、清图与 Boss。这里仍不切换配置重算：单体绑定 Calcs
+当前技能，清图只展示导出的覆盖指标，Boss 只有在 `enemyIsBoss` 显式为 Boss 档时
+才复述同一份快照。
 
 ## 核心设计：只判不算
 
@@ -62,10 +66,11 @@ class CheckItem:
 @dataclass
 class BuildReport:
     items: list[CheckItem] = field(default_factory=list)
+    output_items: list[CheckItem] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
 
     def by_key(self, key: str) -> CheckItem | None:
-        return next((i for i in self.items if i.key == key), None)
+        return next((i for i in (*self.items, *self.output_items) if i.key == key), None)
 
     @property
     def unknown_count(self) -> int:
@@ -193,14 +198,143 @@ def _capped(
 def _dps(_conn, build: PobBuild) -> CheckItem:  # noqa: ANN001
     """**只复述，不计算。** 本库没有整条加成链，算不了 DPS。"""
     stats = build.player_stats
-    for stat in ("FullDPS", "CombinedDPS", "TotalDPS"):
-        if stats.get(stat):
+    for stat in ("FullDPS", "CombinedDPS", "TotalDPS", "TotalDotDPS"):
+        if stat in stats:
             return CheckItem(
                 key="dps", label="DPS", value=f"{_fmt(stats[stat])}（{stat}）",
                 basis="**本库不计算 DPS**（缺整条加成链：增伤/更多/转化/穿透）。"
                       "这个数是你的 PoB 算的，本库只是复述。",
             )
-    return _missing("dps", "DPS", "FullDPS / CombinedDPS / TotalDPS")
+    return _missing("dps", "DPS", "FullDPS / CombinedDPS / TotalDPS / TotalDotDPS")
+
+
+_DPS_FIELDS: tuple[str, ...] = (
+    "FullDPS", "CombinedDPS", "TotalDPS", "TotalDotDPS", "AverageHit",
+)
+_BOSS_LABELS = {
+    "Boss": "普通 Boss",
+    "Pinnacle": "守卫者/巅峰 Boss",
+    "Uber": "Uber 巅峰 Boss",
+    # 旧版 PoB 在同一个配置键下用具体模板名；仍是明确的 Boss 快照，不能丢成未知。
+    "Shaper": "旧版 Shaper/守卫者 Boss",
+    "Sirus": "旧版 Sirus Boss",
+}
+
+
+def _dps_snapshot(build: PobBuild) -> tuple[str, float] | None:
+    """按 PoB 展示层的优先级取一个现成输出；包括 0，绝不把已导出的 0 当缺失。"""
+    return next(
+        ((name, build.player_stats[name]) for name in _DPS_FIELDS
+         if name in build.player_stats),
+        None,
+    )
+
+
+def _selected_skill(build: PobBuild) -> str:
+    """PlayerStat 对应 Calcs 当前选中的主动技能；拿不准就留空。"""
+    group = build.calcs_group
+    if group is None:
+        return ""
+    gem = group.calcs_active_gem
+    if gem is None:
+        return ""
+    return gem.name_zh or gem.name_en
+
+
+def _single_target_output(build: PobBuild) -> CheckItem:
+    hit = _dps_snapshot(build)
+    if hit is None:
+        return _missing(
+            "output_single_target", "单体输出（当前配置）", " / ".join(_DPS_FIELDS)
+        )
+    stat, value = hit
+    skill = _selected_skill(build)
+    shown = f"{skill}；" if skill else ""
+    shown += f"{_fmt(value)}（{stat}）"
+    return CheckItem(
+        key="output_single_target", label="单体输出（当前配置）", value=shown,
+        verdict="仅代表这份 PoB 当前保存的技能与配置",
+        basis=(
+            f"输出直接取自 PlayerStat `{stat}`；"
+            "本库不重算伤害，也不把当前快照外推到另一套敌人或技能配置。"
+        ),
+    )
+
+
+def _boss_output(build: PobBuild) -> CheckItem:
+    boss = str(build.config.get("enemyIsBoss", ""))
+    if boss not in _BOSS_LABELS:
+        state = "未显式保存 `enemyIsBoss`" if not boss else f"`enemyIsBoss={boss}` 不是 Boss 档"
+        return CheckItem(
+            key="output_boss", label="Boss 输出", value="", known=False,
+            missing_reason=(
+                f"这份 build {state}；当前 PlayerStat 不能冒充 Boss 输出。"
+                "请在 PoB 配置页明确选择 Boss / Pinnacle / Uber 后重新导出。"
+            ),
+        )
+    hit = _dps_snapshot(build)
+    if hit is None:
+        return _missing("output_boss", "Boss 输出", " / ".join(_DPS_FIELDS))
+    stat, value = hit
+    skill = _selected_skill(build)
+    parts = [_BOSS_LABELS[boss]]
+    if skill:
+        parts.append(skill)
+    parts.append(f"{_fmt(value)}（{stat}）")
+    return CheckItem(
+        key="output_boss", label="Boss 输出", value="；".join(parts),
+        verdict=f"敌人档位已明确为 {_BOSS_LABELS[boss]}",
+        basis=(
+            f"敌人假设直接取自 Config `enemyIsBoss={boss}`，输出取自 PlayerStat `{stat}`；"
+            "不换档重算。"
+        ),
+    )
+
+
+def _clear_output(build: PobBuild) -> CheckItem:
+    """只展示 PoB 已保存的覆盖指标；这些指标不足以推出清图 DPS 或强弱评级。"""
+    fields = (
+        ("范围半径", ("AreaOfEffectRadiusMetres", "AreaOfEffectRadius")),
+        ("投射物", ("ProjectileCount",)),
+        ("穿透", ("PierceCountString",)),
+        ("分裂", ("ForkCountString",)),
+        ("连锁", ("ChainMaxString",)),
+        ("分叉", ("SplitCountString",)),
+        ("弹跳", ("BounceCount",)),
+    )
+    values: list[str] = []
+    used: list[str] = []
+    for label, candidates in fields:
+        hit = next((name for name in candidates if name in build.player_stat_text), None)
+        if hit is None:
+            continue
+        raw = build.player_stat_text[hit]
+        suffix = " 米" if hit == "AreaOfEffectRadiusMetres" else ""
+        values.append(f"{label} {raw}{suffix}")
+        used.append(hit)
+    if not values:
+        return CheckItem(
+            key="output_clear", label="清图能力", value="", known=False,
+            missing_reason=(
+                "这份 build 没有导出范围半径、投射物数量、穿透、分裂、连锁或弹跳等覆盖指标；"
+                "不能只凭单体 DPS 猜清图能力。"
+            ),
+        )
+    skill = _selected_skill(build)
+    shown = f"{skill}；" if skill else ""
+    shown += "；".join(values)
+    return CheckItem(
+        key="output_clear", label="清图能力", value=shown,
+        verdict="仅展示覆盖快照，不据此给强/弱评级",
+        basis=(
+            "逐项取自 " + " / ".join(f"`{name}`" for name in used)
+            + "；清图还受怪物密度、移动、爆炸与技能机制影响，本库不从这些字段外推。"
+        ),
+    )
+
+
+def _output_analysis(build: PobBuild) -> list[CheckItem]:
+    return [_single_target_output(build), _clear_output(build), _boss_output(build)]
 
 
 def _armour(_conn, build: PobBuild) -> CheckItem:  # noqa: ANN001
@@ -481,6 +615,14 @@ _DEFENCE_COVERS: dict[str, str] = {
     "recovery": "回复",
 }
 
+#: 需求 8.6 的三个场景是契约，不随实现列表自动变化。
+REQUIREMENT_8_6_ITEMS: tuple[str, ...] = ("单体", "清图", "Boss")
+_OUTPUT_COVERS: dict[str, str] = {
+    "output_single_target": "单体",
+    "output_clear": "清图",
+    "output_boss": "Boss",
+}
+
 _CHECKS: tuple[tuple[str, Callable], ...] = (
     ("dps", _dps),
     ("effective_hp", _plain("effective_hp", "Effective HP", "TotalEHP")),
@@ -533,13 +675,28 @@ def uncovered_defence_requirements() -> tuple[str, ...]:
     return tuple(item for item in REQUIREMENT_8_5_ITEMS if item not in covered)
 
 
+def uncovered_output_requirements() -> tuple[str, ...]:
+    """需求 8.6 的单体、清图、Boss 三种场景是否都进入报告。"""
+    covered = {_OUTPUT_COVERS.get(item.key, "") for item in _output_analysis(PobBuild())}
+    return tuple(item for item in REQUIREMENT_8_6_ITEMS if item not in covered)
+
+
 def build_health_report(conn, build: PobBuild) -> BuildReport:  # noqa: ANN001
     """按需求 8.4 逐项检查。缺的标「未知」，**不填估计值**。"""
-    report = BuildReport(items=[fn(conn, build) for _key, fn in _CHECKS])
+    report = BuildReport(
+        items=[fn(conn, build) for _key, fn in _CHECKS],
+        output_items=_output_analysis(build),
+    )
     report.notes.append(
         "需求 8.4 的 16 项与需求 8.5 的防御补充（最大抗性、吸纳、偷取、回复）"
         "均已检查。报告里的数值**取自你粘贴的 build**（PoB 自己算的），本库只做核对与判读，"
         "**没有重算任何一项**；判据（上限、规则）来自本库的游戏常量表，逐条注明出处。"
+    )
+    report.notes.append(
+        "需求 8.6 的输出分析已区分单体、清图与 Boss：单体只复述当前技能快照；"
+        "清图只列 PoB 已导出的覆盖指标；Boss 只有在 `enemyIsBoss` 明确为 "
+        "Boss / Pinnacle / Uber（旧版为 Shaper / Sirus）时才展示当前值。"
+        "三者都不切换配置重算。"
     )
     if report.unknown_count:
         report.notes.append(
