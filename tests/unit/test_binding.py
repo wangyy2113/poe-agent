@@ -288,24 +288,39 @@ class TestPassing(unittest.TestCase):
         self.assertEqual(r.verdicts[0].kind, "recommendation")
 
     def test_合法派生句放行(self):
-        """推导链完整：先陈述可溯源的输入，再给出算出来的结论。
-        结论数值 79 本来就不在证据里——那是算的，不该因此被拦。"""
+        """结论逐值出现在确定性计算器证据中，才允许作为数值派生。"""
+        e = [
+            ev("E1", "基础抗性上限为 75%，该装备提供 +4% 最大抗性上限"),
+            ev(
+                "E2",
+                "输入：75% + 4%；计算结果：最大抗性 79%",
+                claim_scope="calculation",
+            ),
+        ]
+        r = run(
+            "基础抗性上限为 75%[[E1]]。该装备提供 +4% 最大抗性上限[[E1]]。"
+            "因此抗性上限合计为 79%[[E2]]。",
+            e,
+        )
+        self.assertEqual(r.blocked, 0, [v.reason for v in r.verdicts if not v.ok])
+        self.assertEqual(r.verdicts[-1].kind, "derived")
+
+    def test_事实输入不能冒充计算器输出(self):
+        """即使 75 与 4 都有来源，也不能由模型自行心算出 79。"""
         e = [ev("E1", "基础抗性上限为 75%，该装备提供 +4% 最大抗性上限")]
         r = run(
             "基础抗性上限为 75%[[E1]]。该装备提供 +4% 最大抗性上限[[E1]]。"
             "因此抗性上限合计为 79%[[E1]]。",
             e,
         )
-        self.assertEqual(r.blocked, 0, [v.reason for v in r.verdicts if not v.ok])
-        self.assertEqual(r.verdicts[-1].kind, "derived")
-
-    def test_派生句无有据输入时被拦(self):
-        """「因此」二字不能成为绕过闸门的后门：整个回答里没有已通过校验的
-        事实句作为推导输入时，派生句也要拦。"""
-        e = [ev("E1", "该装备无相关数值")]
-        r = run("因此抗性上限合计为 79%[[E1]]。", e)
         self.assertEqual(r.blocked, 1)
-        self.assertIn("推导输入", r.verdicts[0].reason)
+        self.assertIn("计算器输出", r.verdicts[-1].reason)
+
+    def test_派生数值必须精确出现在计算器输出而非仅落在区间(self):
+        e = [ev("E1", "计算结果范围为 70-90%", claim_scope="calculation")]
+        r = run("所以最终结果是 79%[[E1]]。", e)
+        self.assertEqual(r.blocked, 1)
+        self.assertIn("79", r.verdicts[0].reason)
 
     def test_过渡句放行(self):
         e = [ev("E1", "任意内容")]
@@ -537,6 +552,38 @@ class TestEvidence(unittest.TestCase):
         self.assertEqual([e.claim_scope for e in got], ["bench_catalog", "general"])
         self.assertEqual(got[0].claim_data["effect_text"], "最大生命")
         self.assertIn("仅可支撑目录存在", binding.render_evidence_block(got))
+
+    def test_派生通道自动固化为计算器证据范围(self):
+        got = binding.number_evidence(
+            [
+                {
+                    "chunk_id": "calc",
+                    "title": "抗性计算",
+                    "url": "u",
+                    "source": "Path of Building",
+                    "source_priority": 2,
+                    "text": "计算结果 79%",
+                    "channel": "derived",
+                },
+                {
+                    "chunk_id": "pool",
+                    "title": "条件池计算",
+                    "url": "u2",
+                    "source": "POEDB",
+                    "source_priority": 1,
+                    "text": "条件概率 12.5%",
+                    "channel": "derived",
+                    "claim_scope": "affix_pool_odds",
+                },
+            ]
+        )
+        self.assertEqual(got[0].claim_scope, "calculation")
+        self.assertEqual(got[0].channel, "derived")
+        self.assertEqual(got[1].claim_scope, "affix_pool_odds")
+        self.assertEqual(got[1].channel, "derived")
+        self.assertIn("确定性计算器输出", binding.render_evidence_block(got))
+        result = run("因此最大抗性为 79%[[E1]]。", got)
+        self.assertEqual(result.blocked, 0)
 
     def test_证据块不含URL(self):
         """URL 给了模型就会自己编引用格式；引用由代码在出口装配。"""

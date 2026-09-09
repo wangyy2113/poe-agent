@@ -31,7 +31,7 @@ from orchestrator.binding import Evidence
 
 RECORDINGS_DIR = Path(__file__).resolve().parent / "recordings"
 
-#: 录制格式版本。结构变更时 +1，回放遇到旧版本直接要求重录而不是猜字段。
+#: 录制格式版本。不向后兼容的结构变更时 +1；新增可选字段须给旧录制安全默认值。
 FORMAT_VERSION = 1
 
 
@@ -69,6 +69,7 @@ def _evidence_to_dict(e: Evidence) -> dict[str, Any]:
         "can_support_facts": e.can_support_facts,
         "claim_scope": e.claim_scope,
         "claim_data": e.claim_data,
+        "channel": e.channel,
     }
 
 
@@ -85,6 +86,7 @@ def _evidence_from_dict(d: dict[str, Any]) -> Evidence:
         can_support_facts=bool(d.get("can_support_facts", True)),
         claim_scope=str(d.get("claim_scope") or "general"),
         claim_data=dict(d.get("claim_data") or {}),
+        channel=str(d.get("channel") or ""),
     )
 
 
