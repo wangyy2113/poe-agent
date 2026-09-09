@@ -281,6 +281,104 @@ class CoverageAnswerTest(unittest.TestCase):
         self.assertNotIn("gap", kinds, "覆盖声明不该发 gap 事件")
 
 
+class PartialDimensionDisclosureTest(unittest.TestCase):
+    """复合问题继续回答有据部分，同时由代码保证披露无据部分。"""
+
+    QUESTION = "猎首有哪些词缀，值多少钱"
+    NOTE = (
+        "**本题仍有未覆盖部分**：市场价格的数据（未采集）。"
+        "上文仅回答本库有证据的部分；未覆盖部分不作推断；"
+        "查证入口：https://api.poe.watch。"
+    )
+
+    class _Verdict:
+        is_gap = False
+        is_partial = True
+
+        @classmethod
+        def partial_note(cls) -> str:
+            return PartialDimensionDisclosureTest.NOTE
+
+        @staticmethod
+        def missing_points() -> list[str]:
+            return ["市场价格的数据"]
+
+        @staticmethod
+        def category_label() -> str:
+            return "not_collected/economy_price"
+
+    def _patches(self, recorded: list[tuple[list[str], str]]):
+        citation = {
+            "chunk_id": "unique_item:Headhunter#one",
+            "entity_id": "unique_item:Headhunter",
+            "title": "猎首（Headhunter）",
+            "url": "https://poedb.tw/cn/Headhunter",
+            "source": "POEDB",
+            "source_priority": 1,
+            "can_support_facts": True,
+            "text": "猎首提供 +(40-55) 力量",
+            "channel": "alias",
+        }
+        return [
+            patch.object(loop, "get_config", lambda: _FakeConfig()),
+            patch.object(loop, "_persist", lambda *a, **k: None),
+            patch.object(loop, "_record_binding_gaps", lambda *a, **k: None),
+            patch.object(
+                loop,
+                "_record_gaps",
+                lambda _q, points, *, category="", **_k: recorded.append(
+                    (list(points), category)
+                ),
+            ),
+            patch.object(loop, "_precision_tool_route", lambda _q: ""),
+            patch.object(loop, "_preferred_tool_route", lambda _q: ""),
+            patch.object(loop, "_dimension_verdict", lambda *_a, **_k: self._Verdict()),
+            patch.object(loop, "build_system_prompt", lambda *a, **k: "sys"),
+            patch.object(loop, "_prepare_tools", lambda: []),
+            patch.object(loop, "_domain_terms", lambda: ()),
+            patch.object(
+                loop.REGISTRY,
+                "call",
+                lambda *_a, **_k: ToolResult(
+                    ok=True,
+                    data={"sufficient": True, "reason": "实体精确命中"},
+                    citations=[citation],
+                    meta={"channels": ["alias"], "degraded": False},
+                ),
+            ),
+        ]
+
+    def test_批量与流式都保留答案并附同一缺口声明(self) -> None:
+        answer = "猎首提供 +(40-55) 力量[[E1]]。"
+        recorded: list[tuple[list[str], str]] = []
+        with ExitStack() as stack:
+            for p in self._patches(recorded):
+                stack.enter_context(p)
+            batch = loop.run_turn(
+                self.QUESTION,
+                client=_ChatClient([LLMResponse(content=answer, model="fake")]),
+            )
+        with ExitStack() as stack:
+            for p in self._patches(recorded):
+                stack.enter_context(p)
+            events = list(loop.stream_turn(
+                self.QUESTION,
+                client=_StreamClient([[StreamEvent(kind="content", text=answer)]]),
+            ))
+
+        self.assertFalse(batch.evidence_gap)
+        self.assertIn(answer, batch.answer)
+        self.assertIn(self.NOTE, batch.answer)
+        self.assertTrue(batch.retrieval_meta["partial_dimension_gap"])
+        notes = [e["text"] for e in events if e.get("type") == "note"]
+        self.assertEqual([self.NOTE], notes)
+        self.assertIn(answer, _answer_of(events))
+        self.assertEqual(
+            [(["市场价格的数据"], "not_collected/economy_price")] * 2,
+            recorded,
+        )
+
+
 class SharedPipelineTest(unittest.TestCase):
     """结构约束：两条路径都必须经过共享部件，不允许谁再自己抄一份。
 

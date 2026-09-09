@@ -1368,6 +1368,8 @@ class DimensionVerdict:
     uncovered: list[DomainStatus] = field(default_factory=list)
     #: uncovered 中每个领域被判定的具体原因，与 `uncovered` 等长
     why: list[str] = field(default_factory=list)
+    #: 用户实际问到的未覆盖维度词，与 `uncovered` 等长。未采集整个领域时为空。
+    missing_aspects: list[tuple[str, ...]] = field(default_factory=list)
 
     @property
     def is_gap(self) -> bool:
@@ -1375,9 +1377,15 @@ class DimensionVerdict:
 
         **有一个领域覆盖到就不拦**：复合问题（「猎首有哪些词缀，值多少钱」）里
         有据的部分照答、无据的部分单独声明，这是需求里写明的拒答粒度——
-        整轮拦掉就把有据的那半也丢了。此时缺口由提示词的「覆盖边界」章节负责声明。
+        整轮拦掉就把有据的那半也丢了。此时缺口由编排层在出口追加确定性声明，
+        不能只靠模型记得提示词。
         """
         return bool(self.uncovered) and not self.covered
+
+    @property
+    def is_partial(self) -> bool:
+        """是否同时含有可答与不可答的维度。"""
+        return bool(self.uncovered) and bool(self.covered)
 
     def reason(self) -> str:
         """写进缺据声明的「判定依据」。逐条说清是未采集还是维度缺失。"""
@@ -1389,7 +1397,29 @@ class DimensionVerdict:
 
     def missing_points(self) -> list[str]:
         """缺据声明里「缺失的信息点」。"""
-        return [f"{s.spec.display_zh}的数据" for s in self.uncovered]
+        points: list[str] = []
+        for index, status in enumerate(self.uncovered):
+            aspects = self.missing_aspects[index] if index < len(self.missing_aspects) else ()
+            if aspects:
+                points.append(f"{status.spec.display_zh}：{'、'.join(aspects)}")
+            else:
+                points.append(f"{status.spec.display_zh}的数据")
+        return points
+
+    def partial_note(self) -> str:
+        """复合问题的代码生成缺口附注；只陈述覆盖状态，不生成游戏事实。"""
+        if not self.is_partial:
+            return ""
+        items = [
+            f"{point}（{STATUS_ZH[status.status]}）"
+            for point, status in zip(self.missing_points(), self.uncovered)
+        ]
+        urls = list(dict.fromkeys(self.authority_urls()))
+        source = f"；查证入口：{'；'.join(urls)}" if urls else ""
+        return (
+            f"**本题仍有未覆盖部分**：{'；'.join(items)}。"
+            f"上文仅回答本库有证据的部分；未覆盖部分不作推断{source}。"
+        )
 
     def authority_urls(self) -> list[str]:
         return [s.spec.authority_url for s in self.uncovered]
@@ -1454,6 +1484,7 @@ def dimension_gap(
         entity_only = not hinted
         if not s.usable:
             verdict.uncovered.append(s)
+            verdict.missing_aspects.append(())
             verdict.why.append(
                 "该领域一条都没有入库"
                 + (f"，权威来源 {s.spec.authority_url}" if s.spec.authority_url else "")
@@ -1464,6 +1495,7 @@ def dimension_gap(
         ]
         if s.status == "partial" and asked_missing:
             verdict.uncovered.append(s)
+            verdict.missing_aspects.append(tuple(asked_missing[:3]))
             verdict.why.append(
                 f"该领域只是部分采集，而问题涉及的「{'、'.join(asked_missing[:3])}」"
                 f"正落在未采集的部分（{s.spec.partial_note or '见覆盖声明'}）"

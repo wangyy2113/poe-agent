@@ -657,11 +657,12 @@ V1 完成的判定标准（逐条实测，不以「无报错」代替验证）�
 - [x] **知识库无覆盖时输出缺据声明**，含缺失信息点与查证途径，不出现伪造引用，不出现「一般来说/大概」类模糊推断
       （15 条走缺据路径的录制全部满足：tokens 为空即未调模型、含「查不到」、给出查证途径；
       `forbid_in_answer` 断言未命中任何模糊限定语）
-- [ ] **构造一批知识库确定不覆盖的问题，逐条确认系统拒答而非编造**（这是本版本最关键的验收项）
-      —— 12 条里 11 条正确拒答，**仍有 1 条漏出**（`gap_skill_gem_numbers`：「冰霜脉冲」
-      在库里只有一次提及、无技能数据，靠通用词凑够覆盖率过线）。诊断与候选修法见
-      `tests/golden/BASELINE.md`
-- [ ] 部分有据的复合问题：有据部分正常作答，无据部分单独列出，不因局部缺口整轮拒答
+- [x] **构造一批知识库确定不覆盖的问题，逐条确认系统拒答而非编造**
+      —— 2026-09-09 离线复核 30/30 通过；原 `gap_skill_gem_numbers` 随技能石逐级数值
+      入库后已转为正向用例，当前缺口覆盖价格、掉落、制作概率、Boss 打法与 POE2 越界等
+- [x] 部分有据的复合问题：有据部分正常作答，无据部分单独列出，不因局部缺口整轮拒答
+      —— 维度闸门识别 covered + uncovered 时继续生成有据部分，并在出口由代码确定性追加
+      未覆盖维度、采集状态与权威查证入口；批量/流式共用同一附注与缺口台账路径
 - [x] 天赋树的连接关系与点数消耗 —— **2026-08-19 第十五轮**：`passive_graph_node` 3390 个
       节点（可经过 2478）+ `passive_graph_edge` 3382 条连线 + 总点数 123 入库，
       `passive_path` 按七个职业分别算并给出逐节点路径。三条排除是游戏规则：
@@ -816,7 +817,8 @@ V1 完成的判定标准（逐条实测，不以「无报错」代替验证）�
   - [x] Metamod Interaction Matrix v1：逐字 operation × guard 四态矩阵；空白格确定性拒答
   - [x] Body Armour Base Registry v1：PoB 123 个胸甲底材与 POEDB 中英文 slug 一一桥接，P1/P2 分字段溯源
   - [x] Body Armour Normal Affix Pool & Conditional Raw Odds v1：具体底材、物等、prefix/suffix、normal 来源下，以页级整页快照摘要验证完整池，输出整数权重分子/分母、条件概率与独立选择数学期望；batch/stream scope gate 与真实七页只读探针已覆盖
-  - [ ] Affix capacity：现有来源尚无可靠前后缀容量规则，不硬编码 3/3 等经验值
+  - [x] Affix capacity v1：从 PoB `Item.lua` 与 POEDB 抽取 7 条容量规则，普通装备、
+    药剂、珠宝、Graft 与腐化深渊珠宝按各自规则判断；装备字段不完整时保持 unknown
   - [ ] Operation semantics / state transition：按通货、精华、化石、Harvest、隐匿、Eldritch 等分别建立有据状态转移，不能从 normal raw odds 外推
   - [ ] Economy adapter 与 Planner：接入价格、比较最快/最经济路线、逐步期望消耗；上述输入未齐前不得输出完整路线
 - [ ] Boss Agent：机制、防御门槛、药剂、流程；可结合已导入 Build
