@@ -102,6 +102,12 @@ class DimensionGapTest(unittest.TestCase):
         self.assertTrue(v.uncovered, "价格维度应被识别为无数据")
         self.assertTrue(v.covered, "词缀维度应被识别为有数据")
         self.assertFalse(v.is_gap)
+        self.assertTrue(v.is_partial)
+        self.assertEqual(["市场价格的数据"], v.missing_points())
+        note = v.partial_note()
+        self.assertIn("本题仍有未覆盖部分", note)
+        self.assertIn("市场价格的数据（未采集）", note)
+        self.assertIn("https://api.poe.watch", note)
 
     def test_unique_item_question_with_monster_wording_passes(self) -> None:
         """「怪物」不是 Boss 领域的意图词 —— 它在词缀文本里到处都是。
@@ -287,6 +293,10 @@ class SkillGemIntentTest(DimensionGapTest):
                   "冰霜脉冲从哪里掉落"):
             with self.subTest(q=q):
                 self.assertTrue(self._verdict(q, self.GEM_HIT).is_gap, q)
+
+    def test_缺失信息点保留用户问到的具体维度(self) -> None:
+        v = self._verdict("冰霜脉冲从哪里掉落", self.GEM_HIT)
+        self.assertEqual(["技能石：掉落"], v.missing_points())
 
     def test_掉落判据不牵连唯一装备(self) -> None:
         """成对的另一面：加「掉落」不能把别的域的问题拦下来。"""

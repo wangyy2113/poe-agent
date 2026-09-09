@@ -70,6 +70,8 @@ class TurnResult:
     tokens: dict[str, int] = field(default_factory=dict)
     elapsed_ms: int = 0
     degraded_note: str = ""
+    #: 复合问题中未覆盖维度的确定性附注。由覆盖层生成，出口后统一追加。
+    partial_gap_note: str = ""
 
     @property
     def blocked(self) -> int:
@@ -237,7 +239,7 @@ def _apply_dimension_gate(
 ) -> tuple[dict[str, Any], bool]:
     """充分性判定之后的第二道：**被问的维度**有没有数据（见 `kb.coverage.dimension_gap`）。
 
-    返回 `(改判后的 data, 是否改判)`。
+    返回 `(补充覆盖结论后的 data, 是否整轮改判为缺据)`。
 
     **这个函数一度是死代码**（第四十七轮 review 发现）：`_prepare_turn` 里内联了一份
     等价实现，而这里带着这道闸门最权威的 docstring——读到的人会以为它在生效。
@@ -250,6 +252,7 @@ def _apply_dimension_gate(
     「冰霜脉冲的伤害是多少」命中宝石即判充分，而伤害数值本轮明确未入库。
 
     只做一个方向的改判（充分 → 不足）：放宽依据需要新证据，这里没有引入任何新证据。
+    同时有 covered / uncovered 且检索本身充分时不改判，只把部分缺口交给出口代码附注；
     探测失败时按检索判定继续——覆盖层不可用不该让问答停摆。
 
     **无条件问覆盖层，不看 `data['sufficient']`。**「这一维有没有数据」与
@@ -258,7 +261,16 @@ def _apply_dimension_gate(
     评测那一侧就是这么与线上分叉了近三十轮的。
     """
     verdict = _dimension_verdict(question, citations)
-    if verdict is None or not verdict.is_gap:
+    if verdict is None:
+        return data, False
+    if verdict.is_partial and data.get("sufficient"):
+        out = dict(data)
+        out["partial_dimension_gap"] = True
+        out["partial_gap_note"] = verdict.partial_note()
+        out["partial_gap_missing_terms"] = verdict.missing_points()
+        out["partial_gap_category"] = verdict.category_label()
+        return out, False
+    if not verdict.is_gap:
         return data, False
     logger.info("维度覆盖闸门改判为依据不足：%s", verdict.reason())
     out = dict(data)
@@ -2185,6 +2197,16 @@ def _prepare_turn(question: str, result: TurnResult) -> _TurnSetup:
             question, data, citations=first.citations)
         if gate_refused:
             result.retrieval_meta["dimension_gate"] = True
+        elif data.get("partial_dimension_gap"):
+            result.partial_gap_note = str(data.get("partial_gap_note") or "")
+            missing = list(data.get("partial_gap_missing_terms") or [])
+            result.retrieval_meta["partial_dimension_gap"] = True
+            result.retrieval_meta["partial_gap_missing_terms"] = missing
+            _record_gaps(
+                question,
+                missing,
+                category=str(data.get("partial_gap_category") or ""),
+            )
 
     # 偏好工具**只豁免「BM25 命不中」，不豁免维度闸门**。
     # 两者是不同的判断：前者说「证据不在 chunk 里」（那正是工具要去查的），
@@ -2468,7 +2490,12 @@ def _apply_notes(result: TurnResult, evidence: list[Evidence]) -> list[str]:
 
     附注放在闸门**之后**：它们不是模型说的，不需要也不该过绑定校验（见 `_answer_notes`）。
     """
-    notes = _answer_notes(result.tool_calls, evidence)
+    notes: list[str] = []
+    if result.partial_gap_note:
+        notes.append(result.partial_gap_note)
+    for note in _answer_notes(result.tool_calls, evidence):
+        if note not in notes:
+            notes.append(note)
     for note in notes:
         result.answer += f"\n\n> {note}"
     # 推导表**不加 `>` 前缀**：Markdown 表格套进引用块会渲染散架。
