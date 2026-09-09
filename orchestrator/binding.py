@@ -154,7 +154,7 @@ _RECOMMEND_HINTS = (
     "建议", "推荐", "可以考虑", "不妨", "更划算", "更稳", "优先选", "思路是",
     "如果预算", "值得", "取舍", "我倾向", "一般做法",
 )
-#: 推导标记。命中且句中数值均可溯源即视为计算派生。
+#: 推导标记。命中后归为计算派生；数值能否由计算器输出回填在出口阶段另行校验。
 _DERIVED_HINTS = ("因此", "所以", "计算得", "推导", "合计", "= ", "＝", "换算")
 
 #: Markdown 强调标记。只在缺据声明判定里剥掉——那条规则匹配的是**构式**，
@@ -362,6 +362,9 @@ class Evidence:
     claim_scope: str = "general"
     #: 受限证据的结构化原字段。范围闸门只按这里的值做正向匹配，不能仅靠关键词。
     claim_data: dict[str, Any] = field(default_factory=dict)
+    #: 工具声明的证据通道。derived 与 claim_scope 正交：条件池既有专属范围，
+    #: 同时也是确定性计算输出，不能为了标记计算而覆盖原范围。
+    channel: str = ""
 
     @property
     def numbers(self) -> set[str]:
@@ -447,12 +450,16 @@ def number_evidence(citations: Iterable[dict[str, Any]]) -> list[Evidence]:
                 source_priority=priority,
                 text=str(c.get("text") or ""),
                 can_support_facts=bool(c.get("can_support_facts", True)),
-                claim_scope=str(c.get("claim_scope") or "general"),
+                claim_scope=str(
+                    c.get("claim_scope")
+                    or ("calculation" if c.get("channel") == "derived" else "general")
+                ),
                 claim_data=(
                     dict(c["claim_data"])
                     if isinstance(c.get("claim_data"), dict)
                     else {}
                 ),
+                channel=str(c.get("channel") or ""),
             )
         )
     return out
@@ -474,6 +481,8 @@ def render_evidence_block(evidence: list[Evidence]) -> str:
             tags.append(
                 "仅可支撑具体胸甲底材映射、normal 同侧完整池权重、条件概率与独立选择数学期望"
             )
+        if e.claim_scope == "calculation" or e.channel == "derived":
+            tags.append("确定性计算器输出；数值派生结论必须逐值匹配本证据")
         tag = f"（{'；'.join(tags)}）" if tags else ""
         parts.append(f"[{e.label}] 来源：{e.source} → {e.title}{tag}\n{e.text}")
     return "\n\n".join(parts)
@@ -522,24 +531,6 @@ def verify(
             result.blocked += 1
             if verdict.missing_point:
                 result.gaps.append(verdict.missing_point)
-
-    # 第二遍：派生句必须有「已通过校验的事实句」作为推导输入。
-    # 否则模型只要在编造的数值前加个「因此」就能绕过整道闸门。
-    has_grounded_input = any(
-        v.ok and v.kind == "factual" and v.labels for v in result.verdicts
-    )
-    if not has_grounded_input:
-        for i, v in enumerate(result.verdicts):
-            if v.kind != "derived" or not v.ok or "未溯源数值" not in v.reason:
-                continue
-            blocked = _block(
-                v.text, v.kind, v.labels,
-                "计算派生句的数值无法溯源，且整个回答中没有可作为推导输入的有据事实句",
-                f"推导链缺少可溯源的输入：{_excerpt(_BINDING_RE.sub('', v.text))}",
-            )
-            result.verdicts[i] = blocked
-            result.blocked += 1
-            result.gaps.append(blocked.missing_point)
 
     result.used_labels = [
         lb for v in result.verdicts if v.ok for lb in v.labels
@@ -1459,17 +1450,33 @@ def _check_sentence(
             missing = [m for m in missing if _norm_num(m) not in ignored]
 
     if kind == "derived":
-        # 计算派生（需求 15.3、10）：结论数值本来就不在证据里——那是算出来的，
-        # 而输入往往在**上一句**。所以不能要求同句内有可溯源数值。
-        #
-        # 但「因此」二字不能成为绕过闸门的后门：`verify` 的第二遍会检查整个回答里
-        # 是否存在已通过校验的事实句作为推导输入，没有就把派生句一并拦掉。
-        #
-        # 待办（任务 3.5）：`calc/` 就位后派生数值应由计算器产出并回填校验，
-        # 届时这里改为强校验，不再依赖「有事实句垫底」这种间接约束。
+        # 数值派生只能复述确定性计算器已经产出的数值。模型自己拿两条事实做心算，
+        # 即使碰巧算对也没有可审计的执行记录；更不能利用事实证据中的区间任选一个值。
+        # `channel=derived` 的工具引用在编号时被固化为 calculation scope，模型无法伪造。
+        calculation = [
+            e for e in bound
+            if e.claim_scope == "calculation" or e.channel == "derived"
+        ]
+        statement = _strip_ordered_markers(stripped)
+        has_numbers = bool(_NUM_RE.search(normalize_signs(statement)))
+        if has_numbers and not calculation:
+            return _block(
+                sentence, kind, labels,
+                "数值派生句未绑定确定性计算器输出",
+                f"计算结论缺少计算器证据：{_excerpt(stripped)}",
+            )
+        calculated_missing = unsupported_numbers(
+            statement, calculation, allow_ranges=False
+        ) if has_numbers else []
+        if calculated_missing:
+            return _block(
+                sentence, kind, labels,
+                f"派生数值 {', '.join(calculated_missing)} 未出现在计算器输出中",
+                f"计算结论无法由计算器结果回填：{_excerpt(stripped)}",
+            )
         return SentenceVerdict(
             sentence, kind, labels, True,
-            "派生" + (f"，未溯源数值 {', '.join(missing)}" if missing else ""),
+            "计算器派生" if has_numbers else "非数值派生",
             missing_point="",
         )
 
@@ -1637,7 +1644,12 @@ def is_structural(sentence: str) -> bool:
     return False
 
 
-def unsupported_numbers(sentence: str, bound: list[Evidence]) -> list[str]:
+def unsupported_numbers(
+    sentence: str,
+    bound: list[Evidence],
+    *,
+    allow_ranges: bool = True,
+) -> list[str]:
     """找出句中无法在绑定证据里溯源的数值。
 
     证据里的区间 `(40-55)` 覆盖句中的具体值 `47`：模型从区间里取一个具体数
@@ -1656,7 +1668,7 @@ def unsupported_numbers(sentence: str, bound: list[Evidence]) -> list[str]:
         if norm in pool:
             continue
         val = _to_float(raw)
-        if val is not None and any(lo <= val <= hi for lo, hi in ranges):
+        if allow_ranges and val is not None and any(lo <= val <= hi for lo, hi in ranges):
             continue
         if norm not in missing:
             missing.append(raw)

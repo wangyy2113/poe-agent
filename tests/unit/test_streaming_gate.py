@@ -60,6 +60,7 @@ class TestParityWithBatch(unittest.TestCase):
         "该词缀提供 +72 力量[[E1]]。",
         "力量与敏捷各 +40[[E1;E2]]。",
         "基础抗性上限为 75%[[E1]]。因此上限为 79%[[E1]]。",
+        "基础抗性上限为 75%[[E1]]。因此上限为 79%[[E3]]。",
         "建议优先堆抗性。",
         "（本次证据中未包含猎首的掉落来源。）",
         "没有终止标点的尾句[[E1]]",
@@ -88,6 +89,7 @@ class TestParityWithBatch(unittest.TestCase):
             ev("E1", "猎首（Headhunter）：+(40-55) 力量，需求等级 40，基础抗性上限为 75%；"
                      "T1 档为 +40 力量"),
             ev("E2", "+(40-55) 敏捷"),
+            ev("E3", "输入 75%；计算结果 79%", claim_scope="calculation"),
         ]
         for text in self.CASES:
             batch = binding.verify(

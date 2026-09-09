@@ -2803,6 +2803,7 @@ def _merge_evidence(
                 can_support_facts=e.can_support_facts,
                 claim_scope=e.claim_scope,
                 claim_data=e.claim_data,
+                channel=e.channel,
             )
         )
     return merged
