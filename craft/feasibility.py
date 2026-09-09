@@ -36,6 +36,7 @@ import sqlite3
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
+from craft.capacity import assess_affix_capacity
 from parsers.item_mods import resolve_item_class
 
 Verdict = Literal["possible", "impossible", "unknown"]
@@ -476,42 +477,6 @@ class _CapacityOutcome:
     gap: KnowledgeGap | None
 
 
-#: 稀有度写法归一。复用 `parsers/item_text.Rarity` 的中英文映射，
-#: **不在这里写第四份稀有度解析**——它已经有三处了（装备文本、报告、工具）。
-def _normalize_rarity(raw: str | None) -> str | None:
-    from parsers.item_text import Rarity  # noqa: PLC0415  避免导入环
-
-    text = (raw or "").strip()
-    if not text:
-        return None
-    for member in Rarity:
-        if text == member.value:
-            return member.value
-    lowered = text.lower()
-    for member in Rarity:
-        if lowered == member.name.lower():
-            return member.value
-    return None
-
-
-def _capacity_rule(
-    conn: sqlite3.Connection, rarity: str
-) -> sqlite3.Row | None:
-    """查该稀有度的**默认**名额规则。
-
-    只查 `default`：珠宝 / Graft / 药剂那几档要靠底材种类判定，而本模块拿到的是
-    POEDB 页面 slug，没有可靠的种类映射。**宁可对那些底材保持 unknown**，
-    也不要拿默认的 3+3 去答一个真实上限是 2+2 的珠宝——那是带着引用的错结论。
-    """
-    try:
-        return conn.execute(
-            "SELECT * FROM craft_affix_capacity WHERE rarity=? AND item_kind='default'",
-            (rarity,),
-        ).fetchone()
-    except sqlite3.Error:
-        return None
-
-
 def _check_affix_capacity(
     conn: sqlite3.Connection,
     rarity: str | None,
@@ -539,55 +504,27 @@ def _check_affix_capacity(
             "（腐化 / 附魔 / 灭界者 / 虚空忆境等），这些槽位的名额规则未采集，"
             "无法验证是否超限"
         )
-    normalized = _normalize_rarity(rarity)
-    if normalized is None:
-        return unknown(
-            "问题没有给出物品稀有度，无法确定前后缀名额上限；"
-            "补上「魔法」或「稀有」即可判定"
-        )
-    rule = _capacity_rule(conn, normalized)
-    if rule is None:
-        return unknown(f"库里没有「{normalized}」的前后缀名额规则")
-    if rule["prefix_limit"] is None or rule["suffix_limit"] is None:
-        # 传奇不受名额限制，但传奇的词缀是固定的，不能据此说这些词缀能共存
-        return unknown(
-            f"「{normalized}」不受前后缀数量限制，因此名额不构成约束；"
-            "但传奇物品的词缀是固定的，能否共存不由名额决定"
-        )
-
-    prefix_limit = int(rule["prefix_limit"])
-    suffix_limit = int(rule["suffix_limit"])
-    over = []
-    if (analysis.occupied_prefixes or 0) > prefix_limit:
-        over.append(f"前缀 {analysis.occupied_prefixes} > 上限 {prefix_limit}")
-    if (analysis.occupied_suffixes or 0) > suffix_limit:
-        over.append(f"后缀 {analysis.occupied_suffixes} > 上限 {suffix_limit}")
-    rule_text = str(rule["poedb_text"] or rule["pob_text"] or "")
-    rule_url = str(rule["url"] or CRAFT_RULE_URL)
-    if over:
-        return _CapacityOutcome(
-            check=ConstraintCheck(
-                key="affix_capacity",
-                status="fail",
-                summary=(
-                    f"{occupancy}；超出「{normalized}」的名额上限"
-                    f"（{prefix_limit} 前缀 / {suffix_limit} 后缀）：" + "，".join(over)
-                ),
-                evidence_urls=tuple(dict.fromkeys((*urls, rule_url))),
-            ),
-            gap=None,
-        )
+    assessment = assess_affix_capacity(
+        conn,
+        rarity,
+        analysis.occupied_prefixes or 0,
+        analysis.occupied_suffixes or 0,
+        occupancy=occupancy,
+    )
+    evidence_urls = tuple(
+        dict.fromkeys((*urls, *([assessment.rule_url] if assessment.rule_url else [])))
+    )
+    check = ConstraintCheck(
+        key="affix_capacity",
+        status=assessment.status,
+        summary=assessment.summary,
+        evidence_urls=evidence_urls,
+        missing=assessment.missing,
+    )
     return _CapacityOutcome(
-        check=ConstraintCheck(
-            key="affix_capacity",
-            status="pass",
-            summary=(
-                f"{occupancy}；未超出「{normalized}」的名额上限"
-                f"（{prefix_limit} 前缀 / {suffix_limit} 后缀）。规则原文：{rule_text}"
-            ),
-            evidence_urls=tuple(dict.fromkeys((*urls, rule_url))),
-        ),
-        gap=None,
+        check=check,
+        gap=_gap("affix_capacity", assessment.missing)
+        if assessment.status == "unknown" else None,
     )
 
 

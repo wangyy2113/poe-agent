@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import logging
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -69,6 +70,22 @@ class JudgementOut(BaseModel):
     missing: list[str]
 
 
+class AffixCapacityOut(BaseModel):
+    status: Literal["pass", "fail", "unknown"]
+    item_kind: str
+    prefix_used: int
+    suffix_used: int
+    prefix_limit: int | None
+    suffix_limit: int | None
+    prefix_remaining: int | None
+    suffix_remaining: int | None
+    summary: str
+    missing: str
+    rule_text: str
+    source: str
+    url: str
+
+
 class ItemResponse(BaseModel):
     language: str
     #: 是否进阶复制（Ctrl+Alt+C）。为 true 时 T 级由游戏原文给出
@@ -89,6 +106,7 @@ class ItemResponse(BaseModel):
     matched_count: int
     prefix_count: int
     suffix_count: int
+    affix_capacity: AffixCapacityOut
     #: 市场价值。经济源未接入，恒为 false + 原因（需求 7.8）
     market_available: bool
     market_reason: str
@@ -168,6 +186,21 @@ def analyze_item(req: ItemRequest, caller: str = Depends(require_user)) -> ItemR
         matched_count=report.mods.matched_count,
         prefix_count=report.mods.prefix_count,
         suffix_count=report.mods.suffix_count,
+        affix_capacity=AffixCapacityOut(
+            status=report.capacity.status,
+            item_kind=report.capacity.item_kind,
+            prefix_used=report.capacity.prefix_used,
+            suffix_used=report.capacity.suffix_used,
+            prefix_limit=report.capacity.prefix_limit,
+            suffix_limit=report.capacity.suffix_limit,
+            prefix_remaining=report.capacity.prefix_remaining,
+            suffix_remaining=report.capacity.suffix_remaining,
+            summary=report.capacity.summary,
+            missing=report.capacity.missing,
+            rule_text=report.capacity.rule_text,
+            source=report.capacity.source,
+            url=report.capacity.rule_url,
+        ),
         market_available=report.market.available,
         market_reason=report.market.reason,
         judgements=[

@@ -13,9 +13,12 @@ from __future__ import annotations
 import sys
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from api.item import ItemRequest, analyze_item  # noqa: E402
+from craft.capacity import assess_affix_capacity, infer_item_kind  # noqa: E402
 from parsers.item_report import build_report, render_report  # noqa: E402
 from parsers.item_text import parse_item  # noqa: E402
 from tests.unit.test_item_mods import _insert_affix, fixture_conn, make_item  # noqa: E402
@@ -100,6 +103,52 @@ class TestCraftDirections(ReportTestCase):
         self.assertIn("建议类内容", text)
 
 
+class TestAffixCapacity(ReportTestCase):
+    def test_稀有装备返回上限与剩余名额(self):
+        report = self.report_for(["+107 最大生命"])
+        capacity = report.capacity
+        self.assertEqual(capacity.status, "pass")
+        self.assertEqual((capacity.prefix_limit, capacity.suffix_limit), (3, 3))
+        self.assertEqual((capacity.prefix_remaining, capacity.suffix_remaining), (2, 3))
+        text = render_report(report)
+        self.assertIn("可用随机词缀位：前缀 2 条、后缀 3 条", text)
+        self.assertIn("前后缀名额规则", text)
+
+    def test_魔法装备使用一加一规则(self):
+        raw = make_item("项链", ["+107 最大生命", "+43% 火焰抗性"])
+        report = build_report(self.conn, parse_item(raw.replace("稀有度: 稀有", "稀有度: 魔法")))
+        self.assertEqual(report.capacity.status, "pass")
+        self.assertEqual((report.capacity.prefix_limit, report.capacity.suffix_limit), (1, 1))
+        self.assertEqual((report.capacity.prefix_remaining, report.capacity.suffix_remaining), (0, 0))
+
+    def test_未识别显式词缀时不声称剩余名额(self):
+        report = self.report_for(["+107 最大生命", "+50 最大魔力"])
+        self.assertEqual(report.capacity.status, "unknown")
+        self.assertIsNone(report.capacity.prefix_remaining)
+        self.assertIn("1 条显式词缀未能识别", report.capacity.missing)
+        self.assertNotIn("可用随机词缀位", render_report(report))
+
+    def test_珠宝与已腐化深渊珠宝使用特殊规则(self):
+        jewel = infer_item_kind("Jewels")
+        abyss = infer_item_kind("Abyss Jewels", corrupted=True)
+        self.assertEqual(jewel, "jewel")
+        self.assertEqual(abyss, "jewel_abyss_corrupted")
+        self.assertEqual(infer_item_kind("Amulets", "Jewel Pendant"), "default")
+        normal = assess_affix_capacity(self.conn, "稀有", 2, 2, item_kind=jewel)
+        corrupted = assess_affix_capacity(self.conn, "稀有", 2, 2, item_kind=abyss)
+        self.assertEqual((normal.prefix_limit, normal.suffix_limit), (2, 2))
+        self.assertEqual((corrupted.prefix_limit, corrupted.suffix_limit), (3, 3))
+
+    def test_API返回结构化容量结果(self):
+        request = ItemRequest(text=make_item("项链", ["+107 最大生命"]), render=False)
+        with patch("api.item.dbmod.get_conn", return_value=self.conn):
+            response = analyze_item(request, caller="test")
+        self.assertEqual(response.affix_capacity.status, "pass")
+        self.assertEqual(response.affix_capacity.prefix_remaining, 2)
+        self.assertEqual(response.affix_capacity.url, "https://poedb.tw/cn/Modifiers")
+        self.assertIsNone(response.answer)
+
+
 class TestMarketAndJudgements(ReportTestCase):
     def test_没有经济数据就明说没有(self):
         report = self.report_for(["+107 最大生命"])
@@ -136,15 +185,17 @@ class TestMarketAndJudgements(ReportTestCase):
 class TestCitations(ReportTestCase):
     def test_引用按URL去重并编号(self):
         report = self.report_for(["+107 最大生命", "+43% 火焰抗性"])
-        # 两条词缀同属项链页面 → 一条引用
-        self.assertEqual(len(report.citations), 1)
+        # 两条词缀同属项链页面，再加一条容量规则引用
+        self.assertEqual(len(report.citations), 2)
         text = render_report(report)
         self.assertIn("[E1] 来源：POEDB → 项链 词缀表", text)
+        self.assertIn("[E2] 来源：POEDB → 前后缀名额规则", text)
 
-    def test_无匹配时不伪造引用(self):
+    def test_无词缀匹配时只保留容量规则引用(self):
         report = self.report_for(["+50 最大魔力"])
-        self.assertEqual(report.citations, [])
-        self.assertNotIn("### 引用", render_report(report))
+        self.assertEqual(len(report.citations), 1)
+        self.assertEqual(report.citations[0].title, "前后缀名额规则")
+        self.assertIn("### 引用", render_report(report))
 
 
 class TestWarningsPassThrough(ReportTestCase):

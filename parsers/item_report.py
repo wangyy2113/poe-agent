@@ -23,10 +23,8 @@
 
 ## 可制作方向也只说有据的
 
-不断言「还能加 2 个前缀」——名额规则虽已入 `craft_affix_capacity`，但本报告尚未把
-当前装备状态接入那套容量检查
-（`game_constant` 里没有 affix cap 这类键，实测），没有来源的规则不写进事实。
-只输出两类有据内容：
+前后缀余量由 ``craft_affix_capacity`` 的结构化规则计算；若有未识别显式词缀、隐匿
+占位或未鉴定状态，则只展示已识别计数并把结论保持为未知。除此之外只输出两类内容：
 
   1. 同词缀组在该底材上的**更高档位**及其物品等级门槛（来自 `mod_affix`）
   2. 与现有词缀**互斥**的词缀（来自 `family_list` 交集，规则对齐 POEDB）
@@ -38,6 +36,7 @@ import json
 import sqlite3
 from dataclasses import dataclass, field
 
+from craft.capacity import CapacityAssessment, assess_affix_capacity, infer_item_kind
 from entities.models import Citation
 from entities.taxonomy import Source
 from parsers.item_mods import (
@@ -95,6 +94,7 @@ class MarketInfo:
 class ItemReport:
     parsed: ParsedItem
     mods: ItemModReport
+    capacity: CapacityAssessment
     craft_directions: list[CraftDirection] = field(default_factory=list)
     judgements: list[Judgement] = field(default_factory=list)
     market: MarketInfo = field(default_factory=MarketInfo)
@@ -104,9 +104,23 @@ class ItemReport:
 
 def build_report(conn: sqlite3.Connection, item: ParsedItem) -> ItemReport:
     mod_report = analyze_mods(conn, item)
-    report = ItemReport(parsed=item, mods=mod_report)
+    capacity = assess_affix_capacity(
+        conn,
+        item.rarity.value,
+        mod_report.prefix_count,
+        mod_report.suffix_count,
+        item_kind=infer_item_kind(
+            item.item_class, item.base_type, corrupted=item.flags.corrupted
+        ),
+        occupancy=(
+            f"当前已识别前缀 {mod_report.prefix_count} 条、"
+            f"后缀 {mod_report.suffix_count} 条"
+        ),
+        incomplete_reason=_capacity_incomplete_reason(item, mod_report),
+    )
+    report = ItemReport(parsed=item, mods=mod_report, capacity=capacity)
     report.warnings = [*item.warnings, *mod_report.warnings]
-    report.citations = _citations(mod_report)
+    report.citations = _citations(mod_report, capacity)
     report.craft_directions = _craft_directions(conn, mod_report)
     report.judgements = _judgements(item, mod_report)
     report.market = MarketInfo(
@@ -122,7 +136,9 @@ def build_report(conn: sqlite3.Connection, item: ParsedItem) -> ItemReport:
 # ── 引用 ────────────────────────────────────────────────────
 
 
-def _citations(mod_report: ItemModReport) -> list[Citation]:
+def _citations(
+    mod_report: ItemModReport, capacity: CapacityAssessment
+) -> list[Citation]:
     """按 URL 去重装配引用。标题用中文词缀原文，便于对照。"""
     out: list[Citation] = []
     seen: set[str] = set()
@@ -139,7 +155,36 @@ def _citations(mod_report: ItemModReport) -> list[Citation]:
                 priority=1,
             )
         )
+    if capacity.rule_url and capacity.rule_url not in seen:
+        out.append(
+            Citation(
+                source=capacity.source or Source.POEDB.value,
+                title="前后缀名额规则",
+                url=capacity.rule_url,
+                priority=capacity.source_priority,
+            )
+        )
     return out
+
+
+def _capacity_incomplete_reason(item: ParsedItem, mod_report: ItemModReport) -> str:
+    """找出会让“剩余名额”被低估的输入缺口。"""
+    countable = {"explicit", "crafted", "fractured"}
+    unresolved = [
+        analysis
+        for analysis in mod_report.mods
+        if analysis.mod.kind.value in countable and not analysis.affix_type
+    ]
+    reasons = []
+    if unresolved:
+        reasons.append(f"有 {len(unresolved)} 条显式词缀未能识别为前缀或后缀")
+    if item.flags.veiled:
+        reasons.append("含未解锁隐匿词缀，占位方向未知")
+    if item.flags.unidentified:
+        reasons.append("物品未鉴定，词缀未完整显示")
+    if item.unclassified:
+        reasons.append(f"有 {len(item.unclassified)} 行内容未归类")
+    return "；".join(reasons)
 
 
 def _label_of(report: ItemReport, url: str) -> str:
@@ -350,6 +395,17 @@ def render_report(report: ItemReport) -> str:
         f"- 已确定档位 {report.mods.matched_count} 条 / 共 {len(report.mods.mods)} 条"
         f"；前缀 {report.mods.prefix_count} 条、后缀 {report.mods.suffix_count} 条"
     )
+    capacity = report.capacity
+    capacity_label = _label_of(report, capacity.rule_url)
+    capacity_mark = f"[[{capacity_label}]]" if capacity_label else ""
+    lines.append(f"- 前后缀容量：{capacity.summary}{capacity_mark}")
+    if capacity.status == "pass":
+        lines.append(
+            f"- 可用随机词缀位：前缀 {capacity.prefix_remaining} 条、"
+            f"后缀 {capacity.suffix_remaining} 条{capacity_mark}"
+        )
+    elif capacity.missing:
+        lines.append(f"- 容量结论未知：{capacity.missing}")
     lines.append("")
 
     for analysis in report.mods.mods:
