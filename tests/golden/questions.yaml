@@ -503,6 +503,12 @@ cases:
       同一轮里 `retrieval/hybrid._MOD_INTENT_TERMS` 的裸「精华」也拆成了
       「精华词缀」+ 三个问句形式——**意图词必须专指**。
 
+  - id: route_essence_operation_state
+    query: 物等84的稀有项链能用憎恨之破空精华吗
+    kind: tool_route
+    expect_tool: essence_operation_state
+    note: 具名精华 + 明确装备状态 → 原文约束与逐类别保底词缀状态机；不得扩写成功率或路线
+
   - id: gap_essence_drop_source
     query: 尖啸憎恨精华在哪里刷，掉率多少
     kind: gap

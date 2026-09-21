@@ -7,11 +7,19 @@
 from __future__ import annotations
 
 from craft.feasibility import analyze_feasibility
+from craft.essence_operations import (
+    EssenceItemState,
+    EssenceOperationResult,
+    evaluate_essence_operation,
+)
 from craft.operations import ItemState, OperationResult, evaluate_operation
 
 __all__ = [
+    "EssenceItemState",
+    "EssenceOperationResult",
     "ItemState",
     "OperationResult",
     "analyze_feasibility",
+    "evaluate_essence_operation",
     "evaluate_operation",
 ]

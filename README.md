@@ -32,7 +32,7 @@ POE1 的机制耦合极深，一个错误的小前提会让整条结论反向。
 | Boss 技能伤害 | 10 条 Boss 技能的伤害建模 + 22 个 Boss 的护甲/闪避倍率；`boss_skill_damage` 按 `monsterDamageTable` 与 PoB 系数算出某等级的一击伤害（谢勒的球 84 级 9,588–14,382 冰霜），未指定掷骰区间时给两端。**只给伤害建模，不给打法**——技能机制、阶段与应对未采集；数字是 PoB 建模值，GGG 未公布 |
 | 制作规则（名额） | 7 条前后缀名额规则（魔法 1+1、稀有 3+3、传奇不受限制、药剂随魔法，另有 PoB 独有的珠宝/Graft 2+2 与「已腐化深渊珠宝回到 3+3」）；`check_mod_combination` 因此**第一次能返回 `possible`**，超名额则 `impossible`。`possible` 的含义是「这些词缀能共存」而非「能做出来」；**影响力条件与元词缀状态机仍未采集** |
 | 收获（古灵庄园） | 74 条定向工艺 + 98 条命能费用（效果原文与原始费用，费用通货按 GGG 元数据路径与通货表逐条对账 5/5）；另有 **51 个种子怪物**按颜色对应四种命能中的三种（`harvest_seed_lookup`，神圣白晶命能不在表里）；只有工具、没有卡片；**掉落数量与概率、成功率与权重未采集** |
-| 精华 | 精华**赋予的词缀** 5985 条（在 `mod_affix`，已渲染进词缀组卡）+ **精华物品本身** 105 件（等阶 / 堆叠上限 / 等级上限 / 基础效果 / 632 行逐装备类别的保底词缀），与 PoB `Data/Essence.lua` 逐项对账（条数 105/105、装备类别数两侧均 22、tier 104/105，唯一分歧登记为 `essence_review`）；卡片 + `essence_lookup`；**掉落来源与兑换成本未采集** |
+| 精华 | 精华**赋予的词缀** 5985 条（在 `mod_affix`，已渲染进词缀组卡）+ **精华物品本身** 105 件（等阶 / 堆叠上限 / 等级上限 / 基础效果 / 632 行逐装备类别的保底词缀），与 PoB `Data/Essence.lua` 逐项对账（条数 105/105、装备类别数两侧均 22、tier 104/105，唯一分歧登记为 `essence_review`）；`essence_operation_state` / `POST /craft/essence` 按原文判断普通升级、稀有重置、物等上限与类别保底词缀；**掉落来源与兑换成本未采集** |
 | 万神殿 | 12 位神祇、32 层神力、41 条词缀（中文词缀、抓获的头目与地图、给予神力的章节与任务；PoB × POEDB 两侧 `(stat_id, value)` 逐条对账全对）；**启用规则与神之容器的机制说明未采集** |
 | 地图 | 159 张（等阶、头目、额外目标、命运卡、工艺台配方、图鉴相邻地图）+ 361 条地图词缀；**内部布局未采集** |
 | 星团珠宝 | 3 个尺寸（小 2–3 / 中 4–6 / 大 8–12 个小天赋）+ 55 条小天赋类型（仅英文）+ 308 条核心天赋与基石清单；**哪种类型能开出哪些核心天赋未采集** |
@@ -360,6 +360,19 @@ curl -s -X POST http://127.0.0.1:8787/poe_agent/craft/operation \
 效果原文中的稀有度前提与结构化名额规则通过，不代表完整游戏可执行性；具体新增词缀、
 数值、概率、步骤、成本与路线仍保持未知。腐化、镜像、裂隙等特殊状态不会被擅自外推。
 
+**精华状态转移** —— `POST /craft/essence`。逐字使用精华页的基础效果、等级上限和
+逐装备类别保底词缀，不按精华等阶推断规则。
+
+```bash
+curl -s -X POST http://127.0.0.1:8787/poe_agent/craft/essence \
+  -H 'Content-Type: application/json' \
+  -d '{"essence":"憎恨之破空精华","rarity":"稀有","item_level":84,"item_class":"项链"}'
+```
+
+该例返回 `compatible`、操作模式 `reroll_rare_properties`，并给出项链保底词缀
+`冰霜伤害提高 (31—34)%`。低阶精华的物等上限、普通/稀有前提和真实 tier 0 例外均按
+页面字段判断；额外随机词缀、最终数值、成功率、步骤、成本与路线仍保持未知。
+
 **装备分析** —— `POST /item`，把游戏内复制的装备文本变成结构化报告。
 
 ```bash
@@ -621,7 +634,7 @@ PoB 排 P2 而不是 P1：它在数值上更接近一手，但不含中文名与
 ### 评测：四项指标与黄金问答集
 
 `config.yaml` 里的阈值与 `orchestrator/binding.py` 的闸门规则都需要判据，否则改动之后
-无法判断是变好还是变坏。判据来自 `tests/golden/questions.yaml`（150 条，六类样本：
+无法判断是变好还是变坏。判据来自 `tests/golden/questions.yaml`（151 条，六类样本：
 专名 / 描述性 / 数值 / 跨来源 / **确定不覆盖** / 工具路由），基线与结论记在
 `tests/golden/BASELINE.md`。
 
@@ -652,7 +665,7 @@ PoB 排 P2 而不是 P1：它在数值上更接近一手，但不含中文名与
 .venv/bin/python -m unittest discover -s tests -t .
 ```
 
-目前 1583 项，其中与「无据不答」直接相关的：
+目前 1600 项，其中与「无据不答」直接相关的：
 
 | 组 | 项数 | 重点 |
 | --- | --- | --- |
@@ -689,7 +702,7 @@ orchestrator/           主循环、出口绑定闸门、引用装配
 agents/                 领域 Agent：提示词 + 允许工具集 + 输出契约
 tools/                  工具注册与实现。顺序即推荐优先级：
                           economy_price_lookup / economy_material_cost / affix_pool_odds / check_mod_combination
-                          / craft_operation_state / bench_recipe_catalog
+                          / craft_operation_state / essence_operation_state / bench_recipe_catalog
                           / metamod_interaction_matrix / mod_tiers / skill_gem_levels
                           / spectre_stats / passive_path / cluster_jewel_info
                           / resistance_calc / mitigation_calc / recovery_calc / reservation_calc
@@ -700,6 +713,7 @@ tools/                  工具注册与实现。顺序即推荐优先级：
                           / entity_lookup / kb_coverage / kb_search（兜底）
 craft/                  制作分析：feasibility.py 组合三态可行性 / pool.py 胸甲条件权重概率
                           / operations.py 基础通货保守状态转移
+                          / essence_operations.py 精华原文约束与保底词缀状态转移
 calc/                   常量访问层与计算器（constants.py 缺失即抛异常 / derive.py 推导件
                           / resistance.py 抗性
                           / mitigation.py 受击结算
