@@ -15,6 +15,7 @@ from tools.impl.harvest_enchant_operation import harvest_quality_enchant_state
 from tools.impl.harvest_exchange_operation import harvest_exchange_state
 from tools.impl.harvest_modifier_operation import harvest_modifier_state
 from tools.impl.harvest_operation import harvest_reforge_state
+from tools.impl.veiled_operation import veiled_operation_state
 
 router = APIRouter(tags=["制作"])
 
@@ -140,6 +141,49 @@ class EldritchOperationResponse(BaseModel):
     after: dict[str, Any]
     checks: list[dict[str, Any]]
     unknown_fields: list[str]
+    metamod_interactions: list[dict[str, Any]]
+    boundary: str
+    answer: str
+
+
+class VeiledOperationRequest(BaseModel):
+    operation: str = Field(min_length=1, max_length=80)
+    item_text: str | None = Field(default=None, max_length=20_000)
+    rarity: Literal["普通", "魔法", "稀有", "传奇"] | None = None
+    item_class: str | None = Field(default=None, min_length=1, max_length=80)
+    prefix_count: int | None = Field(default=None, ge=0, le=6)
+    suffix_count: int | None = Field(default=None, ge=0, le=6)
+    corrupted: bool = False
+    mirrored: bool = False
+    fractured: bool = False
+
+    @model_validator(mode="after")
+    def no_mixed_state(self) -> "VeiledOperationRequest":
+        if self.item_text and any(
+            value is not None
+            for value in (self.rarity, self.item_class, self.prefix_count, self.suffix_count)
+        ):
+            raise ValueError("item_text 与手工状态字段不能混用")
+        return self
+
+
+class VeiledOperationResponse(BaseModel):
+    found: bool
+    verdict: str
+    operation: str
+    operation_en: str
+    metadata_id: str
+    effect_text: str
+    action: str
+    source: str
+    source_priority: int
+    source_url: str
+    fetched_at: str
+    before: dict[str, Any]
+    after: dict[str, Any]
+    checks: list[dict[str, Any]]
+    unknown_fields: list[str]
+    veiled_pool: dict[str, Any] | None
     metamod_interactions: list[dict[str, Any]]
     boundary: str
     answer: str
@@ -369,6 +413,34 @@ def eldritch_state(
             "supported_operations": (result.data or {}).get("supported_operations", []),
         })
     return EldritchOperationResponse(**result.data)
+
+
+@router.post("/craft/veiled", response_model=VeiledOperationResponse)
+def veiled_state(
+    req: VeiledOperationRequest, _caller: str = Depends(require_user)
+) -> VeiledOperationResponse:
+    result = veiled_operation_state(
+        operation=req.operation,
+        item_text=req.item_text,
+        rarity=req.rarity,
+        item_class=req.item_class or "",
+        prefix_count=req.prefix_count,
+        suffix_count=req.suffix_count,
+        corrupted=req.corrupted,
+        mirrored=req.mirrored,
+        fractured=req.fractured,
+    )
+    if not result.ok:
+        raise HTTPException(status_code=422, detail={
+            "error": "invalid_veiled_operation", "reason": result.error,
+        })
+    if not (result.data or {}).get("found"):
+        raise HTTPException(status_code=422, detail={
+            "error": "unsupported_veiled_operation",
+            "reason": "只支持两种已有逐字效果的加密通货，不按名称猜爱斯林工艺语义",
+            "supported_operations": (result.data or {}).get("supported_operations", []),
+        })
+    return VeiledOperationResponse(**result.data)
 
 
 @router.post("/craft/harvest/reforge", response_model=HarvestReforgeResponse)

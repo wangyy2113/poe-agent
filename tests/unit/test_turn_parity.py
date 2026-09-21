@@ -809,6 +809,66 @@ class EldritchOperationAnswerTest(unittest.TestCase):
         )
 
 
+class VeiledOperationAnswerTest(unittest.TestCase):
+    """加密通货状态转移由代码直出，批量与流式不得把目录改写成概率。"""
+
+    ANSWER = (
+        "### 加密崇高石状态转移\n\n"
+        "**结论：已知约束兼容**\n\n"
+        "> 随机移除一条并加入加密词缀；候选目录不是单次揭露选项或概率。"
+    )
+
+    def _patches(self):
+        def call(name, arguments):
+            if name == "kb_search":
+                return ToolResult(
+                    ok=True,
+                    data={"sufficient": False, "reason": "状态转移不在静态卡片", "missing_terms": []},
+                    citations=[],
+                    meta={"channels": ["bm25"], "degraded": False},
+                )
+            if name == "veiled_operation_state":
+                args = json.loads(arguments)
+                self.assertEqual("加密崇高石", args["operation"])
+                self.assertEqual("胸甲", args["item_class"])
+                self.assertEqual(2, args["prefix_count"])
+                return ToolResult(
+                    ok=True,
+                    data={"answer": self.ANSWER, "found": True, "verdict": "compatible"},
+                    citations=[{
+                        "chunk_id": "veiled_operation:exalted",
+                        "entity_id": None,
+                        "title": "加密崇高石状态转移",
+                        "url": "https://poedb.tw/cn/Veiled_Exalted_Orb",
+                        "source": "POEDB",
+                        "source_priority": 1,
+                        "can_support_facts": True,
+                        "text": self.ANSWER,
+                        "channel": "structured",
+                    }],
+                    meta={"channel": "structured"},
+                )
+            raise AssertionError(name)
+
+        return [
+            patch.object(loop, "get_config", lambda: _FakeConfig()),
+            patch.object(loop, "_persist", lambda *a, **k: None),
+            patch.object(loop, "_record_gaps", lambda *a, **k: None),
+            patch.object(loop.REGISTRY, "call", call),
+        ]
+
+    def test_两条路径直接返回同一加密通货状态转移(self) -> None:
+        question = "稀有胸甲有2条前缀2条后缀，加密崇高石会怎样"
+        batch, events = _both_paths(question, self._patches)
+        self.assertFalse(batch.evidence_gap)
+        self.assertEqual(self.ANSWER, batch.answer)
+        self.assertEqual(self.ANSWER, _answer_of(events))
+        self.assertEqual(
+            ["kb_search", "veiled_operation_state"],
+            [call["tool"] for call in batch.tool_calls],
+        )
+
+
 class PartialDimensionDisclosureTest(unittest.TestCase):
     """复合问题继续回答有据部分，同时由代码保证披露无据部分。"""
 
