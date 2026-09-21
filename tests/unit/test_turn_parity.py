@@ -514,6 +514,65 @@ class EssenceOperationAnswerTest(unittest.TestCase):
         )
 
 
+class HarvestReforgeAnswerTest(unittest.TestCase):
+    """Harvest 重铸状态由代码直接输出，批量与流式不得交给模型扩写。"""
+
+    ANSWER = (
+        "### Harvest 重铸状态转移\n\n"
+        "**结论：已知约束兼容**\n\n"
+        "> 保底火焰标签；具体词缀、概率、市场成本与路线未知。"
+    )
+
+    def _patches(self):
+        def call(name, arguments):
+            if name == "kb_search":
+                return ToolResult(
+                    ok=True,
+                    data={"sufficient": False, "reason": "状态转移不在静态卡片", "missing_terms": []},
+                    citations=[],
+                    meta={"channels": ["bm25"], "degraded": False},
+                )
+            if name == "harvest_reforge_state":
+                args = json.loads(arguments)
+                self.assertEqual("火焰", args["operation"])
+                self.assertEqual("稀有", args["rarity"])
+                return ToolResult(
+                    ok=True,
+                    data={"answer": self.ANSWER, "found": True, "verdict": "compatible"},
+                    citations=[{
+                        "chunk_id": "harvest_operation:fire",
+                        "entity_id": None,
+                        "title": "Harvest 火焰重铸",
+                        "url": "https://poedb.tw/cn/Horticrafting",
+                        "source": "POEDB",
+                        "source_priority": 1,
+                        "can_support_facts": True,
+                        "text": self.ANSWER,
+                        "channel": "structured",
+                    }],
+                    meta={"channel": "structured"},
+                )
+            raise AssertionError(name)
+
+        return [
+            patch.object(loop, "get_config", lambda: _FakeConfig()),
+            patch.object(loop, "_persist", lambda *a, **k: None),
+            patch.object(loop, "_record_gaps", lambda *a, **k: None),
+            patch.object(loop.REGISTRY, "call", call),
+        ]
+
+    def test_两条路径直接返回同一Harvest状态转移(self) -> None:
+        question = "收获火焰重铸能用于稀有装备吗"
+        batch, events = _both_paths(question, self._patches)
+        self.assertFalse(batch.evidence_gap)
+        self.assertEqual(self.ANSWER, batch.answer)
+        self.assertEqual(self.ANSWER, _answer_of(events))
+        self.assertEqual(
+            ["kb_search", "harvest_reforge_state"],
+            [call["tool"] for call in batch.tool_calls],
+        )
+
+
 class PartialDimensionDisclosureTest(unittest.TestCase):
     """复合问题继续回答有据部分，同时由代码保证披露无据部分。"""
 
