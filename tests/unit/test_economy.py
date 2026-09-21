@@ -8,11 +8,18 @@ import unittest
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
-from api.economy import PriceRequest, price as price_endpoint
+from api.economy import (
+    MaterialCostItemRequest,
+    MaterialCostRequest,
+    PriceRequest,
+    material_cost as material_cost_endpoint,
+    price as price_endpoint,
+)
+from economy.models import MaterialRequest
 from economy.poe_watch import PoeWatchClient, PoeWatchError
 from economy.service import EconomyService, EconomyUnavailable, InvalidEconomyQuery
 from kb.coverage import probe
-from tools.impl.economy import render_price
+from tools.impl.economy import render_material_cost, render_price
 
 
 SCHEMA = """
@@ -168,6 +175,7 @@ class EconomyServiceTest(unittest.TestCase):
         self.assertEqual("partial", status.status)
         self.assertEqual(0, status.item_count)
         self.assertIn("economy_price_lookup", status.spec.tools)
+        self.assertIn("economy_material_cost", status.spec.tools)
 
     def test_http_handler_exposes_structured_freshness_fields(self) -> None:
         with patch("api.economy.service_from_config", return_value=self.service):
@@ -178,6 +186,66 @@ class EconomyServiceTest(unittest.TestCase):
         self.assertEqual("poe.watch", response.source)
         self.assertEqual("2026-09-21T04:00:00Z", response.fetched_at)
         self.assertFalse(response.stale)
+
+    def test_material_cost_batches_shared_snapshots_and_sums_all_axes(self) -> None:
+        result = self.service.material_cost([
+            MaterialRequest("Divine Orb", 2, "currency"),
+            MaterialRequest("Chaos Orb", 100, "currency"),
+        ])
+        self.assertTrue(result.calculable)
+        self.assertEqual(840.5, result.total_mean_chaos)
+        self.assertEqual(830, result.total_min_chaos)
+        self.assertEqual(850, result.total_max_chaos)
+        self.assertEqual(0, result.unresolved_count)
+        self.assertEqual(["/leagues", "/get"], [path for path, _ in self.calls])
+        self.assertEqual("priced", result.materials[0].status)
+        self.assertEqual(740.5, result.materials[0].subtotal_mean_chaos)
+        self.assertTrue(result.materials[0].low_confidence)
+        self.assertEqual("quote_unit", result.materials[1].unit_price.group)
+
+        rendered = render_material_cost(result)
+        self.assertIn("均值总成本：840.5 混沌石", rendered)
+        self.assertIn("数量乘法与总和由代码计算", rendered)
+        self.assertIn("不是报价承诺", rendered)
+
+    def test_chaos_orb_is_explicit_quote_unit_when_upstream_omits_it(self) -> None:
+        result = self.service.price("Chaos Orb", category="currency")
+        self.assertTrue(result.found)
+        self.assertEqual(1, result.prices[0].mean_chaos)
+        self.assertEqual("quote_unit", result.prices[0].group)
+        self.assertIn("单位恒等式", render_price(result))
+
+    def test_material_cost_never_presents_partial_list_as_total(self) -> None:
+        result = self.service.material_cost([
+            MaterialRequest("Divine Orb", 1, "currency"),
+            MaterialRequest("Definitely Missing", 3, "currency"),
+        ])
+        self.assertFalse(result.calculable)
+        self.assertIsNone(result.total_mean_chaos)
+        self.assertEqual(1, result.unresolved_count)
+        self.assertEqual("not_found", result.materials[1].status)
+        self.assertIn("总成本不可计算", render_material_cost(result))
+        self.assertNotIn("均值总成本：370.25", render_material_cost(result))
+
+    def test_material_cost_rejects_invalid_or_empty_inputs(self) -> None:
+        with self.assertRaises(InvalidEconomyQuery):
+            self.service.material_cost([])
+        with self.assertRaises(InvalidEconomyQuery):
+            self.service.material_cost([MaterialRequest("Divine Orb", float("nan"))])
+        with self.assertRaises(InvalidEconomyQuery):
+            self.service.material_cost([MaterialRequest("Divine Orb", 0)])
+
+    def test_material_cost_http_handler_returns_structured_line_provenance(self) -> None:
+        request = MaterialCostRequest(materials=[
+            MaterialCostItemRequest(query="Divine Orb", quantity=2, category="currency"),
+            MaterialCostItemRequest(query="Chaos Orb", quantity=100, category="currency"),
+        ])
+        with patch("api.economy.service_from_config", return_value=self.service):
+            response = material_cost_endpoint(request, _caller="test")
+        self.assertTrue(response.calculable)
+        self.assertEqual(840.5, response.total_mean_chaos)
+        self.assertEqual("2026-09-21T04:00:00Z", response.materials[0]["fetched_at"])
+        self.assertEqual("poe.watch", response.materials[1]["source"])
 
 
 if __name__ == "__main__":

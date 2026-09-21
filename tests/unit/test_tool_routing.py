@@ -192,6 +192,28 @@ class PreferredRouteTest(unittest.TestCase):
             "economy_price_lookup", loop._preferred_tool_route("做一把毕业弓的制作成本")
         )
 
+    def test_explicit_material_list_routes_to_deterministic_cost_tool(self) -> None:
+        question = "2 个神圣石和 100 个混沌石一共多少钱"
+        self.assertEqual("economy_material_cost", loop._preferred_tool_route(question))
+        self.assertEqual({
+            "materials": [
+                {"query": "神圣石", "quantity": 2.0, "category": "auto"},
+                {"query": "混沌石", "quantity": 100.0, "category": "auto"},
+            ]
+        }, loop._material_cost_args(question))
+
+    def test_ambiguous_craft_cost_does_not_invent_a_material_list(self) -> None:
+        self.assertIsNone(loop._material_cost_args("做一把毕业弓的制作成本"))
+        self.assertNotEqual(
+            "economy_material_cost", loop._preferred_tool_route("做一把毕业弓的制作成本")
+        )
+
+    def test_single_explicit_quantity_can_be_costed(self) -> None:
+        self.assertEqual(
+            {"materials": [{"query": "神圣石", "quantity": 10.0, "category": "auto"}]},
+            loop._material_cost_args("10 个神圣石一共多少钱"),
+        )
+
 
 class FirstRoundToolsTest(unittest.TestCase):
     """网关忽略 tool_choice，所以「强制」靠裁剪 schema。"""

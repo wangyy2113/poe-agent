@@ -28,7 +28,7 @@ POE1 的机制耦合极深，一个错误的小前提会让整条结论反向。
 | 技能石与辅助宝石 | 820 颗（558 主动 + 262 辅助）+ 30672 行每级字面值 + **每级效果文本与属性需求**（POEDB 详情页逐级表，812 颗逐级对过账）；PoB 出结构、POEDB 出中文名，按 `grantedEffectId` 桥接，清单页没收录的再按详情页标题兜底（未桥接只剩 1 颗）。**每级基础伤害已入库**（175 颗技能 7000 行，按 PoB 的 effectiveness 公式算出显示值，与 POEDB 技能页对账 20/20）；固定效果、获取途径及技能与辅助宝石的双向确认关系也已入库。**DPS 仍不算**（缺整条加成链） |
 | 通货 | 113 条（中英文名、堆叠上限、效果原文）；工艺台费用引用的 18 个通货全部能对上；**获取途径与兑换比例未采集**；市场价格走 poe.watch 实时快照 |
 | 圣甲虫 | 118 个（效果、堆叠上限、地图装置放置上限）；**掉落来源未采集**；市场价格走 poe.watch 实时快照 |
-| 实时经济价格 | `POST /economy/price` + `economy_price_lookup`：poe.watch 当前/指定联盟的唯一装备、通货、圣甲虫、命运卡、碎片价格；SQLite 30 分钟 TTL，刷新失败降级旧快照，超过 6 小时显式标陈旧；每次输出来源、联盟、抓取时间与低置信度标记。**不含稀有装备估值、制作成本、趋势、利润与 Flip 建议** |
+| 实时经济价格与材料清单成本 | `POST /economy/price` + `economy_price_lookup`：poe.watch 当前/指定联盟的唯一装备、通货、圣甲虫、命运卡、碎片价格；`POST /economy/material-cost` + `economy_material_cost`：对用户明确给出的材料与数量逐项计算 mean/min/max 小计和总计。SQLite 30 分钟 TTL，刷新失败降级旧快照，超过 6 小时显式标陈旧；每项输出来源、联盟、抓取时间与低置信度标记。**不生成制作材料或路径，不含稀有装备估值、成功率、趋势、利润与 Flip 建议** |
 | Boss 技能伤害 | 10 条 Boss 技能的伤害建模 + 22 个 Boss 的护甲/闪避倍率；`boss_skill_damage` 按 `monsterDamageTable` 与 PoB 系数算出某等级的一击伤害（谢勒的球 84 级 9,588–14,382 冰霜），未指定掷骰区间时给两端。**只给伤害建模，不给打法**——技能机制、阶段与应对未采集；数字是 PoB 建模值，GGG 未公布 |
 | 制作规则（名额） | 7 条前后缀名额规则（魔法 1+1、稀有 3+3、传奇不受限制、药剂随魔法，另有 PoB 独有的珠宝/Graft 2+2 与「已腐化深渊珠宝回到 3+3」）；`check_mod_combination` 因此**第一次能返回 `possible`**，超名额则 `impossible`。`possible` 的含义是「这些词缀能共存」而非「能做出来」；**影响力条件与元词缀状态机仍未采集** |
 | 收获（古灵庄园） | 74 条定向工艺 + 98 条命能费用（效果原文与原始费用，费用通货按 GGG 元数据路径与通货表逐条对账 5/5）；另有 **51 个种子怪物**按颜色对应四种命能中的三种（`harvest_seed_lookup`，神圣白晶命能不在表里）；只有工具、没有卡片；**掉落数量与概率、成功率与权重未采集** |
@@ -334,6 +334,18 @@ curl -s -X POST http://127.0.0.1:8787/poe_agent/economy/price \
 响应始终带 `league`、`source`、`fetched_at`、`from_cache`、`stale`、`degraded` 和
 `warning`；上游失败且完全没有缓存时返回 **503**，不会猜一个价格。
 
+**明确材料清单成本** —— `POST /economy/material-cost`。每项都必须给名称和正数数量；
+服务逐项精确匹配，并用同一联盟的 `mean/min/max × quantity` 做确定性加总。
+
+```bash
+curl -s -X POST http://127.0.0.1:8787/poe_agent/economy/material-cost \
+  -H 'Content-Type: application/json' \
+  -d '{"materials":[{"query":"神圣石","quantity":2},{"query":"混沌石","quantity":100}]}'
+```
+
+若任一材料未找到、同名结果不唯一或缺少均价，`calculable=false` 且总均价为空，绝不会把
+已查到的部分冒充完整总成本。它只计算输入清单，不会反推某件装备需要哪些材料、成功率或工艺步骤。
+
 **装备分析** —— `POST /item`，把游戏内复制的装备文本变成结构化报告。
 
 ```bash
@@ -421,9 +433,9 @@ curl -s -X POST http://127.0.0.1:8787/poe_agent/build \
 `Boss/Pinnacle/Uber` 或旧版 `Shaper/Sirus` 时才给值，不把普通怪快照冒充 Boss 输出。
 报告还会列出装备文本里可逐字核对的防御来源；天赋、技能、配置、升华与药剂没有
 PoB breakdown 时明确标成尚未拆分，不把它们当作 0。对已知且低于明确上限的元素抗性、
-混沌抗性与法术压制，报告给出低/高预算两档建议和可复核的目标差额。虽然标准条目价格
-快照已接入，但完整制作路径与材料清单仍缺，成本只按单一词缀、单件装备或多部位重构
-分档，不虚构 chaos/divine 方案报价。
+混沌抗性与法术压制，报告给出低/高预算两档建议和可复核的目标差额。标准条目价格与
+**用户明确提供的材料清单**成本已接入，但系统仍不会自行生成完整制作路径或材料清单；
+Build 建议中的成本只按改造规模分档，不虚构 chaos/divine 方案报价。
 当前激活天赋方案的 `treeVersion` 还会与本地 `passive_graph_node`（缺失时退回
 `game_constant`）版本比对；不一致时提示宝石桥接、规则判读和建议可能存在偏差，
 但不会否定原 PoB 已保存的 PlayerStat 快照。
@@ -626,7 +638,7 @@ PoB 排 P2 而不是 P1：它在数值上更接近一手，但不含中文名与
 .venv/bin/python -m unittest discover -s tests -t .
 ```
 
-目前 1541 项，其中与「无据不答」直接相关的：
+目前 1564 项，其中与「无据不答」直接相关的：
 
 | 组 | 项数 | 重点 |
 | --- | --- | --- |
@@ -634,7 +646,7 @@ PoB 排 P2 而不是 P1：它在数值上更接近一手，但不含中文名与
 | 装备文本解析 | 45 | 真实 Ctrl+C 文本 fixture；「普通复制不许带 T 级」「认不出必须显式失败」 |
 | 词缀 T 级匹配 | 26 | 内存桩库，数值照抄真实库；「匹配不上必须标未匹配」 |
 | 装备分析报告 | 20 | 「不给稀有装备估值」「容量输入不完整不报余量」「最高档位不跨来源类别」 |
-| 实时经济价格 | 11 | 精确名称、中文别名、联盟选择、TTL、刷新失败降级、陈旧与低置信度披露 |
+| 实时经济价格与材料成本 | 16 | 精确名称、批量清单加总、计价单位、缺价不报部分总价、联盟、TTL、降级、陈旧与低置信度披露 |
 | 游戏常量访问 | 14 | 缺失即抛异常，绝不给默认值 |
 | 流式闸门一致性 | 9 | 流式与批量校验的判定必须完全一致 |
 | 表格断言单位 | 10 | 表格整块算一个断言；绑定位置放宽但「要不要绑定」没放宽；表格未收齐不下发 |
@@ -662,7 +674,7 @@ orchestrator/           主循环、出口绑定闸门、引用装配
                           loop.py / binding.py / citation.py
 agents/                 领域 Agent：提示词 + 允许工具集 + 输出契约
 tools/                  工具注册与实现。顺序即推荐优先级：
-                          economy_price_lookup / affix_pool_odds / check_mod_combination
+                          economy_price_lookup / economy_material_cost / affix_pool_odds / check_mod_combination
                           / bench_recipe_catalog
                           / metamod_interaction_matrix / mod_tiers / skill_gem_levels
                           / spectre_stats / passive_path / cluster_jewel_info

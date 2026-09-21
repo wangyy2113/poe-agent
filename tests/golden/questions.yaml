@@ -1124,6 +1124,12 @@ cases:
     expect_tool: economy_price_lookup
     note: 实时价格必须走 poe.watch 工具并携带联盟、抓取时间与置信度，不由模型估价
 
+  - id: route_explicit_material_cost
+    query: 2 个神圣石和 100 个混沌石一共多少钱
+    kind: tool_route
+    expect_tool: economy_material_cost
+    note: 明确名称与数量的清单必须走确定性成本工具；不能只查其中一个单价或交给模型心算
+
   - id: gap_cluster_jewel_notables
     query: 大型星团珠宝能开出哪些大点
     kind: gap

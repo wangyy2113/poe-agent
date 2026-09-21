@@ -724,6 +724,10 @@ V1 完成的判定标准（逐条实测，不以「无报错」代替验证）�
 - [x] 低预算 / 高预算双档优化建议 v1：每个已识别短板都成对给出行动、预期收益、
   成本规模与假设；未接赛季经济数据前不虚构 chaos/divine 报价。当前规则只覆盖有明确
   上限的抗性与法压，EHP / Max Hit 等需建立职业与内容门槛后再扩充
+- [x] 明确材料清单成本 v1（2026-09-21）：`POST /economy/material-cost` 与
+  `economy_material_cost` 对用户给出的材料名称和数量逐项精确查 poe.watch，同联盟计算
+  `quantity × mean/min/max` 并汇总；每项保留来源、抓取时间、缓存/陈旧与低置信度状态。
+  任一材料缺价或同名不唯一时不输出部分总价；不反推制作材料、步骤、概率或利润
 - [x] Build / 系统版本偏差提示（需求 8.9，2026-09-08）：读取当前激活天赋方案的
   `treeVersion`，与本地 `passive_graph_node.tree_version` 比对（缺表时退回
   `game_constant.game_version`）；同版、跨版、任一侧未知三种状态分开呈现。跨版只提示
