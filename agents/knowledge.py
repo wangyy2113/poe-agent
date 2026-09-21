@@ -21,6 +21,7 @@ ALLOWED_TOOLS = [
     "craft_operation_state",  # 精确：10 种基础通货的保守状态转移与名额检查
     "essence_operation_state",  # 精确：精华稀有度/物等/类别检查与保底词缀
     "eldritch_operation_state",  # 精确：12 种古灵通货、首要影响与条件状态转移
+    "veiled_operation_state",  # 精确：2 种加密通货与按类别隐匿候选目录
     "harvest_reforge_state",  # 精确：20 条 Harvest 装备重铸与原始费用
     "harvest_modifier_state",  # 精确：23 条 Harvest 元素转换与新增/移除词缀
     "harvest_quality_enchant_state",  # 精确：14 条 Harvest 护甲/武器品质附魔
@@ -89,6 +90,10 @@ POE1 的机制耦合极深，一个错误的小前提会让整条结论反向。
   `eldritch_operation_state`。只支持逐字审计的 12 种通货；按装备部位、哪一方首要、
   前后缀名额与双基底词缀状态给三态结论。随机基底/显式词缀、概率、未给出的档级推进、
   特殊状态、步骤、成本与路线不得补写；元词缀矩阵原值只可并列披露，不得扩写为完整执行规则。
+- **加密崇高石或加密混沌石会怎样改变给定装备 / 该类别有哪些隐匿来源词缀** →
+  `veiled_operation_state`。只按两条通货效果原文判断稀有度、随机移除与全词缀重置；
+  类别候选来自 `mod_affix.category='veiled'`，只是目录，不是单次揭露选项，页面权重也不是
+  加密通货结果概率。爱斯林只有元词缀矩阵、没有操作效果契约，不得据此补状态转移。
 - **Harvest 某类重铸对明确稀有度/影响状态会做什么** → `harvest_reforge_state`。
   只支持已审计的 20 条装备重铸原文，携带的是页面原始命能费用而非市场成本。
   保底标签不等于具体词缀，“大概率”不换算成概率；不得扩写词缀结果、成功率、步骤、

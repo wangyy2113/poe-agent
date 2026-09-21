@@ -442,6 +442,12 @@ cases:
     expect_tool: eldritch_operation_state
     note: 古灵专用状态机优先于名称中包含的基础“崇高石”；只检查目标前缀侧名额，不猜具体词缀
 
+  - id: route_veiled_operation_state
+    query: 稀有胸甲有2条前缀2条后缀，加密崇高石会怎样
+    kind: tool_route
+    expect_tool: veiled_operation_state
+    note: 加密专用状态机优先于基础“崇高石”；候选目录不冒充单次揭露选项或结果概率
+
   - id: desc_lifeforce_usage
     query: 狂野紫晶命能有什么用
     kind: description

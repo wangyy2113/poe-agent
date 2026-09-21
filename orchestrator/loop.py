@@ -1351,6 +1351,55 @@ def _eldritch_operation_args(question: str) -> dict[str, Any] | None:
     return args
 
 
+_VEILED_OPERATION_SIGNALS = (
+    "能用", "可以用", "能不能用", "会怎样", "会变", "效果", "结果", "状态转移",
+    "添加", "移除", "重置", "词缀", "候选",
+)
+
+
+def _veiled_operation_args(question: str) -> dict[str, Any] | None:
+    """抽取两种具名加密通货；不把爱斯林或泛隐匿问题猜成通货操作。"""
+    if any(term in question for term in ("多少钱", "价格", "成本", "哪里刷", "怎么获得")):
+        return None
+    if not any(signal in question for signal in _VEILED_OPERATION_SIGNALS):
+        return None
+    try:
+        from craft.veiled_operations import VEILED_SPECS  # noqa: PLC0415
+    except Exception:  # noqa: BLE001
+        return None
+    matched = [
+        spec for spec in VEILED_SPECS
+        if spec.name_zh in question or spec.name_en.casefold() in question.casefold()
+        or any(alias in question for alias in spec.aliases)
+    ]
+    unique = list({spec.metadata_id: spec for spec in matched}.values())
+    if len(unique) != 1:
+        return None
+    args: dict[str, Any] = {"operation": unique[0].name_zh}
+    classes = [name for name in _ESSENCE_ITEM_CLASSES if name in question]
+    if classes:
+        args["item_class"] = classes[0]
+    if "稀有" in question or "黄装" in question:
+        args["rarity"] = "稀有"
+    elif "魔法" in question or "蓝装" in question:
+        args["rarity"] = "魔法"
+    elif "普通" in question or "白装" in question:
+        args["rarity"] = "普通"
+    elif "传奇" in question or "暗金" in question:
+        args["rarity"] = "传奇"
+    for key, marker in (("prefix_count", "前缀"), ("suffix_count", "后缀")):
+        match = re.search(rf"(\d+)\s*(?:条|个)?\s*{marker}", question)
+        if match:
+            args[key] = int(match.group(1))
+    if "已腐化" in question:
+        args["corrupted"] = True
+    if "已镜像" in question or "已鏡像" in question:
+        args["mirrored"] = True
+    if "裂隙词缀" in question or "裂隙詞綴" in question:
+        args["fractured"] = True
+    return args
+
+
 _HARVEST_REFORGE_TAGS = (
     "召唤生物", "元素", "冰霜", "属性", "掉落", "攻击", "施法", "暴击",
     "混沌", "火焰", "物理", "生命", "速度", "闪电", "防御", "魔力",
@@ -1604,6 +1653,9 @@ def _preferred_tool_route(question: str) -> str:
     material_args = _material_cost_args(question)
     if material_args is not None:
         return "economy_material_cost"
+    veiled_args = _veiled_operation_args(question)
+    if veiled_args is not None:
+        return "veiled_operation_state"
     eldritch_args = _eldritch_operation_args(question)
     if eldritch_args is not None:
         return "eldritch_operation_state"
@@ -2054,6 +2106,7 @@ _CODE_INVOKED_TOOLS: dict[str, Any] = {
     "craft_operation_state": _craft_operation_args,
     "essence_operation_state": _essence_operation_args,
     "eldritch_operation_state": _eldritch_operation_args,
+    "veiled_operation_state": _veiled_operation_args,
     "harvest_reforge_state": _harvest_reforge_args,
     "harvest_modifier_state": _harvest_modifier_args,
     "harvest_quality_enchant_state": _harvest_quality_enchant_args,
@@ -2086,6 +2139,7 @@ _DETERMINISTIC_DIRECT_TOOLS = frozenset({
     "economy_price_lookup", "economy_material_cost", "craft_operation_state",
     "essence_operation_state",
     "eldritch_operation_state",
+    "veiled_operation_state",
     "harvest_reforge_state",
     "harvest_modifier_state",
     "harvest_quality_enchant_state",
