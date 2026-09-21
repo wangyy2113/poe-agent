@@ -395,6 +395,65 @@ class MaterialCostAnswerTest(unittest.TestCase):
         )
 
 
+class CraftOperationAnswerTest(unittest.TestCase):
+    """基础通货状态转移由代码直接输出，批量与流式不得交给模型扩写。"""
+
+    ANSWER = (
+        "### 崇高石状态转移\n\n"
+        "**结论：已知约束兼容**\n\n"
+        "> 只证明稀有度与前后缀名额；不提供具体结果、概率、成本或路线。"
+    )
+
+    def _patches(self):
+        def call(name, arguments):
+            if name == "kb_search":
+                return ToolResult(
+                    ok=True,
+                    data={"sufficient": False, "reason": "状态转移不在静态卡片", "missing_terms": []},
+                    citations=[],
+                    meta={"channels": ["bm25"], "degraded": False},
+                )
+            if name == "craft_operation_state":
+                args = json.loads(arguments)
+                self.assertEqual("崇高石", args["operation"])
+                self.assertEqual(2, args["prefix_count"])
+                return ToolResult(
+                    ok=True,
+                    data={"answer": self.ANSWER, "found": True, "verdict": "compatible"},
+                    citations=[{
+                        "chunk_id": "craft_operation:exalted",
+                        "entity_id": None,
+                        "title": "崇高石状态转移",
+                        "url": "https://poedb.tw/cn/Exalted_Orb",
+                        "source": "POEDB",
+                        "source_priority": 1,
+                        "can_support_facts": True,
+                        "text": self.ANSWER,
+                        "channel": "structured",
+                    }],
+                    meta={"channel": "structured"},
+                )
+            raise AssertionError(name)
+
+        return [
+            patch.object(loop, "get_config", lambda: _FakeConfig()),
+            patch.object(loop, "_persist", lambda *a, **k: None),
+            patch.object(loop, "_record_gaps", lambda *a, **k: None),
+            patch.object(loop.REGISTRY, "call", call),
+        ]
+
+    def test_两条路径直接返回同一状态转移(self) -> None:
+        question = "稀有装备 2 条前缀 3 条后缀还能用崇高石吗"
+        batch, events = _both_paths(question, self._patches)
+        self.assertFalse(batch.evidence_gap)
+        self.assertEqual(self.ANSWER, batch.answer)
+        self.assertEqual(self.ANSWER, _answer_of(events))
+        self.assertEqual(
+            ["kb_search", "craft_operation_state"],
+            [call["tool"] for call in batch.tool_calls],
+        )
+
+
 class PartialDimensionDisclosureTest(unittest.TestCase):
     """复合问题继续回答有据部分，同时由代码保证披露无据部分。"""
 

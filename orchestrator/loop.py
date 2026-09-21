@@ -1185,6 +1185,60 @@ def _material_cost_args(question: str) -> dict[str, Any] | None:
     return {"materials": materials}
 
 
+_CRAFT_OPERATION_SIGNALS = (
+    "能用", "可以用", "能不能用", "会变", "变成", "之后", "结果", "状态转移",
+    "有什么用", "什么效果", "添加词缀", "新增词缀", "移除词缀", "重置词缀",
+)
+
+
+def _craft_operation_args(question: str) -> dict[str, Any] | None:
+    """抽取明确基础通货与用户逐字给出的状态；不从目标装备反推制作步骤。"""
+    if "多少钱" in question or not any(signal in question for signal in _CRAFT_OPERATION_SIGNALS):
+        return None
+    try:
+        from craft.operations import OPERATION_SPECS  # noqa: PLC0415
+    except Exception:  # noqa: BLE001
+        return None
+    matched = [
+        spec for spec in OPERATION_SPECS
+        if spec.name_zh in question or spec.name_en.lower() in question.lower()
+    ]
+    unique = list({spec.metadata_id: spec for spec in matched}.values())
+    if len(unique) != 1:
+        return None
+    args: dict[str, Any] = {"operation": unique[0].name_zh}
+    rarities = []
+    for rarity, markers in (
+        ("普通", ("普通物品", "普通装备", "白装")),
+        ("魔法", ("魔法物品", "魔法装备", "蓝装")),
+        ("稀有", ("稀有物品", "稀有装备", "黄装")),
+        ("传奇", ("传奇物品", "传奇装备", "暗金")),
+    ):
+        if any(marker in question for marker in markers):
+            rarities.append(rarity)
+    if len(rarities) > 1:
+        return None
+    if rarities:
+        args["rarity"] = rarities[0]
+    for key, marker in (("prefix_count", "前缀"), ("suffix_count", "后缀")):
+        match = re.search(rf"(\d+)\s*(?:条|个)?\s*{marker}", question)
+        if match:
+            args[key] = int(match.group(1))
+    if "已腐化" in question:
+        args["corrupted"] = True
+    if "已镜像" in question or "已鏡像" in question:
+        args["mirrored"] = True
+    if "裂隙词缀" in question or "裂隙詞綴" in question:
+        args["fractured"] = True
+    if "深渊珠宝" in question or "深淵珠寶" in question:
+        args["item_kind"] = "jewel_abyss_corrupted" if args.get("corrupted") else "jewel"
+    elif "珠宝" in question or "珠寶" in question:
+        args["item_kind"] = "jewel"
+    elif "药剂" in question or "藥劑" in question:
+        args["item_kind"] = "flask"
+    return args
+
+
 def _preferred_tool_route(question: str) -> str:
     """代码决定本轮该先调哪个精确工具；无把握时返回空串，交回模型自选。
 
@@ -1194,6 +1248,9 @@ def _preferred_tool_route(question: str) -> str:
     material_args = _material_cost_args(question)
     if material_args is not None:
         return "economy_material_cost"
+    operation_args = _craft_operation_args(question)
+    if operation_args is not None:
+        return "craft_operation_state"
     enumeration = any(intent in question for intent in _ENUMERATION_INTENTS)
     for tool, intents in _PREFERRED_TOOL_INTENTS:
         if not any(intent in question for intent in intents):
@@ -1620,6 +1677,7 @@ def _resistance_args(question: str) -> dict[str, Any] | None:
 #: 「我有 10000 护甲能减多少伤害」**碰巧**也拒答了，但拒答理由是「工具没返回证据」
 #: 而不是工具想说的「你没给这一击的伤害」——契约过了、机制却是坏的。
 _CODE_INVOKED_TOOLS: dict[str, Any] = {
+    "craft_operation_state": _craft_operation_args,
     "economy_material_cost": _material_cost_args,
     "economy_price_lookup": lambda question: {"query": question, "category": "auto"},
     # 路由时已确认该名字在别名表里命中，参数就是问题本身
@@ -1644,10 +1702,13 @@ _CODE_INVOKED_TOOLS: dict[str, Any] = {
 #: 这些工具按设计**不产出引用**（覆盖声明是元信息不是游戏事实）。
 #: 「一条证据都没拿到就走缺据」的兜底要放过它们，否则它们永远进不了生成。
 _TOOLS_WITHOUT_CITATIONS = frozenset({"kb_coverage"})
+_DETERMINISTIC_DIRECT_TOOLS = frozenset({
+    "economy_price_lookup", "economy_material_cost", "craft_operation_state",
+})
 
 
-def _economy_answer(tool_result: ToolResult) -> str:
-    """实时价格也由代码生成，防止模型改写数值或漏掉新鲜度限定。"""
+def _direct_tool_answer(tool_result: ToolResult) -> str:
+    """确定性工具由代码生成答案，防止模型改写数值、状态或边界限定。"""
     return str((tool_result.data or {}).get("answer") or "").strip()
 
 
@@ -2250,7 +2311,7 @@ def _prepare_turn(question: str, result: TurnResult) -> _TurnSetup:
     gate_refused = False
     if precision_tool:
         result.retrieval_meta["precision_route"] = precision_tool
-    elif preferred_tool not in {"economy_price_lookup", "economy_material_cost"}:
+    elif preferred_tool not in _DETERMINISTIC_DIRECT_TOOLS:
         # 精确路由不过这道闸：那类问题的维度由工具自己的缺据字段负责声明。
         # 其余情况一律走 `_apply_dimension_gate`（它内部无条件问覆盖层）。
         # **这里曾内联过一份等价实现**，而那个函数就在同一个文件里、还带着这道闸门
@@ -2323,10 +2384,9 @@ def _prepare_turn(question: str, result: TurnResult) -> _TurnSetup:
     ):
         setup.final = _coverage_answer(preferred_result)
         return setup
-    if preferred_tool in {"economy_price_lookup", "economy_material_cost"} \
-            and preferred_result is not None:
+    if preferred_tool in _DETERMINISTIC_DIRECT_TOOLS and preferred_result is not None:
         if preferred_result.ok:
-            setup.final = _economy_answer(preferred_result)
+            setup.final = _direct_tool_answer(preferred_result)
         else:
             result.evidence_gap = True
             setup.gap = (
