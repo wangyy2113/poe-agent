@@ -1988,6 +1988,42 @@ def vector_status() -> VectorStatus:
     return _vector_status or VectorStatus(False, "未探测")
 
 
+def vector_channel_status(
+    requested: bool,
+    *,
+    query_adapter_ready: bool = False,
+) -> VectorStatus:
+    """返回向量检索的**运行时有效状态**，而不是只复述配置值。
+
+    ``retrieval.vector.enabled`` 只是运维侧的启用请求。扩展不可加载、数据库尚未
+    初始化、向量表没有建立或查询适配器尚未接入时，请求值不能被检索/API 当成
+    “向量通道已启用”。这里集中收口判定，避免各入口分别读取配置后产生不同结论。
+    """
+    if not requested:
+        return VectorStatus(False, "配置关闭")
+
+    extension = vector_status()
+    if not extension.available:
+        return VectorStatus(False, extension.reason)
+    if _conn is None:
+        return VectorStatus(False, "数据库未初始化")
+
+    try:
+        row = _conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='chunk_vec'"
+        ).fetchone()
+    except sqlite3.Error as exc:
+        return VectorStatus(False, f"检查向量表失败: {type(exc).__name__}: {exc}")
+    if row is None:
+        return VectorStatus(
+            False,
+            "向量表未建立（retrieval.vector.dim 必须为正数）",
+        )
+    if not query_adapter_ready:
+        return VectorStatus(False, "向量查询适配器尚未接入")
+    return VectorStatus(True, extension.reason)
+
+
 def close_db() -> None:
     """关闭前做 WAL checkpoint，避免残留 -wal / -shm 文件。"""
     global _conn, _vector_status

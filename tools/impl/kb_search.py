@@ -57,6 +57,8 @@ MAX_EVIDENCE_CHARS = 1200
 def kb_search(query: str, category: str | None = None, top_k: int | None = None) -> ToolResult:
     cfg = get_config()
     k = max(1, min(int(top_k or cfg.get("retrieval.top_k", 20)), 20))
+    vector_requested = bool(cfg.get("retrieval.vector.enabled", False))
+    vector_runtime = dbmod.vector_channel_status(vector_requested)
     result = retrieve(
         dbmod.get_conn(),
         query,
@@ -65,7 +67,12 @@ def kb_search(query: str, category: str | None = None, top_k: int | None = None)
         min_coverage=float(cfg.get("retrieval.min_coverage", 0.5)),
         rrf_k=int(cfg.get("retrieval.rrf_k", 60)),
         priority_decay=float(cfg.get("retrieval.priority_decay", 0.08)),
-        vector_enabled=bool(cfg.get("retrieval.vector.enabled", False)),
+        vector_enabled=vector_runtime.available,
+        vector_disabled_reason=(
+            vector_runtime.reason
+            if vector_requested and not vector_runtime.available
+            else ""
+        ),
         rerank_enabled=bool(cfg.get("retrieval.rerank.enabled", False)),
         category=category or None,
     )
