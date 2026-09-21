@@ -1413,6 +1413,58 @@ def _harvest_modifier_args(question: str) -> dict[str, Any] | None:
     return args
 
 
+def _harvest_quality_enchant_args(question: str) -> dict[str, Any] | None:
+    """抽取 14 条 Harvest 品质附魔；非整步品质的取整留给状态机判 unknown。"""
+    lowered = question.lower()
+    if "收获" not in question and "harvest" not in lowered:
+        return None
+    if "附魔" not in question or "品质" not in question:
+        return None
+    if any(term in question for term in ("多少命能", "费用", "成本", "多少钱")):
+        return None
+
+    if "近战武器" in question:
+        if "武器范围" not in question:
+            return None
+        operation = "近战武器范围"
+        item_kind = "melee_weapon"
+    elif "武器" in question:
+        stats = [
+            stat for stat in ("元素伤害", "精度", "效果区域", "暴击率", "攻击速度")
+            if stat in question
+        ]
+        if len(stats) != 1:
+            return None
+        operation = "武器" + stats[0]
+        item_kind = "weapon"
+    elif "护甲" in question or "胸甲" in question:
+        stats = [
+            stat for stat in (
+                "冰霜抗性", "火焰抗性", "闪电抗性", "力量", "敏捷", "智慧", "生命", "魔力",
+            ) if stat in question
+        ]
+        if len(stats) != 1:
+            return None
+        operation = "护甲" + stats[0]
+        item_kind = "body_armour"
+    else:
+        return None
+
+    args: dict[str, Any] = {"operation": operation, "item_kind": item_kind}
+    quality = re.search(r"品质\s*\+?\s*(\d{1,3})\s*%", question)
+    if quality is None:
+        quality = re.search(r"(\d{1,3})\s*%\s*品质", question)
+    if quality:
+        args["quality"] = int(quality.group(1))
+    if "已腐化" in question:
+        args["corrupted"] = True
+    if "已镜像" in question or "已鏡像" in question:
+        args["mirrored"] = True
+    if "裂隙词缀" in question or "裂隙詞綴" in question:
+        args["fractured"] = True
+    return args
+
+
 def _preferred_tool_route(question: str) -> str:
     """代码决定本轮该先调哪个精确工具；无把握时返回空串，交回模型自选。
 
@@ -1428,6 +1480,9 @@ def _preferred_tool_route(question: str) -> str:
     essence_args = _essence_operation_args(question)
     if essence_args is not None:
         return "essence_operation_state"
+    harvest_enchant_args = _harvest_quality_enchant_args(question)
+    if harvest_enchant_args is not None:
+        return "harvest_quality_enchant_state"
     harvest_modifier_args = _harvest_modifier_args(question)
     if harvest_modifier_args is not None:
         return "harvest_modifier_state"
@@ -1864,6 +1919,7 @@ _CODE_INVOKED_TOOLS: dict[str, Any] = {
     "essence_operation_state": _essence_operation_args,
     "harvest_reforge_state": _harvest_reforge_args,
     "harvest_modifier_state": _harvest_modifier_args,
+    "harvest_quality_enchant_state": _harvest_quality_enchant_args,
     "economy_material_cost": _material_cost_args,
     "economy_price_lookup": lambda question: {"query": question, "category": "auto"},
     # 路由时已确认该名字在别名表里命中，参数就是问题本身
@@ -1893,6 +1949,7 @@ _DETERMINISTIC_DIRECT_TOOLS = frozenset({
     "essence_operation_state",
     "harvest_reforge_state",
     "harvest_modifier_state",
+    "harvest_quality_enchant_state",
 })
 
 

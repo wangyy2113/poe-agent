@@ -631,6 +631,65 @@ class HarvestModifierAnswerTest(unittest.TestCase):
         )
 
 
+class HarvestQualityEnchantAnswerTest(unittest.TestCase):
+    """Harvest 品质附魔由代码直出，批量与流式不得改写比例。"""
+
+    ANSWER = (
+        "### Harvest 品质附魔状态转移\n\n"
+        "**结论：已知约束兼容**\n\n"
+        "> 20% 品质给予 10% 火焰抗性，且品质不再增加防御。"
+    )
+
+    def _patches(self):
+        def call(name, arguments):
+            if name == "kb_search":
+                return ToolResult(
+                    ok=True,
+                    data={"sufficient": False, "reason": "状态转移不在静态卡片", "missing_terms": []},
+                    citations=[],
+                    meta={"channels": ["bm25"], "degraded": False},
+                )
+            if name == "harvest_quality_enchant_state":
+                args = json.loads(arguments)
+                self.assertEqual("护甲火焰抗性", args["operation"])
+                self.assertEqual(20, args["quality"])
+                return ToolResult(
+                    ok=True,
+                    data={"answer": self.ANSWER, "found": True, "verdict": "compatible"},
+                    citations=[{
+                        "chunk_id": "harvest_enchant_operation:body-armour-fire-resistance",
+                        "entity_id": None,
+                        "title": "Harvest 护甲火焰抗性品质附魔",
+                        "url": "https://poedb.tw/cn/Horticrafting",
+                        "source": "POEDB",
+                        "source_priority": 1,
+                        "can_support_facts": True,
+                        "text": self.ANSWER,
+                        "channel": "structured",
+                    }],
+                    meta={"channel": "structured"},
+                )
+            raise AssertionError(name)
+
+        return [
+            patch.object(loop, "get_config", lambda: _FakeConfig()),
+            patch.object(loop, "_persist", lambda *a, **k: None),
+            patch.object(loop, "_record_gaps", lambda *a, **k: None),
+            patch.object(loop.REGISTRY, "call", call),
+        ]
+
+    def test_两条路径直接返回同一Harvest品质附魔结果(self) -> None:
+        question = "收获护甲品质20%附魔成火焰抗性能加多少"
+        batch, events = _both_paths(question, self._patches)
+        self.assertFalse(batch.evidence_gap)
+        self.assertEqual(self.ANSWER, batch.answer)
+        self.assertEqual(self.ANSWER, _answer_of(events))
+        self.assertEqual(
+            ["kb_search", "harvest_quality_enchant_state"],
+            [call["tool"] for call in batch.tool_calls],
+        )
+
+
 class PartialDimensionDisclosureTest(unittest.TestCase):
     """复合问题继续回答有据部分，同时由代码保证披露无据部分。"""
 

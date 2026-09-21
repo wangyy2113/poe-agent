@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field, model_validator
 from api.deps import require_user
 from tools.impl.craft_operation import craft_operation_state
 from tools.impl.essence_operation import essence_operation_state
+from tools.impl.harvest_enchant_operation import harvest_quality_enchant_state
 from tools.impl.harvest_modifier_operation import harvest_modifier_state
 from tools.impl.harvest_operation import harvest_reforge_state
 
@@ -170,6 +171,41 @@ class HarvestModifierResponse(BaseModel):
     answer: str
 
 
+class HarvestQualityEnchantRequest(BaseModel):
+    operation: str = Field(min_length=1, max_length=180)
+    item_text: str | None = Field(default=None, max_length=20_000)
+    item_kind: Literal["body_armour", "weapon", "melee_weapon", "other"] | None = None
+    quality: int | None = Field(default=None, ge=0, le=100)
+    corrupted: bool = False
+    mirrored: bool = False
+    fractured: bool = False
+
+    @model_validator(mode="after")
+    def no_mixed_item_state(self) -> "HarvestQualityEnchantRequest":
+        if self.item_text and (self.item_kind is not None or self.quality is not None):
+            raise ValueError("item_text 与手工 item_kind/quality 不能混用")
+        return self
+
+
+class HarvestQualityEnchantResponse(BaseModel):
+    found: bool
+    verdict: str
+    craft_id: str
+    effect_text: str
+    enchant_key: str
+    source: str
+    source_priority: int
+    source_url: str
+    fetched_at: str
+    costs: list[dict[str, Any]]
+    before: dict[str, Any]
+    after: dict[str, Any]
+    checks: list[dict[str, Any]]
+    unknown_fields: list[str]
+    boundary: str
+    answer: str
+
+
 @router.post("/craft/operation", response_model=CraftOperationResponse)
 def operation_state(
     req: CraftOperationRequest, _caller: str = Depends(require_user)
@@ -274,3 +310,29 @@ def harvest_modifier_operation_state(
             "supported_examples": (result.data or {}).get("supported_examples", []),
         })
     return HarvestModifierResponse(**result.data)
+
+
+@router.post("/craft/harvest/quality-enchant", response_model=HarvestQualityEnchantResponse)
+def harvest_quality_enchant_operation_state(
+    req: HarvestQualityEnchantRequest, _caller: str = Depends(require_user)
+) -> HarvestQualityEnchantResponse:
+    result = harvest_quality_enchant_state(
+        operation=req.operation,
+        item_text=req.item_text,
+        item_kind=req.item_kind,
+        quality=req.quality,
+        corrupted=req.corrupted,
+        mirrored=req.mirrored,
+        fractured=req.fractured,
+    )
+    if not result.ok:
+        raise HTTPException(status_code=422, detail={
+            "error": "invalid_harvest_quality_enchant", "reason": result.error,
+        })
+    if not (result.data or {}).get("found"):
+        raise HTTPException(status_code=422, detail={
+            "error": "unsupported_harvest_quality_enchant",
+            "reason": "只支持 14 条已审计的护甲/武器品质附魔，不按相似描述猜语义",
+            "supported_examples": (result.data or {}).get("supported_examples", []),
+        })
+    return HarvestQualityEnchantResponse(**result.data)
