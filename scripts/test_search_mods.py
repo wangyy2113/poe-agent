@@ -92,6 +92,8 @@ def main() -> int:
     cfg = get_config()
     setup_logging(cfg.logs_dir, "WARNING")
     conn = dbmod.init_db(cfg.db_path)
+    vector_requested = bool(cfg.get("retrieval.vector.enabled", False))
+    vector_runtime = dbmod.vector_channel_status(vector_requested)
 
     n_mod = conn.execute(
         "SELECT count(*) FROM chunk WHERE entity_id LIKE 'mod_ladder:%'"
@@ -113,7 +115,12 @@ def main() -> int:
             min_coverage=float(cfg.get("retrieval.min_coverage", 0.5)),
             rrf_k=int(cfg.get("retrieval.rrf_k", 60)),
             priority_decay=float(cfg.get("retrieval.priority_decay", 0.08)),
-            vector_enabled=bool(cfg.get("retrieval.vector.enabled", False)),
+            vector_enabled=vector_runtime.available,
+            vector_disabled_reason=(
+                vector_runtime.reason
+                if vector_requested and not vector_runtime.available
+                else ""
+            ),
             rerank_enabled=bool(cfg.get("retrieval.rerank.enabled", False)),
         )
         top = r.hits[0] if r.hits else None

@@ -173,6 +173,7 @@ def retrieve(
     rrf_k: int = 60,
     priority_decay: float = 0.08,
     vector_enabled: bool = False,
+    vector_disabled_reason: str = "",
     rerank_enabled: bool = False,
     category: str | None = None,
     league: str | None = None,
@@ -228,7 +229,13 @@ def retrieve(
         result.channels.append("vector")
     else:
         result.degraded = True
-        result.note = "向量检索与重排未启用（网关无 embedding 模型），当前走 BM25 + 实体精确匹配"
+        if vector_disabled_reason:
+            result.note = (
+                f"向量检索已自动降级（{vector_disabled_reason}），"
+                "当前走 BM25 + 实体精确匹配"
+            )
+        else:
+            result.note = "向量检索与重排未启用（网关无 embedding 模型），当前走 BM25 + 实体精确匹配"
 
     if not rerank_enabled:
         result.degraded = True

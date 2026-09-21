@@ -49,7 +49,12 @@ async def _lifespan(_app: FastAPI):
     dim = int(cfg.get("retrieval.vector.dim", 0) or 0)
     dbmod.init_db(cfg.db_path, vector_dim=dim)
     logger.info("数据库就绪：%s", cfg.db_path)
-    logger.info("向量通道：%s", dbmod.vector_status())
+    vector_requested = bool(cfg.get("retrieval.vector.enabled", False))
+    vector_runtime = dbmod.vector_channel_status(vector_requested)
+    if vector_requested and not vector_runtime.available:
+        logger.warning("向量通道已自动禁用：%s", vector_runtime.reason)
+    else:
+        logger.info("向量通道：%s", vector_runtime)
     _warn_if_open()
     try:
         yield
@@ -87,11 +92,16 @@ def health() -> dict[str, Any]:
         out["db"] = {"error": f"{type(exc).__name__}: {exc}"}
 
     vs = dbmod.vector_status()
+    vector_requested = bool(cfg.get("retrieval.vector.enabled", False))
+    vector_runtime = dbmod.vector_channel_status(vector_requested)
     out["vector"] = {
         "extension_available": vs.available,
-        "reason": vs.reason,
-        "enabled": bool(cfg.get("retrieval.vector.enabled", False)),
+        "requested": vector_requested,
+        "enabled": vector_runtime.available,
+        "reason": vector_runtime.reason,
     }
+    if vector_requested and not vector_runtime.available:
+        out["status"] = "degraded"
     out["tools"] = __import__("tools.registry", fromlist=["REGISTRY"]).REGISTRY.names()
     try:
         sec = get_secrets()

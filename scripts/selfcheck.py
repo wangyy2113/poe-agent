@@ -158,8 +158,12 @@ def main() -> int:
         print("  全部实体都有 content_hash")
 
     vs = dbmod.vector_status()
+    vector_requested = bool(cfg.get("retrieval.vector.enabled", False))
+    vector_runtime = dbmod.vector_channel_status(vector_requested)
     print(f"  向量扩展     : {vs}")
-    if not vs.available:
+    print(f"  向量配置请求 : {'启用' if vector_requested else '关闭'}")
+    print(f"  向量运行状态 : {vector_runtime}")
+    if vector_requested and not vector_runtime.available:
         print("     → 已自动禁用向量通道，BM25 + 实体精确匹配不受影响")
 
     dbmod.close_db()

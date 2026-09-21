@@ -48,6 +48,8 @@ class SearchResponse(BaseModel):
 @router.post("/search", response_model=SearchResponse)
 def search(req: SearchRequest) -> SearchResponse:
     cfg = get_config()
+    vector_requested = bool(cfg.get("retrieval.vector.enabled", False))
+    vector_runtime = dbmod.vector_channel_status(vector_requested)
     result = retrieve(
         dbmod.get_conn(),
         req.query,
@@ -56,7 +58,12 @@ def search(req: SearchRequest) -> SearchResponse:
         min_coverage=float(cfg.get("retrieval.min_coverage", 0.5)),
         rrf_k=int(cfg.get("retrieval.rrf_k", 60)),
         priority_decay=float(cfg.get("retrieval.priority_decay", 0.08)),
-        vector_enabled=bool(cfg.get("retrieval.vector.enabled", False)),
+        vector_enabled=vector_runtime.available,
+        vector_disabled_reason=(
+            vector_runtime.reason
+            if vector_requested and not vector_runtime.available
+            else ""
+        ),
         rerank_enabled=bool(cfg.get("retrieval.rerank.enabled", False)),
         category=req.category,
     )

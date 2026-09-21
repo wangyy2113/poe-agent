@@ -486,7 +486,7 @@ curl -s http://127.0.0.1:8787/poe_agent/healthz
 ```
 status = ok
 db     = entities 1341 / chunks 25759 / aliases 2691, journal_mode=wal
-vector = extension_available true (sqlite-vec v0.1.9), enabled false
+vector = extension_available true, requested false, enabled false, reason="配置关闭"
 llm    = glm-5.2, credentials 1
          pool[0] key=sk-…  healthy=true  cooldown_seconds=0
 ```
@@ -519,10 +519,13 @@ ASGI 服务器看到的 TCP peer，刻意不信任 `X-Forwarded-For`。如果前
 
 ### 检索结果里的 `degraded=true` 是什么意思
 
-不是故障。2026-08-04 实测网关未注册任何 embedding / rerank 模型，所以
+配置主动关闭时不是故障。2026-08-04 实测网关未注册任何 embedding / rerank 模型，所以
 `config.yaml` 里 `retrieval.vector.enabled` 与 `rerank.enabled` 都是 `false`，
 检索走 BM25 + 实体精确 + 词缀意图三路，`degraded` 标记的是「向量通道未参与」。
-将来运维在网关上注册了 embedding 模型，只改配置即可启用，代码无需改动。
+`/healthz` 会分开报告配置请求值 `requested` 与运行时有效值 `enabled`。即使配置误设为
+`true`，扩展不可加载、`chunk_vec` 未建立或查询适配器尚未接入时也会自动按关闭处理，
+在启动日志、健康检查和检索附注中写明原因，不会把一个未执行的 `vector` 通道列进元数据；
+BM25 与实体精确检索继续可用。
 
 ---
 
@@ -608,7 +611,7 @@ PoB 排 P2 而不是 P1：它在数值上更接近一手，但不含中文名与
 .venv/bin/python -m unittest discover -s tests -t .
 ```
 
-目前 1531 项，其中与「无据不答」直接相关的：
+目前 1541 项，其中与「无据不答」直接相关的：
 
 | 组 | 项数 | 重点 |
 | --- | --- | --- |
