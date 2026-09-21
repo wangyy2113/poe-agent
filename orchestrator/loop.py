@@ -825,6 +825,11 @@ _YIELDS_TO_ENUMERATION = frozenset(
 
 
 _PREFERRED_TOOL_INTENTS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    # 实时价格不在静态 chunk 中；由代码直连受控数据源并确定性渲染。
+    # 不收裸「成本」：制作成本需要完整工艺路径，本工具只查单个市场条目。
+    ("economy_price_lookup", (
+        "价格", "多少钱", "多少C", "多少c", "值多少", "行情", "市价", "市场价",
+    )),
     # 词缀档位 / 物品等级 / 权重：kb_search 只能命中一张卡再读表格，容易读错行
     ("mod_tiers", (
         "几档", "多少档", "有几级", "档位", "阶级", "梯度", "T级", "t级",
@@ -1565,6 +1570,7 @@ def _resistance_args(question: str) -> dict[str, Any] | None:
 #: 「我有 10000 护甲能减多少伤害」**碰巧**也拒答了，但拒答理由是「工具没返回证据」
 #: 而不是工具想说的「你没给这一击的伤害」——契约过了、机制却是坏的。
 _CODE_INVOKED_TOOLS: dict[str, Any] = {
+    "economy_price_lookup": lambda question: {"query": question, "category": "auto"},
     # 路由时已确认该名字在别名表里命中，参数就是问题本身
     "entity_lookup": lambda question: {"name": question},
     # 无参数
@@ -1587,6 +1593,11 @@ _CODE_INVOKED_TOOLS: dict[str, Any] = {
 #: 这些工具按设计**不产出引用**（覆盖声明是元信息不是游戏事实）。
 #: 「一条证据都没拿到就走缺据」的兜底要放过它们，否则它们永远进不了生成。
 _TOOLS_WITHOUT_CITATIONS = frozenset({"kb_coverage"})
+
+
+def _economy_answer(tool_result: ToolResult) -> str:
+    """实时价格也由代码生成，防止模型改写数值或漏掉新鲜度限定。"""
+    return str((tool_result.data or {}).get("answer") or "").strip()
 
 
 def _coverage_answer(tool_result: ToolResult) -> str:
@@ -2188,7 +2199,7 @@ def _prepare_turn(question: str, result: TurnResult) -> _TurnSetup:
     gate_refused = False
     if precision_tool:
         result.retrieval_meta["precision_route"] = precision_tool
-    else:
+    elif preferred_tool != "economy_price_lookup":
         # 精确路由不过这道闸：那类问题的维度由工具自己的缺据字段负责声明。
         # 其余情况一律走 `_apply_dimension_gate`（它内部无条件问覆盖层）。
         # **这里曾内联过一份等价实现**，而那个函数就在同一个文件里、还带着这道闸门
@@ -2260,6 +2271,16 @@ def _prepare_turn(question: str, result: TurnResult) -> _TurnSetup:
         and preferred_result.ok
     ):
         setup.final = _coverage_answer(preferred_result)
+        return setup
+    if preferred_tool == "economy_price_lookup" and preferred_result is not None:
+        if preferred_result.ok:
+            setup.final = _economy_answer(preferred_result)
+        else:
+            result.evidence_gap = True
+            setup.gap = (
+                f"实时经济价格不可用（{preferred_result.error}）。"
+                "没有可用快照时不猜测价格，请稍后重试。"
+            )
         return setup
 
     # 偏好工具已由代码调过、却一条证据都没给出，且检索侧也没有 → **不进生成**。

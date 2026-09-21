@@ -46,9 +46,10 @@
 
 ### 1. 别名精确命中会掩盖「维度无数据」（2 条漏出）
 
-- `gap_price_headhunter`「猎首现在值多少混沌石」→ alias 命中 `unique_item:Headhunter`
-  → `sufficient=true`，理由「实体精确命中」。但价格维度 `economy_price = not_collected`，
-  库里一个字都没有。
+- `gap_price_headhunter`「猎首现在值多少混沌石」最初曾因 alias 命中
+  `unique_item:Headhunter` 而错误放行；维度闸门曾用它验证“实体存在不等于价格存在”。
+  2026-09-21 接入 poe.watch 后，该用例改为正向路由：必须命中
+  `economy_price_lookup`，并由代码返回带联盟、抓取时间、缓存/陈旧与置信度的快照。
 - `gap_passive_path_cost`「从起点点到神威之盾要花几个天赋点」→ alias 命中天赋节点
   → 判充分。但 `passive_tree` 的 `partial_note` 明确写着「天赋点消耗与连接关系未入库」。
 
@@ -5109,7 +5110,7 @@ PoB 的 `PlayerStat` 是最终快照，不包含完整计算 breakdown。直接�
 
 双档建议同样只从已知事实出发：元素抗性、混沌抗性或法压低于明确上限时，分别生成
 低预算与高预算方案。预期收益写成当前值到目标值的差额；抗性的承受倍率变化由公式直接
-计算。项目尚未接入赛季经济价格，因此成本只诚实标注为单一词缀、单件装备或多部位重构，
+计算。项目虽已接入标准条目价格快照，但缺完整制作路径，因此成本只诚实标注为单一词缀、单件装备或多部位重构，
 不编造 chaos/divine 数字。未知指标不触发建议，EHP / Max Hit 等也不在没有内容门槛时
 擅自判弱。
 

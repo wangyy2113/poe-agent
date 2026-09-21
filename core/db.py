@@ -1316,6 +1316,22 @@ CREATE TABLE IF NOT EXISTS source_conflict (
 );
 CREATE INDEX IF NOT EXISTS idx_conflict_kind ON source_conflict(kind, resolved);
 
+-- ── 实时经济快照（poe.watch）──
+-- 价格数据不进入知识卡片：它有独立 TTL，且每次回答必须携带抓取时间与陈旧标记。
+-- payload 保留上游原始 JSON，避免上游增加字段时必须先迁表；content_hash 用于观测
+-- 快照是否真的变化。每个联盟/类别只保留最新一份，数据库仍是可整体备份的单文件。
+CREATE TABLE IF NOT EXISTS economy_snapshot (
+    source       TEXT NOT NULL,
+    league       TEXT NOT NULL,
+    category     TEXT NOT NULL,
+    fetched_at   TEXT NOT NULL,
+    payload      TEXT NOT NULL CHECK(json_valid(payload)),
+    content_hash TEXT NOT NULL CHECK(content_hash <> ''),
+    PRIMARY KEY(source, league, category)
+);
+CREATE INDEX IF NOT EXISTS idx_economy_snapshot_fetched
+    ON economy_snapshot(fetched_at);
+
 -- ── 知识库自描述：覆盖声明 ──
 -- 为什么要落库而不是每次现算：它要注入 system prompt、要供缺据声明归因、
 -- 要让 kb_search 的 category 枚举说真话，三处都在请求路径上，每次扫全库不合适。

@@ -1,0 +1,55 @@
+"""实时经济价格 API。"""
+
+from __future__ import annotations
+
+from typing import Any, Literal
+
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
+
+from api.deps import require_user
+from economy.service import EconomyUnavailable, InvalidEconomyQuery
+from tools.impl.economy import render_price, service_from_config
+
+router = APIRouter(tags=["经济"])
+
+
+class PriceRequest(BaseModel):
+    query: str = Field(min_length=1, max_length=200)
+    category: Literal["auto", "unique", "currency", "scarab", "card", "fragment"] = "auto"
+    league: str | None = Field(default=None, max_length=100)
+
+
+class PriceResponse(BaseModel):
+    found: bool
+    query: str
+    resolved_name: str
+    requested_category: str
+    categories_searched: list[str]
+    league: str
+    source: str
+    source_url: str
+    fetched_at: str
+    from_cache: bool
+    stale: bool
+    degraded: bool
+    warning: str
+    prices: list[dict[str, Any]]
+    answer: str
+
+
+@router.post("/economy/price", response_model=PriceResponse)
+def price(req: PriceRequest, _caller: str = Depends(require_user)) -> PriceResponse:
+    try:
+        result = service_from_config().price(
+            req.query, category=req.category, league=req.league
+        )
+    except InvalidEconomyQuery as exc:
+        raise HTTPException(status_code=422, detail={
+            "error": "invalid_economy_query", "reason": str(exc),
+        }) from exc
+    except EconomyUnavailable as exc:
+        raise HTTPException(status_code=503, detail={
+            "error": "economy_unavailable", "reason": str(exc),
+        }) from exc
+    return PriceResponse(**result.as_dict(), answer=render_price(result))

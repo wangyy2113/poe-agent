@@ -25,6 +25,7 @@ from fastapi.staticfiles import StaticFiles
 from api import normalize_base_path
 from api.admin import router as admin_router
 from api.chat import router as chat_router
+from api.economy import router as economy_router
 from api.build import router as build_router
 from api.item import router as item_router
 from api.search import router as search_router
@@ -86,6 +87,16 @@ def health() -> dict[str, Any]:
             "entities": conn.execute("SELECT count(*) FROM entity").fetchone()[0],
             "chunks": conn.execute("SELECT count(*) FROM chunk").fetchone()[0],
             "aliases": conn.execute("SELECT count(*) FROM alias").fetchone()[0],
+        }
+        economy_row = conn.execute(
+            "SELECT count(*) AS snapshots, max(fetched_at) AS latest "
+            "FROM economy_snapshot WHERE category <> '__leagues__'"
+        ).fetchone()
+        out["economy"] = {
+            "enabled": bool(cfg.get("economy.enabled", True)),
+            "source": "poe.watch",
+            "cached_snapshots": int(economy_row["snapshots"] or 0),
+            "latest_fetched_at": economy_row["latest"],
         }
     except Exception as exc:  # noqa: BLE001
         out["status"] = "degraded"
@@ -150,6 +161,7 @@ def create_app() -> FastAPI:
     api.add_api_route("/healthz", health, methods=["GET"], tags=["运维"])
     api.include_router(search_router)
     api.include_router(chat_router)
+    api.include_router(economy_router)
     api.include_router(item_router)
     api.include_router(build_router)
     api.include_router(screenshot_router)

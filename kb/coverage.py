@@ -94,6 +94,8 @@ class DomainSpec:
     pob_files: tuple[str, ...] = ()
     #: status=partial 时必须说明缺什么。
     partial_note: str = ""
+    #: 由请求时实时查询的能力，不要求先在静态表里存在一条记录。
+    live_source: bool = False
     #: `partial_note` 里那些未覆盖维度的**意图词**，供 `dimension_gap()` 判定。
     #:
     #: 为什么要有机器可读的一份：`partial_note` 是给人看的散文，判定不能去匹配散文。
@@ -922,11 +924,11 @@ DOMAINS: tuple[DomainSpec, ...] = (
         partial_note=(
             "已入库 **118 个圣甲虫**：中英文名、效果原文、堆叠上限与"
             "**地图装置放置上限**（页面上的「限制」，与堆叠上限是两回事）；"
-            "**未采集**：掉落来源与获取途径、价格（属「市场价格」域）、"
+            "**未采集**：掉落来源与获取途径；价格由 `economy_price_lookup` 实时查询；"
             "以及页面上那 7 张「提到圣甲虫的词缀表」（地图/箱子词缀、工艺台解锁、密教成员阶级）"
         ),
         missing_dimension_hints=(
-            "怎么获得", "哪里获得", "哪里刷", "掉落", "价格", "多少钱", "值多少", "兑换",
+            "怎么获得", "哪里获得", "哪里刷", "掉落", "兑换",
         ),
     ),
     # ── 经济系统 ──
@@ -957,12 +959,11 @@ DOMAINS: tuple[DomainSpec, ...] = (
             "区块列命运卡兑换途径；`/cn/Divination_Card` 列表页 404）——"
             "与 Boss 打法同一类，问到要说「本库未采集该维度」并给权威来源，"
             "**不能说成「查不到」**；"
-            "**未采集**：兑换比例、碎片合成数量，以及价格"
-            "（价格属「市场价格」域，经济源未接入）。"
+            "**未采集**：兑换比例与碎片合成数量；价格由 `economy_price_lookup` 实时查询。"
             "圣甲虫已单列成域（2026-08-19 第十七轮入库）"
         ),
-        # 「多少钞」是社区对混沌石价格的说法。价格问题会同时命中 economy_price 域，
-        # 这里也列上是为了在只问通货时也拦住——两处都拦不冲突，漏一处才是问题。
+        # 价格维度已由 live-source 工具接管，不再把价格词列为通货静态表的缺口；
+        # 否则覆盖声明会一边说已接入、一边又把同一问句标成未采集。
         #
         # **「怎么获得」第五十一轮试着删过，又加回来了**——记下来免得下次再删一遍。
         # 商店配方入库后这个问题**部分**答得出来（拿什么换什么），看起来该放行；
@@ -981,8 +982,7 @@ DOMAINS: tuple[DomainSpec, ...] = (
         # 留着这段是因为当时的推理里混了两个理由，其中一个现在不成立了，
         # 而另一个仍然成立；不写清楚，下次读的人会以为整段都过期了。
         missing_dimension_hints=(
-            "怎么获得", "哪里获得", "哪里刷", "掉落", "兑换", "多少钞", "价格", "多少钱",
-            "值多少", "合成", "几个碎片",
+            "怎么获得", "哪里获得", "哪里刷", "掉落", "兑换", "合成", "几个碎片",
         ),
     ),
     DomainSpec(
@@ -990,10 +990,22 @@ DOMAINS: tuple[DomainSpec, ...] = (
         display_zh="市场价格",
         category=Category.ECONOMY,
         authority_url="https://api.poe.watch",
-        count_sql=None,
+        # 这是实时 API 能力而不是静态语料。实际每次回答仍由工具校验上游/缓存
+        # 可用性，不把「适配器已接入」误写成「上游永不失败」。
+        live_source=True,
+        tools=("economy_price_lookup",),
         hints=("价格", "多少钱", "多少C", "值多少", "成本", "行情"),
-        question_hints=("某物品当前价格", "某制作方案的通货成本"),
-        note="经济源未接入。缺它，任何「多少钱 / 期望消耗」的问题都无法回答",
+        question_hints=("唯一装备 / 通货 / 圣甲虫 / 命运卡 / 碎片的当前联盟价格",),
+        partial_note=(
+            "已接入 poe.watch 实时快照与 SQLite TTL 缓存，可查唯一装备、通货、圣甲虫、"
+            "命运卡和碎片；每条结果带联盟、抓取时间、缓存/陈旧状态与低置信度标记。"
+            "**未覆盖**：稀有装备估值、制作方案成本、趋势、利润与 Flip 建议"
+        ),
+        missing_dimension_hints=(
+            "稀有装备估值", "制作成本", "制作方案成本", "成本", "趋势", "利润", "Flip",
+            "倒卖", "套利",
+        ),
+        note="poe.watch 市场统计快照；mean/min/max 不代表保证成交价",
     ),
     # ── 联盟机制 ──
     DomainSpec(
@@ -1171,7 +1183,7 @@ def probe(
             or 0
         )
 
-        if count:
+        if count or spec.live_source:
             status: Status = "partial" if spec.partial_note else "ingested"
         else:
             harvested = False
@@ -1260,10 +1272,15 @@ def load(conn: sqlite3.Connection) -> list[DomainStatus]:
             # 不要静默当它不存在。
             logger.warning("kb_coverage 里有未声明的领域 %s，已忽略", r["domain_key"])
             continue
+        stored_status = r["status"]
+        if spec.live_source:
+            # 实时能力随代码部署生效，不应被旧版 kb_coverage 快照里的
+            # not_collected 卡住；上游当次不可用由工具自己的降级契约报告。
+            stored_status = "partial" if spec.partial_note else "ingested"
         out.append(
             DomainStatus(
                 spec=spec,
-                status=r["status"],
+                status=stored_status,
                 item_count=r["item_count"] or 0,
                 chunk_count=r["chunk_count"] or 0,
                 channels=json.loads(r["channels"] or "[]"),
