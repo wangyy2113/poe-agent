@@ -418,6 +418,12 @@ cases:
     expect_tool: harvest_reforge_state
     note: 明确 Harvest 重铸与装备状态 → 原文状态机；不得把保底标签扩写成具体词缀或成功率
 
+  - id: route_harvest_modifier_state
+    query: 收获能把火焰抗性转成冰霜抗性吗
+    kind: tool_route
+    expect_tool: harvest_modifier_state
+    note: 元素词缀近似位阶转换走确定性状态机；未给来源词缀状态时结论必须保持 unknown
+
   - id: desc_lifeforce_usage
     query: 狂野紫晶命能有什么用
     kind: description

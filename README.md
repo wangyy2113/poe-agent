@@ -31,7 +31,7 @@ POE1 的机制耦合极深，一个错误的小前提会让整条结论反向。
 | 实时经济价格与材料清单成本 | `POST /economy/price` + `economy_price_lookup`：poe.watch 当前/指定联盟的唯一装备、通货、圣甲虫、命运卡、碎片价格；`POST /economy/material-cost` + `economy_material_cost`：对用户明确给出的材料与数量逐项计算 mean/min/max 小计和总计。SQLite 30 分钟 TTL，刷新失败降级旧快照，超过 6 小时显式标陈旧；每项输出来源、联盟、抓取时间与低置信度标记。**不生成制作材料或路径，不含稀有装备估值、成功率、趋势、利润与 Flip 建议** |
 | Boss 技能伤害 | 10 条 Boss 技能的伤害建模 + 22 个 Boss 的护甲/闪避倍率；`boss_skill_damage` 按 `monsterDamageTable` 与 PoB 系数算出某等级的一击伤害（谢勒的球 84 级 9,588–14,382 冰霜），未指定掷骰区间时给两端。**只给伤害建模，不给打法**——技能机制、阶段与应对未采集；数字是 PoB 建模值，GGG 未公布 |
 | 制作规则（名额） | 7 条前后缀名额规则（魔法 1+1、稀有 3+3、传奇不受限制、药剂随魔法，另有 PoB 独有的珠宝/Graft 2+2 与「已腐化深渊珠宝回到 3+3」）；`check_mod_combination` 因此**第一次能返回 `possible`**，超名额则 `impossible`。`possible` 的含义是「这些词缀能共存」而非「能做出来」；**影响力条件与元词缀状态机仍未采集** |
-| 收获（古灵庄园） | 74 条定向工艺 + 98 条命能费用（效果原文与原始费用，费用通货按 GGG 元数据路径与通货表逐条对账 5/5）；其中 20 条装备重铸由 `harvest_reforge_state` / `POST /craft/harvest/reforge` 做稀有度、影响状态、保底标签与条件后状态判定；另有 **51 个种子怪物**按颜色对应四种命能中的三种（`harvest_seed_lookup`）；**掉落数量与概率、成功率与权重未采集** |
+| 收获（古灵庄园） | 74 条定向工艺 + 98 条命能费用；其中 20 条装备重铸由 `harvest_reforge_state` 判断，另 23 条元素转换与新增/移除词缀由 `harvest_modifier_state` 判断，合计覆盖 43 条装备词缀操作及其 66 条费用子项；另有 **51 个种子怪物**按颜色对应四种命能中的三种（`harvest_seed_lookup`）；**材料转换、牺牲与附魔仍只在目录层，掉落数量与概率、成功率与权重未采集** |
 | 精华 | 精华**赋予的词缀** 5985 条（在 `mod_affix`，已渲染进词缀组卡）+ **精华物品本身** 105 件（等阶 / 堆叠上限 / 等级上限 / 基础效果 / 632 行逐装备类别的保底词缀），与 PoB `Data/Essence.lua` 逐项对账（条数 105/105、装备类别数两侧均 22、tier 104/105，唯一分歧登记为 `essence_review`）；`essence_operation_state` / `POST /craft/essence` 按原文判断普通升级、稀有重置、物等上限与类别保底词缀；**掉落来源与兑换成本未采集** |
 | 万神殿 | 12 位神祇、32 层神力、41 条词缀（中文词缀、抓获的头目与地图、给予神力的章节与任务；PoB × POEDB 两侧 `(stat_id, value)` 逐条对账全对）；**启用规则与神之容器的机制说明未采集** |
 | 地图 | 159 张（等阶、头目、额外目标、命运卡、工艺台配方、图鉴相邻地图）+ 361 条地图词缀；**内部布局未采集** |
@@ -383,7 +383,20 @@ curl -s -X POST http://127.0.0.1:8787/poe_agent/craft/harvest/reforge \
 ```
 
 响应保留页面原文“其中包括一个火焰词缀”和原始命能费用，但不把保底标签改写成具体词缀，
-也不把“大概率”换算成数值概率。转换、牺牲与附魔仍只作为目录记录，不会被猜成装备重铸。
+也不把“大概率”换算成数值概率。元素词缀转换与新增/移除由下一个独立端点处理；
+材料转换、牺牲与附魔仍只作为目录记录，不会被猜成装备重铸。
+
+**Harvest 定向词缀状态转移** —— `POST /craft/harvest/modifier`。支持 12 条元素伤害/抗性
+近似位阶转换，以及 11 条新增指定标签并从不受影响物品移除另一个随机词缀。
+
+```bash
+curl -s -X POST http://127.0.0.1:8787/poe_agent/craft/harvest/modifier \
+  -H 'Content-Type: application/json' \
+  -d '{"operation":"火焰抗性转冰霜抗性","source_modifier_present":true}'
+```
+
+该例返回 `compatible`、火焰抗性 → 冰霜抗性的条件变化和原始费用。输出只保留
+“近似位阶”，不声称相同位阶；新增/移除类也只给标签与随机移除语义，不猜具体词缀。
 
 **装备分析** —— `POST /item`，把游戏内复制的装备文本变成结构化报告。
 
@@ -646,7 +659,7 @@ PoB 排 P2 而不是 P1：它在数值上更接近一手，但不含中文名与
 ### 评测：四项指标与黄金问答集
 
 `config.yaml` 里的阈值与 `orchestrator/binding.py` 的闸门规则都需要判据，否则改动之后
-无法判断是变好还是变坏。判据来自 `tests/golden/questions.yaml`（152 条，六类样本：
+无法判断是变好还是变坏。判据来自 `tests/golden/questions.yaml`（153 条，六类样本：
 专名 / 描述性 / 数值 / 跨来源 / **确定不覆盖** / 工具路由），基线与结论记在
 `tests/golden/BASELINE.md`。
 
@@ -677,7 +690,7 @@ PoB 排 P2 而不是 P1：它在数值上更接近一手，但不含中文名与
 .venv/bin/python -m unittest discover -s tests -t .
 ```
 
-目前 1618 项，其中与「无据不答」直接相关的：
+目前 1632 项，其中与「无据不答」直接相关的：
 
 | 组 | 项数 | 重点 |
 | --- | --- | --- |
@@ -715,6 +728,7 @@ agents/                 领域 Agent：提示词 + 允许工具集 + 输出契�
 tools/                  工具注册与实现。顺序即推荐优先级：
                           economy_price_lookup / economy_material_cost / affix_pool_odds / check_mod_combination
                           / craft_operation_state / essence_operation_state / harvest_reforge_state
+                          / harvest_modifier_state
                           / bench_recipe_catalog
                           / metamod_interaction_matrix / mod_tiers / skill_gem_levels
                           / spectre_stats / passive_path / cluster_jewel_info
@@ -728,6 +742,7 @@ craft/                  制作分析：feasibility.py 组合三态可行性 / po
                           / operations.py 基础通货保守状态转移
                           / essence_operations.py 精华原文约束与保底词缀状态转移
                           / harvest_operations.py 20 条 Harvest 装备重铸状态转移
+                          / harvest_modifier_operations.py 23 条 Harvest 定向词缀状态转移
 calc/                   常量访问层与计算器（constants.py 缺失即抛异常 / derive.py 推导件
                           / resistance.py 抗性
                           / mitigation.py 受击结算
