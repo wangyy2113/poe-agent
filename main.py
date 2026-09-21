@@ -25,6 +25,7 @@ from fastapi.staticfiles import StaticFiles
 from api import normalize_base_path
 from api.admin import router as admin_router
 from api.chat import router as chat_router
+from api.craft import router as craft_router
 from api.economy import router as economy_router
 from api.build import router as build_router
 from api.item import router as item_router
@@ -162,6 +163,7 @@ def create_app() -> FastAPI:
     api.include_router(search_router)
     api.include_router(chat_router)
     api.include_router(economy_router)
+    api.include_router(craft_router)
     api.include_router(item_router)
     api.include_router(build_router)
     api.include_router(screenshot_router)

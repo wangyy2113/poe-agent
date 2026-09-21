@@ -1542,6 +1542,12 @@ cases:
     expect_tool: bench_recipe_catalog
     note: 工艺台目录/原始费用 → bench_recipe_catalog，不得改写成制作步骤
 
+  - id: route_craft_operation_state
+    query: 稀有装备 2 条前缀 3 条后缀还能用崇高石吗
+    kind: tool_route
+    expect_tool: craft_operation_state
+    note: 基础通货操作状态与已知名额 → craft_operation_state；不得改写成制作路线或成功率
+
   - id: route_spectre_stats
     query: 生命倍率最高的幽魂是哪个
     kind: tool_route

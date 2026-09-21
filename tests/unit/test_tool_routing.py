@@ -214,6 +214,25 @@ class PreferredRouteTest(unittest.TestCase):
             loop._material_cost_args("10 个神圣石一共多少钱"),
         )
 
+    def test_explicit_currency_operation_routes_to_state_machine(self) -> None:
+        question = "稀有装备 2 条前缀 3 条后缀还能用崇高石吗"
+        self.assertEqual("craft_operation_state", loop._preferred_tool_route(question))
+        self.assertEqual({
+            "operation": "崇高石",
+            "rarity": "稀有",
+            "prefix_count": 2,
+            "suffix_count": 3,
+        }, loop._craft_operation_args(question))
+
+    def test_currency_price_still_routes_to_economy_not_operation(self) -> None:
+        question = "崇高石现在多少钱"
+        self.assertIsNone(loop._craft_operation_args(question))
+        self.assertEqual("economy_price_lookup", loop._preferred_tool_route(question))
+
+    def test_generic_craft_plan_does_not_invent_an_operation(self) -> None:
+        self.assertIsNone(loop._craft_operation_args("这把毕业弓应该怎么做"))
+        self.assertNotEqual("craft_operation_state", loop._preferred_tool_route("这把毕业弓应该怎么做"))
+
 
 class FirstRoundToolsTest(unittest.TestCase):
     """网关忽略 tool_choice，所以「强制」靠裁剪 schema。"""

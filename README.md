@@ -40,6 +40,7 @@ POE1 的机制耦合极深，一个错误的小前提会让整条结论反向。
 | 怪物数据 | 怪物词缀 183 条（有中文文本的）+ 可作幽魂怪物 1948 个与其伤害% / 生命%，其中 268 个另有 PoB 的四抗性与建模系数；倍率排名在这 268 个里做；**Boss 技能与打法、掉落、怪物技能说明未采集** |
 | 跨来源冲突 | 幽魂对账给出 8 条已确认分歧 → 答案里并列双方并推荐 POEDB（需求 15.5 首次可验收）；43 条粒度差异单列，不当冲突呈现 |
 | 元词缀矩阵 | 页面矩阵 134 条（operation × guard，5 个小节）；空白格只进审计、不成为证据 |
+| 基础通货状态机 | `craft_operation_state` / `POST /craft/operation`：按 POEDB 效果原文模拟增幅、崇高、重铸、神圣、剥离、改造、混沌、富豪、机会、点金 10 种基础通货；检查稀有度与前后缀名额，输出三态结论和条件后状态；特殊状态与来源未说明字段保持未知，**不生成结果词缀、成功率、步骤、成本或路线** |
 | 跨来源对账 | 词缀区间一致 86.4%、唯一装备实质字段一致 83.5%，差异登记待核对 |
 | 游戏常量 | `calc/constants.py`，逐个常量可溯源到 GGG 原始表；**缺失即抛异常，不给默认值** |
 | 受击结算 | `calc/mitigation.py` + `mitigation_calc` 工具：闪避与命中率（怪物命中值取自库里的等级表）、格挡几率与上限、法术压制（减 **40%** 不是 50%）、护甲对某一击的减伤（**护甲不是固定百分比减伤**，不给伤害数值就没有答案）。**不含头目的护甲/闪避倍率** |
@@ -346,6 +347,19 @@ curl -s -X POST http://127.0.0.1:8787/poe_agent/economy/material-cost \
 若任一材料未找到、同名结果不唯一或缺少均价，`calculable=false` 且总均价为空，绝不会把
 已查到的部分冒充完整总成本。它只计算输入清单，不会反推某件装备需要哪些材料、成功率或工艺步骤。
 
+**基础通货状态转移** —— `POST /craft/operation`。支持 10 种已审计基础通货，输入可为
+稀有度与前后缀计数，也可直接给完整装备复制文本；两种状态输入不能混用。
+
+```bash
+curl -s -X POST http://127.0.0.1:8787/poe_agent/craft/operation \
+  -H 'Content-Type: application/json' \
+  -d '{"operation":"崇高石","rarity":"稀有","prefix_count":2,"suffix_count":3}'
+```
+
+该例返回 `compatible`，条件后状态只能是 3 前缀 + 3 后缀。这里的兼容只证明 POEDB
+效果原文中的稀有度前提与结构化名额规则通过，不代表完整游戏可执行性；具体新增词缀、
+数值、概率、步骤、成本与路线仍保持未知。腐化、镜像、裂隙等特殊状态不会被擅自外推。
+
 **装备分析** —— `POST /item`，把游戏内复制的装备文本变成结构化报告。
 
 ```bash
@@ -607,7 +621,7 @@ PoB 排 P2 而不是 P1：它在数值上更接近一手，但不含中文名与
 ### 评测：四项指标与黄金问答集
 
 `config.yaml` 里的阈值与 `orchestrator/binding.py` 的闸门规则都需要判据，否则改动之后
-无法判断是变好还是变坏。判据来自 `tests/golden/questions.yaml`（148 条，六类样本：
+无法判断是变好还是变坏。判据来自 `tests/golden/questions.yaml`（150 条，六类样本：
 专名 / 描述性 / 数值 / 跨来源 / **确定不覆盖** / 工具路由），基线与结论记在
 `tests/golden/BASELINE.md`。
 
@@ -638,7 +652,7 @@ PoB 排 P2 而不是 P1：它在数值上更接近一手，但不含中文名与
 .venv/bin/python -m unittest discover -s tests -t .
 ```
 
-目前 1564 项，其中与「无据不答」直接相关的：
+目前 1583 项，其中与「无据不答」直接相关的：
 
 | 组 | 项数 | 重点 |
 | --- | --- | --- |
@@ -668,14 +682,14 @@ fixture 来源逐个标注在 `tests/unit/fixtures/items/README.md`——样本�
 main.py                 入口：装配 FastAPI + 进程内启动 uvicorn
 core/                   配置、SQLite、日志、LLM 客户端
 api/                    路由层：只做校验与编排调用，不写业务逻辑
-                          chat.py / search.py / economy.py / item.py / admin.py / deps.py（鉴权）
+                          chat.py / search.py / economy.py / craft.py / item.py / admin.py / deps.py（鉴权）
 economy/                poe.watch 适配、领域模型、SQLite 快照与降级策略
 orchestrator/           主循环、出口绑定闸门、引用装配
                           loop.py / binding.py / citation.py
 agents/                 领域 Agent：提示词 + 允许工具集 + 输出契约
 tools/                  工具注册与实现。顺序即推荐优先级：
                           economy_price_lookup / economy_material_cost / affix_pool_odds / check_mod_combination
-                          / bench_recipe_catalog
+                          / craft_operation_state / bench_recipe_catalog
                           / metamod_interaction_matrix / mod_tiers / skill_gem_levels
                           / spectre_stats / passive_path / cluster_jewel_info
                           / resistance_calc / mitigation_calc / recovery_calc / reservation_calc
@@ -685,6 +699,7 @@ tools/                  工具注册与实现。顺序即推荐优先级：
                           / stat_sources
                           / entity_lookup / kb_coverage / kb_search（兜底）
 craft/                  制作分析：feasibility.py 组合三态可行性 / pool.py 胸甲条件权重概率
+                          / operations.py 基础通货保守状态转移
 calc/                   常量访问层与计算器（constants.py 缺失即抛异常 / derive.py 推导件
                           / resistance.py 抗性
                           / mitigation.py 受击结算

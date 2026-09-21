@@ -827,6 +827,11 @@ V1 完成的判定标准（逐条实测，不以「无报错」代替验证）�
   - [x] Affix capacity v1：从 PoB `Item.lua` 与 POEDB 抽取 7 条容量规则，普通装备、
     药剂、珠宝、Graft 与腐化深渊珠宝按各自规则判断；装备字段不完整时保持 unknown
   - [ ] Operation semantics / state transition：按通货、精华、化石、Harvest、隐匿、Eldritch 等分别建立有据状态转移，不能从 normal raw odds 外推
+    - [x] 基础通货 v1：增幅、崇高、重铸、神圣、剥离、改造、混沌、富豪、机会、点金
+      10 种操作逐字绑定 `poedb_currency.effect_zh`；稀有度和结构化名额三态检查、条件后状态、
+      装备文本/API/聊天确定性出口已接通。来源文本漂移或腐化、镜像、裂隙等特殊状态保持 unknown；
+      不生成结果词缀、成功率、步骤、成本或路线
+    - [ ] 精华、化石、Harvest、隐匿与 Eldritch 操作语义
   - [ ] Economy adapter 与 Planner：接入价格、比较最快/最经济路线、逐步期望消耗；上述输入未齐前不得输出完整路线
 - [ ] Boss Agent：机制、防御门槛、药剂、流程；可结合已导入 Build
 - [x] 官方角色 API 导入 v1（2026-09-08）：接入 OAuth `account:characters` 的当前
