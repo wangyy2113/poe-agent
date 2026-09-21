@@ -1,8 +1,8 @@
 """Harvest 装备重铸操作的保守状态转移。
 
 只支持 ``harvest_craft`` 中 20 条可逐字分类的装备重铸原文，并携带其
-``harvest_craft_cost`` 原始费用。其它 Harvest 转换、牺牲与附魔继续停在目录层，
-不会被相似关键词误归为重铸语义。
+``harvest_craft_cost`` 原始费用。元素词缀转换与新增/移除由相邻领域模块处理；
+材料转换、牺牲与附魔继续停在目录层，不会被相似关键词误归为重铸语义。
 """
 
 from __future__ import annotations

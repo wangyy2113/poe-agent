@@ -1358,6 +1358,61 @@ def _harvest_reforge_args(question: str) -> dict[str, Any] | None:
     return args
 
 
+_HARVEST_REMOVE_ADD_TAGS = (
+    "冰霜", "攻击", "施法", "暴击", "混沌", "火焰",
+    "物理", "生命", "速度", "闪电", "防御",
+)
+
+
+def _harvest_modifier_args(question: str) -> dict[str, Any] | None:
+    """抽取 23 条 Harvest 定向词缀操作；不从操作名称臆测物品当前状态。"""
+    lowered = question.lower()
+    if "收获" not in question and "harvest" not in lowered:
+        return None
+    if any(term in question for term in ("多少命能", "费用", "成本", "多少钱")):
+        return None
+
+    conversion = re.search(
+        r"(冰霜|火焰|闪电)(伤害|抗性)(?:词缀)?.{0,10}?(?:转(?:为|成)?|变为|变成)"
+        r".{0,6}?(冰霜|火焰|闪电)(伤害|抗性)",
+        question,
+    )
+    args: dict[str, Any]
+    if conversion:
+        source, source_kind, target, target_kind = conversion.groups()
+        if source == target or source_kind != target_kind:
+            return None
+        args = {"operation": f"{source}{source_kind}转{target}{target_kind}"}
+        source_pattern = rf"(?:有|含|存在)(?:一个|一条)?{source}{source_kind}(?:词缀)?"
+        absent_pattern = rf"(?:没有|不含|不存在)(?:一个|一条)?{source}{source_kind}(?:词缀)?"
+        if re.search(absent_pattern, question):
+            args["source_modifier_present"] = False
+        elif re.search(source_pattern, question):
+            args["source_modifier_present"] = True
+    elif any(term in question for term in ("添加", "新增")) and any(
+        term in question for term in ("移除", "去掉")
+    ):
+        tags = [tag for tag in _HARVEST_REMOVE_ADD_TAGS if tag in question]
+        tags = list(dict.fromkeys(tags))
+        if len(tags) != 1 or "随机词缀" not in question:
+            return None
+        args = {"operation": f"新增{tags[0]}并移除随机词缀"}
+    else:
+        return None
+
+    if "不受影响" in question or "无影响力" in question:
+        args["influenced"] = False
+    elif "受影响" in question or "影响底材" in question or "有影响力" in question:
+        args["influenced"] = True
+    if "已腐化" in question:
+        args["corrupted"] = True
+    if "已镜像" in question or "已鏡像" in question:
+        args["mirrored"] = True
+    if "裂隙词缀" in question or "裂隙詞綴" in question:
+        args["fractured"] = True
+    return args
+
+
 def _preferred_tool_route(question: str) -> str:
     """代码决定本轮该先调哪个精确工具；无把握时返回空串，交回模型自选。
 
@@ -1373,6 +1428,9 @@ def _preferred_tool_route(question: str) -> str:
     essence_args = _essence_operation_args(question)
     if essence_args is not None:
         return "essence_operation_state"
+    harvest_modifier_args = _harvest_modifier_args(question)
+    if harvest_modifier_args is not None:
+        return "harvest_modifier_state"
     harvest_args = _harvest_reforge_args(question)
     if harvest_args is not None:
         return "harvest_reforge_state"
@@ -1805,6 +1863,7 @@ _CODE_INVOKED_TOOLS: dict[str, Any] = {
     "craft_operation_state": _craft_operation_args,
     "essence_operation_state": _essence_operation_args,
     "harvest_reforge_state": _harvest_reforge_args,
+    "harvest_modifier_state": _harvest_modifier_args,
     "economy_material_cost": _material_cost_args,
     "economy_price_lookup": lambda question: {"query": question, "category": "auto"},
     # 路由时已确认该名字在别名表里命中，参数就是问题本身
@@ -1833,6 +1892,7 @@ _DETERMINISTIC_DIRECT_TOOLS = frozenset({
     "economy_price_lookup", "economy_material_cost", "craft_operation_state",
     "essence_operation_state",
     "harvest_reforge_state",
+    "harvest_modifier_state",
 })
 
 

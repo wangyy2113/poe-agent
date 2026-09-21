@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field, model_validator
 from api.deps import require_user
 from tools.impl.craft_operation import craft_operation_state
 from tools.impl.essence_operation import essence_operation_state
+from tools.impl.harvest_modifier_operation import harvest_modifier_state
 from tools.impl.harvest_operation import harvest_reforge_state
 
 router = APIRouter(tags=["制作"])
@@ -131,6 +132,44 @@ class HarvestReforgeResponse(BaseModel):
     answer: str
 
 
+class HarvestModifierRequest(BaseModel):
+    operation: str = Field(min_length=1, max_length=180)
+    item_text: str | None = Field(default=None, max_length=20_000)
+    source_modifier_present: bool | None = None
+    influenced: bool | None = None
+    corrupted: bool = False
+    mirrored: bool = False
+    fractured: bool = False
+
+    @model_validator(mode="after")
+    def no_mixed_influence_state(self) -> "HarvestModifierRequest":
+        if self.item_text and self.influenced is not None:
+            raise ValueError("item_text 与手工 influenced 不能混用")
+        return self
+
+
+class HarvestModifierResponse(BaseModel):
+    found: bool
+    verdict: str
+    craft_id: str
+    effect_text: str
+    mode: str
+    source_modifier: str
+    target_modifier: str
+    guaranteed_tag: str
+    source: str
+    source_priority: int
+    source_url: str
+    fetched_at: str
+    costs: list[dict[str, Any]]
+    before: dict[str, Any]
+    after: dict[str, Any]
+    checks: list[dict[str, Any]]
+    unknown_fields: list[str]
+    boundary: str
+    answer: str
+
+
 @router.post("/craft/operation", response_model=CraftOperationResponse)
 def operation_state(
     req: CraftOperationRequest, _caller: str = Depends(require_user)
@@ -209,3 +248,29 @@ def harvest_state(
             "supported_operations": (result.data or {}).get("supported_operations", []),
         })
     return HarvestReforgeResponse(**result.data)
+
+
+@router.post("/craft/harvest/modifier", response_model=HarvestModifierResponse)
+def harvest_modifier_operation_state(
+    req: HarvestModifierRequest, _caller: str = Depends(require_user)
+) -> HarvestModifierResponse:
+    result = harvest_modifier_state(
+        operation=req.operation,
+        item_text=req.item_text,
+        source_modifier_present=req.source_modifier_present,
+        influenced=req.influenced,
+        corrupted=req.corrupted,
+        mirrored=req.mirrored,
+        fractured=req.fractured,
+    )
+    if not result.ok:
+        raise HTTPException(status_code=422, detail={
+            "error": "invalid_harvest_modifier_operation", "reason": result.error,
+        })
+    if not (result.data or {}).get("found"):
+        raise HTTPException(status_code=422, detail={
+            "error": "unsupported_harvest_modifier_operation",
+            "reason": "只支持 23 条已审计的元素转换与新增/移除操作，不按相似描述猜语义",
+            "supported_examples": (result.data or {}).get("supported_examples", []),
+        })
+    return HarvestModifierResponse(**result.data)
