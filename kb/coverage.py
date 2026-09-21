@@ -570,7 +570,10 @@ DOMAINS: tuple[DomainSpec, ...] = (
             "SELECT DISTINCT currency_name_zh FROM harvest_craft_cost "
             "WHERE currency_name_zh<>''"
         ),
-        tools=("harvest_craft_catalog", "harvest_reforge_state", "harvest_modifier_state"),
+        tools=(
+            "harvest_craft_catalog", "harvest_reforge_state", "harvest_modifier_state",
+            "harvest_quality_enchant_state",
+        ),
         hints=("收获", "园艺", "古灵庄园", "生命力", "命能"),
         question_hints=(
             "收获有哪些定向工艺选项",
@@ -578,6 +581,7 @@ DOMAINS: tuple[DomainSpec, ...] = (
             "某种命能能用来做什么",
             "20 条装备重铸对明确稀有度 / 影响状态的条件变化",
             "23 条元素转换或新增指定标签并移除随机词缀的条件变化",
+            "14 条护甲或武器品质附魔的类别检查与可确定收益",
         ),
         poedb_pages=("Horticrafting", "Harvest"),
         partial_note=(
@@ -590,6 +594,8 @@ DOMAINS: tuple[DomainSpec, ...] = (
             "相同词缀类型倾向与影响类型随机化，携带页面原始费用）；"
             "**23 条定向词缀状态转移 v1 已结构化**（12 条元素伤害/抗性近似位阶转换、"
             "11 条新增指定标签并移除随机词缀，携带 40 条原始费用子项）；"
+            "**14 条品质附魔状态转移 v1 已结构化**（8 条护甲、6 条武器，类别检查，"
+            "品质整除原文步长时计算替代收益，携带 14 条原始费用子项）；"
             "**未采集**：掉落数量与概率、成功率与权重、制作步骤、市场成本，"
             "以及同页 41 行催化剂等参考表"
         ),
@@ -607,8 +613,8 @@ DOMAINS: tuple[DomainSpec, ...] = (
             "**没有卡片，只有工具**（与工艺台同理）：74 条描述里 16 条只差一个词"
             "（「重铸……其中包括一个 X 词缀」），做成卡片会让 BM25 在近重复文本里"
             "互相挤掉。所以目录与状态转移均走结构化工具，`probe()` 报的 chunk 数是 0"
-            "不是缺陷。元素词缀转换与新增/移除有独立状态机；材料转换、牺牲与附魔"
-            "仍只在目录层。"
+            "不是缺陷。装备重铸、元素词缀转换、新增/移除与品质附魔有独立状态机；"
+            "材料转换与牺牲仍只在目录层。"
         ),
     ),
     # 注意：辛迪加给的是**隐匿**词缀（POEDB category=veiled，中文标签「隐匿」），

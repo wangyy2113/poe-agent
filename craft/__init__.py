@@ -12,6 +12,11 @@ from craft.essence_operations import (
     evaluate_essence_operation,
 )
 from craft.feasibility import analyze_feasibility
+from craft.harvest_enchant_operations import (
+    HarvestEnchantItemState,
+    HarvestEnchantResult,
+    evaluate_harvest_enchant,
+)
 from craft.harvest_modifier_operations import (
     HarvestModifierItemState,
     HarvestModifierResult,
@@ -28,6 +33,8 @@ __all__ = [
     "EssenceItemState",
     "EssenceOperationResult",
     "HarvestItemState",
+    "HarvestEnchantItemState",
+    "HarvestEnchantResult",
     "HarvestModifierItemState",
     "HarvestModifierResult",
     "HarvestOperationResult",
@@ -35,6 +42,7 @@ __all__ = [
     "OperationResult",
     "analyze_feasibility",
     "evaluate_essence_operation",
+    "evaluate_harvest_enchant",
     "evaluate_harvest_modifier_operation",
     "evaluate_harvest_reforge",
     "evaluate_operation",

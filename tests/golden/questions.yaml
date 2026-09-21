@@ -424,6 +424,12 @@ cases:
     expect_tool: harvest_modifier_state
     note: 元素词缀近似位阶转换走确定性状态机；未给来源词缀状态时结论必须保持 unknown
 
+  - id: route_harvest_quality_enchant_state
+    query: 收获护甲品质20%附魔成火焰抗性能加多少
+    kind: tool_route
+    expect_tool: harvest_quality_enchant_state
+    note: 品质整除原文步长时由代码计算替代收益；不得保留默认防御增益或猜非整步取整
+
   - id: desc_lifeforce_usage
     query: 狂野紫晶命能有什么用
     kind: description
