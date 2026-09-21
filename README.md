@@ -41,6 +41,7 @@ POE1 的机制耦合极深，一个错误的小前提会让整条结论反向。
 | 跨来源冲突 | 幽魂对账给出 8 条已确认分歧 → 答案里并列双方并推荐 POEDB（需求 15.5 首次可验收）；43 条粒度差异单列，不当冲突呈现 |
 | 元词缀矩阵 | 页面矩阵 134 条（operation × guard，5 个小节）；空白格只进审计、不成为证据 |
 | 基础通货状态机 | `craft_operation_state` / `POST /craft/operation`：按 POEDB 效果原文模拟增幅、崇高、重铸、神圣、剥离、改造、混沌、富豪、机会、点金 10 种基础通货；检查稀有度与前后缀名额，输出三态结论和条件后状态；特殊状态与来源未说明字段保持未知，**不生成结果词缀、成功率、步骤、成本或路线** |
+| 古灵通货状态机 | `eldritch_operation_state` / `POST /craft/eldritch`：逐字覆盖四档余烬、四档溶液、古灵混沌/崇高/剥离石与冲突石共 12 种；检查装备部位、首要影响、前后缀名额和双基底词缀状态，并列披露已有元词缀矩阵原值。随机结果、概率、未给出的档级推进与特殊状态保持未知 |
 | 跨来源对账 | 词缀区间一致 86.4%、唯一装备实质字段一致 83.5%，差异登记待核对 |
 | 游戏常量 | `calc/constants.py`，逐个常量可溯源到 GGG 原始表；**缺失即抛异常，不给默认值** |
 | 受击结算 | `calc/mitigation.py` + `mitigation_calc` 工具：闪避与命中率（怪物命中值取自库里的等级表）、格挡几率与上限、法术压制（减 **40%** 不是 50%）、护甲对某一击的减伤（**护甲不是固定百分比减伤**，不给伤害数值就没有答案）。**不含头目的护甲/闪避倍率** |
@@ -423,6 +424,18 @@ curl -s -X POST http://127.0.0.1:8787/poe_agent/craft/harvest/exchange \
 该例只确定输出为 0–10 张相同命运卡，不生成每个结果的概率。材料转换保留随机、同色、
 同位阶、同类别与“化石数量可能变少”等原文；页面费用与按堆叠比例缩放分开披露。
 
+**古灵通货状态转移** —— `POST /craft/eldritch`。覆盖 12 种古灵通货，并区分
+装备部位、焚界者/灭界者哪一方首要、目标侧前后缀名额与双基底词缀状态。
+
+```bash
+curl -s -X POST http://127.0.0.1:8787/poe_agent/craft/eldritch \
+  -H 'Content-Type: application/json' \
+  -d '{"operation":"古灵崇高石","rarity":"稀有","item_slot":"body_armour","dominance":"焚界者","prefix_count":2,"suffix_count":3}'
+```
+
+该例只确定添加一个随机前缀并把前缀计数变为 3；不会生成具体词缀或概率。
+冲突石只保留“随机升一降一、被降低的次级词缀移除”的原文边界，不推断确切档级推进。
+
 **装备分析** —— `POST /item`，把游戏内复制的装备文本变成结构化报告。
 
 ```bash
@@ -684,7 +697,7 @@ PoB 排 P2 而不是 P1：它在数值上更接近一手，但不含中文名与
 ### 评测：四项指标与黄金问答集
 
 `config.yaml` 里的阈值与 `orchestrator/binding.py` 的闸门规则都需要判据，否则改动之后
-无法判断是变好还是变坏。判据来自 `tests/golden/questions.yaml`（155 条，六类样本：
+无法判断是变好还是变坏。判据来自 `tests/golden/questions.yaml`（156 条，六类样本：
 专名 / 描述性 / 数值 / 跨来源 / **确定不覆盖** / 工具路由），基线与结论记在
 `tests/golden/BASELINE.md`。
 
@@ -715,7 +728,7 @@ PoB 排 P2 而不是 P1：它在数值上更接近一手，但不含中文名与
 .venv/bin/python -m unittest discover -s tests -t .
 ```
 
-目前 1661 项，其中与「无据不答」直接相关的：
+目前 1674 项，其中与「无据不答」直接相关的：
 
 | 组 | 项数 | 重点 |
 | --- | --- | --- |
@@ -752,7 +765,7 @@ orchestrator/           主循环、出口绑定闸门、引用装配
 agents/                 领域 Agent：提示词 + 允许工具集 + 输出契约
 tools/                  工具注册与实现。顺序即推荐优先级：
                           economy_price_lookup / economy_material_cost / affix_pool_odds / check_mod_combination
-                          / craft_operation_state / essence_operation_state / harvest_reforge_state
+                          / craft_operation_state / essence_operation_state / eldritch_operation_state / harvest_reforge_state
                           / harvest_modifier_state
                           / bench_recipe_catalog
                           / metamod_interaction_matrix / mod_tiers / skill_gem_levels

@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field, model_validator
 
 from api.deps import require_user
 from tools.impl.craft_operation import craft_operation_state
+from tools.impl.eldritch_operation import eldritch_operation_state
 from tools.impl.essence_operation import essence_operation_state
 from tools.impl.harvest_enchant_operation import harvest_quality_enchant_state
 from tools.impl.harvest_exchange_operation import harvest_exchange_state
@@ -94,6 +95,52 @@ class EssenceOperationResponse(BaseModel):
     guaranteed_modifier: dict[str, str] | None
     checks: list[dict[str, Any]]
     unknown_fields: list[str]
+    boundary: str
+    answer: str
+
+
+class EldritchOperationRequest(BaseModel):
+    operation: str = Field(min_length=1, max_length=80)
+    item_text: str | None = Field(default=None, max_length=20_000)
+    rarity: Literal["普通", "魔法", "稀有", "传奇"] | None = None
+    item_slot: Literal["body_armour", "boots", "gloves", "helmet", "other"] | None = None
+    dominance: Literal["焚界者", "灭界者", "平衡", "无"] | None = None
+    prefix_count: int | None = Field(default=None, ge=0, le=6)
+    suffix_count: int | None = Field(default=None, ge=0, le=6)
+    has_searing_implicit: bool | None = None
+    has_eater_implicit: bool | None = None
+    corrupted: bool = False
+    mirrored: bool = False
+    fractured: bool = False
+
+    @model_validator(mode="after")
+    def no_mixed_state(self) -> "EldritchOperationRequest":
+        manual = (
+            self.rarity, self.item_slot, self.dominance, self.prefix_count,
+            self.suffix_count, self.has_searing_implicit, self.has_eater_implicit,
+        )
+        if self.item_text and any(value is not None for value in manual):
+            raise ValueError("item_text 与手工状态字段不能混用")
+        return self
+
+
+class EldritchOperationResponse(BaseModel):
+    found: bool
+    verdict: str
+    operation: str
+    operation_en: str
+    metadata_id: str
+    effect_text: str
+    action: str
+    source: str
+    source_priority: int
+    source_url: str
+    fetched_at: str
+    before: dict[str, Any]
+    after: dict[str, Any]
+    checks: list[dict[str, Any]]
+    unknown_fields: list[str]
+    metamod_interactions: list[dict[str, Any]]
     boundary: str
     answer: str
 
@@ -291,6 +338,37 @@ def essence_state(
             "reason": "只接受本库 105 件精华的唯一精确名称，不按相似名称猜操作语义",
         })
     return EssenceOperationResponse(**result.data)
+
+
+@router.post("/craft/eldritch", response_model=EldritchOperationResponse)
+def eldritch_state(
+    req: EldritchOperationRequest, _caller: str = Depends(require_user)
+) -> EldritchOperationResponse:
+    result = eldritch_operation_state(
+        operation=req.operation,
+        item_text=req.item_text,
+        rarity=req.rarity,
+        item_slot=req.item_slot,
+        dominance=req.dominance,
+        prefix_count=req.prefix_count,
+        suffix_count=req.suffix_count,
+        has_searing_implicit=req.has_searing_implicit,
+        has_eater_implicit=req.has_eater_implicit,
+        corrupted=req.corrupted,
+        mirrored=req.mirrored,
+        fractured=req.fractured,
+    )
+    if not result.ok:
+        raise HTTPException(status_code=422, detail={
+            "error": "invalid_eldritch_operation", "reason": result.error,
+        })
+    if not (result.data or {}).get("found"):
+        raise HTTPException(status_code=422, detail={
+            "error": "unsupported_eldritch_operation",
+            "reason": "只支持 12 种已审计古灵通货，不按相似名称猜操作语义",
+            "supported_operations": (result.data or {}).get("supported_operations", []),
+        })
+    return EldritchOperationResponse(**result.data)
 
 
 @router.post("/craft/harvest/reforge", response_model=HarvestReforgeResponse)

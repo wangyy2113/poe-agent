@@ -436,6 +436,12 @@ cases:
     expect_tool: harvest_exchange_state
     note: 材料转换保留随机与可能缩小堆叠边界；不得生成具体化石、概率或完整费用
 
+  - id: route_eldritch_operation_state
+    query: 焚界者首要的稀有胸甲有2条前缀3条后缀，古灵崇高石能用吗
+    kind: tool_route
+    expect_tool: eldritch_operation_state
+    note: 古灵专用状态机优先于名称中包含的基础“崇高石”；只检查目标前缀侧名额，不猜具体词缀
+
   - id: desc_lifeforce_usage
     query: 狂野紫晶命能有什么用
     kind: description
