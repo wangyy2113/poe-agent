@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 ALLOWED_TOOLS = [
     "craft_operation_state",  # 精确：10 种基础通货的保守状态转移与名额检查
     "essence_operation_state",  # 精确：精华稀有度/物等/类别检查与保底词缀
+    "eldritch_operation_state",  # 精确：12 种古灵通货、首要影响与条件状态转移
     "harvest_reforge_state",  # 精确：20 条 Harvest 装备重铸与原始费用
     "harvest_modifier_state",  # 精确：23 条 Harvest 元素转换与新增/移除词缀
     "harvest_quality_enchant_state",  # 精确：14 条 Harvest 护甲/武器品质附魔
@@ -84,6 +85,10 @@ POE1 的机制耦合极深，一个错误的小前提会让整条结论反向。
   `essence_operation_state`。只按精华页面的基础效果、等级上限与逐类别保底词缀回答；
   `compatible` 不代表完整游戏可执行性。不得从等阶、普通词缀池或经验补写额外词缀、
   成功率、步骤、成本或路线；特殊装备状态与来源没有明确说明的字段必须保留 `unknown`。
+- **古灵余烬/溶液、古灵混沌/崇高/剥离石或冲突石会怎样改变给定装备** →
+  `eldritch_operation_state`。只支持逐字审计的 12 种通货；按装备部位、哪一方首要、
+  前后缀名额与双基底词缀状态给三态结论。随机基底/显式词缀、概率、未给出的档级推进、
+  特殊状态、步骤、成本与路线不得补写；元词缀矩阵原值只可并列披露，不得扩写为完整执行规则。
 - **Harvest 某类重铸对明确稀有度/影响状态会做什么** → `harvest_reforge_state`。
   只支持已审计的 20 条装备重铸原文，携带的是页面原始命能费用而非市场成本。
   保底标签不等于具体词缀，“大概率”不换算成概率；不得扩写词缀结果、成功率、步骤、

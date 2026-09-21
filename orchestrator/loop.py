@@ -1293,6 +1293,64 @@ def _essence_operation_args(question: str) -> dict[str, Any] | None:
     return args
 
 
+_ELDRITCH_OPERATION_SIGNALS = (
+    "能用", "可以用", "能不能用", "会怎样", "会变", "效果", "结果", "状态转移",
+    "添加", "移除", "重置", "提高", "降低",
+)
+
+
+def _eldritch_operation_args(question: str) -> dict[str, Any] | None:
+    """抽取具名古灵通货和用户明确给出的状态，不推断影响力强弱。"""
+    if any(term in question for term in ("多少钱", "价格", "成本", "哪里刷", "怎么获得")):
+        return None
+    if not any(signal in question for signal in _ELDRITCH_OPERATION_SIGNALS):
+        return None
+    try:
+        from craft.eldritch_operations import ELDRITCH_SPECS  # noqa: PLC0415
+    except Exception:  # noqa: BLE001
+        return None
+    matched = [
+        spec for spec in ELDRITCH_SPECS
+        if spec.name_zh in question or spec.name_en.casefold() in question.casefold()
+        or any(alias in question for alias in spec.aliases)
+    ]
+    unique = list({spec.metadata_id: spec for spec in matched}.values())
+    if len(unique) != 1:
+        return None
+    args: dict[str, Any] = {"operation": unique[0].name_zh}
+    for slot, markers in (
+        ("body_armour", ("身体装备", "胸甲")),
+        ("boots", ("脚部装备", "鞋子", "鞋")),
+        ("gloves", ("手部装备", "手套")),
+        ("helmet", ("头部装备", "头盔")),
+    ):
+        if any(marker in question for marker in markers):
+            args["item_slot"] = slot
+            break
+    if any(term in question for term in ("焚界者首要", "焚界者为首要", "焚界者占优")):
+        args["dominance"] = "焚界者"
+    elif any(term in question for term in ("灭界者首要", "灭界者为首要", "灭界者占优")):
+        args["dominance"] = "灭界者"
+    elif any(term in question for term in ("势均力敌", "同级", "平衡")):
+        args["dominance"] = "平衡"
+    for key, marker in (("prefix_count", "前缀"), ("suffix_count", "后缀")):
+        match = re.search(rf"(\d+)\s*(?:条|个)?\s*{marker}", question)
+        if match:
+            args[key] = int(match.group(1))
+    if "稀有" in question or "黄装" in question:
+        args["rarity"] = "稀有"
+    if "同时有焚界者和灭界者" in question or "双古灵" in question:
+        args["has_searing_implicit"] = True
+        args["has_eater_implicit"] = True
+    if "已腐化" in question:
+        args["corrupted"] = True
+    if "已镜像" in question or "已鏡像" in question:
+        args["mirrored"] = True
+    if "裂隙词缀" in question or "裂隙詞綴" in question:
+        args["fractured"] = True
+    return args
+
+
 _HARVEST_REFORGE_TAGS = (
     "召唤生物", "元素", "冰霜", "属性", "掉落", "攻击", "施法", "暴击",
     "混沌", "火焰", "物理", "生命", "速度", "闪电", "防御", "魔力",
@@ -1546,6 +1604,9 @@ def _preferred_tool_route(question: str) -> str:
     material_args = _material_cost_args(question)
     if material_args is not None:
         return "economy_material_cost"
+    eldritch_args = _eldritch_operation_args(question)
+    if eldritch_args is not None:
+        return "eldritch_operation_state"
     operation_args = _craft_operation_args(question)
     if operation_args is not None:
         return "craft_operation_state"
@@ -1992,6 +2053,7 @@ def _resistance_args(question: str) -> dict[str, Any] | None:
 _CODE_INVOKED_TOOLS: dict[str, Any] = {
     "craft_operation_state": _craft_operation_args,
     "essence_operation_state": _essence_operation_args,
+    "eldritch_operation_state": _eldritch_operation_args,
     "harvest_reforge_state": _harvest_reforge_args,
     "harvest_modifier_state": _harvest_modifier_args,
     "harvest_quality_enchant_state": _harvest_quality_enchant_args,
@@ -2023,6 +2085,7 @@ _TOOLS_WITHOUT_CITATIONS = frozenset({"kb_coverage"})
 _DETERMINISTIC_DIRECT_TOOLS = frozenset({
     "economy_price_lookup", "economy_material_cost", "craft_operation_state",
     "essence_operation_state",
+    "eldritch_operation_state",
     "harvest_reforge_state",
     "harvest_modifier_state",
     "harvest_quality_enchant_state",

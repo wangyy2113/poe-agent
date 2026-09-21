@@ -749,6 +749,66 @@ class HarvestExchangeAnswerTest(unittest.TestCase):
         )
 
 
+class EldritchOperationAnswerTest(unittest.TestCase):
+    """古灵状态转移由代码直出，批量与流式不得改写随机结果。"""
+
+    ANSWER = (
+        "### 古灵崇高石状态转移\n\n"
+        "**结论：已知约束兼容**\n\n"
+        "> 焚界者首要时添加随机前缀；具体词缀、概率、成本与路线未知。"
+    )
+
+    def _patches(self):
+        def call(name, arguments):
+            if name == "kb_search":
+                return ToolResult(
+                    ok=True,
+                    data={"sufficient": False, "reason": "状态转移不在静态卡片", "missing_terms": []},
+                    citations=[],
+                    meta={"channels": ["bm25"], "degraded": False},
+                )
+            if name == "eldritch_operation_state":
+                args = json.loads(arguments)
+                self.assertEqual("古灵崇高石", args["operation"])
+                self.assertEqual("焚界者", args["dominance"])
+                self.assertEqual(2, args["prefix_count"])
+                return ToolResult(
+                    ok=True,
+                    data={"answer": self.ANSWER, "found": True, "verdict": "compatible"},
+                    citations=[{
+                        "chunk_id": "eldritch_operation:exalted",
+                        "entity_id": None,
+                        "title": "古灵崇高石状态转移",
+                        "url": "https://poedb.tw/cn/Eldritch_Exalted_Orb",
+                        "source": "POEDB",
+                        "source_priority": 1,
+                        "can_support_facts": True,
+                        "text": self.ANSWER,
+                        "channel": "structured",
+                    }],
+                    meta={"channel": "structured"},
+                )
+            raise AssertionError(name)
+
+        return [
+            patch.object(loop, "get_config", lambda: _FakeConfig()),
+            patch.object(loop, "_persist", lambda *a, **k: None),
+            patch.object(loop, "_record_gaps", lambda *a, **k: None),
+            patch.object(loop.REGISTRY, "call", call),
+        ]
+
+    def test_两条路径直接返回同一古灵状态转移(self) -> None:
+        question = "焚界者首要的稀有胸甲有2条前缀3条后缀，古灵崇高石能用吗"
+        batch, events = _both_paths(question, self._patches)
+        self.assertFalse(batch.evidence_gap)
+        self.assertEqual(self.ANSWER, batch.answer)
+        self.assertEqual(self.ANSWER, _answer_of(events))
+        self.assertEqual(
+            ["kb_search", "eldritch_operation_state"],
+            [call["tool"] for call in batch.tool_calls],
+        )
+
+
 class PartialDimensionDisclosureTest(unittest.TestCase):
     """复合问题继续回答有据部分，同时由代码保证披露无据部分。"""
 
