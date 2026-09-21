@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import re
 import time
 import uuid
@@ -1138,12 +1139,61 @@ def _resistance_numeric_route(question: str) -> str:
     return ""
 
 
+_MATERIAL_COST_SIGNALS = (
+    "材料成本", "材料清单", "清单成本", "清单总价", "合计", "总计", "一共", "总共",
+)
+_MATERIAL_ITEM_RE = re.compile(
+    r"(?P<quantity>\d+(?:\.\d+)?)\s*(?P<unit>个|枚|颗|张|份)?\s*(?P<name>.+)"
+)
+
+
+def _material_cost_args(question: str) -> dict[str, Any] | None:
+    """只抽取形如「2 个神圣石和 100 个混沌石一共多少钱」的明确清单。
+
+    数字、单位或边界不够明确就返回 None；绝不从「做一把弓的成本」反推材料。
+    """
+    if not any(signal in question for signal in (*_MATERIAL_COST_SIGNALS, "多少钱")):
+        return None
+    segments = re.split(r"\s*(?:[，,、+]|和|以及|\band\b)\s*", question, flags=re.I)
+    materials: list[dict[str, Any]] = []
+    explicit_units = 0
+    for segment in segments:
+        match = _MATERIAL_ITEM_RE.search(segment.strip())
+        if not match:
+            continue
+        name = match.group("name").strip()
+        # 价格问法只属于句尾，不是材料名的一部分。
+        cut_positions = [
+            name.find(marker) for marker in (
+                "一共", "合计", "总计", "总共", "清单成本", "材料成本", "总价",
+                "多少钱", "值多少", "价格",
+            ) if marker in name
+        ]
+        if cut_positions:
+            name = name[:min(cut_positions)].strip()
+        name = name.rstrip("？?。！! ")
+        if not name or len(name) > 200 or any(word in name for word in ("制作", "打造", "毕业")):
+            return None
+        quantity = float(match.group("quantity"))
+        if not math.isfinite(quantity) or quantity <= 0 or quantity > 1_000_000_000:
+            return None
+        if match.group("unit"):
+            explicit_units += 1
+        materials.append({"query": name, "quantity": quantity, "category": "auto"})
+    if not materials or (len(materials) == 1 and explicit_units == 0):
+        return None
+    return {"materials": materials}
+
+
 def _preferred_tool_route(question: str) -> str:
     """代码决定本轮该先调哪个精确工具；无把握时返回空串，交回模型自选。
 
     只在**第一次**调用时强制（`tool_choice`），后续轮次放开——工具结果可能说明
     需要换工具，锁死会让它无路可走。
     """
+    material_args = _material_cost_args(question)
+    if material_args is not None:
+        return "economy_material_cost"
     enumeration = any(intent in question for intent in _ENUMERATION_INTENTS)
     for tool, intents in _PREFERRED_TOOL_INTENTS:
         if not any(intent in question for intent in intents):
@@ -1570,6 +1620,7 @@ def _resistance_args(question: str) -> dict[str, Any] | None:
 #: 「我有 10000 护甲能减多少伤害」**碰巧**也拒答了，但拒答理由是「工具没返回证据」
 #: 而不是工具想说的「你没给这一击的伤害」——契约过了、机制却是坏的。
 _CODE_INVOKED_TOOLS: dict[str, Any] = {
+    "economy_material_cost": _material_cost_args,
     "economy_price_lookup": lambda question: {"query": question, "category": "auto"},
     # 路由时已确认该名字在别名表里命中，参数就是问题本身
     "entity_lookup": lambda question: {"name": question},
@@ -2199,7 +2250,7 @@ def _prepare_turn(question: str, result: TurnResult) -> _TurnSetup:
     gate_refused = False
     if precision_tool:
         result.retrieval_meta["precision_route"] = precision_tool
-    elif preferred_tool != "economy_price_lookup":
+    elif preferred_tool not in {"economy_price_lookup", "economy_material_cost"}:
         # 精确路由不过这道闸：那类问题的维度由工具自己的缺据字段负责声明。
         # 其余情况一律走 `_apply_dimension_gate`（它内部无条件问覆盖层）。
         # **这里曾内联过一份等价实现**，而那个函数就在同一个文件里、还带着这道闸门
@@ -2272,7 +2323,8 @@ def _prepare_turn(question: str, result: TurnResult) -> _TurnSetup:
     ):
         setup.final = _coverage_answer(preferred_result)
         return setup
-    if preferred_tool == "economy_price_lookup" and preferred_result is not None:
+    if preferred_tool in {"economy_price_lookup", "economy_material_cost"} \
+            and preferred_result is not None:
         if preferred_result.ok:
             setup.final = _economy_answer(preferred_result)
         else:

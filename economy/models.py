@@ -53,3 +53,68 @@ class PriceSearch:
         out["categories_searched"] = list(self.categories_searched)
         out["prices"] = [p.as_dict() for p in self.prices]
         return out
+
+
+@dataclass(frozen=True)
+class MaterialRequest:
+    """用户明确给出的一个材料项；不包含任何制作路径推断。"""
+
+    query: str
+    quantity: float
+    category: str = "auto"
+
+
+@dataclass(frozen=True)
+class MaterialCostLine:
+    query: str
+    quantity: float
+    requested_category: str
+    status: str
+    reason: str
+    resolved_name: str
+    categories_searched: tuple[str, ...]
+    league: str
+    source: str
+    source_url: str
+    fetched_at: str
+    from_cache: bool
+    stale: bool
+    degraded: bool
+    warning: str
+    low_confidence: bool
+    unit_price: PricePoint | None
+    candidate_count: int
+    subtotal_mean_chaos: float | None
+    subtotal_min_chaos: float | None
+    subtotal_max_chaos: float | None
+
+    def as_dict(self) -> dict[str, Any]:
+        out = asdict(self)
+        out["categories_searched"] = list(self.categories_searched)
+        out["unit_price"] = self.unit_price.as_dict() if self.unit_price else None
+        return out
+
+
+@dataclass(frozen=True)
+class MaterialCostEstimate:
+    """明确材料清单的确定性加总；缺任一单价时不输出不完整总价。"""
+
+    league: str
+    source: str
+    source_url: str
+    fetched_at: str
+    from_cache: bool
+    stale: bool
+    degraded: bool
+    warning: str
+    calculable: bool
+    unresolved_count: int
+    total_mean_chaos: float | None
+    total_min_chaos: float | None
+    total_max_chaos: float | None
+    materials: tuple[MaterialCostLine, ...] = field(default_factory=tuple)
+
+    def as_dict(self) -> dict[str, Any]:
+        out = asdict(self)
+        out["materials"] = [item.as_dict() for item in self.materials]
+        return out

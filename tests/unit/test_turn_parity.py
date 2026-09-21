@@ -21,6 +21,7 @@
 
 from __future__ import annotations
 
+import json
 import sys
 import unittest
 from contextlib import ExitStack
@@ -332,6 +333,64 @@ class EconomyAnswerTest(unittest.TestCase):
         self.assertEqual(self.ANSWER, _answer_of(events))
         self.assertEqual(
             ["kb_search", "economy_price_lookup"],
+            [call["tool"] for call in batch.tool_calls],
+        )
+
+
+class MaterialCostAnswerTest(unittest.TestCase):
+    """明确材料清单也由代码计算并直出，两条传输路径不得经过模型改写。"""
+
+    ANSWER = (
+        "### Allflame 材料清单成本快照\n\n"
+        "**均值总成本：840.5 混沌石**\n\n"
+        "> 数据源：poe.watch；联盟：Allflame；最早抓取时间：2026-09-21T04:00:00Z。"
+    )
+
+    def _patches(self):
+        def call(name, arguments):
+            if name == "kb_search":
+                return ToolResult(
+                    ok=True,
+                    data={"sufficient": False, "reason": "动态成本不在静态卡片", "missing_terms": []},
+                    citations=[],
+                    meta={"channels": ["bm25"], "degraded": False},
+                )
+            if name == "economy_material_cost":
+                args = json.loads(arguments)
+                self.assertEqual(2, len(args["materials"]))
+                return ToolResult(
+                    ok=True,
+                    data={"answer": self.ANSWER, "calculable": True},
+                    citations=[{
+                        "chunk_id": "economy-cost:Allflame:abc",
+                        "entity_id": None,
+                        "title": "Allflame material cost",
+                        "url": "https://api.poe.watch",
+                        "source": "poe.watch",
+                        "source_priority": 5,
+                        "can_support_facts": True,
+                        "text": self.ANSWER,
+                        "channel": "live_economy",
+                    }],
+                    meta={"channel": "live_economy"},
+                )
+            raise AssertionError(name)
+
+        return [
+            patch.object(loop, "get_config", lambda: _FakeConfig()),
+            patch.object(loop, "_persist", lambda *a, **k: None),
+            patch.object(loop, "_record_gaps", lambda *a, **k: None),
+            patch.object(loop.REGISTRY, "call", call),
+        ]
+
+    def test_两条路径逐字一致且不调用模型(self) -> None:
+        question = "2 个神圣石和 100 个混沌石一共多少钱"
+        batch, events = _both_paths(question, self._patches)
+        self.assertFalse(batch.evidence_gap)
+        self.assertEqual(self.ANSWER, batch.answer)
+        self.assertEqual(self.ANSWER, _answer_of(events))
+        self.assertEqual(
+            ["kb_search", "economy_material_cost"],
             [call["tool"] for call in batch.tool_calls],
         )
 

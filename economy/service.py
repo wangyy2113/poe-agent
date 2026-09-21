@@ -4,14 +4,22 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 import sqlite3
 import threading
 from dataclasses import dataclass
+from decimal import Decimal
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
 
-from economy.models import PricePoint, PriceSearch
+from economy.models import (
+    MaterialCostEstimate,
+    MaterialCostLine,
+    MaterialRequest,
+    PricePoint,
+    PriceSearch,
+)
 from economy.poe_watch import PoeWatchClient, PoeWatchError
 from retrieval.alias import lookup, normalize
 
@@ -136,6 +144,28 @@ class EconomyService:
             unique[(str(item.item_id), item.category)] = item
         prices = list(unique.values())
 
+        # poe.watch 的所有 mean/min/max 都以 Chaos Orb 为计价单位，因此上游列表可能
+        # 不返回 Chaos Orb 自身。这里是单位恒等式（1 chaos = 1 chaos），不是市场估价；
+        # 仍沿用 currency 快照的时间戳，明确它所依附的报价口径。
+        if (
+            not prices
+            and logical_category in {"auto", "currency"}
+            and normalize(resolved_name) == normalize("Chaos Orb")
+        ):
+            prices = [PricePoint(
+                item_id="chaos-quote-unit",
+                name="Chaos Orb",
+                category="currency",
+                group="quote_unit",
+                mean_chaos=1.0,
+                min_chaos=1.0,
+                max_chaos=1.0,
+                divine=None,
+                daily=None,
+                change_percent=None,
+                low_confidence=False,
+            )]
+
         # 价格新鲜度只取价格快照；联盟目录可以比价格缓存更早，不应把刚刷新的价格
         # 错标成陈旧。联盟请求是否降级仍合并到 degraded 状态。
         fetched_at = min(s.fetched_at for s in snapshots)
@@ -170,6 +200,114 @@ class EconomyService:
             degraded=degraded,
             warning=warning,
             prices=tuple(prices),
+        )
+
+    def material_cost(
+        self,
+        materials: list[MaterialRequest],
+        *,
+        league: str | None = None,
+    ) -> MaterialCostEstimate:
+        """给明确材料清单逐项查价并加总，不补材料、不推断制作步骤。"""
+        if not materials:
+            raise InvalidEconomyQuery("materials 不能为空")
+        if len(materials) > 50:
+            raise InvalidEconomyQuery("materials 最多包含 50 项")
+
+        lines: list[MaterialCostLine] = []
+        selected_league = ""
+        for material in materials:
+            query = (material.query or "").strip()
+            quantity = material.quantity
+            if not query:
+                raise InvalidEconomyQuery("材料 query 不能为空")
+            if (
+                isinstance(quantity, bool)
+                or not isinstance(quantity, (int, float))
+                or not math.isfinite(float(quantity))
+                or float(quantity) <= 0
+                or float(quantity) > 1_000_000_000
+            ):
+                raise InvalidEconomyQuery("材料 quantity 必须是 0 到 1,000,000,000 之间的有限数")
+
+            result = self.price(query, category=material.category, league=league)
+            if selected_league and result.league != selected_league:
+                raise EconomyUnavailable("同一材料清单返回了不同联盟，拒绝混合计价")
+            selected_league = result.league
+            matches = result.prices
+            point = matches[0] if len(matches) == 1 else None
+            if not matches:
+                status, reason = "not_found", "未找到同名条目；未做模糊匹配"
+            elif len(matches) > 1:
+                status, reason = "ambiguous", f"同名匹配到 {len(matches)} 个条目，未擅自选价"
+            elif point is not None and point.mean_chaos is None:
+                status, reason = "missing_price", "上游未提供混沌石均价"
+            else:
+                status, reason = "priced", ""
+
+            def subtotal(value: float | None) -> float | None:
+                if point is None or value is None:
+                    return None
+                # 从十进制文本构造，避免二进制浮点乘法产生 0.30000000000000004。
+                return float(Decimal(str(value)) * Decimal(str(quantity)))
+
+            lines.append(MaterialCostLine(
+                query=query,
+                quantity=float(quantity),
+                requested_category=material.category,
+                status=status,
+                reason=reason,
+                resolved_name=result.resolved_name,
+                categories_searched=result.categories_searched,
+                league=result.league,
+                source=result.source,
+                source_url=result.source_url,
+                fetched_at=result.fetched_at,
+                from_cache=result.from_cache,
+                stale=result.stale,
+                degraded=result.degraded,
+                warning=result.warning,
+                low_confidence=bool(point and point.low_confidence),
+                unit_price=point,
+                candidate_count=len(matches),
+                subtotal_mean_chaos=subtotal(point.mean_chaos if point else None),
+                subtotal_min_chaos=subtotal(point.min_chaos if point else None),
+                subtotal_max_chaos=subtotal(point.max_chaos if point else None),
+            ))
+
+        def total(field: str) -> float | None:
+            values = [getattr(line, field) for line in lines]
+            if any(value is None for value in values):
+                return None
+            return float(sum((Decimal(str(value)) for value in values), Decimal("0")))
+
+        mean_total = total("subtotal_mean_chaos")
+        unresolved = sum(line.status != "priced" for line in lines)
+        warnings: list[str] = []
+        if unresolved:
+            warnings.append(f"{unresolved} 项未取得唯一可用均价，总成本不可计算")
+        if any(line.stale for line in lines):
+            warnings.append("至少一个材料使用陈旧快照")
+        elif any(line.degraded for line in lines):
+            warnings.append("至少一个材料在上游刷新失败后使用缓存")
+        if any(line.low_confidence for line in lines):
+            warnings.append("至少一个材料被 poe.watch 标记为低置信度")
+
+        return MaterialCostEstimate(
+            league=selected_league,
+            source=SOURCE,
+            source_url=SOURCE_URL,
+            fetched_at=min(line.fetched_at for line in lines),
+            from_cache=all(line.from_cache for line in lines),
+            stale=any(line.stale for line in lines),
+            degraded=any(line.degraded for line in lines),
+            warning="；".join(warnings),
+            calculable=mean_total is not None,
+            unresolved_count=unresolved,
+            total_mean_chaos=mean_total,
+            total_min_chaos=total("subtotal_min_chaos"),
+            total_max_chaos=total("subtotal_max_chaos"),
+            materials=tuple(lines),
         )
 
     def _leagues(self) -> tuple[list[dict[str, Any]], _Snapshot]:

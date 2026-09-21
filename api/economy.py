@@ -8,8 +8,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from api.deps import require_user
+from economy.models import MaterialRequest as DomainMaterialRequest
 from economy.service import EconomyUnavailable, InvalidEconomyQuery
-from tools.impl.economy import render_price, service_from_config
+from tools.impl.economy import render_material_cost, render_price, service_from_config
 
 router = APIRouter(tags=["经济"])
 
@@ -38,6 +39,35 @@ class PriceResponse(BaseModel):
     answer: str
 
 
+class MaterialCostItemRequest(BaseModel):
+    query: str = Field(min_length=1, max_length=200)
+    quantity: float = Field(gt=0, le=1_000_000_000, allow_inf_nan=False)
+    category: Literal["auto", "unique", "currency", "scarab", "card", "fragment"] = "auto"
+
+
+class MaterialCostRequest(BaseModel):
+    materials: list[MaterialCostItemRequest] = Field(min_length=1, max_length=50)
+    league: str | None = Field(default=None, max_length=100)
+
+
+class MaterialCostResponse(BaseModel):
+    league: str
+    source: str
+    source_url: str
+    fetched_at: str
+    from_cache: bool
+    stale: bool
+    degraded: bool
+    warning: str
+    calculable: bool
+    unresolved_count: int
+    total_mean_chaos: float | None
+    total_min_chaos: float | None
+    total_max_chaos: float | None
+    materials: list[dict[str, Any]]
+    answer: str
+
+
 @router.post("/economy/price", response_model=PriceResponse)
 def price(req: PriceRequest, _caller: str = Depends(require_user)) -> PriceResponse:
     try:
@@ -53,3 +83,30 @@ def price(req: PriceRequest, _caller: str = Depends(require_user)) -> PriceRespo
             "error": "economy_unavailable", "reason": str(exc),
         }) from exc
     return PriceResponse(**result.as_dict(), answer=render_price(result))
+
+
+@router.post("/economy/material-cost", response_model=MaterialCostResponse)
+def material_cost(
+    req: MaterialCostRequest, _caller: str = Depends(require_user)
+) -> MaterialCostResponse:
+    try:
+        result = service_from_config().material_cost(
+            [
+                DomainMaterialRequest(
+                    query=item.query,
+                    quantity=item.quantity,
+                    category=item.category,
+                )
+                for item in req.materials
+            ],
+            league=req.league,
+        )
+    except InvalidEconomyQuery as exc:
+        raise HTTPException(status_code=422, detail={
+            "error": "invalid_material_cost_query", "reason": str(exc),
+        }) from exc
+    except EconomyUnavailable as exc:
+        raise HTTPException(status_code=503, detail={
+            "error": "economy_unavailable", "reason": str(exc),
+        }) from exc
+    return MaterialCostResponse(**result.as_dict(), answer=render_material_cost(result))

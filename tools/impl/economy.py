@@ -5,12 +5,13 @@
 
 from __future__ import annotations
 
+import hashlib
 from datetime import timedelta
 from functools import lru_cache
 
 from core import db as dbmod
 from core.config import get_config
-from economy.models import PriceSearch
+from economy.models import MaterialCostEstimate, MaterialRequest, PriceSearch
 from economy.poe_watch import PoeWatchClient
 from economy.service import (
     API_URL,
@@ -74,6 +75,9 @@ def render_price(result: PriceSearch) -> str:
         lines.append("未找到同名条目；没有进行模糊匹配，也没有按同类物品估价。")
     else:
         for item in result.prices:
+            if item.group == "quote_unit":
+                lines.append("- 计价单位：**1 混沌石 = 1 混沌石**（单位恒等式，非成交统计）。")
+                continue
             lines += [
                 f"- poe.watch 均值：**{_price(item.mean_chaos)} 混沌石**",
                 f"- 观测区间：{_price(item.min_chaos)}–{_price(item.max_chaos)} 混沌石",
@@ -90,6 +94,69 @@ def render_price(result: PriceSearch) -> str:
         f"> 数据源：[poe.watch]({result.source_url})；联盟：{result.league}；"
         f"抓取时间：{result.fetched_at}；状态：{status}。",
         "> mean/min/max 是市场统计快照，不是报价承诺或保证成交价。",
+    ]
+    if result.warning:
+        lines.append(f"> 注意：{result.warning}。")
+    return "\n".join(lines)
+
+
+def render_material_cost(result: MaterialCostEstimate) -> str:
+    """确定性材料成本表；任何缺价都不会被静默略过后给出部分总价。"""
+    lines = [
+        f"### {result.league} 材料清单成本快照",
+        "",
+        "| 材料 | 数量 | 单价均值（混沌石） | 小计均值（混沌石） | 观测小计区间 | 状态 |",
+        "| --- | ---: | ---: | ---: | ---: | --- |",
+    ]
+    provenance: list[str] = []
+    for item in result.materials:
+        point = item.unit_price
+        name = item.resolved_name or item.query
+        status = "已计价"
+        if item.status != "priced":
+            status = item.reason
+        elif point and point.group == "quote_unit":
+            status = "已计价；混沌石计价单位恒等于 1"
+        elif item.low_confidence:
+            status = "已计价；低置信度"
+        if item.stale:
+            status += "；陈旧"
+        elif item.degraded:
+            status += "；缓存降级"
+        lines.append(
+            f"| {name} | {_price(item.quantity)} | "
+            f"{_price(point.mean_chaos if point else None)} | "
+            f"{_price(item.subtotal_mean_chaos)} | "
+            f"{_price(item.subtotal_min_chaos)}–{_price(item.subtotal_max_chaos)} | "
+            f"{status} |"
+        )
+        snapshot_status = "缓存" if item.from_cache else "刚刷新"
+        if item.stale:
+            snapshot_status += "、已陈旧"
+        elif item.degraded:
+            snapshot_status += "、上游失败后降级"
+        provenance.append(
+            f"- {name}：{item.source} / {item.league} / {item.fetched_at} / {snapshot_status}"
+        )
+
+    lines.append("")
+    if result.calculable:
+        lines += [
+            f"**均值总成本：{_price(result.total_mean_chaos)} 混沌石**",
+            f"观测区间总计：{_price(result.total_min_chaos)}–"
+            f"{_price(result.total_max_chaos)} 混沌石。",
+        ]
+    else:
+        lines.append(
+            "**总成本不可计算**：至少一项没有唯一可用均价；未用部分清单冒充完整总价。"
+        )
+    lines += ["", "逐项快照：", *provenance]
+    lines += [
+        "",
+        f"> 数据源：[poe.watch]({result.source_url})；联盟：{result.league}；"
+        f"最早抓取时间：{result.fetched_at}。每项的抓取时间与缓存状态保留在结构化结果中。",
+        "> 单价与区间来自 mean/min/max 市场统计快照；数量乘法与总和由代码计算，"
+        "不是报价承诺、保证成交价、制作成功率或利润预测。",
     ]
     if result.warning:
         lines.append(f"> 注意：{result.warning}。")
@@ -157,5 +224,96 @@ def economy_price_lookup(
             "from_cache": result.from_cache,
             "stale": result.stale,
             "degraded": result.degraded,
+        },
+    )
+
+
+@REGISTRY.register(
+    name="economy_material_cost",
+    description=(
+        "对用户明确给出的 POE1 材料清单做实时成本加总。逐项精确查 poe.watch 单价，"
+        "计算数量×mean/min/max，并汇总混沌石总成本；保留每项联盟、抓取时间、缓存/"
+        "陈旧和低置信度状态。缺少任一均价时明确返回不可计算，不生成材料清单、制作步骤、"
+        "成功率、利润或 Flip 建议。"
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "materials": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 50,
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string", "minLength": 1, "maxLength": 200},
+                        "quantity": {"type": "number", "exclusiveMinimum": 0, "maximum": 1000000000},
+                        "category": {
+                            "type": "string",
+                            "enum": list(PUBLIC_CATEGORIES),
+                            "default": "auto",
+                        },
+                    },
+                    "required": ["query", "quantity"],
+                    "additionalProperties": False,
+                },
+            },
+            "league": {
+                "type": "string",
+                "maxLength": 100,
+                "description": "可选；整张清单必须使用同一联盟",
+            },
+        },
+        "required": ["materials"],
+        "additionalProperties": False,
+    },
+)
+def economy_material_cost(
+    materials: list[dict[str, object]], league: str | None = None
+) -> ToolResult:
+    try:
+        requests = [
+            MaterialRequest(
+                query=str(item.get("query") or ""),
+                quantity=item.get("quantity"),  # type: ignore[arg-type]
+                category=str(item.get("category") or "auto"),
+            )
+            for item in materials
+            if isinstance(item, dict)
+        ]
+        if len(requests) != len(materials):
+            raise InvalidEconomyQuery("materials 中每项都必须是对象")
+        result = service_from_config().material_cost(requests, league=league)
+    except (EconomyUnavailable, InvalidEconomyQuery, TypeError) as exc:
+        return ToolResult(ok=False, error=str(exc), meta={"source": "poe.watch"})
+
+    rendered = render_material_cost(result)
+    identity = "|".join(
+        f"{item.resolved_name}:{item.quantity}:{item.fetched_at}"
+        for item in result.materials
+    )
+    digest = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:16]
+    citations = [{
+        "chunk_id": f"economy-cost:{result.league}:{digest}",
+        "entity_id": None,
+        "title": f"{result.league} 材料清单成本快照",
+        "url": API_URL,
+        "source": result.source,
+        "source_priority": 5,
+        "can_support_facts": True,
+        "text": rendered,
+        "channel": "live_economy",
+    }] if any(item.unit_price for item in result.materials) else []
+    return ToolResult(
+        ok=True,
+        data={**result.as_dict(), "answer": rendered},
+        citations=citations,
+        meta={
+            "channel": "live_economy",
+            "source": result.source,
+            "from_cache": result.from_cache,
+            "stale": result.stale,
+            "degraded": result.degraded,
+            "calculable": result.calculable,
         },
     )
