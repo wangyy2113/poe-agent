@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field, model_validator
 
 from api.deps import require_user
 from tools.impl.craft_operation import craft_operation_state
+from tools.impl.essence_operation import essence_operation_state
 
 router = APIRouter(tags=["制作"])
 
@@ -52,6 +53,47 @@ class CraftOperationResponse(BaseModel):
     answer: str
 
 
+class EssenceOperationRequest(BaseModel):
+    essence: str = Field(min_length=1, max_length=80)
+    item_text: str | None = Field(default=None, max_length=20_000)
+    rarity: Literal["普通", "魔法", "稀有", "传奇"] | None = None
+    item_level: int | None = Field(default=None, ge=1, le=100)
+    item_class: str | None = Field(default=None, min_length=1, max_length=80)
+    corrupted: bool = False
+    mirrored: bool = False
+    fractured: bool = False
+
+    @model_validator(mode="after")
+    def no_mixed_state(self) -> "EssenceOperationRequest":
+        if self.item_text and any(
+            value is not None for value in (self.rarity, self.item_level, self.item_class)
+        ):
+            raise ValueError("item_text 与手工状态字段不能混用")
+        return self
+
+
+class EssenceOperationResponse(BaseModel):
+    found: bool
+    verdict: str
+    essence: str
+    essence_en: str
+    metadata_id: str
+    tier: int
+    base_effect: str
+    level_cap: int | None
+    source: str
+    source_priority: int
+    source_url: str
+    fetched_at: str
+    before: dict[str, Any]
+    after: dict[str, Any]
+    guaranteed_modifier: dict[str, str] | None
+    checks: list[dict[str, Any]]
+    unknown_fields: list[str]
+    boundary: str
+    answer: str
+
+
 @router.post("/craft/operation", response_model=CraftOperationResponse)
 def operation_state(
     req: CraftOperationRequest, _caller: str = Depends(require_user)
@@ -78,3 +120,29 @@ def operation_state(
             "supported_operations": (result.data or {}).get("supported_operations", []),
         })
     return CraftOperationResponse(**result.data)
+
+
+@router.post("/craft/essence", response_model=EssenceOperationResponse)
+def essence_state(
+    req: EssenceOperationRequest, _caller: str = Depends(require_user)
+) -> EssenceOperationResponse:
+    result = essence_operation_state(
+        essence=req.essence,
+        item_text=req.item_text,
+        rarity=req.rarity,
+        item_level=req.item_level,
+        item_class=req.item_class or "",
+        corrupted=req.corrupted,
+        mirrored=req.mirrored,
+        fractured=req.fractured,
+    )
+    if not result.ok:
+        raise HTTPException(status_code=422, detail={
+            "error": "invalid_essence_operation", "reason": result.error,
+        })
+    if not (result.data or {}).get("found"):
+        raise HTTPException(status_code=422, detail={
+            "error": "unsupported_essence",
+            "reason": "只接受本库 105 件精华的唯一精确名称，不按相似名称猜操作语义",
+        })
+    return EssenceOperationResponse(**result.data)

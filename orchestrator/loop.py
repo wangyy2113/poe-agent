@@ -1239,6 +1239,60 @@ def _craft_operation_args(question: str) -> dict[str, Any] | None:
     return args
 
 
+_ESSENCE_OPERATION_SIGNALS = (
+    "能用", "可以用", "能不能用", "会变", "变成", "重置", "升级", "状态转移",
+)
+_ESSENCE_NAME_RE = re.compile(
+    r"(?:[一-鿿]{2}之(?:低语|呢喃|啼泣|哀嚎|咆哮|尖啸|破空)精华|"
+    r"(?:哀恸|极恐|浮夸|谵妄|错乱)精华)"
+)
+_ESSENCE_ITEM_CLASSES = tuple(sorted((
+    "箭袋", "头部", "胸甲", "鞋子", "手套", "腰带", "盾牌", "弓", "长杖",
+    "双手剑", "双手斧", "双手锤", "法杖", "爪", "匕首", "单手剑", "细剑",
+    "单手斧", "单手锤", "短杖", "项链", "戒指",
+), key=len, reverse=True))
+
+
+def _essence_operation_args(question: str) -> dict[str, Any] | None:
+    """抽取具名精华与用户明确给出的装备状态；不按等阶或相似名称猜精华。"""
+    if any(term in question for term in ("多少钱", "价格", "哪里刷", "怎么获得", "掉率")):
+        return None
+    if not any(signal in question for signal in _ESSENCE_OPERATION_SIGNALS):
+        return None
+    names = list(dict.fromkeys(match.group(0) for match in _ESSENCE_NAME_RE.finditer(question)))
+    if len(names) != 1:
+        return None
+    args: dict[str, Any] = {"essence": names[0]}
+    classes = [name for name in _ESSENCE_ITEM_CLASSES if name in question]
+    if classes:
+        args["item_class"] = classes[0]
+    rarities = []
+    for rarity, markers in (
+        ("普通", ("普通物品", "普通装备", "白装")),
+        ("魔法", ("魔法物品", "魔法装备", "蓝装")),
+        ("稀有", ("稀有物品", "稀有装备", "黄装")),
+        ("传奇", ("传奇物品", "传奇装备", "暗金")),
+    ):
+        if any(marker in question for marker in markers) or (
+            classes and f"{rarity}{classes[0]}" in question
+        ):
+            rarities.append(rarity)
+    if len(rarities) > 1:
+        return None
+    if rarities:
+        args["rarity"] = rarities[0]
+    level = re.search(r"(?:物品等级|物等|ilvl)\s*[:：]?\s*(\d{1,3})", question, re.I)
+    if level:
+        args["item_level"] = int(level.group(1))
+    if "已腐化" in question:
+        args["corrupted"] = True
+    if "已镜像" in question or "已鏡像" in question:
+        args["mirrored"] = True
+    if "裂隙词缀" in question or "裂隙詞綴" in question:
+        args["fractured"] = True
+    return args
+
+
 def _preferred_tool_route(question: str) -> str:
     """代码决定本轮该先调哪个精确工具；无把握时返回空串，交回模型自选。
 
@@ -1251,6 +1305,9 @@ def _preferred_tool_route(question: str) -> str:
     operation_args = _craft_operation_args(question)
     if operation_args is not None:
         return "craft_operation_state"
+    essence_args = _essence_operation_args(question)
+    if essence_args is not None:
+        return "essence_operation_state"
     enumeration = any(intent in question for intent in _ENUMERATION_INTENTS)
     for tool, intents in _PREFERRED_TOOL_INTENTS:
         if not any(intent in question for intent in intents):
@@ -1678,6 +1735,7 @@ def _resistance_args(question: str) -> dict[str, Any] | None:
 #: 而不是工具想说的「你没给这一击的伤害」——契约过了、机制却是坏的。
 _CODE_INVOKED_TOOLS: dict[str, Any] = {
     "craft_operation_state": _craft_operation_args,
+    "essence_operation_state": _essence_operation_args,
     "economy_material_cost": _material_cost_args,
     "economy_price_lookup": lambda question: {"query": question, "category": "auto"},
     # 路由时已确认该名字在别名表里命中，参数就是问题本身
@@ -1704,6 +1762,7 @@ _CODE_INVOKED_TOOLS: dict[str, Any] = {
 _TOOLS_WITHOUT_CITATIONS = frozenset({"kb_coverage"})
 _DETERMINISTIC_DIRECT_TOOLS = frozenset({
     "economy_price_lookup", "economy_material_cost", "craft_operation_state",
+    "essence_operation_state",
 })
 
 

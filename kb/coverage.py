@@ -488,17 +488,20 @@ DOMAINS: tuple[DomainSpec, ...] = (
         category=Category.CRAFTING,
         authority_url=f"{POEDB_BASE}/Essence",
         count_sql="SELECT count(*) FROM mod_affix WHERE category='essence'",
-        tools=("essence_lookup", "stat_sources"),
+        tools=("essence_lookup", "essence_operation_state", "stat_sources"),
         hints=("精华", "精华词缀"),
         question_hints=(
             "某精华赋予什么词缀", "某词缀由哪个精华赋予",
             "某精华的等阶 / 堆叠上限 / 等级上限", "哪些精华没有等级上限",
+            "具名精华能否用于明确稀有度 / 物品等级 / 装备类别",
         ),
         poedb_pages=("Essence",),
         partial_note=(
             "精华**赋予的词缀**已入库（5985 条，并已渲染进词缀组卡）；"
             "**精华物品本身**第五十九轮补上（105 件，等阶 / 堆叠 / 等级上限 / 效果原文 / "
             "逐装备类别的保底词缀，与 PoB `Data/Essence.lua` 逐项对账）；"
+            "**精华状态转移 v1 已结构化**（效果原文 × 普通/稀有前提 × 物等上限 × "
+            "逐类别保底词缀；特殊状态保持 unknown）；"
             "**未采集**：掉落来源与兑换成本"
         ),
         # 「怎么获得 / 如何获得 / 哪里刷」**留着**：精华的主要来源是禁锢怪物掉落，
@@ -739,14 +742,15 @@ DOMAINS: tuple[DomainSpec, ...] = (
             "药剂随魔法，另有 PoB 独有的珠宝与 Graft 2+2 与"
             "「已腐化的深渊珠宝回到 3+3」这条例外；魔法与稀有两侧对账一致）；"
             "**10 种基础通货状态转移 v1 已结构化**（效果原文 × 稀有度 × 名额）；"
-            "**影响力底材条件与特殊制作体系的完整操作状态机仍未结构化**——"
+            "**精华状态转移 v1 已结构化**（效果原文 × 稀有度 × 物等 × 类别保底词缀）；"
+            "**影响力底材条件与其余特殊制作体系的完整操作状态机仍未结构化**——"
             "元词缀只有页面矩阵，矩阵值不能把 unknown 变成 possible"
         ),
         missing_dimension_hints=(
             "影响力", "元词缀", "觉醒者之石", "完整状态转移", "制作步骤", "步骤", "怎么做",
         ),
         note=(
-            "这个域只覆盖名额与基础通货 v1；不要据此声称影响力、特殊制作体系或完整"
+            "这个域只覆盖名额、基础通货 v1 与精华 v1；不要据此声称影响力、其余特殊制作体系或完整"
             "元词缀规则已经具备"
         ),
     ),
