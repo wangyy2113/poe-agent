@@ -1293,6 +1293,71 @@ def _essence_operation_args(question: str) -> dict[str, Any] | None:
     return args
 
 
+_HARVEST_REFORGE_TAGS = (
+    "召唤生物", "元素", "冰霜", "属性", "掉落", "攻击", "施法", "暴击",
+    "混沌", "火焰", "物理", "生命", "速度", "闪电", "防御", "魔力",
+)
+
+
+def _harvest_reforge_args(question: str) -> dict[str, Any] | None:
+    """抽取 Harvest 重铸原文能唯一冻结的模式；费用问法仍交给目录工具。"""
+    lowered = question.lower()
+    if "收获" not in question and "harvest" not in lowered:
+        return None
+    if any(term in question for term in ("多少命能", "费用", "成本", "多少钱")):
+        return None
+    if "重铸" not in question and not ("随机" in question and "影响类型" in question):
+        return None
+
+    operation = ""
+    if "大概率不会" in question or "不同词缀类型" in question:
+        operation = "大概率不同"
+    elif "大概率会" in question or "相同词缀类型" in question:
+        operation = "大概率相同"
+    elif "随机" in question and "影响类型" in question:
+        operation = "随机影响类型"
+    elif "影响词缀" in question:
+        operation = "影响词缀"
+    else:
+        tags = []
+        if "掉落属性" in question:
+            tags.append("掉落")
+        tags.extend(
+            tag for tag in _HARVEST_REFORGE_TAGS
+            if tag != "掉落" and tag in question
+        )
+        tags = list(dict.fromkeys(tags))
+        if len(tags) != 1:
+            return None
+        operation = tags[0]
+
+    args: dict[str, Any] = {"operation": operation}
+    rarities = []
+    for rarity, markers in (
+        ("普通", ("普通物品", "普通装备", "白装")),
+        ("魔法", ("魔法物品", "魔法装备", "蓝装")),
+        ("稀有", ("稀有物品", "稀有装备", "黄装")),
+        ("传奇", ("传奇物品", "传奇装备", "暗金")),
+    ):
+        if any(marker in question for marker in markers):
+            rarities.append(rarity)
+    if len(rarities) > 1:
+        return None
+    if rarities:
+        args["rarity"] = rarities[0]
+    if "不受影响" in question or "无影响力" in question:
+        args["influenced"] = False
+    elif "受影响" in question or "影响底材" in question or "有影响力" in question:
+        args["influenced"] = True
+    if "已腐化" in question:
+        args["corrupted"] = True
+    if "已镜像" in question or "已鏡像" in question:
+        args["mirrored"] = True
+    if "裂隙词缀" in question or "裂隙詞綴" in question:
+        args["fractured"] = True
+    return args
+
+
 def _preferred_tool_route(question: str) -> str:
     """代码决定本轮该先调哪个精确工具；无把握时返回空串，交回模型自选。
 
@@ -1308,6 +1373,9 @@ def _preferred_tool_route(question: str) -> str:
     essence_args = _essence_operation_args(question)
     if essence_args is not None:
         return "essence_operation_state"
+    harvest_args = _harvest_reforge_args(question)
+    if harvest_args is not None:
+        return "harvest_reforge_state"
     enumeration = any(intent in question for intent in _ENUMERATION_INTENTS)
     for tool, intents in _PREFERRED_TOOL_INTENTS:
         if not any(intent in question for intent in intents):
@@ -1736,6 +1804,7 @@ def _resistance_args(question: str) -> dict[str, Any] | None:
 _CODE_INVOKED_TOOLS: dict[str, Any] = {
     "craft_operation_state": _craft_operation_args,
     "essence_operation_state": _essence_operation_args,
+    "harvest_reforge_state": _harvest_reforge_args,
     "economy_material_cost": _material_cost_args,
     "economy_price_lookup": lambda question: {"query": question, "category": "auto"},
     # 路由时已确认该名字在别名表里命中，参数就是问题本身
@@ -1763,6 +1832,7 @@ _TOOLS_WITHOUT_CITATIONS = frozenset({"kb_coverage"})
 _DETERMINISTIC_DIRECT_TOOLS = frozenset({
     "economy_price_lookup", "economy_material_cost", "craft_operation_state",
     "essence_operation_state",
+    "harvest_reforge_state",
 })
 
 

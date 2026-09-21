@@ -570,12 +570,13 @@ DOMAINS: tuple[DomainSpec, ...] = (
             "SELECT DISTINCT currency_name_zh FROM harvest_craft_cost "
             "WHERE currency_name_zh<>''"
         ),
-        tools=("harvest_craft_catalog",),
+        tools=("harvest_craft_catalog", "harvest_reforge_state"),
         hints=("收获", "园艺", "古灵庄园", "生命力", "命能"),
         question_hints=(
             "收获有哪些定向工艺选项",
             "某条收获工艺要多少命能",
             "某种命能能用来做什么",
+            "20 条装备重铸对明确稀有度 / 影响状态的条件变化",
         ),
         poedb_pages=("Horticrafting", "Harvest"),
         partial_note=(
@@ -584,6 +585,8 @@ DOMAINS: tuple[DomainSpec, ...] = (
             "**命能的获取途径已入库**（第五十八轮，同页那张表——它三列其实是"
             "`怪物 ｜ 阶级 ｜ Colour`，51 个种子怪物按颜色掉对应命能，"
             "由 `harvest_seed_lookup` 回答）；"
+            "**20 条装备重铸状态转移 v1 已结构化**（16 类保底标签、影响词缀保底、"
+            "相同词缀类型倾向与影响类型随机化，携带页面原始费用）；"
             "**未采集**：掉落数量与概率、成功率与权重、制作步骤、市场成本，"
             "以及同页 41 行催化剂等参考表"
         ),
@@ -600,7 +603,8 @@ DOMAINS: tuple[DomainSpec, ...] = (
         note=(
             "**没有卡片，只有工具**（与工艺台同理）：74 条描述里 16 条只差一个词"
             "（「重铸……其中包括一个 X 词缀」），做成卡片会让 BM25 在近重复文本里"
-            "互相挤掉。所以 `probe()` 报的 chunk 数是 0，这不是缺陷。"
+            "互相挤掉。所以目录与状态转移均走结构化工具，`probe()` 报的 chunk 数是 0"
+            "不是缺陷。转换、牺牲与附魔仍只在目录层，不属于重铸状态机。"
         ),
     ),
     # 注意：辛迪加给的是**隐匿**词缀（POEDB category=veiled，中文标签「隐匿」），
