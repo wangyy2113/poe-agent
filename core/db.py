@@ -259,9 +259,9 @@ CREATE INDEX IF NOT EXISTS idx_bench_cost_currency
 -- ── 收获（古灵庄园）定向工艺（POEDB `/cn/Horticrafting`）──
 -- 与工艺台同一条边界：本表只保存页面明确列出的**效果文本与原始命能费用**。
 -- `craft/harvest_operations.py`、`craft/harvest_modifier_operations.py` 与
--- `craft/harvest_enchant_operations.py` 另以 57 条逐字原文为契约实现装备重铸、
--- 元素转换、新增/移除与品质附魔状态转移；其余目录项不承载「对当前物品可执行」
--- 的语义，也不给成功率与最经济路线。
+-- `craft/harvest_*_operations.py` 以全部 74 条逐字原文为契约实现装备重铸、元素转换、
+-- 新增/移除、品质附魔、材料转换与牺牲状态转移；只声明原文明示的条件与随机边界，
+-- 不给未公开概率、市场成本或最经济路线。
 --
 -- 那一页有三张表，本表只对应第一张（74 行定向工艺）。另外两张
 -- （51 行作物与掉落来源、41 行催化/化石/工艺台/花园工艺站混排）**有意不取**，

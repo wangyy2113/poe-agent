@@ -1465,6 +1465,78 @@ def _harvest_quality_enchant_args(question: str) -> dict[str, Any] | None:
     return args
 
 
+def _harvest_exchange_args(question: str) -> dict[str, Any] | None:
+    """抽取 17 条 Harvest 材料转换/牺牲；随机结果与堆叠费用不在路由层推导。"""
+    lowered = question.lower()
+    if "收获" not in question and "harvest" not in lowered:
+        return None
+    if any(term in question for term in ("多少命能", "费用", "成本", "多少钱")):
+        return None
+
+    operation = ""
+    if "地图" in question and "献祭" in question:
+        operation = "腐化地图牺牲"
+    elif "技能石" in question and "献祭" in question and any(
+        term in question for term in ("经验", "透镜", "腐化")
+    ):
+        operation = "腐化技能石经验"
+    elif "命运卡" in question and any(
+        term in question for term in ("献祭", "半叠", "翻倍", "赌博")
+    ):
+        operation = "命运卡赌博"
+    elif "辅助宝石" in question and any(term in question for term in ("转换", "转变")):
+        operation = "辅助宝石同色转换"
+    elif any(term in question for term in ("恐怖碎片", "空虚碎片", "塑形碎片", "知识碎片")):
+        operation = "特殊碎片转换"
+    elif "塑界者碎片" in question:
+        operation = "塑界者碎片转换"
+    elif "裂界者碎片" in question:
+        operation = "裂界者碎片转换"
+    elif "征服者碎片" in question:
+        operation = "征服者碎片转换"
+    elif "永恒碎片" in question or "永恒印记" in question:
+        operation = "永恒碎片印记转换"
+    elif "祭品" in question or "凡人碎片" in question:
+        operation = "祭品凡人碎片转换"
+    elif "催化剂" in question:
+        operation = "催化剂转换"
+    elif "化石" in question and any(term in question for term in ("转换", "转变")):
+        operation = "化石转换"
+    elif "圣油" in question:
+        operation = "圣油转换"
+    elif "精华" in question and any(term in question for term in ("转换", "转变")):
+        operation = "精华转换"
+    elif "赛季专属星盘" in question or "星盘转换" in question:
+        operation = "赛季星盘转换"
+    elif "雾魇宝珠" in question:
+        operation = "雾魇宝珠转换"
+    elif "命运卡" in question and any(term in question for term in ("转换", "转变")):
+        operation = "命运卡随机转换"
+    if not operation:
+        return None
+
+    args: dict[str, Any] = {"operation": operation}
+    quantity = re.search(r"(?:献祭|投入|一堆|一叠)?\s*(\d+)\s*(?:个|颗|枚|张|份)", question)
+    if quantity:
+        args["quantity"] = int(quantity.group(1))
+    max_stack = re.search(r"堆叠上限\s*[:：为是]?\s*(\d+)", question)
+    if max_stack:
+        args["max_stack_size"] = int(max_stack.group(1))
+    tier = re.search(r"(\d{1,2})\s*阶(?:地图)?", question)
+    if tier:
+        args["map_tier"] = int(tier.group(1))
+    experience = re.search(r"(?:总存量)?经验\s*[:：为是]?\s*(\d+)", question)
+    if experience:
+        args["gem_total_experience"] = int(experience.group(1))
+    if "稀有" in question or "黄图" in question:
+        args["rarity"] = "稀有"
+    if "未腐化" in question:
+        args["corrupted"] = False
+    elif "腐化" in question:
+        args["corrupted"] = True
+    return args
+
+
 def _preferred_tool_route(question: str) -> str:
     """代码决定本轮该先调哪个精确工具；无把握时返回空串，交回模型自选。
 
@@ -1483,6 +1555,9 @@ def _preferred_tool_route(question: str) -> str:
     harvest_enchant_args = _harvest_quality_enchant_args(question)
     if harvest_enchant_args is not None:
         return "harvest_quality_enchant_state"
+    harvest_exchange_args = _harvest_exchange_args(question)
+    if harvest_exchange_args is not None:
+        return "harvest_exchange_state"
     harvest_modifier_args = _harvest_modifier_args(question)
     if harvest_modifier_args is not None:
         return "harvest_modifier_state"
@@ -1920,6 +1995,7 @@ _CODE_INVOKED_TOOLS: dict[str, Any] = {
     "harvest_reforge_state": _harvest_reforge_args,
     "harvest_modifier_state": _harvest_modifier_args,
     "harvest_quality_enchant_state": _harvest_quality_enchant_args,
+    "harvest_exchange_state": _harvest_exchange_args,
     "economy_material_cost": _material_cost_args,
     "economy_price_lookup": lambda question: {"query": question, "category": "auto"},
     # 路由时已确认该名字在别名表里命中，参数就是问题本身
@@ -1950,6 +2026,7 @@ _DETERMINISTIC_DIRECT_TOOLS = frozenset({
     "harvest_reforge_state",
     "harvest_modifier_state",
     "harvest_quality_enchant_state",
+    "harvest_exchange_state",
 })
 
 
