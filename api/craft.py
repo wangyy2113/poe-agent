@@ -11,6 +11,7 @@ from api.deps import require_user
 from tools.impl.craft_operation import craft_operation_state
 from tools.impl.essence_operation import essence_operation_state
 from tools.impl.harvest_enchant_operation import harvest_quality_enchant_state
+from tools.impl.harvest_exchange_operation import harvest_exchange_state
 from tools.impl.harvest_modifier_operation import harvest_modifier_state
 from tools.impl.harvest_operation import harvest_reforge_state
 
@@ -206,6 +207,38 @@ class HarvestQualityEnchantResponse(BaseModel):
     answer: str
 
 
+class HarvestExchangeRequest(BaseModel):
+    operation: str = Field(min_length=1, max_length=260)
+    quantity: int | None = Field(default=None, ge=1)
+    max_stack_size: int | None = Field(default=None, ge=1)
+    rarity: Literal["普通", "魔法", "稀有", "传奇"] | None = None
+    corrupted: bool | None = None
+    map_tier: int | None = Field(default=None, ge=1, le=100)
+    gem_total_experience: int | None = Field(default=None, ge=0)
+
+
+class HarvestExchangeResponse(BaseModel):
+    found: bool
+    verdict: str
+    craft_id: str
+    effect_text: str
+    operation_key: str
+    mode: str
+    input_label: str
+    output_relation: str
+    source: str
+    source_priority: int
+    source_url: str
+    fetched_at: str
+    costs: list[dict[str, Any]]
+    before: dict[str, Any]
+    after: dict[str, Any]
+    checks: list[dict[str, Any]]
+    unknown_fields: list[str]
+    boundary: str
+    answer: str
+
+
 @router.post("/craft/operation", response_model=CraftOperationResponse)
 def operation_state(
     req: CraftOperationRequest, _caller: str = Depends(require_user)
@@ -336,3 +369,29 @@ def harvest_quality_enchant_operation_state(
             "supported_examples": (result.data or {}).get("supported_examples", []),
         })
     return HarvestQualityEnchantResponse(**result.data)
+
+
+@router.post("/craft/harvest/exchange", response_model=HarvestExchangeResponse)
+def harvest_exchange_operation_state(
+    req: HarvestExchangeRequest, _caller: str = Depends(require_user)
+) -> HarvestExchangeResponse:
+    result = harvest_exchange_state(
+        operation=req.operation,
+        quantity=req.quantity,
+        max_stack_size=req.max_stack_size,
+        rarity=req.rarity,
+        corrupted=req.corrupted,
+        map_tier=req.map_tier,
+        gem_total_experience=req.gem_total_experience,
+    )
+    if not result.ok:
+        raise HTTPException(status_code=422, detail={
+            "error": "invalid_harvest_exchange", "reason": result.error,
+        })
+    if not (result.data or {}).get("found"):
+        raise HTTPException(status_code=422, detail={
+            "error": "unsupported_harvest_exchange",
+            "reason": "只支持 17 条已审计的 Harvest 材料转换与牺牲，不按相似描述猜语义",
+            "supported_operations": (result.data or {}).get("supported_operations", []),
+        })
+    return HarvestExchangeResponse(**result.data)

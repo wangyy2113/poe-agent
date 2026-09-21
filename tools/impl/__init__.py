@@ -7,6 +7,7 @@ from tools.impl import bench as _bench  # noqa: F401  注册副作用
 from tools.impl import boss as _boss  # noqa: F401  注册副作用
 from tools.impl import harvest as _harvest  # noqa: F401  注册副作用
 from tools.impl import harvest_enchant_operation as _harvest_enchant_operation  # noqa: F401  注册副作用
+from tools.impl import harvest_exchange_operation as _harvest_exchange_operation  # noqa: F401  注册副作用
 from tools.impl import harvest_modifier_operation as _harvest_modifier_operation  # noqa: F401  注册副作用
 from tools.impl import harvest_operation as _harvest_operation  # noqa: F401  注册副作用
 from tools.impl import craft as _craft  # noqa: F401  注册副作用
@@ -29,4 +30,4 @@ from tools.impl import thresholds as _thresholds  # noqa: F401  注册副作用
 from tools.impl import recovery as _recovery  # noqa: F401  注册副作用
 from tools.impl import reservation as _reservation  # noqa: F401  注册副作用
 
-__all__ = ["_ailments", "_bench", "_boss", "_craft", "_craft_operation", "_crit", "_craft_pool", "_defence", "_economy", "_essence", "_essence_operation", "_gems", "_harvest", "_harvest_enchant_operation", "_harvest_modifier_operation", "_harvest_operation", "_kb_search", "_maxhit", "_cluster", "_metamods", "_monsters", "_mods", "_passives", "_recovery", "_reservation", "_thresholds"]
+__all__ = ["_ailments", "_bench", "_boss", "_craft", "_craft_operation", "_crit", "_craft_pool", "_defence", "_economy", "_essence", "_essence_operation", "_gems", "_harvest", "_harvest_enchant_operation", "_harvest_exchange_operation", "_harvest_modifier_operation", "_harvest_operation", "_kb_search", "_maxhit", "_cluster", "_metamods", "_monsters", "_mods", "_passives", "_recovery", "_reservation", "_thresholds"]

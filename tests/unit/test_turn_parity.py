@@ -690,6 +690,65 @@ class HarvestQualityEnchantAnswerTest(unittest.TestCase):
         )
 
 
+class HarvestExchangeAnswerTest(unittest.TestCase):
+    """Harvest 转换/牺牲由代码直出，批量与流式不得补随机概率。"""
+
+    ANSWER = (
+        "### Harvest 转换/牺牲状态转移\n\n"
+        "**结论：已知约束兼容**\n\n"
+        "> 输出为另一种化石，具体类型、概率与数量未知。"
+    )
+
+    def _patches(self):
+        def call(name, arguments):
+            if name == "kb_search":
+                return ToolResult(
+                    ok=True,
+                    data={"sufficient": False, "reason": "状态转移不在静态卡片", "missing_terms": []},
+                    citations=[],
+                    meta={"channels": ["bm25"], "degraded": False},
+                )
+            if name == "harvest_exchange_state":
+                args = json.loads(arguments)
+                self.assertEqual("化石转换", args["operation"])
+                self.assertEqual(10, args["quantity"])
+                return ToolResult(
+                    ok=True,
+                    data={"answer": self.ANSWER, "found": True, "verdict": "compatible"},
+                    citations=[{
+                        "chunk_id": "harvest_exchange_operation:fossil",
+                        "entity_id": None,
+                        "title": "Harvest 化石转换",
+                        "url": "https://poedb.tw/cn/Horticrafting",
+                        "source": "POEDB",
+                        "source_priority": 1,
+                        "can_support_facts": True,
+                        "text": self.ANSWER,
+                        "channel": "structured",
+                    }],
+                    meta={"channel": "structured"},
+                )
+            raise AssertionError(name)
+
+        return [
+            patch.object(loop, "get_config", lambda: _FakeConfig()),
+            patch.object(loop, "_persist", lambda *a, **k: None),
+            patch.object(loop, "_record_gaps", lambda *a, **k: None),
+            patch.object(loop.REGISTRY, "call", call),
+        ]
+
+    def test_两条路径直接返回同一Harvest转换结果(self) -> None:
+        question = "收获把10个化石转换成另一种化石会怎样"
+        batch, events = _both_paths(question, self._patches)
+        self.assertFalse(batch.evidence_gap)
+        self.assertEqual(self.ANSWER, batch.answer)
+        self.assertEqual(self.ANSWER, _answer_of(events))
+        self.assertEqual(
+            ["kb_search", "harvest_exchange_state"],
+            [call["tool"] for call in batch.tool_calls],
+        )
+
+
 class PartialDimensionDisclosureTest(unittest.TestCase):
     """复合问题继续回答有据部分，同时由代码保证披露无据部分。"""
 
