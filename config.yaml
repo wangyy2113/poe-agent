@@ -159,6 +159,16 @@ crawl:
   # 缓存有效期；未过期且内容哈希未变则跳过重新抽取与索引
   cache_ttl_hours: 24
 
+economy:
+  # poe.watch 实时价格只作为市场统计快照，不代表保证成交价。
+  enabled: true
+  cache_ttl_minutes: 30
+  # 上游失败可退回旧缓存；超过该阈值仍会返回，但必须显式标成陈旧。
+  stale_after_hours: 6
+  timeout_seconds: 15
+  # 与采集器一致，对公共 API 保持克制；0 表示不做客户端节流。
+  requests_per_second: 0.5
+
 logging:
   level: "INFO"
   # 按日期后缀直接命名新文件，不做 rename 轮转

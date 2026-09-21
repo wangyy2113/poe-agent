@@ -48,7 +48,7 @@ class BuildAdviceTest(unittest.TestCase):
             pair = [item for item in items if item.weakness == weakness]
             self.assertEqual({item.tier for item in pair}, {"低预算", "高预算"})
             self.assertTrue(all(item.expected_gain for item in pair))
-            self.assertTrue(all("未接赛季经济数据" in item.estimated_cost for item in pair))
+            self.assertTrue(all("缺完整制作路径" in item.estimated_cost for item in pair))
 
     def test_未知项不猜成短板(self) -> None:
         self.assertEqual(build_suggestions(PobBuild()), [])

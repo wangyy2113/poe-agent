@@ -490,7 +490,8 @@ def _build_response(
         suggestions=[BuildSuggestionOut(**item.__dict__) for item in suggestions],
         suggestions_note=(
             "建议只由已知 PlayerStat 短板触发；预期收益是当前值到目标值的可复核差额。"
-            "项目尚未接入赛季经济数据，因此成本按改造规模分档，不提供虚构的通货报价。"
+            "标准条目价格快照已接入，但缺完整制作路径与材料清单；"
+            "成本按改造规模分档，不提供虚构的方案通货报价。"
         ),
         version_check=BuildVersionOut(**version.__dict__),
         tree_serialization_version=(tree_link.serialization_version if tree_link else None),

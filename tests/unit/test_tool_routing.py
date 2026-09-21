@@ -177,8 +177,20 @@ class PreferredRouteTest(unittest.TestCase):
             "", loop._preferred_tool_route("知识库里有哪些已确认的跨来源数据冲突")
         )
 
-    def test_price_question_gets_no_route(self) -> None:
-        self.assertEqual("", loop._preferred_tool_route("猎首现在值多少混沌石"))
+    def test_price_question_routes_to_live_economy(self) -> None:
+        self.assertEqual(
+            "economy_price_lookup", loop._preferred_tool_route("猎首现在值多少混沌石")
+        )
+
+    def test_market_price_phrasings_route_to_live_economy(self) -> None:
+        for question in ("神圣石现在多少钱", "猎首当前市价", "The Apothecary 行情"):
+            with self.subTest(question=question):
+                self.assertEqual("economy_price_lookup", loop._preferred_tool_route(question))
+
+    def test_crafting_cost_is_not_claimed_by_snapshot_lookup(self) -> None:
+        self.assertNotEqual(
+            "economy_price_lookup", loop._preferred_tool_route("做一把毕业弓的制作成本")
+        )
 
 
 class FirstRoundToolsTest(unittest.TestCase):

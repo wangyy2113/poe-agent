@@ -1120,10 +1120,9 @@ cases:
 
   - id: gap_price_headhunter
     query: 猎首现在值多少混沌石
-    kind: gap
-    expect_gap: true
-    forbid_in_answer: ["大约", "左右", "参考价"]
-    note: 经济源未接入（economy_price = not_collected），不得按同类物品类推价格
+    kind: tool_route
+    expect_tool: economy_price_lookup
+    note: 实时价格必须走 poe.watch 工具并携带联盟、抓取时间与置信度，不由模型估价
 
   - id: gap_cluster_jewel_notables
     query: 大型星团珠宝能开出哪些大点

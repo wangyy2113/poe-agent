@@ -14,7 +14,7 @@
 ## 为什么价值判断只输出「数据不足」
 
 需求 7.5 要求给出是否值得裂界 / 镜像湖 / 镜子级别的判断。这些判断的输入是
-**该配置在当前赛季的市场溢价**，而经济数据源（需求 10）尚未接入。
+**该配置在当前赛季的市场溢价**；poe.watch 标准条目快照不能替代稀有装备逐词缀估值。
 
 按第一原则，此处不给「看起来合理」的结论：一条「建议裂界」会让人真的去花
 分裂石，而我们连该词缀裂界后值多少都查不到。所以输出格式是
@@ -71,7 +71,7 @@ class CraftDirection:
 
 @dataclass
 class Judgement:
-    """价值判断。`verdict` 恒为「数据不足」直到经济源接入。"""
+    """价值判断。稀有装备估值模型尚未接入时保持「数据不足」。"""
 
     topic: str
     verdict: str
@@ -126,8 +126,9 @@ def build_report(conn: sqlite3.Connection, item: ParsedItem) -> ItemReport:
     report.market = MarketInfo(
         available=False,
         reason=(
-            "经济数据源尚未接入（需求 10 的 poe.watch 适配层未实现），"
-            "因此无法给出市场价值。**不按同类物品类推价格**"
+            "poe.watch 已可查询有稳定名称的唯一装备/通货等条目，但本接口尚不具备"
+            "按稀有装备逐词缀估值的模型，因此无法给出这件装备的市场价值。"
+            "**不按同类物品类推价格**"
         ),
     )
     return report

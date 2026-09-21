@@ -281,6 +281,61 @@ class CoverageAnswerTest(unittest.TestCase):
         self.assertNotIn("gap", kinds, "覆盖声明不该发 gap 事件")
 
 
+class EconomyAnswerTest(unittest.TestCase):
+    """实时价格走确定性答案：批量/流式逐字一致，且完全不调用模型。"""
+
+    ANSWER = (
+        "### Headhunter · Allflame 价格快照\n\n"
+        "- poe.watch 均值：**100 混沌石**\n\n"
+        "> 数据源：poe.watch；联盟：Allflame；抓取时间：2026-09-21T04:00:00Z。"
+    )
+
+    def _patches(self):
+        def call(name, _arguments):
+            if name == "kb_search":
+                return ToolResult(
+                    ok=True,
+                    data={"sufficient": False, "reason": "动态价格不在静态卡片", "missing_terms": []},
+                    citations=[],
+                    meta={"channels": ["bm25"], "degraded": False},
+                )
+            if name == "economy_price_lookup":
+                return ToolResult(
+                    ok=True,
+                    data={"answer": self.ANSWER, "found": True},
+                    citations=[{
+                        "chunk_id": "economy:Allflame:accessory:1:2026-09-21T04:00:00Z",
+                        "entity_id": None,
+                        "title": "Headhunter price",
+                        "url": "https://api.poe.watch",
+                        "source": "poe.watch",
+                        "source_priority": 5,
+                        "can_support_facts": True,
+                        "text": self.ANSWER,
+                        "channel": "live_economy",
+                    }],
+                    meta={"channel": "live_economy"},
+                )
+            raise AssertionError(name)
+
+        return [
+            patch.object(loop, "get_config", lambda: _FakeConfig()),
+            patch.object(loop, "_persist", lambda *a, **k: None),
+            patch.object(loop, "_record_gaps", lambda *a, **k: None),
+            patch.object(loop.REGISTRY, "call", call),
+        ]
+
+    def test_两条路径都直接返回同一价格快照(self) -> None:
+        batch, events = _both_paths("猎首现在值多少混沌石", self._patches)
+        self.assertFalse(batch.evidence_gap)
+        self.assertEqual(self.ANSWER, batch.answer)
+        self.assertEqual(self.ANSWER, _answer_of(events))
+        self.assertEqual(
+            ["kb_search", "economy_price_lookup"],
+            [call["tool"] for call in batch.tool_calls],
+        )
+
+
 class PartialDimensionDisclosureTest(unittest.TestCase):
     """复合问题继续回答有据部分，同时由代码保证披露无据部分。"""
 
