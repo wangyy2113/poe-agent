@@ -9,10 +9,14 @@ from pydantic import BaseModel, Field
 
 from api.deps import require_user
 from economy.models import MaterialRequest as DomainMaterialRequest
+from economy.rare_items import InvalidRareComparable
 from economy.service import EconomyUnavailable, InvalidEconomyQuery
+from economy.trade_api import TradeApiError
 from tools.impl.economy import (
+    rare_service_from_config,
     render_material_cost,
     render_price,
+    render_rare_comparables,
     render_trend,
     service_from_config,
 )
@@ -107,6 +111,32 @@ class MaterialCostResponse(BaseModel):
     answer: str
 
 
+class RareComparableRequest(BaseModel):
+    item_text: str = Field(min_length=1, max_length=20000)
+    league: str | None = Field(default=None, max_length=100)
+
+
+class RareComparableResponse(BaseModel):
+    available: bool
+    status: str
+    reason: str
+    league: str
+    source: str
+    source_url: str
+    fetched_at: str
+    base_type_input: str
+    base_type_en: str
+    item_level: int | None
+    corrupted: bool
+    explicit_mod_count: int
+    mapped_mod_count: int
+    comparison_quality: str
+    mapped_stats: list[dict[str, Any]]
+    unmapped_mods: list[str]
+    quote: dict[str, Any] | None
+    answer: str
+
+
 @router.post("/economy/price", response_model=PriceResponse)
 def price(req: PriceRequest, _caller: str = Depends(require_user)) -> PriceResponse:
     try:
@@ -122,6 +152,25 @@ def price(req: PriceRequest, _caller: str = Depends(require_user)) -> PriceRespo
             "error": "economy_unavailable", "reason": str(exc),
         }) from exc
     return PriceResponse(**result.as_dict(), answer=render_price(result))
+
+
+@router.post("/economy/rare-comparables", response_model=RareComparableResponse)
+def rare_comparables(
+    req: RareComparableRequest, _caller: str = Depends(require_user)
+) -> RareComparableResponse:
+    try:
+        result = rare_service_from_config().estimate(req.item_text, league=req.league)
+    except InvalidRareComparable as exc:
+        raise HTTPException(status_code=422, detail={
+            "error": "invalid_rare_comparable", "reason": str(exc),
+        }) from exc
+    except TradeApiError as exc:
+        raise HTTPException(status_code=503, detail={
+            "error": "trade_api_unavailable", "reason": str(exc),
+        }) from exc
+    return RareComparableResponse(
+        **result.as_dict(), answer=render_rare_comparables(result)
+    )
 
 
 @router.post("/economy/trend", response_model=TrendResponse)

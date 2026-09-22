@@ -1711,12 +1711,46 @@ def _harvest_exchange_args(question: str) -> dict[str, Any] | None:
     return args
 
 
+def _rare_comparable_args(question: str) -> dict[str, Any] | None:
+    """完整稀有装备复制文本 + 价格意图才进入可比挂单工具。"""
+    if not (
+        "稀有度: 稀有" in question
+        or "稀有度：稀有" in question
+        or "Rarity: Rare" in question
+    ):
+        return None
+    if "--------" not in question:
+        return None
+    if not any(term in question for term in (
+        "价格", "多少钱", "多少C", "多少c", "值多少", "行情", "市价", "市场价",
+        "估值", "可比", "挂单",
+    )):
+        return None
+    headers = [
+        pos for marker in ("物品类别:", "物品类别：", "Item Class:")
+        if (pos := question.find(marker)) >= 0
+    ]
+    if not headers:
+        return None
+    item_text = question[min(headers):].strip()
+    lines = item_text.splitlines()
+    if lines and any(term in lines[-1] for term in (
+        "价格", "多少钱", "多少C", "多少c", "值多少", "行情", "市价", "市场价",
+        "估值", "可比", "挂单",
+    )):
+        lines.pop()
+    item_text = "\n".join(lines).strip()
+    return {"item_text": item_text} if item_text else None
+
+
 def _preferred_tool_route(question: str) -> str:
     """代码决定本轮该先调哪个精确工具；无把握时返回空串，交回模型自选。
 
     只在**第一次**调用时强制（`tool_choice`），后续轮次放开——工具结果可能说明
     需要换工具，锁死会让它无路可走。
     """
+    if _rare_comparable_args(question) is not None:
+        return "economy_rare_comparables"
     if any(term in question for term in (
         "价格趋势", "行情趋势", "价格走势", "行情走势", "涨跌", "涨了多少",
         "跌了多少", "最近在涨", "最近在跌", "过去一周", "过去一个月",
@@ -2190,6 +2224,7 @@ _CODE_INVOKED_TOOLS: dict[str, Any] = {
     "economy_material_cost": _material_cost_args,
     "economy_price_trend": _economy_trend_args,
     "economy_price_lookup": lambda question: {"query": question, "category": "auto"},
+    "economy_rare_comparables": _rare_comparable_args,
     # 路由时已确认该名字在别名表里命中，参数就是问题本身
     "entity_lookup": lambda question: {"name": question},
     # 无参数
@@ -2213,7 +2248,8 @@ _CODE_INVOKED_TOOLS: dict[str, Any] = {
 #: 「一条证据都没拿到就走缺据」的兜底要放过它们，否则它们永远进不了生成。
 _TOOLS_WITHOUT_CITATIONS = frozenset({"kb_coverage"})
 _DETERMINISTIC_DIRECT_TOOLS = frozenset({
-    "economy_price_lookup", "economy_price_trend", "economy_material_cost", "craft_operation_state",
+    "economy_price_lookup", "economy_price_trend", "economy_material_cost",
+    "economy_rare_comparables", "craft_operation_state",
     "essence_operation_state",
     "eldritch_operation_state",
     "veiled_operation_state",

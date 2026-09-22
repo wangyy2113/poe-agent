@@ -107,7 +107,7 @@ class ItemResponse(BaseModel):
     prefix_count: int
     suffix_count: int
     affix_capacity: AffixCapacityOut
-    #: 市场价值。稀有装备估值模型未接入，恒为 false + 原因（需求 7.8）
+    #: 本地报告不自动联网；实时同类挂单比较走 /economy/rare-comparables。
     market_available: bool
     market_reason: str
     judgements: list[JudgementOut]

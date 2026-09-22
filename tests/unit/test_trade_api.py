@@ -74,6 +74,44 @@ def unique_listing(
     }
 
 
+def rare_listing(
+    price: float,
+    *,
+    currency: str = "chaos",
+    league: str = "Allflame",
+    base_type: str = "Amber Amulet",
+    item_level: int = 84,
+    corrupted: bool = False,
+    frame_type: int = 2,
+) -> dict:
+    return {
+        "listing": {
+            "indexed": "2026-09-22T08:00:00Z",
+            "account": {"online": {"league": league}},
+            "price": {"type": "~price", "amount": price, "currency": currency},
+        },
+        "item": {
+            "name": "Dread Eye",
+            "typeLine": base_type,
+            "frameType": frame_type,
+            "ilvl": item_level,
+            "corrupted": corrupted,
+        },
+    }
+
+
+STATS = {
+    "result": [{
+        "id": "explicit",
+        "label": "Explicit",
+        "entries": [
+            {"id": "explicit.stat_4080418644", "text": "+# to Strength", "type": "explicit"},
+            {"id": "explicit.stat_3299347043", "text": "+# to maximum Life", "type": "explicit"},
+        ],
+    }]
+}
+
+
 class TradeApiClientTest(unittest.TestCase):
     def test_filters_cross_league_invalid_and_outlier_before_median(self) -> None:
         calls: list[tuple[str, str, dict | None]] = []
@@ -310,6 +348,123 @@ class TradeApiClientTest(unittest.TestCase):
             TradeApiClient(request_json=request, requests_per_second=0).unique_quote(
                 "Allflame", "Goldrim", "Leather Cap"
             )
+
+    def test_rare_search_uses_exact_metadata_and_presence_stats(self) -> None:
+        ids = [f"r{i}" for i in range(8)]
+        rows = {
+            "r0": rare_listing(10),
+            "r1": rare_listing(11),
+            "r2": rare_listing(12),
+            "r3": rare_listing(13),
+            "r4": rare_listing(14),
+            "r5": rare_listing(1, league="Standard"),
+            "r6": rare_listing(1, item_level=83),
+            "r7": rare_listing(1, frame_type=3),
+        }
+        calls: list[tuple[str, str, dict | None]] = []
+
+        def request(method: str, path: str, payload: dict | None):
+            calls.append((method, path, payload))
+            if path == "/api/trade/data/stats":
+                return STATS
+            if path.startswith("/api/trade/search/"):
+                return {"id": "rare-query", "total": len(ids), "result": ids}
+            if path.startswith("/api/trade/fetch/"):
+                requested = path.split("/fetch/", 1)[1].split("?", 1)[0].split(",")
+                return {"result": [rows[item_id] for item_id in requested]}
+            self.fail(f"unexpected request: {path}")
+
+        quote = TradeApiClient(
+            request_json=request, requests_per_second=0, minimum_samples=5
+        ).rare_quote(
+            "Allflame", "Amber Amulet", 84, False,
+            ["explicit.stat_4080418644", "explicit.stat_3299347043"],
+        )
+        self.assertEqual(12, quote.median_chaos)
+        self.assertEqual(5, quote.sample_count)
+        self.assertEqual(1, quote.cross_league_filtered_count)
+        self.assertEqual(2, quote.invalid_quote_filtered_count)
+        self.assertIn("只约束词缀存在", quote.sample_scope)
+        search = next(call[2] for call in calls if call[1].startswith("/api/trade/search/"))
+        self.assertEqual("Amber Amulet", search["query"]["type"])
+        self.assertEqual(
+            "rare",
+            search["query"]["filters"]["type_filters"]["filters"]["rarity"]["option"],
+        )
+        self.assertEqual(
+            {"min": 84, "max": 84},
+            search["query"]["filters"]["misc_filters"]["filters"]["ilvl"],
+        )
+        self.assertEqual(
+            [{"id": "explicit.stat_4080418644"}, {"id": "explicit.stat_3299347043"}],
+            search["query"]["stats"][0]["filters"],
+        )
+
+    def test_rare_rejects_hash_missing_from_official_dictionary(self) -> None:
+        client = TradeApiClient(
+            request_json=lambda _m, path, _p: STATS if path.endswith("/stats") else {},
+            requests_per_second=0,
+        )
+        with self.assertRaisesRegex(TradeApiError, "没有显式 stat"):
+            client.rare_quote(
+                "Allflame", "Amber Amulet", 84, False, ["explicit.stat_999"]
+            )
+
+    def test_rare_divine_prices_use_audited_exchange_rate(self) -> None:
+        ids = [f"r{i}" for i in range(8)]
+
+        def request(_method: str, path: str, _payload: dict | None):
+            if path == "/api/trade/data/stats":
+                return STATS
+            if path.startswith("/api/trade/search/"):
+                return {"id": "rare-divine", "total": 8, "result": ids}
+            if path.startswith("/api/trade/fetch/"):
+                return {"result": [
+                    *[rare_listing(value) for value in (340, 350, 360, 370, 380)],
+                    *[rare_listing(1, currency="divine") for _ in range(3)],
+                ]}
+            if path == "/api/trade/data/static":
+                return STATIC
+            return {"result": {
+                str(index): listing(value)
+                for index, value in enumerate((350, 355, 360, 365, 370))
+            }}
+
+        quote = TradeApiClient(
+            request_json=request, requests_per_second=0, minimum_samples=5
+        ).rare_quote(
+            "Allflame", "Amber Amulet", 84, False,
+            ["explicit.stat_3299347043"],
+        )
+        self.assertEqual(360, quote.median_chaos)
+        self.assertEqual(3, quote.divine_listing_count)
+        self.assertEqual(360, quote.divine_chaos_rate)
+        self.assertEqual("converted", quote.conversion_status)
+
+    def test_rare_search_contract_is_asserted(self) -> None:
+        def request(_method: str, path: str, _payload: dict | None):
+            if path == "/api/trade/data/stats":
+                return STATS
+            return {"result": []}
+
+        with self.assertRaisesRegex(TradeApiError, "查询 id"):
+            TradeApiClient(request_json=request, requests_per_second=0).rare_quote(
+                "Allflame", "Amber Amulet", 84, False,
+                ["explicit.stat_3299347043"],
+            )
+
+    def test_stats_dictionary_contract_and_cache(self) -> None:
+        calls = 0
+
+        def request(_method: str, _path: str, _payload: dict | None):
+            nonlocal calls
+            calls += 1
+            return STATS
+
+        client = TradeApiClient(request_json=request, requests_per_second=0)
+        self.assertEqual("+# to Strength", client.explicit_stats()["explicit.stat_4080418644"])
+        client.explicit_stats()
+        self.assertEqual(1, calls)
 
 
 if __name__ == "__main__":

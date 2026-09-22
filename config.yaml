@@ -200,6 +200,11 @@ economy:
     minimum_samples: 5
     # 未腐化唯一装备搜索按价格升序最多抓取多少条；官方 fetch 每批最多 10 条。
     unique_max_results: 40
+  rare_comparables:
+    # 稀有装备只输出可审计的同类在线挂单比较，不输出精确成交价或制作价值。
+    enabled: true
+    # 按价格升序最多抓取多少条；官方 fetch 每批最多 10 条。
+    max_results: 40
 
 logging:
   level: "INFO"

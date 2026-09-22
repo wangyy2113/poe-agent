@@ -13,8 +13,13 @@ from core import db as dbmod
 from core.config import get_config
 from economy.models import MaterialCostEstimate, MaterialRequest, PriceSearch, PriceTrendSearch
 from economy.poe_watch import PoeWatchClient
+from economy.rare_items import (
+    InvalidRareComparable,
+    RareComparableEstimate,
+    RareComparableService,
+)
 from economy.trade_api import API_URL as TRADE_API_URL
-from economy.trade_api import TradeApiClient
+from economy.trade_api import TradeApiClient, TradeApiError
 from economy.service import (
     API_URL,
     PUBLIC_CATEGORIES,
@@ -92,6 +97,27 @@ def service_from_config() -> EconomyService:
     )
 
 
+def rare_service_from_config() -> RareComparableService:
+    cfg = get_config()
+    if not bool(cfg.get("economy.rare_comparables.enabled", True)):
+        raise InvalidRareComparable("稀有装备可比挂单查询已由配置关闭")
+    return RareComparableService(
+        dbmod.get_conn(),
+        _shared_trade_client(
+            float(cfg.get("economy.trade_fallback.timeout_seconds", 15)),
+            float(cfg.get("economy.trade_fallback.requests_per_second", 0.5)),
+            str(cfg.get(
+                "economy.trade_fallback.user_agent",
+                "poe1-agent/0.2 (local economy fallback; "
+                "github.com/wangyy2113/poe-agent)",
+            )),
+            float(cfg.get("economy.trade_fallback.static_ttl_hours", 24)),
+            int(cfg.get("economy.trade_fallback.minimum_samples", 5)),
+            int(cfg.get("economy.rare_comparables.max_results", 40)),
+        ),
+    )
+
+
 def _price(value: float | None) -> str:
     if value is None:
         return "未提供"
@@ -106,6 +132,69 @@ def _citation_url(source: str, source_url: str = "") -> str:
 
 def _source_priority(source: str) -> int:
     return 1 if source == "GGG Trade API" else 5
+
+
+def render_rare_comparables(result: RareComparableEstimate) -> str:
+    lines = [
+        f"## {result.base_type_input or result.base_type_en} · 稀有装备可比挂单",
+        "",
+        f"> 数据源：{result.source}；联盟：{result.league or '未查询'}；"
+        f"查询时间：{result.fetched_at}。这是在线挂单比较，不是成交记录或精确估值。",
+        "",
+        f"- 状态：{result.status}（{result.reason}）",
+        f"- 精确底材：{result.base_type_en}；物等：{result.item_level}；"
+        f"腐化：{'是' if result.corrupted else '否'}",
+        f"- 词缀映射：{result.mapped_mod_count}/{result.explicit_mod_count} 条；"
+        f"可比性：{result.comparison_quality}",
+    ]
+    for mapping in result.mapped_stats:
+        labels = " / ".join(
+            f"{stat_id}（{text}）"
+            for stat_id, text in zip(mapping.stat_ids, mapping.official_texts, strict=True)
+        )
+        lines.append(f"  - `{mapping.mod_text}` → {labels}")
+    if result.unmapped_mods:
+        lines.append("- 未映射词缀（未进入筛选，已降低可比性）：")
+        lines.extend(f"  - `{text}`" for text in result.unmapped_mods)
+    quote = result.quote
+    if quote is not None:
+        if quote.sufficient:
+            lines += [
+                f"- 可比挂单中位数：**{_price(quote.median_chaos)} 混沌石**",
+                f"- 保留样本范围：{_price(quote.min_chaos)}–{_price(quote.max_chaos)} 混沌石",
+            ]
+        else:
+            lines.append(
+                f"- **不输出代表价**：过滤后 {quote.sample_count} 条，"
+                f"最低要求 {quote.minimum_sample_count} 条"
+            )
+        lines += [
+            f"- 搜索总命中 {quote.search_total or 0} 条，本次抓取 "
+            f"{quote.fetched_listing_count or 0} 条，过滤后保留 {quote.sample_count} 条",
+            f"- 过滤：跨联盟 {quote.cross_league_filtered_count}、无效结构/身份 "
+            f"{quote.invalid_quote_filtered_count}、无法换算货币 "
+            f"{quote.unconverted_currency_filtered_count or 0}、统计离群 "
+            f"{quote.outlier_filtered_count}",
+            f"- 挂单时间：{quote.earliest_listing_at or '未提供'} → "
+            f"{quote.latest_listing_at or '未提供'}",
+            f"- 样本边界：{quote.sample_scope}",
+        ]
+        if quote.divine_listing_count:
+            conversion = (
+                f"{_price(quote.divine_chaos_rate)} Chaos/Divine，"
+                f"{quote.conversion_sample_count or 0} 条换算样本"
+                if quote.conversion_status == "converted"
+                else f"换算状态 {quote.conversion_status}"
+            )
+            lines.append(
+                f"- 标价构成：Chaos {quote.chaos_listing_count or 0} 条、Divine "
+                f"{quote.divine_listing_count or 0} 条；{conversion}"
+            )
+    lines += [
+        "",
+        "> 不据此判断保证成交价、制作价值、利润、是否值得分裂/镜像湖或镜子级别。",
+    ]
+    return "\n".join(lines)
 
 
 def render_price(result: PriceSearch) -> str:
@@ -403,6 +492,74 @@ def economy_price_lookup(
             "stale": result.stale,
             "degraded": result.degraded,
             "fallback": result.fallback,
+        },
+    )
+
+
+@REGISTRY.register(
+    name="economy_rare_comparables",
+    description=(
+        "把 POE1 稀有装备复制文本映射到 GGG 官方 Trade stat，查询同联盟、精确底材、"
+        "相同物等和腐化状态、同时具备已映射显式词缀的在线可比挂单。返回中位数、范围、"
+        "样本/过滤审计和未映射词缀。它不是精确成交价、制作价值、利润或是否值得分裂/"
+        "镜像湖/镜子级别的判断；样本不足时不输出代表价。"
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "item_text": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 20000,
+                "description": "游戏内 Ctrl+C 或 Ctrl+Alt+C 得到的完整稀有装备文本",
+            },
+            "league": {
+                "type": "string",
+                "maxLength": 100,
+                "description": "可选；留空时选择当前普通挑战联盟",
+            },
+        },
+        "required": ["item_text"],
+        "additionalProperties": False,
+    },
+)
+def economy_rare_comparables(
+    item_text: str, league: str | None = None
+) -> ToolResult:
+    try:
+        result = rare_service_from_config().estimate(item_text, league=league)
+    except (InvalidRareComparable, TradeApiError) as exc:
+        return ToolResult(ok=False, error=str(exc), meta={"source": "GGG Trade API"})
+    except ValueError as exc:
+        # ItemParseError 是 ValueError 子类；工具层保持统一失败契约。
+        return ToolResult(ok=False, error=str(exc), meta={"source": "item_text"})
+
+    rendered = render_rare_comparables(result)
+    citations = []
+    if result.quote is not None:
+        citations.append({
+            "chunk_id": (
+                f"rare-comparable:{result.league}:{result.quote.item_id}:"
+                f"{result.fetched_at}"
+            ),
+            "entity_id": None,
+            "title": f"{result.base_type_en} · {result.league} 稀有装备可比挂单",
+            "url": result.source_url,
+            "source": result.source,
+            "source_priority": 1,
+            "can_support_facts": True,
+            "text": rendered,
+            "channel": "live_economy",
+        })
+    return ToolResult(
+        ok=True,
+        data={**result.as_dict(), "answer": rendered},
+        citations=citations,
+        meta={
+            "channel": "live_economy",
+            "source": result.source,
+            "status": result.status,
+            "comparison_quality": result.comparison_quality,
         },
     )
 

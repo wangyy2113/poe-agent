@@ -3,7 +3,7 @@
 复用 `test_item_mods` 的内存桩库，离线可跑。
 
 重点是三条「不许做的事」：
-  - 不许给稀有装备市场估值（只有标准条目快照，需求 7.8 禁止类推）
+  - 本地装备报告不许把另一个接口的同类挂单冒充为精确市场估值
   - 不许给裂界/镜像湖/镜子级别的结论（需求 7.5 的输入不具备）
   - 「该底材上最高档位」不许跨来源类别取（工艺台 T1 与掉落 T1 差一个量级）
 """
@@ -150,12 +150,13 @@ class TestAffixCapacity(ReportTestCase):
 
 
 class TestMarketAndJudgements(ReportTestCase):
-    def test_没有稀有装备估值模型就明说没有(self):
+    def test_报告不自动联网并指向可比挂单工具(self):
         report = self.report_for(["+107 最大生命"])
         self.assertFalse(report.market.available)
         text = render_report(report)
         self.assertIn("**无价格数据。**", text)
-        self.assertIn("不按同类物品类推价格", text)
+        self.assertIn("economy_rare_comparables", text)
+        self.assertIn("不是这件装备的精确成交价", text)
 
     def test_三项价值判断都不给结论(self):
         report = self.report_for(["+107 最大生命"])
