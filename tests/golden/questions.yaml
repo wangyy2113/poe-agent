@@ -1411,7 +1411,7 @@ cases:
     query: 星团珠宝上的天赋要花几个天赋点
     kind: description
     expect_any_hit: true
-    expect_in_answer: ["哪些核心天赋出现在哪种小天赋类型上未采集"]
+    expect_in_answer: ["基础生成权重不是单次概率"]
     note: >-
       2026-08-19 第十八轮起**可答**：星团珠宝清单入库后能给出三个尺寸的结构，
       并说明这些天赋不在主天赋树上、没有「从起点走过去」的点数
@@ -1427,17 +1427,18 @@ cases:
     expect_values: ["8", "12"]
     note: PoB ClusterJewels.lua 的 minNodes/maxNodes：大型 8–12
 
-  - id: gap_cluster_notable_pool
+  - id: route_cluster_notable_pool
     query: 大星团珠宝的斧剑伤害能开出哪些核心天赋
-    kind: gap
-    expect_gap: true
+    kind: tool_route
+    expect_tool: cluster_jewel_info
     note: >-
-      「哪些核心天赋出现在哪种小天赋类型上」这个映射本地拿不到：
-      ClusterJewels.lua 只给「尺寸 → 类型」与一份扁平的 308 条清单，
-      树 JSON 的节点字段里也没有 affliction 标签
+      2026-09-22 第九十一轮起可答：ClusterJewels.lua 的类型 tag 与
+      ModJewelCluster.lua 核心天赋词缀的正权重键同源连接，并保留物等门槛、
+      前后缀位和基础生成权重
     lesson: >-
-      有 308 条清单在手上，最容易犯的错是拿其中一部分去凑一个「看起来对」的答案。
-      这条哨兵钉住：清单在库里 ≠ 那个映射在库里。
+      原先只审计 ClusterJewels.lua 与树 JSON，误判为本地没有映射；实际上已经入库的
+      ModJewelCluster.lua 用相同 affliction tag 给出了可出现池。跨文件连接必须校验
+      commit 一致，权重只按基础值披露，不能冒充单次概率。
 
   - id: route_passive_path
     query: 从起点点到坚毅之心要花几个天赋点

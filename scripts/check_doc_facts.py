@@ -90,6 +90,23 @@ def _distinct(table: str, column: str) -> Callable[[sqlite3.Connection], int]:
     return inner
 
 
+def _cluster_mapping_count(*, distinct_types: bool) -> Callable[[sqlite3.Connection], int]:
+    """同一 PoB commit 下，小天赋类型 tag 与正权重核心天赋词缀的连接数。"""
+    select = "count(DISTINCT s.size || ':' || s.tag)" if distinct_types else "count(*)"
+
+    def inner(conn: sqlite3.Connection) -> int:
+        return int(conn.execute(
+            f"SELECT {select} FROM pob_cluster_skill s "  # noqa: S608
+            "JOIN pob_cluster_jewel j ON j.size=s.size "
+            "JOIN pob_mod p ON p.mod_kind='jewel_cluster' "
+            "AND p.text_en LIKE '1 Added Passive Skill is %' "
+            "AND p.url LIKE '%/blob/' || j.source_commit || '/%' "
+            "AND CAST(json_extract(p.weights,'$.' || s.weight_tag) AS INTEGER)>0"
+        ).fetchone()[0])
+
+    return inner
+
+
 def _unit_test_count(_conn: sqlite3.Connection) -> int:
     """跑一遍发现（不执行用例）数出总数。
 
@@ -233,6 +250,14 @@ FACTS: tuple[Fact, ...] = (
          _count("pob_cluster_notable")),
     Fact("星团小天赋类型数", "README.md", r"([\d,]+) 条小天赋类型",
          _count("pob_cluster_skill")),
+    Fact("星团已映射小天赋类型数", "README.md", r"当前覆盖 ([\d,]+) 个类型、",
+         _cluster_mapping_count(distinct_types=True)),
+    Fact("星团类型核心关系数", "README.md", r"个类型、([\d,]+) 条类型—核心关系",
+         _cluster_mapping_count(distinct_types=False)),
+    Fact("CLAUDE.md 星团已映射小天赋类型数", "CLAUDE.md", r"当前覆盖 ([\d,]+) 个类型、",
+         _cluster_mapping_count(distinct_types=True)),
+    Fact("CLAUDE.md 星团类型核心关系数", "CLAUDE.md", r"个类型、([\d,]+) 条\n类型—核心关系",
+         _cluster_mapping_count(distinct_types=False)),
     Fact("CLAUDE.md 地图张数", "CLAUDE.md", r"`poedb_map` \*\*([\d,]+)\*\*",
          _count("poedb_map")),
     Fact("地图张数", "README.md", r"\| 地图 \| ([\d,]+) 张",

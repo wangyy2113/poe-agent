@@ -1195,7 +1195,8 @@ CREATE TABLE IF NOT EXISTS pob_cluster_jewel (
 -- 与宝石的 `description_en` 同一处理，不自己翻译。
 CREATE TABLE IF NOT EXISTS pob_cluster_skill (
     size            TEXT NOT NULL,
-    tag             TEXT NOT NULL,     -- affliction_maximum_life
+    tag             TEXT NOT NULL,     -- skills 表的稳定键，如 affliction_maximum_life
+    weight_tag      TEXT NOT NULL,     -- 条目内 tag；与 ModJewelCluster.weightKey 连接
     name_en         TEXT NOT NULL CHECK(name_en <> ''),
     stats_en        TEXT NOT NULL CHECK(json_valid(stats_en)),
     enchant_en      TEXT NOT NULL CHECK(json_valid(enchant_en)),
@@ -1597,6 +1598,7 @@ def _migrate(conn: sqlite3.Connection) -> None:
         _migrate_conflict_cause(conn)
         _migrate_reservation_columns(conn)
         _migrate_gap_source(conn)
+        _migrate_cluster_skill_weight_tag(conn)
         conn.commit()
     except sqlite3.Error as exc:
         # 迁移失败不能让启动失败——但必须告警，否则台账会继续悄悄积累重复
@@ -1829,6 +1831,26 @@ def _migrate_reservation_columns(conn: sqlite3.Connection) -> None:
     if added:
         conn.commit()
         logger.info("pob_skill_level 补列完成：%s（需重跑技能石导入才有值）", added)
+
+
+def _migrate_cluster_skill_weight_tag(conn: sqlite3.Connection) -> None:
+    """补上 ClusterJewels 条目内用于连接词缀权重的真实 tag。
+
+    旧表把 ``skills`` 的映射键存进 ``tag``。绝大多数条目两者相同，但格挡攻击/法术
+    共用 ``affliction_chance_to_block``，两个 legacy 类型也使用 ``old_do_not_use_*``。
+    这四条来自已钉住的 PoB 数据，不靠名称翻译推断。
+    """
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(pob_cluster_skill)")}
+    if "weight_tag" not in cols:
+        conn.execute("ALTER TABLE pob_cluster_skill ADD COLUMN weight_tag TEXT")
+    conn.execute(
+        "UPDATE pob_cluster_skill SET weight_tag=CASE tag "
+        "WHEN 'affliction_chance_to_block_attack_damage' THEN 'affliction_chance_to_block' "
+        "WHEN 'affliction_chance_to_block_spell_damage' THEN 'affliction_chance_to_block' "
+        "WHEN 'affliction_aura_effect' THEN 'old_do_not_use_affliction_aura_effect' "
+        "WHEN 'affliction_curse_effect' THEN 'old_do_not_use_affliction_curse_effect' "
+        "ELSE tag END WHERE weight_tag IS NULL OR weight_tag=''"
+    )
 
 
 def _migrate_conflict_cause(conn: sqlite3.Connection) -> None:
