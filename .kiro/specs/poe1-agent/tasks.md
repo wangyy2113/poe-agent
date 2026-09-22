@@ -859,6 +859,11 @@ V1 完成的判定标准（逐条实测，不以「无报错」代替验证）�
       `mod_affix.category='delve'` 的 1,983 行地渊来源词缀，并列披露 4 个元词缀矩阵原值。
       不合并多标签乘数、不把目录或基础权重冒充最终概率；共鸣器组合、完整执行契约、
       稀有度变化、具体结果数量、步骤、成本与路线保持 unknown
+    - [x] 影响力底材约束 v1：复用 1,022 条 PoB 底材已有的 `tags` / `influenceTags`，
+      按 `ItemTools.lua` 的六种传统影响显示名映射与 `Item.lua:GetModSpawnWeight` 标签匹配规则，
+      将具体底材、单一影响、可选物等与 POEDB 目标词缀 `spawn_tags` 接入
+      `check_mod_combination`；另提供 `base_influence_profile` 精确查询。影响底材获得方式、
+      多影响组合、觉醒者之石状态转移、步骤与概率保持 unknown
   - [ ] Economy adapter 与 Planner：接入价格、比较最快/最经济路线、逐步期望消耗；上述输入未齐前不得输出完整路线
 - [ ] Boss Agent：机制、防御门槛、药剂、流程；可结合已导入 Build
 - [x] 官方角色 API 导入 v1（2026-09-08）：接入 OAuth `account:characters` 的当前

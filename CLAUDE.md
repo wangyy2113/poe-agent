@@ -146,7 +146,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 1785 项，秒级
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 1795 项，秒级
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选
@@ -729,7 +729,9 @@ POEDB 页面仍是旧版」：`号召` PoB 侧是 `ConvocationNew`（各级需�
 （腐化 / 附魔 / 灭界者，各有各的槽位规则）、**没给稀有度**（不替用户假定「稀有」）、
 查不到规则、规则说「不受限制」（传奇的词缀是固定的，不由名额决定）。
 而 `possible` 的判据是**「这一页一条缺口都没有」**而不是「容量过了」——
-来源与影响力规则将来补上时，这里一行都不用改。
+来源规则将来补上时，这里一行都不用改。影响力这一维已在后续轮次接通：给定具体底材、
+单一影响与可选物等时，按 PoB `tags` / `influenceTags` 和 POEDB `spawn_tags` 过滤候选；
+没有具体底材、多影响组合或影响底材获得方式仍保持 `unknown`。
 
 **`possible` 的含义只是「这些词缀能共存」，不是「能做出来」**，这条区别写在
 工具描述、系统提示词与证据正文三处。超出名额则判 `impossible`——这是新增的真负例。

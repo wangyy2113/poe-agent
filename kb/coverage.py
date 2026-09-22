@@ -192,8 +192,11 @@ DOMAINS: tuple[DomainSpec, ...] = (
         count_sql="SELECT count(*) FROM pob_base_item",
         # 渠道按类别看：18 个装备部位各算一个渠道，比原先按护甲属性标签分更有信息量
         channel_sql="SELECT DISTINCT category_key FROM pob_base_item",
-        tools=("affix_pool_odds",),
-        hints=("底材", "基础物品", "白装底子", "胸甲底材"),
+        tools=("affix_pool_odds", "base_influence_profile"),
+        hints=(
+            "底材", "基础物品", "白装底子", "胸甲底材", "底材影响力",
+            "支持哪些影响", "能承载哪些影响", "影响生成标签",
+        ),
         question_hints=(
             "某底材的中英文名、PoB 标签、隐式词缀原文与 POEDB 页面",
             "某底材的基础数值（护甲/武器伤害/药剂）与属性需求",
@@ -206,11 +209,13 @@ DOMAINS: tuple[DomainSpec, ...] = (
             "覆盖 PoB 侧 96.1%）：中英文名、ItemClass、标签、影响力标签、隐式词缀原文、"
             "基础数值与属性需求都有；"
             "**尚缺**：41 条未桥接（实验底材 19 条、PoB 变体展开 13 条、伪条目 9 条，"
-            "已按类别登记在缺口台账）、可获得性与稀有度、影响力适用规则、词缀容量；"
+            "已按类别登记在缺口台账）、可获得性与稀有度、词缀容量；"
+            "**具体底材的六类传统影响 influenceTags 已可查询**，并能与目标影响词缀的"
+            "正权重 spawn_tags 做确定性适用性检查；"
             "**按属性分的词缀页映射只有胸甲有**，所以条件权重概率仍只能算胸甲"
         ),
         missing_dimension_hints=(
-            "可获得性", "稀有度", "掉落等级", "词缀容量", "影响力要求",
+            "可获得性", "稀有度", "掉落等级", "词缀容量",
         ),
         note=(
             "英文名与生成标签来自钉 commit 的 PoB P2；中文名与 slug 来自 POEDB P1；"
@@ -672,12 +677,13 @@ DOMAINS: tuple[DomainSpec, ...] = (
         partial_note=(
             "已支持候选解析、完整 family_list 互斥、占位见证与**前后缀名额判定**"
             "（第三十七轮入库，因此 `possible` / 超名额的 `impossible` 都已可达）；"
-            "**来源适用条件与影响力规则仍未采集**，候选含非常规来源或底材带影响力时"
-            "仍只能返回 unknown。元词缀**页面矩阵**已采集，"
+            "**普通与单一传统影响来源的底材适用条件已接通**：提供具体底材后，按 PoB "
+            "base.tags / influenceTags 与 POEDB spawn_tags 过滤，并可按物等过滤；"
+            "其它非常规来源、未给具体底材或多影响组合仍返回 unknown。元词缀**页面矩阵**已采集，"
             "但矩阵值不能把 unknown 变成 possible"
         ),
         missing_dimension_hints=(
-            "成功率", "成本", "步骤", "影响力", "怎么做", "最快", "最经济",
+            "成功率", "成本", "步骤", "怎么做", "最快", "最经济",
         ),
         note=(
             "`possible` 的含义是**这些词缀能共存**，不是「可以制作」；"
@@ -747,7 +753,7 @@ DOMAINS: tuple[DomainSpec, ...] = (
         category=Category.CRAFTING,
         authority_url=f"{POEDB_BASE}/Modifiers",
         count_sql="SELECT count(*) FROM craft_affix_capacity",
-        tools=("check_mod_combination", "craft_operation_state"),
+        tools=("check_mod_combination", "craft_operation_state", "base_influence_profile"),
         hints=("几个前缀", "几个后缀", "名额", "制作操作", "状态转移", "影响力", "元词缀", "觉醒者之石"),
         question_hints=(
             "稀有装备最多几前缀几后缀",
@@ -763,15 +769,18 @@ DOMAINS: tuple[DomainSpec, ...] = (
             "「已腐化的深渊珠宝回到 3+3」这条例外；魔法与稀有两侧对账一致）；"
             "**10 种基础通货状态转移 v1 已结构化**（效果原文 × 稀有度 × 名额）；"
             "**精华状态转移 v1 已结构化**（效果原文 × 稀有度 × 物等 × 类别保底词缀）；"
-            "**影响力底材条件与其余特殊制作体系的完整操作状态机仍未结构化**——"
+            "**具体底材 × 单一影响 × 目标词缀的生成标签约束已结构化**"
+            "（PoB base.tags / influenceTags × POEDB spawn_tags，可选物等过滤）；"
+            "**多影响组合、影响底材获得方式与其余特殊制作体系的完整操作状态机仍未结构化**——"
             "元词缀只有页面矩阵，矩阵值不能把 unknown 变成 possible"
         ),
         missing_dimension_hints=(
-            "影响力", "元词缀", "觉醒者之石", "完整状态转移", "制作步骤", "步骤", "怎么做",
+            "影响力词缀需要什么底材", "哪些底材能", "影响力规则", "双影响",
+            "元词缀", "觉醒者之石", "完整状态转移", "制作步骤", "步骤", "怎么做",
         ),
         note=(
-            "这个域只覆盖名额、基础通货 v1 与精华 v1；不要据此声称影响力、其余特殊制作体系或完整"
-            "元词缀规则已经具备"
+            "这个域只覆盖名额、基础通货 v1、精华 v1 与具体底材单影响生成标签约束；"
+            "不要据此声称影响底材获得方式、多影响组合、其余特殊制作体系或完整元词缀规则已经具备"
         ),
     ),
     # ── 地图系统 ──
