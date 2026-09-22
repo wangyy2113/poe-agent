@@ -187,6 +187,19 @@ class PreferredRouteTest(unittest.TestCase):
             with self.subTest(question=question):
                 self.assertEqual("economy_price_lookup", loop._preferred_tool_route(question))
 
+    def test_price_trend_routes_before_current_price(self) -> None:
+        cases = {
+            "猎首过去7天价格趋势": 168,
+            "神圣石最近24小时涨跌": 24,
+            "The Apothecary 过去一个月行情走势": 720,
+        }
+        for question, hours in cases.items():
+            with self.subTest(question=question):
+                self.assertEqual(
+                    "economy_price_trend", loop._preferred_tool_route(question)
+                )
+                self.assertEqual(hours, loop._economy_trend_args(question)["window_hours"])
+
     def test_crafting_cost_is_not_claimed_by_snapshot_lookup(self) -> None:
         self.assertNotEqual(
             "economy_price_lookup", loop._preferred_tool_route("做一把毕业弓的制作成本")

@@ -28,7 +28,7 @@ POE1 的机制耦合极深，一个错误的小前提会让整条结论反向。
 | 技能石与辅助宝石 | 820 颗（558 主动 + 262 辅助）+ 30672 行每级字面值 + **每级效果文本与属性需求**（POEDB 详情页逐级表，812 颗逐级对过账）；PoB 出结构、POEDB 出中文名，按 `grantedEffectId` 桥接，清单页没收录的再按详情页标题兜底（未桥接只剩 1 颗）。**每级基础伤害已入库**（175 颗技能 7000 行，按 PoB 的 effectiveness 公式算出显示值，与 POEDB 技能页对账 20/20）；固定效果、获取途径及技能与辅助宝石的双向确认关系也已入库。**DPS 仍不算**（缺整条加成链） |
 | 通货 | 113 条（中英文名、堆叠上限、效果原文）；工艺台费用引用的 18 个通货全部能对上；**获取途径与兑换比例未采集**；市场价格走 poe.watch 实时快照 |
 | 圣甲虫 | 118 个（效果、堆叠上限、地图装置放置上限）；**掉落来源未采集**；市场价格走 poe.watch 实时快照 |
-| 实时经济价格与材料清单成本 | `POST /economy/price` + `economy_price_lookup`：poe.watch 当前/指定联盟的唯一装备、通货、圣甲虫、命运卡、碎片价格；`POST /economy/material-cost` + `economy_material_cost`：对用户明确给出的材料与数量逐项计算 mean/min/max 小计和总计。SQLite 30 分钟 TTL，刷新失败降级旧快照，超过 6 小时显式标陈旧；每项输出来源、联盟、抓取时间与低置信度标记。**不生成制作材料或路径，不含稀有装备估值、成功率、趋势、利润与 Flip 建议** |
+| 实时经济价格、趋势与材料清单成本 | `POST /economy/price` 查询当前快照；`POST /economy/trend` 优先用本机带时间戳历史，默认七日窗口可退到上游 `sevenDaysHistory`；`POST /economy/material-cost` 对明确材料与数量计算 mean/min/max 小计和总计，三者均有对应工具。SQLite 价格缓存 TTL 30 分钟、查询命中历史保留 90 天，刷新失败降级旧快照，超过 6 小时显式标陈旧。**不足两个点不判趋势；不生成制作路径，不含稀有装备估值、成功率、利润与 Flip 建议** |
 | Boss 技能伤害 | 10 条 Boss 技能的伤害建模 + 22 个 Boss 的护甲/闪避倍率；`boss_skill_damage` 按 `monsterDamageTable` 与 PoB 系数算出某等级的一击伤害（谢勒的球 84 级 9,588–14,382 冰霜），未指定掷骰区间时给两端。**只给伤害建模，不给打法**——技能机制、阶段与应对未采集；数字是 PoB 建模值，GGG 未公布 |
 | 制作规则（名额） | 7 条前后缀名额规则（魔法 1+1、稀有 3+3、传奇不受限制、药剂随魔法，另有 PoB 独有的珠宝/Graft 2+2 与「已腐化深渊珠宝回到 3+3」）；`check_mod_combination` 因此**第一次能返回 `possible`**，超名额则 `impossible`。`possible` 的含义是「这些词缀能共存」而非「能做出来」；**影响力条件与元词缀状态机仍未采集** |
 | 收获（古灵庄园） | 74 条定向工艺 + 98 条命能费用，且 **74/74 条均有结构化语义**：20 条装备重铸、23 条元素转换与新增/移除、14 条品质附魔、14 条材料随机转换、3 条地图/技能石/命运卡牺牲；另有 **51 个种子怪物**按颜色对应四种命能中的三种。随机类型与概率、堆叠输出数量、费用缩放基准和市场成本未采集时保持未知 |
@@ -60,7 +60,7 @@ POE1 的机制耦合极深，一个错误的小前提会让整条结论反向。
 | **问答** | `POST /chat`：强制检索 → 充分性判定 → 生成 → 出口绑定校验 → 装配引用 |
 | **流式问答** | `POST /chat/stream`：SSE，**按句**校验通过才下发，未校验内容不外发 |
 | **OpenAI 兼容** | `POST /v1/chat/completions`：支持文本消息、非流式与标准 SSE `[DONE]`；内部仍强制检索与出口校验 |
-| **MCP stdio** | `mcp_server.py`：按 MCP `2025-06-18` 向 Codex、Claude Desktop 等客户端暴露 Knowledge Agent 的 44 个只读工具；支持 `--tools` 白名单，工具结果保留结构化数据、引用、unknown/boundary 与耗时 |
+| **MCP stdio** | `mcp_server.py`：按 MCP `2025-06-18` 向 Codex、Claude Desktop 等客户端暴露 Knowledge Agent 的 45 个只读工具；支持 `--tools` 白名单，工具结果保留结构化数据、引用、unknown/boundary 与耗时 |
 | **知识库自动同步与版本 diff** | `scripts/sync_knowledge.py`：按最后成功采集时间自动选择过期分类，复用现有结构断言与快照数量护栏；同步前后按稳定主键报告逐表新增/删除/修改与版本字段变化，历史可从 `/admin/sync/*` 查询。默认只预览，记录删除时整轮标记 `attention` |
 | **鉴权与限流** | 普通接口使用 `API_KEYS` 并按 Key 令牌桶限流；管理接口独立使用 `ADMIN_TOKEN`，可叠加 IP/CIDR 白名单 |
 | **出口闸门** | 逐句校验事实断言与计算派生是否绑定有效证据，未通过由代码拦截；47 项单测覆盖 |
@@ -135,7 +135,7 @@ Windows 把 `.venv/bin/python` 换成 `.venv\Scripts\python.exe`。
 ### 作为 MCP 工具服务器使用
 
 `mcp_server.py` 是本地 stdio 服务，不需要先启动 Web 服务，也不监听端口。默认暴露
-Knowledge Agent 的 44 个只读工具；需要缩小能力面时传入逗号分隔的白名单：
+Knowledge Agent 的 45 个只读工具；需要缩小能力面时传入逗号分隔的白名单：
 
 ```bash
 .venv/bin/python mcp_server.py --tools kb_coverage,entity_lookup
@@ -405,7 +405,8 @@ curl -s http://127.0.0.1:8787/poe_agent/v1/chat/completions \
 
 **实时价格** —— `POST /economy/price`，按精确名称查询当前或指定联盟；中文唯一装备、
 通货与圣甲虫名会先经本地权威别名解析。响应中的 `mean_chaos` / `min_chaos` /
-`max_chaos` 是 poe.watch 统计快照，不是保证成交价。
+`max_chaos` 是 poe.watch 统计快照，不是保证成交价。每次精确命中会按快照抓取时间写入
+历史，同一缓存反复查询不会制造新的观测点。
 
 ```bash
 curl -s -X POST http://127.0.0.1:8787/poe_agent/economy/price \
@@ -415,6 +416,21 @@ curl -s -X POST http://127.0.0.1:8787/poe_agent/economy/price \
 
 响应始终带 `league`、`source`、`fetched_at`、`from_cache`、`stale`、`degraded` 和
 `warning`；上游失败且完全没有缓存时返回 **503**，不会猜一个价格。
+
+**历史价格趋势** —— `POST /economy/trend`。优先比较本机实际保存的带时间戳快照；默认
+查看 168 小时，可传 1–2160 小时。默认七日窗口本机点数不足时，可使用 poe.watch 明确
+返回的 `sevenDaysHistory` 数列，但会标注上游没有提供逐点时间戳。其他窗口至少需要两个
+不同抓取时间的有效均价，否则 `analyzable=false` 并明确说明观测不足。
+
+```bash
+curl -s -X POST http://127.0.0.1:8787/poe_agent/economy/trend \
+  -H 'Content-Type: application/json' \
+  -d '{"query":"猎首","category":"auto","window_hours":168}'
+```
+
+趋势返回首尾均价、绝对/百分比变化、窗口内范围与序列口径。本机历史的计算使用窗口内
+全部记录，结构化响应最多等距返回 200 个点；无论哪种口径都不把 poe.watch 单次响应的
+`change` 字段冒充多日历史，也不据此预测未来。
 
 **明确材料清单成本** —— `POST /economy/material-cost`。每项都必须给名称和正数数量；
 服务逐项精确匹配，并用同一联盟的 `mean/min/max × quantity` 做确定性加总。
@@ -820,7 +836,7 @@ PoB 排 P2 而不是 P1：它在数值上更接近一手，但不含中文名与
 .venv/bin/python -m unittest discover -s tests -t .
 ```
 
-目前 1730 项，其中与「无据不答」直接相关的：
+目前 1741 项，其中与「无据不答」直接相关的：
 
 | 组 | 项数 | 重点 |
 | --- | --- | --- |
@@ -851,12 +867,13 @@ main.py                 入口：装配 FastAPI + 进程内启动 uvicorn
 core/                   配置、SQLite、日志、LLM 客户端
 api/                    路由层：只做校验与编排调用，不写业务逻辑
                           chat.py / search.py / economy.py / craft.py / item.py / admin.py / deps.py（鉴权）
-economy/                poe.watch 适配、领域模型、SQLite 快照与降级策略
+economy/                poe.watch 适配、领域模型、SQLite 快照/历史趋势与降级策略
 orchestrator/           主循环、出口绑定闸门、引用装配
                           loop.py / binding.py / citation.py
 agents/                 领域 Agent：提示词 + 允许工具集 + 输出契约
 tools/                  工具注册与实现。顺序即推荐优先级：
-                          economy_price_lookup / economy_material_cost / affix_pool_odds / check_mod_combination
+                          economy_price_lookup / economy_price_trend / economy_material_cost
+                          / affix_pool_odds / check_mod_combination
                           / craft_operation_state / essence_operation_state / eldritch_operation_state
                           / veiled_operation_state / fossil_operation_state / harvest_reforge_state
                           / harvest_modifier_state

@@ -181,6 +181,10 @@ economy:
   cache_ttl_minutes: 30
   # 上游失败可退回旧缓存；超过该阈值仍会返回，但必须显式标成陈旧。
   stale_after_hours: 6
+  # 趋势只保留实际查询命中的条目；同一快照重复查询按抓取时间去重。
+  history_retention_days: 90
+  # 结构化响应最多返回多少个等距采样点；趋势计算仍使用窗口内全部观测。
+  max_trend_points: 200
   timeout_seconds: 15
   # 与采集器一致，对公共 API 保持克制；0 表示不做客户端节流。
   requests_per_second: 0.5

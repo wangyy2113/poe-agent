@@ -826,6 +826,11 @@ _YIELDS_TO_ENUMERATION = frozenset(
 
 
 _PREFERRED_TOOL_INTENTS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    # 历史趋势必须在当前价格之前匹配，否则「价格趋势」会被快照工具先截走。
+    ("economy_price_trend", (
+        "价格趋势", "行情趋势", "价格走势", "行情走势", "涨跌", "涨了多少",
+        "跌了多少", "最近在涨", "最近在跌", "过去一周", "过去一个月",
+    )),
     # 实时价格不在静态 chunk 中；由代码直连受控数据源并确定性渲染。
     # 不收裸「成本」：制作成本需要完整工艺路径，本工具只查单个市场条目。
     ("economy_price_lookup", (
@@ -1183,6 +1188,23 @@ def _material_cost_args(question: str) -> dict[str, Any] | None:
     if not materials or (len(materials) == 1 and explicit_units == 0):
         return None
     return {"materials": materials}
+
+
+def _economy_trend_args(question: str) -> dict[str, Any]:
+    """保留原问句做精确实体解析，并提取显式历史窗口。"""
+    args: dict[str, Any] = {"query": question, "category": "auto"}
+    match = re.search(r"(?:过去|最近|近)?\s*(\d{1,3})\s*(小时|天|周)", question)
+    if match:
+        amount = int(match.group(1))
+        multiplier = {"小时": 1, "天": 24, "周": 24 * 7}[match.group(2)]
+        hours = amount * multiplier
+        if 1 <= hours <= 2160:
+            args["window_hours"] = hours
+    elif "过去一个月" in question or "最近一个月" in question:
+        args["window_hours"] = 24 * 30
+    elif "过去一周" in question or "最近一周" in question:
+        args["window_hours"] = 24 * 7
+    return args
 
 
 _CRAFT_OPERATION_SIGNALS = (
@@ -1695,6 +1717,11 @@ def _preferred_tool_route(question: str) -> str:
     只在**第一次**调用时强制（`tool_choice`），后续轮次放开——工具结果可能说明
     需要换工具，锁死会让它无路可走。
     """
+    if any(term in question for term in (
+        "价格趋势", "行情趋势", "价格走势", "行情走势", "涨跌", "涨了多少",
+        "跌了多少", "最近在涨", "最近在跌", "过去一周", "过去一个月",
+    )):
+        return "economy_price_trend"
     material_args = _material_cost_args(question)
     if material_args is not None:
         return "economy_material_cost"
@@ -2161,6 +2188,7 @@ _CODE_INVOKED_TOOLS: dict[str, Any] = {
     "harvest_quality_enchant_state": _harvest_quality_enchant_args,
     "harvest_exchange_state": _harvest_exchange_args,
     "economy_material_cost": _material_cost_args,
+    "economy_price_trend": _economy_trend_args,
     "economy_price_lookup": lambda question: {"query": question, "category": "auto"},
     # 路由时已确认该名字在别名表里命中，参数就是问题本身
     "entity_lookup": lambda question: {"name": question},
@@ -2185,7 +2213,7 @@ _CODE_INVOKED_TOOLS: dict[str, Any] = {
 #: 「一条证据都没拿到就走缺据」的兜底要放过它们，否则它们永远进不了生成。
 _TOOLS_WITHOUT_CITATIONS = frozenset({"kb_coverage"})
 _DETERMINISTIC_DIRECT_TOOLS = frozenset({
-    "economy_price_lookup", "economy_material_cost", "craft_operation_state",
+    "economy_price_lookup", "economy_price_trend", "economy_material_cost", "craft_operation_state",
     "essence_operation_state",
     "eldritch_operation_state",
     "veiled_operation_state",

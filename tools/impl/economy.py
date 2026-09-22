@@ -11,7 +11,7 @@ from functools import lru_cache
 
 from core import db as dbmod
 from core.config import get_config
-from economy.models import MaterialCostEstimate, MaterialRequest, PriceSearch
+from economy.models import MaterialCostEstimate, MaterialRequest, PriceSearch, PriceTrendSearch
 from economy.poe_watch import PoeWatchClient
 from economy.service import (
     API_URL,
@@ -48,6 +48,10 @@ def service_from_config() -> EconomyService:
         stale_after=timedelta(
             hours=float(cfg.get("economy.stale_after_hours", 6))
         ),
+        observation_retention=timedelta(
+            days=float(cfg.get("economy.history_retention_days", 90))
+        ),
+        max_trend_points=int(cfg.get("economy.max_trend_points", 200)),
     )
 
 
@@ -94,6 +98,69 @@ def render_price(result: PriceSearch) -> str:
         f"> 数据源：[poe.watch]({result.source_url})；联盟：{result.league}；"
         f"抓取时间：{result.fetched_at}；状态：{status}。",
         "> mean/min/max 是市场统计快照，不是报价承诺或保证成交价。",
+    ]
+    if result.warning:
+        lines.append(f"> 注意：{result.warning}。")
+    return "\n".join(lines)
+
+
+def render_trend(result: PriceTrendSearch) -> str:
+    """确定性趋势文案；只陈述本机已保存的实际观测序列。"""
+    status = "缓存" if result.from_cache else "刚刷新"
+    if result.stale:
+        status += "、已陈旧"
+    elif result.degraded:
+        status += "、上游刷新失败后降级"
+    lines = [
+        f"### {result.resolved_name} · {result.league} 价格趋势",
+        "",
+    ]
+    if not result.trends:
+        lines.append("未找到同名条目；没有进行模糊匹配，也没有按同类物品推断趋势。")
+    for trend in result.trends:
+        lines.append(f"#### {trend.name}（{trend.category or '未提供类别'}）")
+        if trend.status != "ready":
+            lines.append(f"- 暂不可判定：{trend.reason}。")
+            if trend.last_mean_chaos is not None:
+                lines.append(
+                    f"- 当前唯一观测：{_price(trend.last_mean_chaos)} 混沌石"
+                    f"（{trend.last_observed_at}）。"
+                )
+            continue
+        direction = {"up": "上涨", "down": "下跌", "flat": "持平"}[trend.direction]
+        percent = (
+            f"{_price(trend.change_percent)}%"
+            if trend.change_percent is not None
+            else "起点为 0，百分比不可计算"
+        )
+        lines += [
+            f"- 窗口内 {trend.observation_count} 个观测点："
+            f"{_price(trend.first_mean_chaos)} → {_price(trend.last_mean_chaos)} 混沌石",
+            f"- 变化：{direction} {_price(abs(trend.change_chaos or 0))} 混沌石；{percent}",
+            f"- 观测均价范围：{_price(trend.min_mean_chaos)}–"
+            f"{_price(trend.max_mean_chaos)} 混沌石",
+        ]
+        if trend.timestamps_available:
+            lines.append(
+                f"- 起止时间：{trend.first_observed_at} → {trend.last_observed_at}"
+            )
+        else:
+            lines.append(
+                "- 序列口径：poe.watch `sevenDaysHistory`；上游未提供逐点时间戳。"
+            )
+        if trend.low_confidence_count and trend.basis == "local_observations":
+            lines.append(
+                f"- ⚠️ 其中 {trend.low_confidence_count} 个观测被 poe.watch 标记为低置信度。"
+            )
+        elif trend.low_confidence_count:
+            lines.append("- ⚠️ poe.watch 将该条目标记为低置信度。")
+    lines += [
+        "",
+        f"> 数据源：[poe.watch]({result.source_url})；联盟：{result.league}；"
+        f"窗口：{result.window_hours} 小时；当前快照：{result.fetched_at}；状态：{status}。",
+        "> 趋势优先使用本机保存的带时间戳快照；默认七日窗口点数不足时可使用上游明确的"
+        " `sevenDaysHistory` 数列，但不使用单次 change 字段冒充历史。它不是未来价格预测、"
+        "利润承诺或 Flip 建议。",
     ]
     if result.warning:
         lines.append(f"> 注意：{result.warning}。")
@@ -224,6 +291,82 @@ def economy_price_lookup(
             "from_cache": result.from_cache,
             "stale": result.stale,
             "degraded": result.degraded,
+        },
+    )
+
+
+@REGISTRY.register(
+    name="economy_price_trend",
+    description=(
+        "查询 POE1 当前或指定联盟的历史价格趋势。优先使用本机保存的 poe.watch 快照；"
+        "默认七日窗口可回退到上游 sevenDaysHistory 数列，但会明确标注其没有逐点时间戳。"
+        "至少两个有效均价点才计算涨跌；不使用单次 change 推算，不预测未来或提供 Flip 建议。"
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "query": {"type": "string", "minLength": 1, "maxLength": 200},
+            "category": {
+                "type": "string",
+                "enum": list(PUBLIC_CATEGORIES),
+                "default": "auto",
+            },
+            "league": {"type": "string", "maxLength": 100},
+            "window_hours": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 2160,
+                "default": 168,
+            },
+        },
+        "required": ["query"],
+        "additionalProperties": False,
+    },
+)
+def economy_price_trend(
+    query: str,
+    category: str = "auto",
+    league: str | None = None,
+    window_hours: int = 168,
+) -> ToolResult:
+    try:
+        result = service_from_config().trend(
+            query,
+            category=category,
+            league=league,
+            window_hours=window_hours,
+        )
+    except (EconomyUnavailable, InvalidEconomyQuery) as exc:
+        return ToolResult(ok=False, error=str(exc), meta={"source": "poe.watch"})
+
+    rendered = render_trend(result)
+    identity = "|".join(
+        f"{item.item_id}:{item.last_observed_at}:{item.observation_count}"
+        for item in result.trends
+    )
+    digest = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:16]
+    citations = [{
+        "chunk_id": f"economy-trend:{result.league}:{digest}",
+        "entity_id": None,
+        "title": f"{result.resolved_name} · {result.league} 价格趋势",
+        "url": API_URL,
+        "source": result.source,
+        "source_priority": 5,
+        "can_support_facts": True,
+        "text": rendered,
+        "channel": "live_economy",
+    }] if any(item.observation_count for item in result.trends) else []
+    return ToolResult(
+        ok=True,
+        data={**result.as_dict(), "answer": rendered},
+        citations=citations,
+        meta={
+            "channel": "live_economy",
+            "source": result.source,
+            "from_cache": result.from_cache,
+            "stale": result.stale,
+            "degraded": result.degraded,
+            "analyzable": result.analyzable,
         },
     )
 
