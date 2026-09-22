@@ -1387,6 +1387,48 @@ CREATE TABLE IF NOT EXISTS ingest_run (
     note        TEXT
 );
 
+-- ── 自动同步与版本 diff 审计 ──
+-- ingest_run 记录单个采集器内部发生了什么；这里记录一次跨分类同步计划的整体边界，
+-- 以及同步前后事实快照的差异。二者不能混成一张表：一次自动同步可串行触发多个
+-- ingest_run，而版本 diff 必须能回答“哪一类新增/删除/改了多少、版本标记是否变化”。
+CREATE TABLE IF NOT EXISTS knowledge_sync_run (
+    sync_id       TEXT PRIMARY KEY,
+    mode          TEXT NOT NULL CHECK(mode IN ('auto','explicit')),
+    requested     TEXT NOT NULL CHECK(json_valid(requested)),
+    planned       TEXT NOT NULL CHECK(json_valid(planned)),
+    status        TEXT NOT NULL CHECK(status IN ('running','succeeded','attention','failed')),
+    started_at    TEXT NOT NULL,
+    finished_at   TEXT,
+    summary       TEXT CHECK(summary IS NULL OR json_valid(summary)),
+    error         TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_knowledge_sync_started
+    ON knowledge_sync_run(started_at DESC);
+
+CREATE TABLE IF NOT EXISTS knowledge_sync_diff (
+    sync_id            TEXT NOT NULL REFERENCES knowledge_sync_run(sync_id) ON DELETE CASCADE,
+    category           TEXT NOT NULL,
+    status             TEXT NOT NULL CHECK(status IN ('unchanged','changed','attention','failed')),
+    before_fingerprint TEXT NOT NULL,
+    after_fingerprint  TEXT NOT NULL,
+    before_total       INTEGER NOT NULL,
+    after_total        INTEGER NOT NULL,
+    added              INTEGER NOT NULL,
+    removed            INTEGER NOT NULL,
+    changed            INTEGER NOT NULL,
+    unchanged          INTEGER NOT NULL,
+    table_counts_before TEXT NOT NULL CHECK(json_valid(table_counts_before)),
+    table_counts_after  TEXT NOT NULL CHECK(json_valid(table_counts_after)),
+    versions_before    TEXT NOT NULL CHECK(json_valid(versions_before)),
+    versions_after     TEXT NOT NULL CHECK(json_valid(versions_after)),
+    examples           TEXT NOT NULL CHECK(json_valid(examples)),
+    elapsed_ms         INTEGER NOT NULL,
+    error              TEXT,
+    PRIMARY KEY(sync_id, category)
+);
+CREATE INDEX IF NOT EXISTS idx_knowledge_sync_diff_category
+    ON knowledge_sync_diff(category, sync_id);
+
 -- ── 缺口台账：每条缺据声明都记下来，按频次排序即为采集优先级 ──
 CREATE TABLE IF NOT EXISTS knowledge_gap (
     gap_id       INTEGER PRIMARY KEY AUTOINCREMENT,

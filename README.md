@@ -61,6 +61,7 @@ POE1 的机制耦合极深，一个错误的小前提会让整条结论反向。
 | **流式问答** | `POST /chat/stream`：SSE，**按句**校验通过才下发，未校验内容不外发 |
 | **OpenAI 兼容** | `POST /v1/chat/completions`：支持文本消息、非流式与标准 SSE `[DONE]`；内部仍强制检索与出口校验 |
 | **MCP stdio** | `mcp_server.py`：按 MCP `2025-06-18` 向 Codex、Claude Desktop 等客户端暴露 Knowledge Agent 的 44 个只读工具；支持 `--tools` 白名单，工具结果保留结构化数据、引用、unknown/boundary 与耗时 |
+| **知识库自动同步与版本 diff** | `scripts/sync_knowledge.py`：按最后成功采集时间自动选择过期分类，复用现有结构断言与快照数量护栏；同步前后按稳定主键报告逐表新增/删除/修改与版本字段变化，历史可从 `/admin/sync/*` 查询。默认只预览，记录删除时整轮标记 `attention` |
 | **鉴权与限流** | 普通接口使用 `API_KEYS` 并按 Key 令牌桶限流；管理接口独立使用 `ADMIN_TOKEN`，可叠加 IP/CIDR 白名单 |
 | **出口闸门** | 逐句校验事实断言与计算派生是否绑定有效证据，未通过由代码拦截；47 项单测覆盖 |
 | **聊天界面** | `static/` 单页前端，无构建步骤、无 Node、无第三方 JS |
@@ -176,6 +177,36 @@ Claude Desktop 的 `claude_desktop_config.json` 使用同一个入口：
 MCP JSON-RPC；诊断信息写 stderr。客户端必须保留工具返回的 `unknown`、`boundary` 与
 `citations`，不得用模型记忆补全机制、概率、价格或制作路线。Codex 配置字段可对照
 [官方 MCP 文档](https://learn.chatgpt.com/docs/extend/mcp?surface=cli)。
+
+### 自动同步知识库并审查版本变化
+
+默认命令只生成计划，**不联网、不改事实表**。配置中的 `stale_after_hours` 默认为 168
+小时；只有显式加入 `--apply` 才执行到期分类：
+
+```bash
+# 查看哪些分类已经过期
+.venv/bin/python scripts/sync_knowledge.py
+
+# 执行所有到期分类；适合由系统定时器调用
+.venv/bin/python scripts/sync_knowledge.py --apply --json
+
+# 人工指定分类，并忽略 HTTP 缓存重新抓取
+.venv/bin/python scripts/sync_knowledge.py \
+  --apply --categories currency,maps --force
+```
+
+同步直接复用 `kb.pipeline` 已有的 robots.txt、限速、结构断言、数量缩减护栏与原子提交，
+不会绕开采集安全边界。每个分类执行前后都会按稳定主键比较事实行，区分 `added`、
+`removed`、`changed`、`unchanged`，并单列 `version`、`game_version`、`source_commit`、
+`tree_version` 等版本标记。只要出现删除，命令就以 `attention` 结束并返回非零状态，提醒
+人工核对；真实上游删项不会被程序凭数量猜成错误并自动回滚。
+
+管理端提供只读查询：`GET /admin/sync/plan`、`GET /admin/sync/runs`、
+`GET /admin/sync/runs/{sync_id}`，继续受独立 `ADMIN_TOKEN` 与可选 IP 白名单保护。
+
+当前自动集合覆盖词缀、工艺台、元词缀矩阵、天赋树、通货、地图、圣甲虫、精华、收获和
+怪物。唯一装备暂不加入：刷新主列表会覆盖详情页补齐的「不可改变」等词条，完整的
+1,342 页详情合并链尚未原子化；在解决这条数据回退风险前，宁可保留手工流程。
 
 可选：把 PoB 数据也导进来（需要本地有 PathOfBuilding 仓库）
 
@@ -789,7 +820,7 @@ PoB 排 P2 而不是 P1：它在数值上更接近一手，但不含中文名与
 .venv/bin/python -m unittest discover -s tests -t .
 ```
 
-目前 1717 项，其中与「无据不答」直接相关的：
+目前 1730 项，其中与「无据不答」直接相关的：
 
 | 组 | 项数 | 重点 |
 | --- | --- | --- |

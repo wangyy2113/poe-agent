@@ -159,6 +159,22 @@ crawl:
   # 缓存有效期；未过期且内容哈希未变则跳过重新抽取与索引
   cache_ttl_hours: 24
 
+knowledge_sync:
+  # scripts/sync_knowledge.py 默认只预览；显式 --apply 后，只执行超过此时长的分类。
+  stale_after_hours: 168
+  # 唯一装备暂不自动化：主列表刷新会覆盖详情页补齐词条，必须等完整详情链原子化。
+  categories:
+    - mods
+    - bench
+    - metamods
+    - tree
+    - currency
+    - maps
+    - scarab
+    - essence
+    - horticraft
+    - monsters
+
 economy:
   # poe.watch 实时价格只作为市场统计快照，不代表保证成交价。
   enabled: true
