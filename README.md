@@ -60,6 +60,7 @@ POE1 的机制耦合极深，一个错误的小前提会让整条结论反向。
 | **问答** | `POST /chat`：强制检索 → 充分性判定 → 生成 → 出口绑定校验 → 装配引用 |
 | **流式问答** | `POST /chat/stream`：SSE，**按句**校验通过才下发，未校验内容不外发 |
 | **OpenAI 兼容** | `POST /v1/chat/completions`：支持文本消息、非流式与标准 SSE `[DONE]`；内部仍强制检索与出口校验 |
+| **MCP stdio** | `mcp_server.py`：按 MCP `2025-06-18` 向 Codex、Claude Desktop 等客户端暴露 Knowledge Agent 的 44 个只读工具；支持 `--tools` 白名单，工具结果保留结构化数据、引用、unknown/boundary 与耗时 |
 | **鉴权与限流** | 普通接口使用 `API_KEYS` 并按 Key 令牌桶限流；管理接口独立使用 `ADMIN_TOKEN`，可叠加 IP/CIDR 白名单 |
 | **出口闸门** | 逐句校验事实断言与计算派生是否绑定有效证据，未通过由代码拦截；47 项单测覆盖 |
 | **聊天界面** | `static/` 单页前端，无构建步骤、无 Node、无第三方 JS |
@@ -129,6 +130,52 @@ Windows 把 `.venv/bin/python` 换成 `.venv\Scripts\python.exe`。
 单实例保护靠端口绑定失败判断，不用 PID 文件——端口被占用时启动会直接失败退出。
 注意进程名被 `setproctitle` 改成了 `poe-agent`，所以 `pkill -f main.py` 找不到它；
 要停掉残留实例请按端口找：`lsof -nP -iTCP:8787 -sTCP:LISTEN -t`。
+
+### 作为 MCP 工具服务器使用
+
+`mcp_server.py` 是本地 stdio 服务，不需要先启动 Web 服务，也不监听端口。默认暴露
+Knowledge Agent 的 44 个只读工具；需要缩小能力面时传入逗号分隔的白名单：
+
+```bash
+.venv/bin/python mcp_server.py --tools kb_coverage,entity_lookup
+```
+
+Codex CLI 可直接注册（把两处路径替换为本机绝对路径）：
+
+```bash
+codex mcp add poe-agent -- \
+  /绝对路径/poe-agent/.venv/bin/python \
+  /绝对路径/poe-agent/mcp_server.py
+codex mcp list
+```
+
+也可以写入 `~/.codex/config.toml`；Codex CLI、IDE 扩展与桌面端共用这份配置：
+
+```toml
+[mcp_servers.poe-agent]
+command = "/绝对路径/poe-agent/.venv/bin/python"
+args = ["/绝对路径/poe-agent/mcp_server.py"]
+cwd = "/绝对路径/poe-agent"
+```
+
+Claude Desktop 的 `claude_desktop_config.json` 使用同一个入口：
+
+```json
+{
+  "mcpServers": {
+    "poe-agent": {
+      "command": "/绝对路径/poe-agent/.venv/bin/python",
+      "args": ["/绝对路径/poe-agent/mcp_server.py"],
+      "cwd": "/绝对路径/poe-agent"
+    }
+  }
+}
+```
+
+重启客户端后应能看到 `kb_coverage`、`entity_lookup` 等工具。服务进程的 stdout 严格只写
+MCP JSON-RPC；诊断信息写 stderr。客户端必须保留工具返回的 `unknown`、`boundary` 与
+`citations`，不得用模型记忆补全机制、概率、价格或制作路线。Codex 配置字段可对照
+[官方 MCP 文档](https://learn.chatgpt.com/docs/extend/mcp?surface=cli)。
 
 可选：把 PoB 数据也导进来（需要本地有 PathOfBuilding 仓库）
 
@@ -742,7 +789,7 @@ PoB 排 P2 而不是 P1：它在数值上更接近一手，但不含中文名与
 .venv/bin/python -m unittest discover -s tests -t .
 ```
 
-目前 1698 项，其中与「无据不答」直接相关的：
+目前 1717 项，其中与「无据不答」直接相关的：
 
 | 组 | 项数 | 重点 |
 | --- | --- | --- |

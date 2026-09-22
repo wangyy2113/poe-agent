@@ -883,7 +883,13 @@ V1 完成的判定标准（逐条实测，不以「无报错」代替验证）�
 ## V3：协同与实时（待细化）
 
 - [ ] 多 Agent 协同调度
-- [ ] MCP 工具接入
+- [x] MCP 工具接入（2026-09-22）：新增 MCP `2025-06-18` stdio 服务端，复用
+  Knowledge Agent 的 44 个只读工具与同一 SQLite 连接；支持初始化生命周期、ping、
+  `tools/list`、`tools/call`、三版协议协商及 `--tools` 白名单。工具结果同时返回文本、
+  `structuredContent`、引用、元数据与耗时，保留 unknown / boundary；stdout 严格只写
+  逐行 UTF-8 JSON-RPC，非法 JSON、UTF-8、请求 id、初始化参数与 2 MiB 上限均失败关闭。
+  单元测试与真实子进程测试覆盖协议边界、stdout 纯净度、白名单、真实本地工具调用及
+  EOF 后 SQLite 关闭；README 提供 Codex 与 Claude Desktop 配置
 - [ ] 知识库自动同步与版本 diff 分析
 - [ ] 实时经济分析（poe.watch 主源 + Trade API 兜底 + 降级透明标注）
 - [ ] 用户长期记忆
