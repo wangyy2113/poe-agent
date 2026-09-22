@@ -1220,6 +1220,28 @@ _CRAFT_OPERATION_SIGNALS = (
 )
 
 
+_AWAKENER_OPERATION_SIGNALS = (
+    "能用", "可以用", "能不能用", "会怎样", "会变", "效果", "结果", "状态转移",
+    "如何", "怎么", "约束", "摧毁", "重铸", "双影响",
+)
+
+
+def _awakener_orb_args(question: str) -> dict[str, Any] | None:
+    """Route the named currency; two pasted item blocks are left to the model."""
+    if "觉醒者之石" not in question and "awakener's orb" not in question.casefold():
+        return None
+    if any(term in question for term in ("多少钱", "价格", "成本", "哪里刷", "怎么获得", "掉率")):
+        return None
+    if not any(signal in question for signal in _AWAKENER_OPERATION_SIGNALS):
+        return None
+    item_headers = sum(question.count(marker) for marker in (
+        "Item Class:", "物品类别:", "物品类别：", "物品類別:", "物品類別：",
+    ))
+    if item_headers >= 2:
+        return None
+    return {}
+
+
 def _craft_operation_args(question: str) -> dict[str, Any] | None:
     """抽取明确基础通货与用户逐字给出的状态；不从目标装备反推制作步骤。"""
     if "多少钱" in question or not any(signal in question for signal in _CRAFT_OPERATION_SIGNALS):
@@ -1812,6 +1834,9 @@ def _preferred_tool_route(question: str) -> str:
     material_args = _material_cost_args(question)
     if material_args is not None:
         return "economy_material_cost"
+    awakener_args = _awakener_orb_args(question)
+    if awakener_args is not None:
+        return "awakener_orb_state"
     veiled_args = _veiled_operation_args(question)
     if veiled_args is not None:
         return "veiled_operation_state"
@@ -2265,6 +2290,7 @@ def _resistance_args(question: str) -> dict[str, Any] | None:
 #: 「我有 10000 护甲能减多少伤害」**碰巧**也拒答了，但拒答理由是「工具没返回证据」
 #: 而不是工具想说的「你没给这一击的伤害」——契约过了、机制却是坏的。
 _CODE_INVOKED_TOOLS: dict[str, Any] = {
+    "awakener_orb_state": _awakener_orb_args,
     "craft_operation_state": _craft_operation_args,
     "essence_operation_state": _essence_operation_args,
     "eldritch_operation_state": _eldritch_operation_args,
@@ -2303,7 +2329,7 @@ _CODE_INVOKED_TOOLS: dict[str, Any] = {
 _TOOLS_WITHOUT_CITATIONS = frozenset({"kb_coverage"})
 _DETERMINISTIC_DIRECT_TOOLS = frozenset({
     "economy_price_lookup", "economy_price_trend", "economy_material_cost",
-    "economy_rare_comparables", "craft_operation_state",
+    "economy_rare_comparables", "awakener_orb_state", "craft_operation_state",
     "essence_operation_state",
     "eldritch_operation_state",
     "veiled_operation_state",

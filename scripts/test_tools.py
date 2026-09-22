@@ -93,10 +93,11 @@ def main() -> int:
         if need not in labels:
             problems.append(f"stat_sources(药剂效果) 未覆盖渠道 {need}——跨渠道枚举不完整")
     note = r.data.get("coverage_note") or ""
-    print(f"    覆盖声明长度 {len(note)}，含「未采集」：{'未采集' in note}")
+    has_gap_disclosure = "未采集" in note or "尚未接入本枚举" in note
+    print(f"    覆盖声明长度 {len(note)}，含缺口披露：{has_gap_disclosure}")
     print(f"      {note[:200]}…")
-    if "未采集" not in note:
-        problems.append("stat_sources 未携带未采集渠道声明——枚举会假装完整")
+    if not has_gap_disclosure:
+        problems.append("stat_sources 未携带未采集/未接入渠道声明——枚举会假装完整")
     # 覆盖声明只该列**属性来源**类的未采集领域，不该把市场价格、联盟机制也塞进来
     for irrelevant in ("市场价格", "联盟机制", "游戏常量"):
         if irrelevant in note:
@@ -146,10 +147,10 @@ def main() -> int:
     if not r.ok:
         problems.append(f"check_mod_combination 调用失败：{r.error}")
     else:
-        if r.data.get("verdict") != "unknown":
-            problems.append("无 family 冲突但容量规则缺失时必须为 unknown")
-        if not any(g.get("code") == "affix_capacity" for g in r.data.get("gaps") or []):
-            problems.append("check_mod_combination 未报告前后缀容量缺据")
+        if r.data.get("verdict") != "possible":
+            problems.append("容量规则已入库且无 family 冲突时应为 possible")
+        if any(g.get("code") == "affix_capacity" for g in r.data.get("gaps") or []):
+            problems.append("容量规则已入库后不应继续报告 affix_capacity 缺据")
         if not r.citations or any(not c.get("url") for c in r.citations):
             problems.append("check_mod_combination 的候选事实缺少 POEDB 引用")
         forbidden = {"steps", "probability", "cost"}

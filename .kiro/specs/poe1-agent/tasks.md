@@ -863,7 +863,11 @@ V1 完成的判定标准（逐条实测，不以「无报错」代替验证）�
       按 `ItemTools.lua` 的六种传统影响显示名映射与 `Item.lua:GetModSpawnWeight` 标签匹配规则，
       将具体底材、单一影响、可选物等与 POEDB 目标词缀 `spawn_tags` 接入
       `check_mod_combination`；另提供 `base_influence_profile` 精确查询。影响底材获得方式、
-      多影响组合、觉醒者之石状态转移、步骤与概率保持 unknown
+      多影响词缀池组合、步骤与概率保持 unknown
+    - [x] 觉醒者之石 v1：逐字绑定 POEDB 通货效果，接受供体与目标的两段装备复制文本
+      或显式类别/传统影响；检查同类物品、双方唯一且不同的传统影响，给出供体销毁、
+      目标重铸为稀有并兼有两种影响的条件后状态。来源未说明“各保留一条影响词缀”，
+      因此具体保留词缀、重铸结果、前后缀数量、数值、概率、成本与路线保持 unknown
   - [ ] Economy adapter 与 Planner：接入价格、比较最快/最经济路线、逐步期望消耗；上述输入未齐前不得输出完整路线
 - [ ] Boss Agent：机制、防御门槛、药剂、流程；可结合已导入 Build
 - [x] 官方角色 API 导入 v1（2026-09-08）：接入 OAuth `account:characters` 的当前
@@ -889,7 +893,7 @@ V1 完成的判定标准（逐条实测，不以「无报错」代替验证）�
 
 - [ ] 多 Agent 协同调度
 - [x] MCP 工具接入（2026-09-22）：新增 MCP `2025-06-18` stdio 服务端，复用
-  Knowledge Agent 的 45 个只读工具与同一 SQLite 连接；支持初始化生命周期、ping、
+  Knowledge Agent 的 48 个只读工具与同一 SQLite 连接；支持初始化生命周期、ping、
   `tools/list`、`tools/call`、三版协议协商及 `--tools` 白名单。工具结果同时返回文本、
   `structuredContent`、引用、元数据与耗时，保留 unknown / boundary；stdout 严格只写
   逐行 UTF-8 JSON-RPC，非法 JSON、UTF-8、请求 id、初始化参数与 2 MiB 上限均失败关闭。

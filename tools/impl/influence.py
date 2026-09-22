@@ -41,7 +41,8 @@ def _render(profile, requested=None) -> str:  # noqa: ANN001
             "",
             "> 判据：PoB 的底材 `influenceTags` 映射存在该键，即该底材可提供对应影响生成标签；",
             "> 词缀适用性还需让目标词缀的正权重 `spawn_tags` 命中这个生成标签。",
-            "> 边界：不说明影响底材的获得方式、影响数量限制、觉醒者之石状态转移、制作步骤或概率。",
+            "> 边界：不说明影响底材的获得方式、影响数量限制、制作步骤或概率；"
+            "觉醒者之石操作请使用 `awakener_orb_state`。",
         ]
     )
 
@@ -97,7 +98,8 @@ def _citations(profile, rendered: str) -> list[dict[str, Any]]:  # noqa: ANN001
     description=(
         "按逐字中文或英文底材名查询 PoB 的传统影响力能力。返回塑界者、裂界者、督军、"
         "狩猎者、圣战者与救赎者对应的内部生成标签；可指定一种影响。"
-        "只证明底材标签适用性，不说明获得方式、影响数量限制、觉醒者之石、步骤或概率。"
+        "只证明底材标签适用性，不说明获得方式、影响数量限制、步骤或概率；"
+        "觉醒者之石的双物品状态转移另由 awakener_orb_state 处理。"
     ),
     parameters={
         "type": "object",
@@ -160,7 +162,7 @@ def base_influence_profile(
             "answer": rendered,
             "boundary": (
                 "只证明底材 influenceTags 与词缀生成标签适用性；不提供获得方式、"
-                "影响数量限制、觉醒者之石状态转移、步骤或概率"
+                "影响数量限制、步骤或概率；觉醒者之石操作另由 awakener_orb_state 处理"
             ),
         }
     )

@@ -454,6 +454,63 @@ class CraftOperationAnswerTest(unittest.TestCase):
         )
 
 
+class AwakenerOperationAnswerTest(unittest.TestCase):
+    """觉醒者之石效果由代码直出，批量与流式不得补写保留词缀。"""
+
+    ANSWER = (
+        "### 觉醒者之石双物品状态转移\n\n"
+        "**结论：信息不足**\n\n"
+        "> 需要供体与目标；不声称各保留一条影响词缀。"
+    )
+
+    def _patches(self):
+        def call(name, arguments):
+            if name == "kb_search":
+                return ToolResult(
+                    ok=True,
+                    data={"sufficient": False, "reason": "状态转移不在静态卡片", "missing_terms": []},
+                    citations=[],
+                    meta={"channels": ["bm25"], "degraded": False},
+                )
+            if name == "awakener_orb_state":
+                self.assertEqual({}, json.loads(arguments))
+                return ToolResult(
+                    ok=True,
+                    data={"answer": self.ANSWER, "found": True, "verdict": "unknown"},
+                    citations=[{
+                        "chunk_id": "awakener_operation:ApplyInfluence",
+                        "entity_id": None,
+                        "title": "觉醒者之石状态转移",
+                        "url": "https://poedb.tw/cn/Awakeners_Orb",
+                        "source": "POEDB",
+                        "source_priority": 1,
+                        "can_support_facts": True,
+                        "text": self.ANSWER,
+                        "channel": "structured",
+                    }],
+                    meta={"channel": "structured"},
+                )
+            raise AssertionError(name)
+
+        return [
+            patch.object(loop, "get_config", lambda: _FakeConfig()),
+            patch.object(loop, "_persist", lambda *a, **k: None),
+            patch.object(loop, "_record_gaps", lambda *a, **k: None),
+            patch.object(loop.REGISTRY, "call", call),
+        ]
+
+    def test_两条路径直接返回同一觉醒者之石边界答案(self) -> None:
+        question = "觉醒者之石如何约束制作操作"
+        batch, events = _both_paths(question, self._patches)
+        self.assertFalse(batch.evidence_gap)
+        self.assertEqual(self.ANSWER, batch.answer)
+        self.assertEqual(self.ANSWER, _answer_of(events))
+        self.assertEqual(
+            ["kb_search", "awakener_orb_state"],
+            [call["tool"] for call in batch.tool_calls],
+        )
+
+
 class EssenceOperationAnswerTest(unittest.TestCase):
     """精华状态转移由代码直接输出，批量与流式不得交给模型扩写。"""
 

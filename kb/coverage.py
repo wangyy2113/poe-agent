@@ -753,7 +753,10 @@ DOMAINS: tuple[DomainSpec, ...] = (
         category=Category.CRAFTING,
         authority_url=f"{POEDB_BASE}/Modifiers",
         count_sql="SELECT count(*) FROM craft_affix_capacity",
-        tools=("check_mod_combination", "craft_operation_state", "base_influence_profile"),
+        tools=(
+            "check_mod_combination", "craft_operation_state", "base_influence_profile",
+            "awakener_orb_state",
+        ),
         hints=("几个前缀", "几个后缀", "名额", "制作操作", "状态转移", "影响力", "元词缀", "觉醒者之石"),
         question_hints=(
             "稀有装备最多几前缀几后缀",
@@ -771,16 +774,20 @@ DOMAINS: tuple[DomainSpec, ...] = (
             "**精华状态转移 v1 已结构化**（效果原文 × 稀有度 × 物等 × 类别保底词缀）；"
             "**具体底材 × 单一影响 × 目标词缀的生成标签约束已结构化**"
             "（PoB base.tags / influenceTags × POEDB spawn_tags，可选物等过滤）；"
-            "**多影响组合、影响底材获得方式与其余特殊制作体系的完整操作状态机仍未结构化**——"
+            "**觉醒者之石双物品状态转移已结构化**（供体销毁、同类目标重铸为稀有并兼有"
+            "两种影响；具体保留词缀与重铸结果仍未知）；"
+            "**多影响词缀组合可行性、影响底材获得方式与其余特殊制作体系的完整操作状态机"
+            "仍未结构化**——"
             "元词缀只有页面矩阵，矩阵值不能把 unknown 变成 possible"
         ),
         missing_dimension_hints=(
             "影响力词缀需要什么底材", "哪些底材能", "影响力规则", "双影响",
-            "元词缀", "觉醒者之石", "完整状态转移", "制作步骤", "步骤", "怎么做",
+            "元词缀", "完整状态转移", "制作步骤", "步骤", "怎么做",
         ),
         note=(
-            "这个域只覆盖名额、基础通货 v1、精华 v1 与具体底材单影响生成标签约束；"
-            "不要据此声称影响底材获得方式、多影响组合、其余特殊制作体系或完整元词缀规则已经具备"
+            "这个域只覆盖名额、基础通货 v1、精华 v1、具体底材单影响生成标签约束，"
+            "以及觉醒者之石效果原文能证明的双物品状态；不要据此声称影响底材获得方式、"
+            "多影响词缀池组合、具体保留词缀、其余特殊制作体系或完整元词缀规则已经具备"
         ),
     ),
     # ── 地图系统 ──
