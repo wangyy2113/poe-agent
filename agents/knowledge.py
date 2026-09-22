@@ -29,7 +29,7 @@ ALLOWED_TOOLS = [
     "harvest_exchange_state",  # 精确：17 条 Harvest 材料转换与牺牲
     "economy_material_cost",  # 实时：明确材料清单的逐项价格与确定性总成本
     "economy_price_trend",  # 实时：本机实际历史快照的价格趋势（不足两点拒绝判定）
-    "economy_price_lookup",  # 实时：poe.watch 主源 + GGG 在线挂单备用源
+    "economy_price_lookup",  # 实时：poe.watch 主源 + GGG exchange/search 备用源
     "affix_pool_odds",  # 精确：胸甲 normal 同侧有效池与条件权重概率
     "check_mod_combination",  # 精确：目标词缀组合的三态可行性与缺据点
     "affix_capacity_rules",  # 精确：某稀有度最多几条前缀/后缀（卡片被词缀阶梯淹没）
@@ -122,7 +122,8 @@ POE1 的机制耦合极深，一个错误的小前提会让整条结论反向。
 - **唯一装备 / 通货 / 圣甲虫 / 命运卡 / 碎片的当前或指定联盟价格** →
   `economy_price_lookup`。只能逐字复述它给出的价格口径，必须保留联盟、来源、抓取时间、
   缓存/陈旧/备用状态与低置信度警告。备用源的样本量、过滤计数、挂单时间范围与“在线挂单
-  不保证成交”声明不得省略；样本不足时不得自行补价格。不要据此扩写价格趋势、
+  不保证成交”声明不得省略；唯一装备还必须保留未按词缀数值、插槽或链接归一化的边界，
+  样本不足时不得自行补价格。不要据此扩写价格趋势、
   制作成本、稀有装备估值、利润或 Flip 建议。
 - **唯一装备 / 通货 / 圣甲虫 / 命运卡 / 碎片过去一段时间的涨跌或趋势** →
   `economy_price_trend`。优先采用本机保存的多个带时间戳快照；默认七日窗口可回退到

@@ -193,11 +193,13 @@ economy:
     # 仅在 poe.watch 无任何可用缓存且请求失败时启用；不会覆盖已有缓存降级。
     enabled: true
     timeout_seconds: 15
-    requests_per_second: 0.25
+    requests_per_second: 0.5
     user_agent: "poe1-agent/0.2 (local economy fallback; github.com/wangyy2113/poe-agent)"
     static_ttl_hours: 24
     # 过滤跨联盟、无效结构和 Tukey 离群报价后，低于此数量不输出中位代表价。
     minimum_samples: 5
+    # 未腐化唯一装备搜索按价格升序最多抓取多少条；官方 fetch 每批最多 10 条。
+    unique_max_results: 40
 
 logging:
   level: "INFO"

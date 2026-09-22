@@ -29,6 +29,7 @@ from economy.trade_api import (
     SOURCE_URL as TRADE_SOURCE_URL,
     TradeApiClient,
     TradeApiError,
+    TradeQuote,
 )
 from retrieval.alias import lookup, normalize
 
@@ -267,14 +268,13 @@ class EconomyService:
         """主源没有任何可用缓存时，才查询官方在线交换挂单。"""
         if self.trade_client is None:
             raise primary_error
-        if logical_category == "unique":
-            raise EconomyUnavailable(
-                f"{primary_error}；GGG Trade API 备用源不支持唯一装备估值"
-            ) from primary_error
-        if logical_category not in {"auto", "currency", "scarab", "card", "fragment"}:
+        if logical_category not in {
+            "auto", "currency", "scarab", "card", "fragment", "unique",
+        }:
             raise primary_error
 
         try:
+            source_url = TRADE_SOURCE_URL
             official_leagues = [{"name": name} for name in self.trade_client.leagues()]
             selected_league = self._select_league(
                 requested_league, official_leagues, source=TRADE_SOURCE
@@ -303,34 +303,33 @@ class EconomyService:
                 warning = (
                     "poe.watch 无可用缓存且刷新失败，已显式降级；混沌石价格为计价单位恒等式"
                 )
+            elif logical_category == "unique":
+                base_type = self._unique_base_type(resolved_name)
+                if not base_type:
+                    raise TradeApiError(
+                        "本地权威数据缺少唯一装备底材，拒绝只按名称做备用估值"
+                    )
+                quote = self.trade_client.unique_quote(
+                    selected_league, resolved_name, base_type
+                )
+                source_url = quote.source_url
+                point = self._trade_price_point(quote, group="unique_listing")
+                searched = ("unique",)
+                warning = (
+                    "poe.watch 无可用缓存且刷新失败，已显式降级到 GGG Trade API "
+                    "未腐化唯一装备在线挂单"
+                )
+                if not quote.sufficient:
+                    warning += (
+                        f"；过滤后只有 {quote.sample_count} 条有效挂单，低于最低样本数 "
+                        f"{quote.minimum_sample_count}，未输出代表价"
+                    )
+                warning += "；未按词缀数值、插槽或链接归一化"
             else:
                 quote = self.trade_client.quote(
                     selected_league, resolved_name, logical_category
                 )
-                point = PricePoint(
-                    item_id=f"trade:{quote.item_id}",
-                    name=quote.name,
-                    category=quote.category,
-                    group="exchange_listing",
-                    representative_chaos=quote.median_chaos,
-                    price_basis="ggg_listing_median",
-                    mean_chaos=None,
-                    median_chaos=quote.median_chaos,
-                    min_chaos=quote.min_chaos,
-                    max_chaos=quote.max_chaos,
-                    divine=None,
-                    daily=None,
-                    change_percent=None,
-                    low_confidence=not quote.sufficient,
-                    sample_count=quote.sample_count,
-                    minimum_sample_count=quote.minimum_sample_count,
-                    raw_listing_count=quote.raw_listing_count,
-                    cross_league_filtered_count=quote.cross_league_filtered_count,
-                    invalid_quote_filtered_count=quote.invalid_quote_filtered_count,
-                    outlier_filtered_count=quote.outlier_filtered_count,
-                    earliest_listing_at=quote.earliest_listing_at,
-                    latest_listing_at=quote.latest_listing_at,
-                )
+                point = self._trade_price_point(quote, group="exchange_listing")
                 searched = (quote.category,)
                 warning = (
                     "poe.watch 无可用缓存且刷新失败，已显式降级到 GGG Trade API 在线挂单"
@@ -352,7 +351,7 @@ class EconomyService:
             categories_searched=searched,
             league=selected_league,
             source=TRADE_SOURCE,
-            source_url=TRADE_SOURCE_URL,
+            source_url=source_url,
             fetched_at=_iso(self.now()),
             from_cache=False,
             stale=False,
@@ -361,6 +360,46 @@ class EconomyService:
             fallback_reason="poe.watch 无可用缓存且刷新失败",
             warning=warning,
             prices=(point,),
+        )
+
+    @staticmethod
+    def _trade_price_point(quote: TradeQuote, *, group: str) -> PricePoint:
+        return PricePoint(
+            item_id=(
+                quote.item_id
+                if str(quote.item_id).startswith("unique:")
+                else f"trade:{quote.item_id}"
+            ),
+            name=quote.name,
+            category=quote.category,
+            group=group,
+            representative_chaos=quote.median_chaos,
+            price_basis="ggg_listing_median",
+            mean_chaos=None,
+            median_chaos=quote.median_chaos,
+            min_chaos=quote.min_chaos,
+            max_chaos=quote.max_chaos,
+            divine=None,
+            daily=None,
+            change_percent=None,
+            low_confidence=not quote.sufficient,
+            sample_count=quote.sample_count,
+            minimum_sample_count=quote.minimum_sample_count,
+            raw_listing_count=quote.raw_listing_count,
+            cross_league_filtered_count=quote.cross_league_filtered_count,
+            invalid_quote_filtered_count=quote.invalid_quote_filtered_count,
+            unconverted_currency_filtered_count=quote.unconverted_currency_filtered_count,
+            outlier_filtered_count=quote.outlier_filtered_count,
+            earliest_listing_at=quote.earliest_listing_at,
+            latest_listing_at=quote.latest_listing_at,
+            search_total=quote.search_total,
+            fetched_listing_count=quote.fetched_listing_count,
+            chaos_listing_count=quote.chaos_listing_count,
+            divine_listing_count=quote.divine_listing_count,
+            divine_chaos_rate=quote.divine_chaos_rate,
+            conversion_sample_count=quote.conversion_sample_count,
+            conversion_status=quote.conversion_status,
+            sample_scope=quote.sample_scope,
         )
 
     def trend(
@@ -849,6 +888,24 @@ class EconomyService:
         ):
             return non_currency[0]
         return query.strip(), None, None
+
+    def _unique_base_type(self, name: str) -> str | None:
+        rows = self.conn.execute(
+            "SELECT attributes FROM entity WHERE entity_id LIKE 'unique_item:%' "
+            "AND name_en=? COLLATE NOCASE",
+            (name,),
+        ).fetchall()
+        base_types: list[str] = []
+        for row in rows:
+            try:
+                attributes = json.loads(row["attributes"] or "{}")
+            except (TypeError, json.JSONDecodeError):
+                continue
+            base_type = str(attributes.get("base_type_en") or "").strip()
+            if base_type:
+                base_types.append(base_type)
+        distinct = list(dict.fromkeys(base_types))
+        return distinct[0] if len(distinct) == 1 else None
 
     @staticmethod
     def _unique_category(base_type: str) -> tuple[str, ...] | None:

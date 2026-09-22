@@ -51,6 +51,29 @@ def listing(
     }
 
 
+def unique_listing(
+    price: float,
+    *,
+    currency: str = "chaos",
+    league: str = "Allflame",
+    name: str = "Goldrim",
+    base_type: str = "Leather Cap",
+    corrupted: bool | None = None,
+) -> dict:
+    return {
+        "listing": {
+            "indexed": "2026-09-22T08:00:00Z",
+            "account": {"online": {"league": league}},
+            "price": {"type": "~price", "amount": price, "currency": currency},
+        },
+        "item": {
+            "name": name,
+            "typeLine": base_type,
+            "corrupted": corrupted,
+        },
+    }
+
+
 class TradeApiClientTest(unittest.TestCase):
     def test_filters_cross_league_invalid_and_outlier_before_median(self) -> None:
         calls: list[tuple[str, str, dict | None]] = []
@@ -176,6 +199,117 @@ class TradeApiClientTest(unittest.TestCase):
             requests_per_second=0,
         )
         self.assertEqual(["Allflame", "Standard"], client.leagues())
+
+    def test_unique_search_fetches_batches_and_normalizes_divine_prices(self) -> None:
+        ids = [f"id-{index}" for index in range(12)]
+        rows = {
+            "id-0": unique_listing(340),
+            "id-1": unique_listing(350),
+            "id-2": unique_listing(360),
+            "id-3": unique_listing(1, currency="divine"),
+            "id-4": unique_listing(1.02, currency="divine"),
+            "id-5": unique_listing(0.98, currency="divine"),
+            "id-6": unique_listing(5),
+            "id-7": unique_listing(1, league="Standard"),
+            "id-8": unique_listing(1, corrupted=True),
+            "id-9": unique_listing(1, currency="exalted"),
+            "id-10": {"listing": {"account": {"online": {"league": "Allflame"}}}},
+            "id-11": unique_listing(1, name="Not Goldrim"),
+        }
+        calls: list[tuple[str, str, dict | None]] = []
+
+        def request(method: str, path: str, payload: dict | None):
+            calls.append((method, path, payload))
+            if path.startswith("/api/trade/search/"):
+                return {"id": "search-token", "total": 100, "result": ids}
+            if path.startswith("/api/trade/fetch/"):
+                requested_ids = path.split("/fetch/", 1)[1].split("?", 1)[0].split(",")
+                return {"result": [rows[item_id] for item_id in requested_ids]}
+            if path == "/api/trade/data/static":
+                return STATIC
+            return {"result": {
+                str(index): listing(value)
+                for index, value in enumerate((350, 355, 360, 365, 370))
+            }}
+
+        quote = TradeApiClient(
+            request_json=request,
+            requests_per_second=0,
+            minimum_samples=5,
+            unique_max_results=12,
+        ).unique_quote("Allflame", "Goldrim", "Leather Cap")
+
+        self.assertAlmostEqual(356.4, quote.median_chaos)
+        self.assertEqual(100, quote.search_total)
+        self.assertEqual(12, quote.fetched_listing_count)
+        self.assertEqual(4, quote.chaos_listing_count)
+        self.assertEqual(3, quote.divine_listing_count)
+        self.assertEqual(1, quote.cross_league_filtered_count)
+        self.assertEqual(3, quote.invalid_quote_filtered_count)
+        self.assertEqual(1, quote.unconverted_currency_filtered_count)
+        self.assertEqual(1, quote.outlier_filtered_count)
+        self.assertEqual(360, quote.divine_chaos_rate)
+        self.assertEqual(5, quote.conversion_sample_count)
+        self.assertEqual("converted", quote.conversion_status)
+        self.assertIn("/trade/search/Allflame/search-token", quote.source_url)
+        fetch_calls = [call for call in calls if call[1].startswith("/api/trade/fetch/")]
+        self.assertEqual(2, len(fetch_calls))
+        search_body = next(call[2] for call in calls if call[1].startswith("/api/trade/search/"))
+        self.assertEqual("Goldrim", search_body["query"]["name"])
+        self.assertEqual("Leather Cap", search_body["query"]["type"])
+        self.assertEqual("false", search_body["query"]["filters"]["misc_filters"]["filters"]["corrupted"]["option"])
+
+    def test_unique_divine_listings_are_ignored_when_conversion_sample_is_too_small(self) -> None:
+        def request(_method: str, path: str, _payload: dict | None):
+            if path.startswith("/api/trade/search/"):
+                return {"id": "q", "total": 10, "result": [f"u{i}" for i in range(10)]}
+            if path.startswith("/api/trade/fetch/"):
+                return {"result": [
+                    *[unique_listing(10 + index) for index in range(5)],
+                    *[unique_listing(1, currency="divine") for _ in range(5)],
+                ]}
+            if path == "/api/trade/data/static":
+                return STATIC
+            return {"result": {"a": listing(350), "b": listing(360)}}
+
+        quote = TradeApiClient(
+            request_json=request, requests_per_second=0, minimum_samples=5
+        ).unique_quote("Allflame", "Goldrim", "Leather Cap")
+        self.assertEqual(12, quote.median_chaos)
+        self.assertEqual(5, quote.sample_count)
+        self.assertEqual(5, quote.unconverted_currency_filtered_count)
+        self.assertEqual(2, quote.conversion_sample_count)
+        self.assertEqual("insufficient_samples", quote.conversion_status)
+
+    def test_unique_empty_search_is_auditable_insufficient_result(self) -> None:
+        def request(_method: str, path: str, _payload: dict | None):
+            if path.startswith("/api/trade/search/"):
+                return {"id": "empty", "total": 0, "result": []}
+            self.fail(f"unexpected request: {path}")
+
+        quote = TradeApiClient(
+            request_json=request, requests_per_second=0
+        ).unique_quote("Allflame", "Goldrim", "Leather Cap")
+        self.assertFalse(quote.sufficient)
+        self.assertEqual(0, quote.search_total)
+        self.assertEqual(0, quote.fetched_listing_count)
+
+    def test_unique_search_and_fetch_contracts_are_asserted(self) -> None:
+        broken_search = TradeApiClient(
+            request_json=lambda _m, _p, _b: {"result": []}, requests_per_second=0
+        )
+        with self.assertRaisesRegex(TradeApiError, "查询 id"):
+            broken_search.unique_quote("Allflame", "Goldrim", "Leather Cap")
+
+        def request(_method: str, path: str, _payload: dict | None):
+            if path.startswith("/api/trade/search/"):
+                return {"id": "q", "total": 1, "result": ["u1"]}
+            return {"result": {}}
+
+        with self.assertRaisesRegex(TradeApiError, "unique fetch"):
+            TradeApiClient(request_json=request, requests_per_second=0).unique_quote(
+                "Allflame", "Goldrim", "Leather Cap"
+            )
 
 
 if __name__ == "__main__":
