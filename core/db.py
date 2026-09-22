@@ -1335,6 +1335,30 @@ CREATE TABLE IF NOT EXISTS economy_snapshot (
 CREATE INDEX IF NOT EXISTS idx_economy_snapshot_fetched
     ON economy_snapshot(fetched_at);
 
+-- 价格趋势不能使用上游单次响应里的 change 字段冒充历史。这里只追加用户实际查询
+-- 命中的条目，并以快照抓取时间去重；同一份缓存被反复查询不会制造虚假观测点。
+CREATE TABLE IF NOT EXISTS economy_observation (
+    source          TEXT NOT NULL,
+    league          TEXT NOT NULL,
+    category        TEXT NOT NULL,
+    item_key        TEXT NOT NULL,
+    item_id         TEXT NOT NULL,
+    item_name       TEXT NOT NULL,
+    item_group      TEXT NOT NULL,
+    observed_at     TEXT NOT NULL,
+    mean_chaos      REAL,
+    min_chaos       REAL,
+    max_chaos       REAL,
+    divine          REAL,
+    daily           INTEGER,
+    low_confidence  INTEGER NOT NULL CHECK(low_confidence IN (0,1)),
+    PRIMARY KEY(source, league, category, item_key, observed_at)
+);
+CREATE INDEX IF NOT EXISTS idx_economy_observation_lookup
+    ON economy_observation(source, league, category, item_key, observed_at);
+CREATE INDEX IF NOT EXISTS idx_economy_observation_retention
+    ON economy_observation(observed_at);
+
 -- ── 知识库自描述：覆盖声明 ──
 -- 为什么要落库而不是每次现算：它要注入 system prompt、要供缺据声明归因、
 -- 要让 kb_search 的 category 枚举说真话，三处都在请求路径上，每次扫全库不合适。

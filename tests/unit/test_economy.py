@@ -12,14 +12,22 @@ from api.economy import (
     MaterialCostItemRequest,
     MaterialCostRequest,
     PriceRequest,
+    TrendRequest,
     material_cost as material_cost_endpoint,
     price as price_endpoint,
+    trend as trend_endpoint,
 )
+from core import db as dbmod
 from economy.models import MaterialRequest
 from economy.poe_watch import PoeWatchClient, PoeWatchError
 from economy.service import EconomyService, EconomyUnavailable, InvalidEconomyQuery
 from kb.coverage import probe
-from tools.impl.economy import render_material_cost, render_price
+from tools.impl.economy import (
+    economy_price_trend,
+    render_material_cost,
+    render_price,
+    render_trend,
+)
 
 
 SCHEMA = """
@@ -27,6 +35,13 @@ CREATE TABLE economy_snapshot(
  source TEXT NOT NULL, league TEXT NOT NULL, category TEXT NOT NULL,
  fetched_at TEXT NOT NULL, payload TEXT NOT NULL, content_hash TEXT NOT NULL,
  PRIMARY KEY(source,league,category));
+CREATE TABLE economy_observation(
+ source TEXT NOT NULL, league TEXT NOT NULL, category TEXT NOT NULL,
+ item_key TEXT NOT NULL, item_id TEXT NOT NULL, item_name TEXT NOT NULL,
+ item_group TEXT NOT NULL, observed_at TEXT NOT NULL, mean_chaos REAL,
+ min_chaos REAL, max_chaos REAL, divine REAL, daily INTEGER,
+ low_confidence INTEGER NOT NULL,
+ PRIMARY KEY(source,league,category,item_key,observed_at));
 CREATE TABLE entity(entity_id TEXT PRIMARY KEY, name_en TEXT, attributes TEXT NOT NULL);
 CREATE TABLE alias(
  alias TEXT NOT NULL, alias_norm TEXT NOT NULL, entity_id TEXT NOT NULL, kind TEXT NOT NULL,
@@ -50,6 +65,10 @@ class EconomyServiceTest(unittest.TestCase):
         self.clock = _Clock()
         self.calls: list[tuple[str, dict[str, str]]] = []
         self.fail = False
+        self.mean = 370.25
+        self.minimum = 365
+        self.maximum = 375
+        self.seven_day_history: list[float] = []
 
         def fetch(path: str, params: dict[str, str]):
             self.calls.append((path, params))
@@ -59,8 +78,9 @@ class EconomyServiceTest(unittest.TestCase):
                 return [{"name": "Allflame"}, {"name": "Standard"}]
             return [{
                 "id": 1, "name": "Divine Orb", "category": "currency", "group": "currency",
-                "mean": 370.25, "min": 365, "max": 375, "divine": 1,
+                "mean": self.mean, "min": self.minimum, "max": self.maximum, "divine": 1,
                 "daily": 42, "change": -2, "lowConfidence": True,
+                "sevenDaysHistory": self.seven_day_history,
             }]
 
         self.service = EconomyService(
@@ -91,6 +111,10 @@ class EconomyServiceTest(unittest.TestCase):
         result = self.service.price("Divine Orb", category="currency")
         self.assertTrue(result.from_cache)
         self.assertEqual([], self.calls)
+        self.assertEqual(
+            1,
+            self.conn.execute("SELECT count(*) FROM economy_observation").fetchone()[0],
+        )
 
     def test_expired_snapshot_refresh_failure_degrades_to_non_stale_cache(self) -> None:
         self.service.price("Divine Orb", category="currency")
@@ -175,6 +199,7 @@ class EconomyServiceTest(unittest.TestCase):
         self.assertEqual("partial", status.status)
         self.assertEqual(0, status.item_count)
         self.assertIn("economy_price_lookup", status.spec.tools)
+        self.assertIn("economy_price_trend", status.spec.tools)
         self.assertIn("economy_material_cost", status.spec.tools)
 
     def test_http_handler_exposes_structured_freshness_fields(self) -> None:
@@ -186,6 +211,134 @@ class EconomyServiceTest(unittest.TestCase):
         self.assertEqual("poe.watch", response.source)
         self.assertEqual("2026-09-21T04:00:00Z", response.fetched_at)
         self.assertFalse(response.stale)
+
+    def test_trend_uses_two_saved_snapshots_and_not_upstream_change(self) -> None:
+        self.service.price("Divine Orb", category="currency")
+        self.clock.value += timedelta(minutes=31)
+        self.mean = 400
+        self.minimum = 395
+        self.maximum = 405
+
+        result = self.service.trend(
+            "Divine Orb", category="currency", window_hours=24
+        )
+
+        self.assertTrue(result.analyzable)
+        trend = result.trends[0]
+        self.assertEqual("ready", trend.status)
+        self.assertEqual(2, trend.observation_count)
+        self.assertEqual(370.25, trend.first_mean_chaos)
+        self.assertEqual(400, trend.last_mean_chaos)
+        self.assertEqual(29.75, trend.change_chaos)
+        self.assertEqual("up", trend.direction)
+        self.assertAlmostEqual(8.035, trend.change_percent, places=3)
+        self.assertIn("本机保存的带时间戳快照", render_trend(result))
+        self.assertNotIn("-2%", render_trend(result))
+
+    def test_trend_refuses_to_infer_from_one_observation(self) -> None:
+        result = self.service.trend("Divine Orb", category="currency")
+        self.assertFalse(result.analyzable)
+        self.assertEqual("insufficient_data", result.trends[0].status)
+        self.assertEqual(1, result.trends[0].observation_count)
+        self.assertIsNone(result.trends[0].change_percent)
+        self.assertIn("暂不可判定", render_trend(result))
+
+    def test_default_window_can_use_explicit_upstream_seven_day_series(self) -> None:
+        self.seven_day_history = [300, 310, 320, 330, 340, 360, 370.25]
+        result = self.service.trend("Divine Orb", category="currency")
+        trend = result.trends[0]
+        self.assertTrue(result.analyzable)
+        self.assertEqual("poe_watch_seven_day_history", trend.basis)
+        self.assertFalse(trend.timestamps_available)
+        self.assertEqual(7, trend.observation_count)
+        self.assertEqual(70.25, trend.change_chaos)
+        self.assertEqual(tuple(self.seven_day_history), trend.series_values)
+        self.assertIn("上游未提供逐点时间戳", render_trend(result))
+
+    def test_trend_window_excludes_old_observations(self) -> None:
+        self.service.price("Divine Orb", category="currency")
+        self.clock.value += timedelta(days=2)
+        self.mean = 400
+        result = self.service.trend(
+            "Divine Orb", category="currency", window_hours=24
+        )
+        self.assertFalse(result.analyzable)
+        self.assertEqual(1, result.trends[0].observation_count)
+
+    def test_trend_rejects_invalid_window(self) -> None:
+        for value in (0, 2161, True, 1.5):
+            with self.subTest(value=value), self.assertRaises(InvalidEconomyQuery):
+                self.service.trend(
+                    "Divine Orb", category="currency", window_hours=value  # type: ignore[arg-type]
+                )
+
+    def test_observation_retention_prunes_old_points(self) -> None:
+        self.service.price("Divine Orb", category="currency")
+        self.clock.value += timedelta(days=91)
+        self.mean = 400
+        self.service.price("Divine Orb", category="currency")
+        rows = self.conn.execute(
+            "SELECT observed_at FROM economy_observation ORDER BY observed_at"
+        ).fetchall()
+        self.assertEqual(1, len(rows))
+        self.assertEqual("2026-12-21T04:00:00Z", rows[0]["observed_at"])
+
+    def test_trend_calculates_all_points_but_caps_returned_series(self) -> None:
+        self.service.max_trend_points = 3
+        for index, mean in enumerate((100, 110, 120, 130, 140)):
+            self.mean = mean
+            self.service.price("Divine Orb", category="currency")
+            if index < 4:
+                self.clock.value += timedelta(minutes=31)
+        trend = self.service.trend(
+            "Divine Orb", category="currency", window_hours=24
+        ).trends[0]
+        self.assertEqual(5, trend.observation_count)
+        self.assertEqual((100, 120, 140), trend.series_values)
+        self.assertEqual(3, len(trend.observations))
+        self.assertEqual(40, trend.change_chaos)
+
+    def test_trend_http_handler_exposes_observations(self) -> None:
+        self.service.price("Divine Orb", category="currency")
+        self.clock.value += timedelta(minutes=31)
+        self.mean = 400
+        with patch("api.economy.service_from_config", return_value=self.service):
+            response = trend_endpoint(
+                TrendRequest(query="Divine Orb", category="currency", window_hours=24),
+                _caller="test",
+            )
+        self.assertTrue(response.analyzable)
+        self.assertEqual(2, response.trends[0]["observation_count"])
+        self.assertEqual("poe.watch", response.source)
+
+    def test_trend_tool_returns_deterministic_answer_and_citation(self) -> None:
+        self.service.price("Divine Orb", category="currency")
+        self.clock.value += timedelta(minutes=31)
+        self.mean = 400
+        with patch("tools.impl.economy.service_from_config", return_value=self.service):
+            result = economy_price_trend(
+                "Divine Orb", category="currency", window_hours=24
+            )
+        self.assertTrue(result.ok)
+        self.assertTrue(result.data["analyzable"])
+        self.assertIn("上涨 29.75 混沌石", result.data["answer"])
+        self.assertEqual("live_economy", result.citations[0]["channel"])
+
+    def test_production_schema_contains_observation_contract(self) -> None:
+        conn = sqlite3.connect(":memory:")
+        self.addCleanup(conn.close)
+        conn.executescript(dbmod.SCHEMA)
+        columns = {
+            row[1] for row in conn.execute("PRAGMA table_info(economy_observation)")
+        }
+        self.assertEqual(
+            {
+                "source", "league", "category", "item_key", "item_id", "item_name",
+                "item_group", "observed_at", "mean_chaos", "min_chaos", "max_chaos",
+                "divine", "daily", "low_confidence",
+            },
+            columns,
+        )
 
     def test_material_cost_batches_shared_snapshots_and_sums_all_axes(self) -> None:
         result = self.service.material_cost([

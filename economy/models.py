@@ -22,6 +22,7 @@ class PricePoint:
     daily: int | None
     change_percent: float | None
     low_confidence: bool
+    seven_day_history: tuple[float, ...] = field(default_factory=tuple)
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -52,6 +53,85 @@ class PriceSearch:
         out["found"] = self.found
         out["categories_searched"] = list(self.categories_searched)
         out["prices"] = [p.as_dict() for p in self.prices]
+        return out
+
+
+@dataclass(frozen=True)
+class PriceObservation:
+    observed_at: str
+    mean_chaos: float
+    min_chaos: float | None
+    max_chaos: float | None
+    daily: int | None
+    low_confidence: bool
+
+    def as_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
+class PriceTrend:
+    item_id: int | str
+    name: str
+    category: str
+    group: str
+    basis: str
+    timestamps_available: bool
+    status: str
+    reason: str
+    observation_count: int
+    first_observed_at: str | None
+    last_observed_at: str | None
+    first_mean_chaos: float | None
+    last_mean_chaos: float | None
+    change_chaos: float | None
+    change_percent: float | None
+    min_mean_chaos: float | None
+    max_mean_chaos: float | None
+    direction: str
+    low_confidence_count: int
+    series_values: tuple[float, ...] = field(default_factory=tuple)
+    observations: tuple[PriceObservation, ...] = field(default_factory=tuple)
+
+    def as_dict(self) -> dict[str, Any]:
+        out = asdict(self)
+        out["series_values"] = list(self.series_values)
+        out["observations"] = [item.as_dict() for item in self.observations]
+        return out
+
+
+@dataclass(frozen=True)
+class PriceTrendSearch:
+    query: str
+    resolved_name: str
+    requested_category: str
+    categories_searched: tuple[str, ...]
+    league: str
+    source: str
+    source_url: str
+    fetched_at: str
+    from_cache: bool
+    stale: bool
+    degraded: bool
+    warning: str
+    window_hours: int
+    minimum_observations: int
+    trends: tuple[PriceTrend, ...] = field(default_factory=tuple)
+
+    @property
+    def found(self) -> bool:
+        return bool(self.trends)
+
+    @property
+    def analyzable(self) -> bool:
+        return any(item.status == "ready" for item in self.trends)
+
+    def as_dict(self) -> dict[str, Any]:
+        out = asdict(self)
+        out["found"] = self.found
+        out["analyzable"] = self.analyzable
+        out["categories_searched"] = list(self.categories_searched)
+        out["trends"] = [item.as_dict() for item in self.trends]
         return out
 
 

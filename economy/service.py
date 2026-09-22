@@ -17,8 +17,11 @@ from economy.models import (
     MaterialCostEstimate,
     MaterialCostLine,
     MaterialRequest,
+    PriceObservation,
     PricePoint,
     PriceSearch,
+    PriceTrend,
+    PriceTrendSearch,
 )
 from economy.poe_watch import PoeWatchClient, PoeWatchError
 from retrieval.alias import lookup, normalize
@@ -78,6 +81,13 @@ def _number(value: Any) -> float | None:
         return None
 
 
+def _number_series(value: Any) -> tuple[float, ...]:
+    if not isinstance(value, list):
+        return ()
+    numbers = [_number(item) for item in value]
+    return tuple(item for item in numbers if item is not None and math.isfinite(item))
+
+
 class EconomyService:
     def __init__(
         self,
@@ -86,12 +96,16 @@ class EconomyService:
         client: PoeWatchClient,
         cache_ttl: timedelta = timedelta(minutes=30),
         stale_after: timedelta = timedelta(hours=6),
+        observation_retention: timedelta = timedelta(days=90),
+        max_trend_points: int = 200,
         now: Callable[[], datetime] = _utcnow,
     ) -> None:
         self.conn = conn
         self.client = client
         self.cache_ttl = cache_ttl
         self.stale_after = stale_after
+        self.observation_retention = observation_retention
+        self.max_trend_points = max(2, int(max_trend_points))
         self.now = now
 
     def price(
@@ -125,6 +139,7 @@ class EconomyService:
         snapshots = [self._prices(selected_league, c) for c in upstream_categories]
         wanted = normalize(resolved_name)
         prices: list[PricePoint] = []
+        observed_at_by_item: dict[tuple[str, str], datetime] = {}
         for snapshot in snapshots:
             for row in snapshot.payload:
                 name = str(row.get("name") or "").strip()
@@ -132,7 +147,9 @@ class EconomyService:
                 # ``query`` 既可来自结构化 API（通常就是名字），也可来自聊天整句。
                 # 只接受完整名称相等或完整名称作为问句子串，不做编辑距离/模糊猜测。
                 if name and (row_name == wanted or (len(row_name) >= 4 and row_name in wanted)):
-                    prices.append(self._price_point(row))
+                    point = self._price_point(row)
+                    prices.append(point)
+                    observed_at_by_item[(str(point.item_id), point.category)] = snapshot.fetched_at
 
         if prices:
             longest = max(len(normalize(item.name)) for item in prices)
@@ -186,6 +203,17 @@ class EconomyService:
             # 不把完整异常塞进用户答案，只保留稳定状态；详情进服务日志/工具 error 即可。
             warning = warning or "poe.watch 刷新失败，已降级使用缓存"
 
+        self._record_observations(
+            selected_league,
+            [
+                (
+                    point,
+                    observed_at_by_item.get((str(point.item_id), point.category), fetched_at),
+                )
+                for point in prices
+            ],
+        )
+
         return PriceSearch(
             query=raw_query,
             resolved_name=resolved_name,
@@ -200,6 +228,63 @@ class EconomyService:
             degraded=degraded,
             warning=warning,
             prices=tuple(prices),
+        )
+
+    def trend(
+        self,
+        query: str,
+        *,
+        category: str = "auto",
+        league: str | None = None,
+        window_hours: int = 24 * 7,
+        minimum_observations: int = 2,
+    ) -> PriceTrendSearch:
+        """按本机实际保存的多个快照计算趋势；绝不把单次 ``change`` 当历史。"""
+        if isinstance(window_hours, bool) or not isinstance(window_hours, int):
+            raise InvalidEconomyQuery("window_hours 必须是整数")
+        max_hours = max(1, int(self.observation_retention.total_seconds() // 3600))
+        if not 1 <= window_hours <= max_hours:
+            raise InvalidEconomyQuery(f"window_hours 必须在 1 到 {max_hours} 之间")
+        if (
+            isinstance(minimum_observations, bool)
+            or not isinstance(minimum_observations, int)
+            or not 2 <= minimum_observations <= 100
+        ):
+            raise InvalidEconomyQuery("minimum_observations 必须是 2 到 100 之间的整数")
+
+        current = self.price(query, category=category, league=league)
+        cutoff = _iso(self.now() - timedelta(hours=window_hours))
+        trends = tuple(
+            self._trend_for_point(
+                current.league,
+                point,
+                cutoff=cutoff,
+                window_hours=window_hours,
+                minimum_observations=minimum_observations,
+            )
+            for point in current.prices
+            if point.group != "quote_unit"
+        )
+        warning = current.warning
+        if trends and not any(item.status == "ready" for item in trends):
+            note = f"至少需要 {minimum_observations} 个不同时间的有效均价观测点才能判断趋势"
+            warning = f"{warning}；{note}" if warning else note
+        return PriceTrendSearch(
+            query=current.query,
+            resolved_name=current.resolved_name,
+            requested_category=current.requested_category,
+            categories_searched=current.categories_searched,
+            league=current.league,
+            source=current.source,
+            source_url=current.source_url,
+            fetched_at=current.fetched_at,
+            from_cache=current.from_cache,
+            stale=current.stale,
+            degraded=current.degraded,
+            warning=warning,
+            window_hours=window_hours,
+            minimum_observations=minimum_observations,
+            trends=trends,
         )
 
     def material_cost(
@@ -371,6 +456,170 @@ class EconomyService:
         return _Snapshot(payload, fetched_at, False)
 
     @staticmethod
+    def _observation_key(point: PricePoint) -> str:
+        item_id = str(point.item_id).strip()
+        if item_id:
+            return f"id:{item_id}"
+        identity = json.dumps(
+            [normalize(point.name), point.category, point.group],
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+        return f"name:{hashlib.sha256(identity.encode('utf-8')).hexdigest()}"
+
+    def _record_observations(
+        self,
+        league: str,
+        prices: list[tuple[PricePoint, datetime]],
+    ) -> None:
+        rows = [
+            (
+                SOURCE,
+                league,
+                point.category,
+                self._observation_key(point),
+                str(point.item_id),
+                point.name,
+                point.group,
+                _iso(observed_at),
+                point.mean_chaos,
+                point.min_chaos,
+                point.max_chaos,
+                point.divine,
+                point.daily,
+                int(point.low_confidence),
+            )
+            for point, observed_at in prices
+            if point.group != "quote_unit"
+        ]
+        if not rows:
+            return
+        with _SNAPSHOT_LOCK:
+            self.conn.executemany(
+                "INSERT OR IGNORE INTO economy_observation("
+                "source,league,category,item_key,item_id,item_name,item_group,observed_at,"
+                "mean_chaos,min_chaos,max_chaos,divine,daily,low_confidence) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                rows,
+            )
+            cutoff = _iso(self.now() - self.observation_retention)
+            self.conn.execute(
+                "DELETE FROM economy_observation WHERE source=? AND observed_at < ?",
+                (SOURCE, cutoff),
+            )
+            self.conn.commit()
+
+    def _trend_for_point(
+        self,
+        league: str,
+        point: PricePoint,
+        *,
+        cutoff: str,
+        window_hours: int,
+        minimum_observations: int,
+    ) -> PriceTrend:
+        rows = list(self.conn.execute(
+            "SELECT observed_at,mean_chaos,min_chaos,max_chaos,daily,low_confidence "
+            "FROM economy_observation WHERE source=? AND league=? AND category=? "
+            "AND item_key=? AND observed_at>=? AND mean_chaos IS NOT NULL "
+            "ORDER BY observed_at",
+            (SOURCE, league, point.category, self._observation_key(point), cutoff),
+        ))
+        observations = [
+            PriceObservation(
+                observed_at=str(row["observed_at"]),
+                mean_chaos=float(row["mean_chaos"]),
+                min_chaos=_number(row["min_chaos"]),
+                max_chaos=_number(row["max_chaos"]),
+                daily=(int(row["daily"]) if row["daily"] is not None else None),
+                low_confidence=bool(row["low_confidence"]),
+            )
+            for row in rows
+        ]
+        local_ready = len(observations) >= minimum_observations and (
+            observations[0].observed_at != observations[-1].observed_at
+        )
+        upstream_values = point.seven_day_history if window_hours == 24 * 7 else ()
+        upstream_ready = not local_ready and len(upstream_values) >= minimum_observations
+        basis = (
+            "poe_watch_seven_day_history" if upstream_ready else "local_observations"
+        )
+        values = (
+            [item.mean_chaos for item in observations]
+            if local_ready
+            else list(upstream_values)
+            if upstream_ready
+            else [item.mean_chaos for item in observations]
+        )
+        count = len(values)
+        ready = local_ready or upstream_ready
+        first = observations[0] if observations else None
+        last = observations[-1] if observations else None
+        change = None
+        change_percent = None
+        direction = "unknown"
+        reason = ""
+        if ready:
+            change_decimal = Decimal(str(values[-1])) - Decimal(str(values[0]))
+            change = float(change_decimal)
+            if values[0] != 0:
+                change_percent = float(
+                    change_decimal / abs(Decimal(str(values[0]))) * Decimal("100")
+                )
+            direction = "up" if change > 0 else "down" if change < 0 else "flat"
+        else:
+            reason = (
+                f"窗口内只有 {count} 个有效均价观测点；至少需要 "
+                f"{minimum_observations} 个不同时间的观测点"
+            )
+
+        sampled = self._sample_observations(observations)
+        returned_values = (
+            tuple(upstream_values)
+            if upstream_ready
+            else tuple(item.mean_chaos for item in sampled)
+        )
+        return PriceTrend(
+            item_id=point.item_id,
+            name=point.name,
+            category=point.category,
+            group=point.group,
+            basis=basis,
+            timestamps_available=not upstream_ready,
+            status="ready" if ready else "insufficient_data",
+            reason=reason,
+            observation_count=count,
+            first_observed_at=first.observed_at if local_ready and first else None,
+            last_observed_at=last.observed_at if local_ready and last else None,
+            first_mean_chaos=values[0] if values else None,
+            last_mean_chaos=values[-1] if values else None,
+            change_chaos=change,
+            change_percent=change_percent,
+            min_mean_chaos=min(values) if values else None,
+            max_mean_chaos=max(values) if values else None,
+            direction=direction,
+            low_confidence_count=(
+                sum(item.low_confidence for item in observations)
+                if local_ready
+                else int(point.low_confidence)
+            ),
+            series_values=returned_values,
+            observations=tuple(sampled),
+        )
+
+    def _sample_observations(
+        self, observations: list[PriceObservation]
+    ) -> list[PriceObservation]:
+        if len(observations) <= self.max_trend_points:
+            return observations
+        last = len(observations) - 1
+        indexes = {
+            round(index * last / (self.max_trend_points - 1))
+            for index in range(self.max_trend_points)
+        }
+        return [observations[index] for index in sorted(indexes)]
+
+    @staticmethod
     def _select_league(requested: str | None, leagues: list[dict[str, Any]]) -> str:
         names = [str(row.get("name") or "").strip() for row in leagues]
         names = [name for name in names if name]
@@ -479,4 +728,5 @@ class EconomyService:
             daily=daily_value,
             change_percent=_number(row.get("change")),
             low_confidence=bool(row.get("lowConfidence", False)),
+            seven_day_history=_number_series(row.get("sevenDaysHistory")),
         )

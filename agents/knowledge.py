@@ -28,6 +28,7 @@ ALLOWED_TOOLS = [
     "harvest_quality_enchant_state",  # 精确：14 条 Harvest 护甲/武器品质附魔
     "harvest_exchange_state",  # 精确：17 条 Harvest 材料转换与牺牲
     "economy_material_cost",  # 实时：明确材料清单的逐项价格与确定性总成本
+    "economy_price_trend",  # 实时：本机实际历史快照的价格趋势（不足两点拒绝判定）
     "economy_price_lookup",  # 实时：poe.watch 精确名称价格快照（带联盟/时间/置信度）
     "affix_pool_odds",  # 精确：胸甲 normal 同侧有效池与条件权重概率
     "check_mod_combination",  # 精确：目标词缀组合的三态可行性与缺据点
@@ -122,6 +123,11 @@ POE1 的机制耦合极深，一个错误的小前提会让整条结论反向。
   `economy_price_lookup`。只能逐字复述它给出的市场统计快照，必须保留联盟、来源、抓取时间、
   缓存/陈旧状态与低置信度警告。mean/min/max 不是保证成交价。不要据此扩写价格趋势、
   制作成本、稀有装备估值、利润或 Flip 建议。
+- **唯一装备 / 通货 / 圣甲虫 / 命运卡 / 碎片过去一段时间的涨跌或趋势** →
+  `economy_price_trend`。优先采用本机保存的多个带时间戳快照；默认七日窗口可回退到
+  poe.watch 明确返回的 `sevenDaysHistory` 数列，但要保留“逐点时间戳不可用”的限制。
+  不足两个有效均价点时必须保留“暂不可判定”，不能把单次响应的 change 字段改写成
+  多日历史，也不能据此预测未来、补利润或 Flip 建议。
 - **具体胸甲底材在明确物等、前缀/后缀侧，某普通词缀组的有效池与原始权重** →
   `affix_pool_odds`。问题必须逐字给出底材、物品等级、生成侧和目标；目标命中多个
   `correct_group` 时必须先消歧。它只计算 `normal`、同侧、尚未应用已有 family 排除时
