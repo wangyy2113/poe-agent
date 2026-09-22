@@ -937,6 +937,13 @@ _PREFERRED_TOOL_INTENTS: tuple[tuple[str, tuple[str, ...]], ...] = (
         "前缀上限", "后缀上限", "前缀名额", "后缀名额", "词缀名额",
         "最多几条", "最多能有几条", "前后缀名额",
     )),
+    # 底材 influenceTags 没有独立卡片；只收明确问「某底材能否承载影响」的问法，
+    # 裸的「影响力」仍留给词缀/制作意图，避免抢走组合判断。
+    ("base_influence_profile", (
+        "能承载哪些影响", "支持哪些影响", "底材影响力", "影响生成标签",
+        "能有猎人影响", "能有狩猎者影响", "能有塑界者影响", "能有裂界者影响",
+        "能有督军影响", "能有圣战者影响", "能有救赎者影响",
+    )),
     # 星团珠宝的尺寸、小点数与基石清单只有表、没有卡片。判据要专指「星团」——
     # 单独的「珠宝」会把「珠宝上的词缀」这类有卡片可答的问题抢过来。
     ("cluster_jewel_info", ("星团", "星团珠宝")),
@@ -1464,6 +1471,52 @@ def _fossil_operation_args(question: str) -> dict[str, Any] | None:
         args["mirrored"] = True
     if "裂隙词缀" in question or "裂隙詞綴" in question:
         args["fractured"] = True
+    return args
+
+
+def _base_influence_args(question: str) -> dict[str, Any] | None:
+    """从库内逐字底材名与固定影响别名抽参数；多解时交回模型。"""
+    try:
+        from core import db as dbmod  # noqa: PLC0415
+        from craft.influence import INFLUENCES  # noqa: PLC0415
+
+        rows = dbmod.get_conn().execute(
+            "SELECT base_id,name_zh,name_en FROM pob_base_item ORDER BY base_id"
+        ).fetchall()
+    except Exception:  # noqa: BLE001
+        return None
+    lowered = question.casefold()
+    matches: list[tuple[str, str]] = []
+    for row in rows:
+        zh = str(row["name_zh"] or "")
+        en = str(row["name_en"] or "")
+        for name in (zh, en):
+            if name and name.casefold() in lowered:
+                matches.append((str(row["base_id"]), name))
+    # 去掉被更长逐字名完全包含的短名，仍多解则拒绝猜。
+    maximal = [
+        pair for pair in matches
+        if not any(
+            pair[0] != other[0]
+            and len(pair[1]) < len(other[1])
+            and pair[1].casefold() in other[1].casefold()
+            for other in matches
+        )
+    ]
+    by_id = {base_id: name for base_id, name in maximal}
+    if len(by_id) != 1:
+        return None
+    args: dict[str, Any] = {"base_type": next(iter(by_id.values()))}
+    influence_hits = []
+    for spec in INFLUENCES:
+        aliases = (spec.name_zh, spec.name_en, *spec.aliases)
+        if any(alias and alias.casefold() in lowered for alias in aliases):
+            influence_hits.append(spec)
+    unique = {spec.key: spec for spec in influence_hits}
+    if len(unique) > 1:
+        return None
+    if unique:
+        args["influence"] = next(iter(unique.values())).name_zh
     return args
 
 
@@ -2217,6 +2270,7 @@ _CODE_INVOKED_TOOLS: dict[str, Any] = {
     "eldritch_operation_state": _eldritch_operation_args,
     "veiled_operation_state": _veiled_operation_args,
     "fossil_operation_state": _fossil_operation_args,
+    "base_influence_profile": _base_influence_args,
     "harvest_reforge_state": _harvest_reforge_args,
     "harvest_modifier_state": _harvest_modifier_args,
     "harvest_quality_enchant_state": _harvest_quality_enchant_args,
@@ -2254,6 +2308,7 @@ _DETERMINISTIC_DIRECT_TOOLS = frozenset({
     "eldritch_operation_state",
     "veiled_operation_state",
     "fossil_operation_state",
+    "base_influence_profile",
     "harvest_reforge_state",
     "harvest_modifier_state",
     "harvest_quality_enchant_state",
@@ -2461,7 +2516,11 @@ def _validate_precision_call(
         return "当前问题没有未被否定的组合判断子句"
 
     item_class = _normalized(str(arguments.get("item_class") or ""))
-    if not item_class or item_class not in clause:
+    base_type = _normalized(str(arguments.get("base_type") or ""))
+    if base_type:
+        if base_type not in clause:
+            return "base_type 未逐字对应正向组合判断子句中的具体底材"
+    elif not item_class or item_class not in clause:
         return "item_class 未对应正向组合判断子句中的底材类别"
 
     rarity_raw = arguments.get("rarity")
@@ -2469,6 +2528,14 @@ def _validate_precision_call(
         rarity = _normalized(str(rarity_raw))
         if not rarity or rarity not in clause:
             return "rarity 未对应正向组合判断子句中的稀有度限定"
+
+    item_level = arguments.get("item_level")
+    if item_level is not None:
+        if isinstance(item_level, bool) or not isinstance(item_level, int):
+            return "item_level 必须是整数"
+        level_match = re.search(r"(?:物品等级|物等|ilvl)\s*[:：为是]?\s*(\d{1,3})", clause, re.I)
+        if not level_match or int(level_match.group(1)) != item_level:
+            return "item_level 必须等于正向组合判断子句中明确给出的物品等级"
 
     targets = arguments.get("targets")
     if not isinstance(targets, list) or len(targets) < 2:
@@ -2486,7 +2553,7 @@ def _validate_precision_call(
     if len(set(queries)) != len(queries):
         return "组合检查的目标词缀不得重复"
 
-    segment = _target_segment(clause, item_class)
+    segment = _target_segment(clause, base_type or item_class)
     expected = [part for part in _CRAFT_TARGET_SPLIT_RE.split(segment) if part]
     remaining = list(expected)
     # 先绑定带 source 的目标，避免来源词留在分段里让无来源目标抢先报成普通缺失。
@@ -2525,8 +2592,17 @@ def _precision_citations(
         return [
             citation
             for citation in result.citations
-            if str(citation.get("chunk_id") or "").startswith("craft_solver:")
-            and citation.get("channel") == "derived"
+            if (
+                str(citation.get("chunk_id") or "").startswith("craft_solver:")
+                and citation.get("channel") == "derived"
+            )
+            or (
+                str(citation.get("chunk_id") or "").startswith(
+                    ("craft_base:", "craft_influence_rule:")
+                )
+                and citation.get("channel") == "structured"
+                and citation.get("url")
+            )
         ]
     if tool_name == "bench_recipe_catalog":
         return [

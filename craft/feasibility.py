@@ -11,9 +11,10 @@
 PoB ``Classes/Item.lua`` 两侧对账），所以 ``possible`` 从这一版起真的可达——
 在它之前这个模块末尾有一行无条件的 ``verdict = "unknown"``，三态里的第三态是死的。
 
-来源适用条件与影响力要求**仍未入库**，但它们**只在条件命中时才追加缺口**
-（候选含非常规来源、或底材带影响力）。所以判据不写成「容量过了就 possible」，
-而是 **「这一页一条缺口都没有才 possible」**——将来补上那两条规则时不用再改这里。
+普通与单一影响来源的底材适用条件已接入：给定逐字具体底材时，使用 PoB 的
+``tags`` / ``influenceTags`` 与 POEDB 候选的正权重 ``spawn_tags`` 过滤，并可按物等
+过滤。其它非常规来源、没有具体底材的影响条件以及多影响组合仍追加缺口。所以判据
+不写成「容量过了就 possible」，而是 **「这一页一条缺口都没有才 possible」**。
 
 容量判定的顺序本身就是安全边界，四种情况一律留在 ``unknown``：
 
@@ -37,6 +38,16 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from craft.capacity import assess_affix_capacity
+from craft.influence import (
+    INFLUENCE_CATEGORIES,
+    BaseInfluenceProfile,
+    InfluenceSpec,
+    preferred_modifier_pages,
+    resolve_base_profile,
+    resolve_influence,
+    row_matches_base,
+    spawn_rule_url,
+)
 from parsers.item_mods import resolve_item_class
 
 Verdict = Literal["possible", "impossible", "unknown"]
@@ -49,14 +60,6 @@ MAX_TARGETS = 8
 MAX_TARGET_QUERY_CHARS = 80
 MAX_TARGET_SOURCE_CHARS = 40
 CRAFT_RULE_URL = "https://poedb.tw/cn/metamods"
-
-# 这些名称只用于判断「需要影响力规则才能继续验证」，不据此断言具体机制。
-_INFLUENCE_CATEGORIES = {
-    # 当前 mod_affix.category 的真实取值；不要写页面展示名或自行扩展别名。
-    "elder", "shaper", "crusader", "redeemer", "hunter", "warlord",
-    "eater", "searing",
-}
-
 
 @dataclass(frozen=True)
 class TargetSpec:
@@ -80,6 +83,7 @@ class Candidate:
     sample_texts: tuple[str, ...]
     tiers: tuple[int, ...]
     min_ilvl: int
+    spawn_tags: tuple[str, ...]
     url: str
 
     @property
@@ -108,6 +112,7 @@ class Candidate:
             "sample_texts": list(self.sample_texts),
             "tiers": list(self.tiers),
             "minimum_item_level": self.min_ilvl,
+            "spawn_tags": list(self.spawn_tags),
         }
 
 
@@ -223,8 +228,11 @@ class FeasibilityReport:
     item_class: str
     rarity: str | None
     influences: list[str]
+    base_type: str | None
+    item_level: int | None
     pages: list[str]
     scope_note: str
+    base_profile: BaseInfluenceProfile | None = None
     page_analyses: list[PageAnalysis] = field(default_factory=list)
     checks: list[ConstraintCheck] = field(default_factory=list)
     gaps: list[KnowledgeGap] = field(default_factory=list)
@@ -236,8 +244,11 @@ class FeasibilityReport:
             "item_class": self.item_class,
             "rarity": self.rarity,
             "influences": self.influences,
+            "base_type": self.base_type,
+            "item_level": self.item_level,
             "pages_searched": self.pages,
             "scope_note": self.scope_note,
+            "base_profile": self.base_profile.to_dict() if self.base_profile else None,
             "checks": [c.to_dict() for c in self.checks],
             "gaps": [g.to_dict() for g in self.gaps],
             "page_analyses": [p.to_dict() for p in self.page_analyses],
@@ -315,6 +326,10 @@ def resolve_target_candidates(
     conn: sqlite3.Connection,
     page: str,
     target: TargetSpec,
+    *,
+    base_profile: BaseInfluenceProfile | None = None,
+    requested_influences: tuple[InfluenceSpec, ...] = (),
+    item_level: int | None = None,
 ) -> TargetResolution:
     """在一个确定的 POEDB 底材页面上解析目标候选。
 
@@ -330,11 +345,22 @@ def resolve_target_candidates(
     if target.source:
         sql += " AND (category=? OR category_label=?)"
         params.extend([target.source, target.source])
+    if item_level is not None:
+        sql += " AND ilvl<=?"
+        params.append(item_level)
     sql += " ORDER BY category, gen_type, correct_group, tier, ilvl"
 
     rows = conn.execute(sql, params).fetchall()
     grouped: dict[tuple[Any, ...], list[sqlite3.Row]] = {}
     for row in rows:
+        spawn_tags = _json_list(row["spawn_tags"])
+        if base_profile is not None and not row_matches_base(
+            category=str(row["category"] or ""),
+            spawn_tags=spawn_tags,
+            profile=base_profile,
+            requested=requested_influences,
+        ):
+            continue
         families = _json_list(row["family_list"])
         # POEDB 的 mod_code 在真实库中可能按 T 级变化，不能拿它作为梯度身份。
         # correct_group、来源、生成类型、完整 family_list 与模板共同描述一条可占位
@@ -369,6 +395,11 @@ def resolve_target_candidates(
                 sample_texts=texts[:3],
                 tiers=tiers,
                 min_ilvl=min(int(r["ilvl"] or 0) for r in group),
+                spawn_tags=tuple(
+                    dict.fromkeys(
+                        tag for r in group for tag in _json_list(r["spawn_tags"])
+                    )
+                ),
                 url=str(first["url"] or ""),
             )
         )
@@ -545,8 +576,22 @@ def _analyze_page(
     targets: list[TargetSpec],
     influences: list[str],
     rarity: str | None = None,
+    *,
+    base_profile: BaseInfluenceProfile | None = None,
+    requested_influences: tuple[InfluenceSpec, ...] = (),
+    item_level: int | None = None,
 ) -> PageAnalysis:
-    resolutions = [resolve_target_candidates(conn, page, target) for target in targets]
+    resolutions = [
+        resolve_target_candidates(
+            conn,
+            page,
+            target,
+            base_profile=base_profile,
+            requested_influences=requested_influences,
+            item_level=item_level,
+        )
+        for target in targets
+    ]
     analysis = PageAnalysis(page=page, verdict="unknown", targets=resolutions)
 
     missing: list[TargetResolution] = []
@@ -589,23 +634,74 @@ def _analyze_page(
 
     # 用户显式给出的影响力条件与目标是否召回无关，必须独立报告，不能被早退吞掉。
     if influences:
-        influence_message = (
-            "影响力底材要求尚未结构化入库，无法验证请求的影响力与候选词缀是否兼容"
-        )
-        analysis.checks.append(
-            ConstraintCheck(
-                key="influence_requirement",
-                status="unknown",
-                summary=f"请求的影响力：{'、'.join(influences)}",
-                evidence_urls=tuple(
-                    dict.fromkeys(
-                        c.url for resolution in resolutions for c in resolution.candidates if c.url
-                    )
-                ),
-                missing=influence_message,
+        if base_profile is None:
+            influence_message = (
+                "需要逐字提供具体底材，才能用 PoB influenceTags 验证请求的影响力"
             )
-        )
-        analysis.gaps.append(_gap("influence_requirement", influence_message))
+            analysis.checks.append(
+                ConstraintCheck(
+                    key="influence_requirement",
+                    status="unknown",
+                    summary=f"请求的影响力：{'、'.join(influences)}",
+                    missing=influence_message,
+                )
+            )
+            analysis.gaps.append(_gap("influence_requirement", influence_message))
+        elif len(requested_influences) != len(influences):
+            influence_message = "至少一个影响名无法映射到 PoB 的六种传统影响键"
+            analysis.checks.append(
+                ConstraintCheck(
+                    key="influence_requirement",
+                    status="unknown",
+                    summary=f"请求的影响力：{'、'.join(influences)}",
+                    evidence_urls=(base_profile.pob_url,),
+                    missing=influence_message,
+                )
+            )
+            analysis.gaps.append(_gap("influence_requirement", influence_message))
+        elif len(requested_influences) > 1:
+            influence_message = "多个影响同时存在的数量与组合规则尚未结构化"
+            analysis.checks.append(
+                ConstraintCheck(
+                    key="influence_requirement",
+                    status="unknown",
+                    summary=f"底材支持逐项标签，但请求了 {len(requested_influences)} 种影响",
+                    evidence_urls=(base_profile.pob_url,),
+                    missing=influence_message,
+                )
+            )
+            analysis.gaps.append(_gap("influence_requirement", influence_message))
+        else:
+            spec = requested_influences[0]
+            generation_tag = base_profile.generation_tag(spec)
+            if generation_tag:
+                analysis.checks.append(
+                    ConstraintCheck(
+                        key="influence_requirement",
+                        status="pass",
+                        summary=(
+                            f"底材 {base_profile.name_zh} 的 PoB influenceTags 包含"
+                            f"{spec.name_zh}生成标签 {generation_tag}"
+                        ),
+                        evidence_urls=(
+                            base_profile.pob_url,
+                            spawn_rule_url(base_profile.source_commit),
+                        ),
+                    )
+                )
+            else:
+                analysis.checks.append(
+                    ConstraintCheck(
+                        key="influence_requirement",
+                        status="fail",
+                        summary=(
+                            f"底材 {base_profile.name_zh} 的 PoB influenceTags 不包含"
+                            f"{spec.name_zh}"
+                        ),
+                        evidence_urls=(base_profile.pob_url,),
+                    )
+                )
+                analysis.verdict = "impossible"
 
     if analysis.search_truncated:
         message = f"页面 {page} 的至少一个目标候选超过分析上限，不能穷尽全部分配"
@@ -697,7 +793,18 @@ def _analyze_page(
         analysis.verdict = "impossible"
         return analysis
 
-    special_sources = sorted({c.category for c in unique.values() if c.category != "normal"})
+    validated_influence_categories = {
+        spec.category
+        for spec in requested_influences
+        if base_profile is not None and base_profile.generation_tag(spec)
+    }
+    special_sources = sorted(
+        {
+            c.category
+            for c in unique.values()
+            if c.category != "normal" and c.category not in validated_influence_categories
+        }
+    )
     if special_sources:
         source_message = (
             "来源适用条件尚未结构化入库，无法验证这些来源能否共同用于该底材："
@@ -715,7 +822,7 @@ def _analyze_page(
         analysis.gaps.append(_gap("source_requirement", source_message))
 
     selected_categories = {c.category for c in unique.values()}
-    if not influences and selected_categories & _INFLUENCE_CATEGORIES:
+    if not influences and selected_categories & INFLUENCE_CATEGORIES:
         influence_message = (
             "影响力底材要求尚未结构化入库，无法验证候选词缀与底材影响力是否兼容"
         )
@@ -730,10 +837,13 @@ def _analyze_page(
         )
         analysis.gaps.append(_gap("influence_requirement", influence_message))
 
-    # **判据是「一条缺口都没有」，不是「容量过了」**：来源适用条件与影响力规则
-    # 仍未入库，它们只在条件命中时才追加缺口。这样写，将来补上那两条规则时
-    # 这里一行都不用改；写成「容量 pass 就 possible」则会在那天悄悄放行。
-    analysis.verdict = "possible" if not analysis.gaps else "unknown"
+    # **判据是「一条缺口都没有」，不是「容量过了」**：尚未接通的特殊来源与
+    # 多影响组合只在条件命中时追加缺口。写成「容量 pass 就 possible」会把这些
+    # 尚无证据的条件悄悄放行。
+    if any(c.key == "influence_requirement" and c.status == "fail" for c in analysis.checks):
+        analysis.verdict = "impossible"
+    else:
+        analysis.verdict = "possible" if not analysis.gaps else "unknown"
     return analysis
 
 
@@ -755,19 +865,64 @@ def analyze_feasibility(
     *,
     rarity: str | None = None,
     influences: list[str] | None = None,
+    base_type: str | None = None,
+    item_level: int | None = None,
 ) -> FeasibilityReport:
     """分析目标词缀组合，返回 ``possible / impossible / unknown`` 三态报告。"""
     target_specs = _parse_targets(targets)
     influence_list = [str(v).strip() for v in (influences or []) if str(v).strip()]
-    ref = resolve_item_class(conn, item_class)
+    if item_level is not None and (
+        isinstance(item_level, bool) or not isinstance(item_level, int) or not 1 <= item_level <= 100
+    ):
+        raise ValueError("item_level 必须是 1 到 100 的整数")
+    base_profile = None
+    if base_type:
+        base_profile, base_reason = resolve_base_profile(conn, base_type)
+        if base_profile is None:
+            gap = _gap("base_not_resolved", base_reason)
+            return FeasibilityReport(
+                verdict="unknown",
+                item_class=item_class,
+                rarity=rarity,
+                influences=influence_list,
+                base_type=base_type,
+                item_level=item_level,
+                pages=[],
+                scope_note=base_reason,
+                checks=[
+                    ConstraintCheck(
+                        key="base_type",
+                        status="unknown",
+                        summary=base_reason,
+                        missing="需要 pob_base_item 中唯一的逐字中文或英文底材名",
+                    )
+                ],
+                gaps=[gap],
+            )
+    requested_influences = tuple(
+        spec for raw in influence_list if (spec := resolve_influence(raw)) is not None
+    )
+    item_class_query = (item_class or "").strip()
+    if not item_class_query and base_profile is not None:
+        for candidate in (
+            base_profile.modifier_page,
+            base_profile.poedb_slug,
+            base_profile.poedb_page,
+        ):
+            if candidate and resolve_item_class(conn, candidate).ok:
+                item_class_query = candidate
+                break
+    ref = resolve_item_class(conn, item_class_query)
     if not ref.ok:
-        message = ref.reason or f"无法解析底材类别「{item_class}」"
+        message = ref.reason or f"无法解析底材类别「{item_class_query}」"
         gap = _gap("item_class_not_resolved", message)
         return FeasibilityReport(
             verdict="unknown",
-            item_class=item_class,
+            item_class=item_class_query,
             rarity=rarity,
             influences=influence_list,
+            base_type=base_type,
+            item_level=item_level,
             pages=[],
             scope_note=message,
             checks=[
@@ -781,16 +936,65 @@ def analyze_feasibility(
             gaps=[gap],
         )
 
+    base_page_candidates = (
+        {
+            value
+            for value in (
+                base_profile.modifier_page,
+                base_profile.poedb_slug,
+                base_profile.poedb_page,
+            )
+            if value
+        }
+        if base_profile is not None else set()
+    )
+    if base_profile is not None and not (base_page_candidates & set(ref.pages)):
+        message = (
+            f"底材 {base_profile.name_zh} 的 ItemClass 是 {base_profile.item_class}，"
+            f"与请求类别 {item_class_query!r}（{ref.code}）不一致"
+        )
+        return FeasibilityReport(
+            verdict="unknown",
+            item_class=item_class_query,
+            rarity=rarity,
+            influences=influence_list,
+            base_type=base_type,
+            item_level=item_level,
+            pages=[],
+            scope_note=message,
+            checks=[ConstraintCheck(key="base_item_class", status="unknown", summary=message)],
+            gaps=[_gap("base_item_class", message)],
+        )
+
+    pages = (
+        preferred_modifier_pages(base_profile, ref.pages)
+        if base_profile is not None else ref.pages
+    )
+
     page_analyses = [
-        _analyze_page(conn, page, target_specs, influence_list, rarity)
-        for page in ref.pages
+        _analyze_page(
+            conn,
+            page,
+            target_specs,
+            influence_list,
+            rarity,
+            base_profile=base_profile,
+            requested_influences=requested_influences,
+            item_level=item_level,
+        )
+        for page in pages
     ]
     checks: list[ConstraintCheck] = []
     gaps = [gap for page in page_analyses for gap in page.gaps]
     scope_note = (
-        f"底材类别「{item_class}」精确命中页面 {ref.pages[0]}"
-        if len(ref.pages) == 1
-        else f"底材类别「{item_class}」对应 {len(ref.pages)} 个 POEDB 页面，已分别分析"
+        (
+            f"具体底材「{base_profile.name_zh}（{base_profile.name_en}）」"
+            f"命中页面 {pages[0]}"
+            if base_profile is not None and len(pages) == 1
+            else f"底材类别「{item_class_query}」精确命中页面 {pages[0]}"
+        )
+        if len(pages) == 1
+        else f"底材类别「{item_class_query}」对应 {len(pages)} 个 POEDB 页面，已分别分析"
     )
 
     profiles_equal = len({_page_profile(page) for page in page_analyses}) == 1
@@ -838,11 +1042,14 @@ def analyze_feasibility(
 
     return FeasibilityReport(
         verdict=verdict,
-        item_class=item_class,
+        item_class=item_class_query,
         rarity=rarity,
         influences=influence_list,
-        pages=ref.pages,
+        base_type=base_type,
+        item_level=item_level,
+        pages=pages,
         scope_note=scope_note,
+        base_profile=base_profile,
         page_analyses=page_analyses,
         checks=checks,
         gaps=_dedupe_gaps(gaps),

@@ -21,6 +21,7 @@ from craft.feasibility import (
     TargetResolution,
     analyze_feasibility,
 )
+from craft.influence import INFLUENCES, influence_info_url, spawn_rule_url
 from entities.taxonomy import MAX_FACTUAL_PRIORITY, Source
 from tools.registry import REGISTRY, ToolResult
 
@@ -38,8 +39,8 @@ def _render_target_evidence(resolution: TargetResolution) -> str:
         "",
         f"结构化候选总数：{resolution.total_candidates}。多档同一词缀已折叠为一个候选。",
         "",
-        "| 候选 ID | 词缀文本样例 | 类型 | 来源 | 完整 family_list | 最低物品等级 |",
-        "| --- | --- | --- | --- | --- | --- |",
+        "| 候选 ID | 词缀文本样例 | 类型 | 来源 | 完整 family_list | 最低物品等级 | 正权重标签 |",
+        "| --- | --- | --- | --- | --- | --- | --- |",
     ]
     for candidate in resolution.candidates[:MAX_EVIDENCE_CANDIDATES]:
         text = (
@@ -49,7 +50,7 @@ def _render_target_evidence(resolution: TargetResolution) -> str:
         out.append(
             f"| {candidate.candidate_id} | {text} | {candidate.gen_label or '其他'} | "
             f"{candidate.category_label} (`{candidate.category}`) | {families} | "
-            f"{candidate.min_ilvl} |"
+            f"{candidate.min_ilvl} | {', '.join(candidate.spawn_tags)} |"
         )
     hidden = resolution.total_candidates - min(
         len(resolution.candidates), MAX_EVIDENCE_CANDIDATES
@@ -138,6 +139,11 @@ def _render_solver_evidence(page: PageAnalysis) -> str:
         # 名额上限是 possible / impossible 的直接依据，必须逐字进证据原文，
         # 否则模型复述「上限 3」时数值回填在证据里找不到这个数。
         out.append(f"前后缀名额检查：{capacity.status}。{capacity.summary}")
+    influence = next(
+        (check for check in page.checks if check.key == "influence_requirement"), None
+    )
+    if influence:
+        out.append(f"影响力底材检查：{influence.status}。{influence.summary}")
     if page.selected_candidate_ids:
         out.append("兼容见证：" + "、".join(page.selected_candidate_ids))
         out.append(
@@ -183,6 +189,42 @@ def _citation(
 
 def _citations(report: FeasibilityReport) -> list[dict[str, Any]]:
     citations: list[dict[str, Any]] = []
+    if report.base_profile is not None:
+        profile = report.base_profile
+        citations.extend(
+            [
+                _citation(
+                    chunk_id=f"craft_base:{profile.base_id}",
+                    title=f"{profile.name_zh} · PoB 底材生成标签",
+                    url=profile.pob_url,
+                    text=(
+                        f"底材：{profile.name_zh}（{profile.name_en}）\n"
+                        f"ItemClass：{profile.item_class}\n"
+                        f"基础标签：{', '.join(profile.tags)}\n"
+                        "影响生成标签："
+                        + "；".join(
+                            f"{spec.key}={profile.generation_tag(spec)}"
+                            for spec in INFLUENCES
+                            if profile.generation_tag(spec)
+                        )
+                    ),
+                    source=Source.POB.value,
+                    source_priority=2,
+                ),
+                _citation(
+                    chunk_id=f"craft_influence_rule:{profile.source_commit}",
+                    title="PoB 影响名映射与词缀生成标签匹配规则",
+                    url=spawn_rule_url(profile.source_commit),
+                    text=(
+                        "PoB Item.GetModSpawnWeight：词缀权重键命中 base.tags、includeTags "
+                        "或当前底材 influenceTags 中已启用影响对应的标签时采用该权重。"
+                        f"影响显示名映射见 {influence_info_url(profile.source_commit)}。"
+                    ),
+                    source=Source.POB.value,
+                    source_priority=2,
+                ),
+            ]
+        )
     for page_index, page in enumerate(report.page_analyses, start=1):
         page_url = next(
             (
@@ -226,6 +268,8 @@ def _citations(report: FeasibilityReport) -> list[dict[str, Any]]:
         "`impossible` 只在候选未截断且所有候选分配均被完整 family_list 冲突证明时出现；"
         "`possible` 需要目标全部解析、无 family 冲突、占位未超前后缀名额，"
         "且该页没有任何缺据；其余一律 `unknown` 并逐项列出缺据。"
+        "提供逐字 base_type、item_level 与单一 influences 时，还会用 PoB 底材标签、"
+        "influenceTags 和 POEDB 候选 spawn_tags 过滤不适用候选。"
         "`possible` 的含义是**这些词缀能共存**，不是「能做出来」。"
         "会列出候选、前后缀类型、来源、占位和独立的求解证据。"
         "本工具**不提供制作步骤、成功率或通货成本**。"
@@ -235,7 +279,10 @@ def _citations(report: FeasibilityReport) -> list[dict[str, Any]]:
         "properties": {
             "item_class": {
                 "type": "string",
-                "description": "底材类别或 POEDB 页面名，如「胸甲」「项链」「Amulets」。",
+                "description": (
+                    "底材类别或 POEDB 页面名，如「胸甲」「项链」「Amulets」。"
+                    "提供 base_type 时可省略，由具体底材记录确定页面。"
+                ),
             },
             "targets": {
                 "type": "array",
@@ -270,21 +317,40 @@ def _citations(report: FeasibilityReport) -> list[dict[str, Any]]:
             "influences": {
                 "type": "array",
                 "items": {"type": "string"},
-                "description": "可选底材影响力列表。影响力规则未入库时明确返回 unknown。",
+                "description": (
+                    "可选底材影响力列表。与 base_type 同时提供时按 PoB influenceTags "
+                    "和候选 spawn_tags 验证；不提供具体底材时保持 unknown。"
+                ),
+            },
+            "base_type": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100,
+                "description": "可选逐字中文或英文具体底材名，用于验证生成标签。",
+            },
+            "item_level": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 100,
+                "description": "可选物品等级；提供后排除更高等级才可出现的候选。",
             },
         },
-        "required": ["item_class", "targets"],
+        "required": ["targets"],
         "additionalProperties": False,
     },
 )
 def check_mod_combination(
-    item_class: str,
-    targets: list[dict[str, Any]],
+    item_class: str = "",
+    targets: list[dict[str, Any]] | None = None,
     rarity: str | None = None,
     influences: list[str] | None = None,
+    base_type: str | None = None,
+    item_level: int | None = None,
 ) -> ToolResult:
-    if not (item_class or "").strip():
-        return ToolResult(ok=False, error="item_class 不能为空")
+    if not (item_class or "").strip() and not (base_type or "").strip():
+        return ToolResult(ok=False, error="item_class 与 base_type 至少需要一个")
+    if not targets:
+        return ToolResult(ok=False, error="targets 至少需要一项")
     try:
         report = analyze_feasibility(
             dbmod.get_conn(),
@@ -292,6 +358,8 @@ def check_mod_combination(
             targets=targets,
             rarity=rarity,
             influences=influences,
+            base_type=base_type,
+            item_level=item_level,
         )
     except ValueError as exc:
         return ToolResult(ok=False, error=str(exc))

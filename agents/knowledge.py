@@ -33,6 +33,7 @@ ALLOWED_TOOLS = [
     "economy_rare_comparables",  # 实时：稀有装 Trade stat 同底材可比挂单
     "affix_pool_odds",  # 精确：胸甲 normal 同侧有效池与条件权重概率
     "check_mod_combination",  # 精确：目标词缀组合的三态可行性与缺据点
+    "base_influence_profile",  # 精确：具体底材的六类传统影响生成标签
     "affix_capacity_rules",  # 精确：某稀有度最多几条前缀/后缀（卡片被词缀阶梯淹没）
     "gem_support_match",  # 精确：某辅助能不能辅助某技能 / 某技能能配哪些辅助（无卡片）
     "vendor_recipe_lookup",  # 精确：商店配方（拿什么换什么），无卡片
@@ -144,9 +145,16 @@ POE1 的机制耦合极深，一个错误的小前提会让整条结论反向。
   “下一次加权选择”的条件分布。这个数**不是**任何通货或具体工艺的一次使用成功率，
   独立选择数学期望也**不是**期望通货消耗。禁止据此补已有装备状态、词缀容量、影响力、
   精华/化石/Harvest/Metamod 语义、制作步骤、实际成本或最快/最经济路线。
+- **具体底材能承载哪些影响 / 某影响在该底材上的生成标签** →
+  `base_influence_profile`。它逐字查询 PoB 底材的 `influenceTags`，并按 PoB 自己的
+  `influenceInfo` 映射显示名；不得据此补写影响底材的获得方式、影响数量限制、
+  觉醒者之石状态转移、制作步骤或概率。
 - **多个目标词缀能否共存 / 分别占前后缀** → `check_mod_combination`。它按指定底材页
   穷举候选并检查完整 `family_list`，返回 `possible / impossible / unknown` 三态。
-  `unknown` 里的影响力或来源缺据必须原样说明。**`possible` 的含义是「这些词缀能
+  用户给出具体底材时传 `base_type`，给出物等时传 `item_level`，给出影响时原样传
+  `influences`；三者齐备后工具会用 PoB 的底材标签 / `influenceTags` 与 POEDB 候选的
+  `spawn_tags` 排除不适用候选。只给装备类别而没有具体底材时，影响力约束仍保持
+  `unknown`。**`possible` 的含义是「这些词缀能
   共存」，不是「可以制作」**——两者的区别不能抹平：禁止把 `possible` 改写成
   「能做出来」，也禁止据此扩写制作步骤、成功率、通货成本或最快/最经济路线。
   **不给稀有度时判不了前后缀名额**，结论会停在 `unknown`；这时要请用户补稀有度，

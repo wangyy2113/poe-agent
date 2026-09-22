@@ -160,7 +160,9 @@ CREATE INDEX IF NOT EXISTS idx_pobmod_loose ON pob_mod(loose_template);
 -- ── PoB 胸甲底材注册表（P2 结构 + POEDB P1 中英文名称桥接）──
 -- 不写入 entity：本表的 name_en/tags 来自 PoB，name_zh/slug 来自 POEDB，
 -- 两侧必须一一对应后才入库。它只负责把具体胸甲底材唯一映射到词缀页；
--- 不承载稀有度、词缀容量、影响力适用性、制作状态转移或可获得性结论。
+-- 不承载稀有度、词缀容量、制作状态转移或可获得性结论；其中 tags 与
+-- influence_tags 可作为 `craft.influence` 的底材生成标签输入，但结论还必须与
+-- 目标词缀的 spawn_tags 一起验证。
 CREATE TABLE IF NOT EXISTS pob_base_item (
     base_id         TEXT PRIMARY KEY,
     name_en         TEXT NOT NULL CHECK(name_en <> ''),

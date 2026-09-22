@@ -323,6 +323,40 @@ class TestPrecisionRoute(unittest.TestCase):
             "",
         )
 
+        influenced_base = (
+            "物等84的稀有黑曜护身符上最大生命和hunter混沌持续伤害加成能否共存？"
+        )
+        influenced_args = {
+            "base_type": "黑曜护身符",
+            "item_level": 84,
+            "rarity": "稀有",
+            "influences": ["hunter"],
+            "targets": [
+                {"query": "最大生命"},
+                {"query": "混沌持续伤害加成", "source": "hunter"},
+            ],
+        }
+        self.assertEqual(
+            loop._validate_precision_call(
+                influenced_base, "check_mod_combination", influenced_args
+            ),
+            "",
+        )
+        wrong_base = dict(influenced_args, base_type="星界护身符")
+        self.assertIn(
+            "base_type",
+            loop._validate_precision_call(
+                influenced_base, "check_mod_combination", wrong_base
+            ),
+        )
+        wrong_level = dict(influenced_args, item_level=83)
+        self.assertIn(
+            "item_level",
+            loop._validate_precision_call(
+                influenced_base, "check_mod_combination", wrong_level
+            ),
+        )
+
     def test_工艺台目录问法命中且参数必须逐字归属(self):
         questions = (
             BENCH_QUESTION,
