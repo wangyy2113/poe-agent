@@ -1172,7 +1172,7 @@ cases:
     query: 猎首现在值多少混沌石
     kind: tool_route
     expect_tool: economy_price_lookup
-    note: 实时价格必须走 poe.watch 工具并携带联盟、抓取时间与置信度，不由模型估价
+    note: 实时价格必须走经济工具并携带实际来源、联盟、抓取时间与置信度，不由模型估价
 
   - id: route_explicit_material_cost
     query: 2 个神圣石和 100 个混沌石一共多少钱

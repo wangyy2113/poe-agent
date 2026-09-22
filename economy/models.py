@@ -1,6 +1,7 @@
 """经济价格领域模型。
 
-所有时间均为带时区的 ISO-8601；价格是 poe.watch 的市场统计快照，不代表保证成交价。
+所有时间均为带时区的 ISO-8601；价格可能是 poe.watch 统计快照或 GGG 在线挂单中位数，
+结构化字段会明确给出口径，两者都不代表保证成交价。
 """
 
 from __future__ import annotations
@@ -15,7 +16,10 @@ class PricePoint:
     name: str
     category: str
     group: str
+    representative_chaos: float | None
+    price_basis: str
     mean_chaos: float | None
+    median_chaos: float | None
     min_chaos: float | None
     max_chaos: float | None
     divine: float | None
@@ -23,6 +27,14 @@ class PricePoint:
     change_percent: float | None
     low_confidence: bool
     seven_day_history: tuple[float, ...] = field(default_factory=tuple)
+    sample_count: int | None = None
+    minimum_sample_count: int | None = None
+    raw_listing_count: int | None = None
+    cross_league_filtered_count: int | None = None
+    invalid_quote_filtered_count: int | None = None
+    outlier_filtered_count: int | None = None
+    earliest_listing_at: str | None = None
+    latest_listing_at: str | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -41,6 +53,8 @@ class PriceSearch:
     from_cache: bool
     stale: bool
     degraded: bool
+    fallback: bool
+    fallback_reason: str
     warning: str
     prices: tuple[PricePoint, ...] = field(default_factory=tuple)
 
@@ -113,6 +127,8 @@ class PriceTrendSearch:
     from_cache: bool
     stale: bool
     degraded: bool
+    fallback: bool
+    fallback_reason: str
     warning: str
     window_hours: int
     minimum_observations: int
@@ -160,10 +176,13 @@ class MaterialCostLine:
     from_cache: bool
     stale: bool
     degraded: bool
+    fallback: bool
+    fallback_reason: str
     warning: str
     low_confidence: bool
     unit_price: PricePoint | None
     candidate_count: int
+    subtotal_representative_chaos: float | None
     subtotal_mean_chaos: float | None
     subtotal_min_chaos: float | None
     subtotal_max_chaos: float | None
@@ -186,9 +205,11 @@ class MaterialCostEstimate:
     from_cache: bool
     stale: bool
     degraded: bool
+    fallback: bool
     warning: str
     calculable: bool
     unresolved_count: int
+    total_representative_chaos: float | None
     total_mean_chaos: float | None
     total_min_chaos: float | None
     total_max_chaos: float | None
