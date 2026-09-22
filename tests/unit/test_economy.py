@@ -236,7 +236,7 @@ class EconomyServiceTest(unittest.TestCase):
         self.assertTrue(result.stale)
         self.assertEqual([], trade_calls)
 
-    def test_unique_item_does_not_use_exchange_fallback(self) -> None:
+    def test_unique_item_uses_exact_name_and_base_type_fallback(self) -> None:
         self.conn.execute(
             "INSERT INTO entity(entity_id,name_en,attributes) VALUES(?,?,?)",
             ("unique_item:Headhunter", "Headhunter", json.dumps({"base_type_en": "Leather Belt"})),
@@ -246,12 +246,61 @@ class EconomyServiceTest(unittest.TestCase):
             ("猎首", "猎首", "unique_item:Headhunter", "name_zh"),
         )
         trade_calls: list[tuple[str, str, dict | None]] = []
-        self.service.trade_client = self.trade_client(trade_calls)
+
+        def request(method: str, path: str, payload: dict | None):
+            trade_calls.append((method, path, payload))
+            if path.startswith("/api/leagues"):
+                return [{"id": "Allflame"}]
+            if path.startswith("/api/trade/search/"):
+                self.assertEqual("Headhunter", payload["query"]["name"])
+                self.assertEqual("Leather Belt", payload["query"]["type"])
+                return {"id": "query-id", "total": 5, "result": [f"u{i}" for i in range(5)]}
+            if path.startswith("/api/trade/fetch/"):
+                return {"result": [{
+                    "listing": {
+                        "indexed": "2026-09-22T08:00:00Z",
+                        "account": {"online": {"league": "Allflame"}},
+                        "price": {"type": "~price", "amount": 100 + index, "currency": "chaos"},
+                    },
+                    "item": {"name": "Headhunter", "typeLine": "Leather Belt"},
+                } for index in range(5)]}
+            self.fail(f"unexpected request: {path}")
+
+        self.service.trade_client = TradeApiClient(
+            request_json=request,
+            requests_per_second=0,
+            minimum_samples=5,
+            now=self.clock,
+        )
         self.fail = True
 
-        with self.assertRaisesRegex(EconomyUnavailable, "不支持唯一装备估值"):
-            self.service.price("猎首")
-        self.assertEqual([], trade_calls)
+        result = self.service.price("猎首")
+        self.assertEqual("Headhunter", result.resolved_name)
+        self.assertEqual("unique", result.prices[0].category)
+        self.assertEqual("unique_listing", result.prices[0].group)
+        self.assertEqual(102, result.prices[0].median_chaos)
+        self.assertIn("未腐化", result.prices[0].sample_scope)
+        self.assertIn("/trade/search/Allflame/query-id", result.source_url)
+        rendered = render_price(result)
+        self.assertIn("搜索结果：总命中 5 条，本次抓取 5 条", rendered)
+        self.assertIn("未归一化词缀数值、插槽或链接", rendered)
+        self.assertIn("不是报价承诺或保证成交价", rendered)
+        with patch("api.economy.service_from_config", return_value=self.service):
+            response = price_endpoint(PriceRequest(query="猎首"), _caller="test")
+        self.assertTrue(response.fallback)
+        self.assertEqual(102, response.prices[0]["representative_chaos"])
+        with patch("tools.impl.economy.service_from_config", return_value=self.service):
+            tool_result = economy_price_lookup("猎首")
+        self.assertTrue(tool_result.ok)
+        self.assertIn("/trade/search/Allflame/query-id", tool_result.citations[0]["url"])
+
+    def test_unique_fallback_requires_authoritative_base_type(self) -> None:
+        trade_calls: list[tuple[str, str, dict | None]] = []
+        self.service.trade_client = self.trade_client(trade_calls)
+        self.fail = True
+        with self.assertRaisesRegex(EconomyUnavailable, "缺少唯一装备底材"):
+            self.service.price("Unknown Unique", category="unique")
+        self.assertEqual(1, len(trade_calls))  # 只读取联盟，没有发起模糊装备搜索。
 
     def test_both_sources_failing_remains_unavailable(self) -> None:
         trade_calls: list[tuple[str, str, dict | None]] = []

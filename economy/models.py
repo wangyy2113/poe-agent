@@ -32,9 +32,18 @@ class PricePoint:
     raw_listing_count: int | None = None
     cross_league_filtered_count: int | None = None
     invalid_quote_filtered_count: int | None = None
+    unconverted_currency_filtered_count: int | None = None
     outlier_filtered_count: int | None = None
     earliest_listing_at: str | None = None
     latest_listing_at: str | None = None
+    search_total: int | None = None
+    fetched_listing_count: int | None = None
+    chaos_listing_count: int | None = None
+    divine_listing_count: int | None = None
+    divine_chaos_rate: float | None = None
+    conversion_sample_count: int | None = None
+    conversion_status: str = ""
+    sample_scope: str = ""
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)

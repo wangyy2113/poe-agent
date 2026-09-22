@@ -47,6 +47,16 @@ class TradeQuote:
     outlier_filtered_count: int
     earliest_listing_at: str | None
     latest_listing_at: str | None
+    search_total: int | None = None
+    fetched_listing_count: int | None = None
+    chaos_listing_count: int | None = None
+    divine_listing_count: int | None = None
+    unconverted_currency_filtered_count: int | None = None
+    divine_chaos_rate: float | None = None
+    conversion_sample_count: int | None = None
+    conversion_status: str = ""
+    sample_scope: str = ""
+    source_url: str = SOURCE_URL
 
     @property
     def sufficient(self) -> bool:
@@ -101,13 +111,29 @@ def _without_outliers(values: list[float]) -> list[float]:
     return [value for value in ordered if low <= value <= high]
 
 
+def _keep_candidates(
+    candidates: list[tuple[float, datetime]],
+) -> list[tuple[float, datetime]]:
+    """把数值过滤结果映射回原挂单，保留重复报价各自的时间戳。"""
+    remaining = _without_outliers([value for value, _ in candidates])
+    kept: list[tuple[float, datetime]] = []
+    for candidate in candidates:
+        try:
+            index = remaining.index(candidate[0])
+        except ValueError:
+            continue
+        kept.append(candidate)
+        remaining.pop(index)
+    return kept
+
+
 class TradeApiClient:
     def __init__(
         self,
         *,
         base_url: str = "https://www.pathofexile.com",
         timeout_seconds: float = 15,
-        requests_per_second: float = 0.25,
+        requests_per_second: float = 0.5,
         user_agent: str = (
             "poe1-agent/0.2 (local economy fallback; "
             "github.com/wangyy2113/poe-agent)"
@@ -115,6 +141,7 @@ class TradeApiClient:
         static_ttl: timedelta = timedelta(hours=24),
         league_ttl: timedelta = timedelta(minutes=30),
         minimum_samples: int = 5,
+        unique_max_results: int = 40,
         request_json: JsonRequester | None = None,
         now: Callable[[], datetime] | None = None,
     ) -> None:
@@ -125,6 +152,7 @@ class TradeApiClient:
         self.static_ttl = static_ttl
         self.league_ttl = league_ttl
         self.minimum_samples = max(2, int(minimum_samples))
+        self.unique_max_results = max(1, min(int(unique_max_results), 100))
         self._request_json = request_json
         self._now = now or (lambda: datetime.now(timezone.utc))
         self._lock = threading.RLock()
@@ -234,18 +262,7 @@ class TradeApiClient:
             if not accepted:
                 invalid += 1
 
-        raw_values = [value for value, _ in candidates]
-        kept_values = _without_outliers(raw_values)
-        # 按数值多重集保留对应时间；相同报价的重复挂单仍是独立样本。
-        remaining = list(kept_values)
-        kept: list[tuple[float, datetime]] = []
-        for candidate in candidates:
-            try:
-                index = remaining.index(candidate[0])
-            except ValueError:
-                continue
-            kept.append(candidate)
-            remaining.pop(index)
+        kept = _keep_candidates(candidates)
 
         sample_count = len(kept)
         sufficient = sample_count >= self.minimum_samples
@@ -266,6 +283,171 @@ class TradeApiClient:
             outlier_filtered_count=len(candidates) - sample_count,
             earliest_listing_at=_iso(min(times)) if times else None,
             latest_listing_at=_iso(max(times)) if times else None,
+        )
+
+    def unique_quote(
+        self,
+        league: str,
+        item_name: str,
+        base_type: str,
+    ) -> TradeQuote:
+        """查询未腐化唯一装备，并对 chaos/divine 标价统一换算为 chaos。"""
+        name = item_name.strip()
+        item_type = base_type.strip()
+        if not name or not item_type:
+            raise TradeApiError("唯一装备备用估值需要精确英文名称和底材")
+        search_payload = self._request(
+            "POST",
+            f"/api/trade/search/{quote(league, safe='')}",
+            {
+                "query": {
+                    "status": {"option": "online"},
+                    "name": name,
+                    "type": item_type,
+                    "stats": [{"type": "and", "filters": []}],
+                    "filters": {
+                        "misc_filters": {
+                            "filters": {"corrupted": {"option": "false"}}
+                        }
+                    },
+                },
+                "sort": {"price": "asc"},
+            },
+        )
+        if not isinstance(search_payload, dict):
+            raise TradeApiError("GGG unique search 返回的不是对象")
+        search_id = search_payload.get("id")
+        result_ids = search_payload.get("result")
+        if not isinstance(search_id, str) or not search_id:
+            raise TradeApiError("GGG unique search 缺少查询 id")
+        if not isinstance(result_ids, list) or not all(
+            isinstance(value, str) and value for value in result_ids
+        ):
+            raise TradeApiError("GGG unique search 的 result 不是 id 数组")
+        total_value = search_payload.get("total")
+        search_total = (
+            int(total_value)
+            if isinstance(total_value, int) and not isinstance(total_value, bool)
+            else len(result_ids)
+        )
+        selected_ids = list(dict.fromkeys(result_ids))[:self.unique_max_results]
+        fetched: list[dict[str, Any]] = []
+        for offset in range(0, len(selected_ids), 10):
+            ids = selected_ids[offset:offset + 10]
+            encoded_ids = ",".join(quote(item_id, safe="") for item_id in ids)
+            payload = self._request(
+                "GET",
+                f"/api/trade/fetch/{encoded_ids}?query={quote(search_id, safe='')}",
+                None,
+            )
+            if not isinstance(payload, dict) or not isinstance(payload.get("result"), list):
+                raise TradeApiError("GGG unique fetch 返回缺少 result 数组")
+            if not all(isinstance(row, dict) for row in payload["result"]):
+                raise TradeApiError("GGG unique fetch 的 result 包含非对象条目")
+            fetched.extend(payload["result"])
+
+        cross_league = 0
+        invalid = 0
+        chaos_rows: list[tuple[float, datetime]] = []
+        divine_rows: list[tuple[float, datetime]] = []
+        unsupported_currency = 0
+        for row in fetched:
+            listing = row.get("listing")
+            item = row.get("item")
+            if not isinstance(listing, dict) or not isinstance(item, dict):
+                invalid += 1
+                continue
+            account = listing.get("account")
+            online = account.get("online") if isinstance(account, dict) else None
+            online_league = online.get("league") if isinstance(online, dict) else None
+            if not isinstance(online_league, str) or (
+                online_league.casefold() != league.casefold()
+            ):
+                cross_league += 1
+                continue
+            if (
+                str(item.get("name") or "").strip().casefold() != name.casefold()
+                or str(item.get("typeLine") or "").strip().casefold()
+                != item_type.casefold()
+                or item.get("corrupted") is True
+            ):
+                invalid += 1
+                continue
+            indexed = _parse_time(listing.get("indexed"))
+            price_data = listing.get("price")
+            if indexed is None or not isinstance(price_data, dict):
+                invalid += 1
+                continue
+            if price_data.get("type") not in {"~price", "~b/o"}:
+                invalid += 1
+                continue
+            amount = _number(price_data.get("amount"))
+            currency = str(price_data.get("currency") or "").casefold()
+            if amount is None:
+                invalid += 1
+            elif currency == "chaos":
+                chaos_rows.append((amount, indexed))
+            elif currency == "divine":
+                divine_rows.append((amount, indexed))
+            else:
+                unsupported_currency += 1
+
+        divine_rate: float | None = None
+        conversion_samples: int | None = None
+        conversion_status = "not_needed"
+        if divine_rows:
+            try:
+                conversion = self.quote(league, "Divine Orb", "currency")
+            except TradeApiError:
+                conversion_status = "unavailable"
+            else:
+                divine_rate = conversion.median_chaos
+                conversion_samples = conversion.sample_count
+                conversion_status = (
+                    "converted" if divine_rate is not None else "insufficient_samples"
+                )
+
+        candidates = list(chaos_rows)
+        unconverted = unsupported_currency
+        if divine_rate is None:
+            unconverted += len(divine_rows)
+        else:
+            candidates.extend(
+                (amount * divine_rate, indexed) for amount, indexed in divine_rows
+            )
+        kept = _keep_candidates(candidates)
+        sample_count = len(kept)
+        sufficient = sample_count >= self.minimum_samples
+        values = [value for value, _ in kept]
+        times = [indexed for _, indexed in kept]
+        return TradeQuote(
+            item_id=f"unique:{search_id}",
+            name=name,
+            category="unique",
+            median_chaos=float(statistics.median(values)) if sufficient else None,
+            min_chaos=min(values) if sufficient else None,
+            max_chaos=max(values) if sufficient else None,
+            sample_count=sample_count,
+            minimum_sample_count=self.minimum_samples,
+            raw_listing_count=search_total,
+            cross_league_filtered_count=cross_league,
+            invalid_quote_filtered_count=invalid,
+            outlier_filtered_count=len(candidates) - sample_count,
+            earliest_listing_at=_iso(min(times)) if times else None,
+            latest_listing_at=_iso(max(times)) if times else None,
+            search_total=search_total,
+            fetched_listing_count=len(fetched),
+            chaos_listing_count=len(chaos_rows),
+            divine_listing_count=len(divine_rows),
+            unconverted_currency_filtered_count=unconverted,
+            divine_chaos_rate=divine_rate,
+            conversion_sample_count=conversion_samples,
+            conversion_status=conversion_status,
+            sample_scope=(
+                f"未腐化、精确名称与底材；按标价升序最多抓取前 "
+                f"{self.unique_max_results} 条，未归一化词缀数值、插槽或链接"
+            ),
+            source_url=f"https://www.pathofexile.com/trade/search/{quote(league, safe='')}/{search_id}",
         )
 
     def _resolve_item(self, name: str, requested_category: str) -> tuple[str, str, str]:

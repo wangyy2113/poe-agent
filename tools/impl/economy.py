@@ -41,6 +41,7 @@ def _shared_trade_client(
     user_agent: str,
     static_ttl_hours: float,
     minimum_samples: int,
+    unique_max_results: int,
 ) -> TradeApiClient:
     return TradeApiClient(
         timeout_seconds=timeout_seconds,
@@ -48,6 +49,7 @@ def _shared_trade_client(
         user_agent=user_agent,
         static_ttl=timedelta(hours=static_ttl_hours),
         minimum_samples=minimum_samples,
+        unique_max_results=unique_max_results,
     )
 
 
@@ -60,7 +62,7 @@ def service_from_config() -> EconomyService:
     if fallback_enabled:
         trade_client = _shared_trade_client(
             float(cfg.get("economy.trade_fallback.timeout_seconds", 15)),
-            float(cfg.get("economy.trade_fallback.requests_per_second", 0.25)),
+            float(cfg.get("economy.trade_fallback.requests_per_second", 0.5)),
             str(cfg.get(
                 "economy.trade_fallback.user_agent",
                 "poe1-agent/0.2 (local economy fallback; "
@@ -68,6 +70,7 @@ def service_from_config() -> EconomyService:
             )),
             float(cfg.get("economy.trade_fallback.static_ttl_hours", 24)),
             int(cfg.get("economy.trade_fallback.minimum_samples", 5)),
+            int(cfg.get("economy.trade_fallback.unique_max_results", 40)),
         )
     return EconomyService(
         dbmod.get_conn(),
@@ -95,8 +98,10 @@ def _price(value: float | None) -> str:
     return f"{value:.4f}".rstrip("0").rstrip(".")
 
 
-def _citation_url(source: str) -> str:
-    return TRADE_API_URL if source == "GGG Trade API" else API_URL
+def _citation_url(source: str, source_url: str = "") -> str:
+    if source == "GGG Trade API":
+        return source_url or TRADE_API_URL
+    return API_URL
 
 
 def _source_priority(source: str) -> int:
@@ -142,11 +147,37 @@ def render_price(result: PriceSearch) -> str:
                     f"- 样本：保留 {item.sample_count} / 原始 {item.raw_listing_count} 条；"
                     f"最低要求 {item.minimum_sample_count} 条",
                     f"- 过滤：跨联盟 {item.cross_league_filtered_count} 条、无效报价 "
-                    f"{item.invalid_quote_filtered_count} 条、统计离群 {item.outlier_filtered_count} 条",
+                    f"{item.invalid_quote_filtered_count} 条、无法换算货币 "
+                    f"{item.unconverted_currency_filtered_count or 0} 条、统计离群 "
+                    f"{item.outlier_filtered_count} 条",
                     f"- 挂单时间：{item.earliest_listing_at or '未提供'} → "
                     f"{item.latest_listing_at or '未提供'}",
                     f"- 上游类别：{item.category or '未提供'}",
                 ]
+                if item.search_total is not None:
+                    lines.append(
+                        f"- 搜索结果：总命中 {item.search_total} 条，本次抓取 "
+                        f"{item.fetched_listing_count} 条"
+                    )
+                if item.divine_listing_count:
+                    if item.conversion_status == "converted":
+                        conversion = (
+                            f"换算率 {_price(item.divine_chaos_rate)} Chaos/Divine"
+                            f"（{item.conversion_sample_count or 0} 条有效交换挂单）"
+                        )
+                    elif item.conversion_status == "insufficient_samples":
+                        conversion = (
+                            f"换算样本不足（{item.conversion_sample_count or 0} 条），"
+                            "Divine 标价未计入"
+                        )
+                    else:
+                        conversion = "换算源不可用，Divine 标价未计入"
+                    lines.append(
+                        f"- 标价构成：Chaos {item.chaos_listing_count or 0} 条、Divine "
+                        f"{item.divine_listing_count} 条；{conversion}"
+                    )
+                if item.sample_scope:
+                    lines.append(f"- 样本范围：{item.sample_scope}")
             else:
                 lines += [
                     f"- poe.watch 均值：**{_price(item.mean_chaos)} 混沌石**",
@@ -313,7 +344,7 @@ def render_material_cost(result: MaterialCostEstimate) -> str:
     description=(
         "查询 POE1 当前或指定联盟市场价格。主源为 poe.watch；主源无缓存且失败时，"
         "通货、圣甲虫、命运卡与碎片会显式降级到 GGG Trade API 在线挂单中位数。"
-        "支持唯一装备、通货、圣甲虫、"
+        "唯一装备使用精确名称+底材的未腐化搜索，其他标准条目使用 exchange。支持唯一装备、通货、圣甲虫、"
         "命运卡与碎片；返回混沌石均值/区间、神圣石口径、抓取时间、缓存/陈旧状态和"
         "低置信度标记。只做精确名称匹配，不提供稀有装备估值、制作成本、趋势或 Flip 建议。"
     ),
@@ -354,7 +385,7 @@ def economy_price_lookup(
             ),
             "entity_id": None,
             "title": f"{result.resolved_name} · {result.league} 价格快照",
-            "url": _citation_url(result.source),
+            "url": _citation_url(result.source, result.source_url),
             "source": result.source,
             "source_priority": _source_priority(result.source),
             "can_support_facts": True,
@@ -430,7 +461,7 @@ def economy_price_trend(
         "chunk_id": f"economy-trend:{result.league}:{digest}",
         "entity_id": None,
         "title": f"{result.resolved_name} · {result.league} 价格趋势",
-        "url": _citation_url(result.source),
+        "url": _citation_url(result.source, result.source_url),
         "source": result.source,
         "source_priority": _source_priority(result.source),
         "can_support_facts": True,
@@ -518,18 +549,22 @@ def economy_material_cost(
         for item in result.materials
     )
     digest = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:16]
-    sources = {item.source for item in result.materials if item.unit_price is not None}
+    source_urls = {
+        item.source: item.source_url
+        for item in result.materials
+        if item.unit_price is not None
+    }
     citations = [{
         "chunk_id": f"economy-cost:{result.league}:{digest}:{source}",
         "entity_id": None,
         "title": f"{result.league} 材料清单成本快照",
-        "url": _citation_url(source),
+        "url": _citation_url(source, source_url),
         "source": source,
         "source_priority": _source_priority(source),
         "can_support_facts": True,
         "text": rendered,
         "channel": "live_economy",
-    } for source in sorted(sources)]
+    } for source, source_url in sorted(source_urls.items())]
     return ToolResult(
         ok=True,
         data={**result.as_dict(), "answer": rendered},
