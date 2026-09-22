@@ -187,6 +187,17 @@ class PreferredRouteTest(unittest.TestCase):
             with self.subTest(question=question):
                 self.assertEqual("economy_price_lookup", loop._preferred_tool_route(question))
 
+    def test_rare_item_price_routes_to_comparables_with_clean_item_text(self) -> None:
+        question = (
+            "帮我估值\n物品类别: 项链\n稀有度: 稀有\n恐惧之瞳\n玛瑙护身符\n"
+            "--------\n物品等级: 84\n--------\n+107 最大生命\n这件值多少？"
+        )
+        self.assertEqual("economy_rare_comparables", loop._preferred_tool_route(question))
+        args = loop._rare_comparable_args(question)
+        self.assertIsNotNone(args)
+        self.assertTrue(args["item_text"].startswith("物品类别: 项链"))
+        self.assertTrue(args["item_text"].endswith("+107 最大生命"))
+
     def test_price_trend_routes_before_current_price(self) -> None:
         cases = {
             "猎首过去7天价格趋势": 168,

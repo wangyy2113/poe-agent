@@ -1018,10 +1018,13 @@ DOMAINS: tuple[DomainSpec, ...] = (
         # 这是实时 API 能力而不是静态语料。实际每次回答仍由工具校验上游/缓存
         # 可用性，不把「适配器已接入」误写成「上游永不失败」。
         live_source=True,
-        tools=("economy_price_lookup", "economy_price_trend", "economy_material_cost"),
+        tools=(
+            "economy_price_lookup", "economy_price_trend", "economy_material_cost",
+            "economy_rare_comparables",
+        ),
         hints=("价格", "多少钱", "多少C", "值多少", "成本", "行情", "趋势", "涨跌"),
         question_hints=(
-            "唯一装备 / 通货 / 圣甲虫 / 命运卡 / 碎片的当前联盟价格与本机已积累历史趋势",
+            "标准条目当前价格与历史趋势，以及稀有装备复制文本的同底材可比挂单",
         ),
         partial_note=(
             "已接入 poe.watch 实时快照与 SQLite TTL 缓存，可查唯一装备、通货、圣甲虫、"
@@ -1029,12 +1032,14 @@ DOMAINS: tuple[DomainSpec, ...] = (
             "条目会按快照时间积累历史，至少两个观测点时可计算首尾涨跌。每条结果带联盟、"
             "抓取时间、缓存/陈旧状态与低置信度标记。主源无缓存且失败时，标准条目可通过"
             "exchange、唯一装备可通过精确名称+底材的未腐化 search/fetch 显式降级到 GGG "
-            "Trade API 在线挂单中位数，并披露样本、过滤数与挂单时间。**未覆盖**：稀有装备"
-            "逐词缀估值、唯一装备词缀数值/插槽/链接归一化、制作材料/"
+            "Trade API 在线挂单中位数，并披露样本、过滤数与挂单时间。稀有装备可把本地"
+            "PoB tradeHashes 与官方 stat 字典双重确认的显式词缀用于同底材、同物等/腐化"
+            "状态的挂单比较，未映射词缀显式降级为部分可比。**未覆盖**：稀有装备精确成交"
+            "价或按 roll/隐式/附魔/品质/插槽/链接归一化、唯一装备词缀数值/插槽/链接归一化、制作材料/"
             "路径自动规划与期望成本、利润与 Flip 建议"
         ),
         missing_dimension_hints=(
-            "稀有装备估值", "制作成本", "制作方案成本", "期望成本", "趋势", "利润",
+            "稀有装备精确估值", "制作成本", "制作方案成本", "期望成本", "趋势", "利润",
             "Flip", "倒卖", "套利",
         ),
         note="poe.watch 统计快照或 GGG 在线挂单中位数；两者均不代表保证成交价",
