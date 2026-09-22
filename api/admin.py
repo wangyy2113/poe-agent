@@ -5,12 +5,74 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from api.deps import require_admin
 from core import db as dbmod
+from core.config import get_config
+from kb.sync import CATEGORY_SPECS, build_plan, load_sync_run, validate_categories
 
 router = APIRouter(prefix="/admin", tags=["管理"], dependencies=[Depends(require_admin)])
+
+
+@router.get("/sync/plan")
+def sync_plan(
+    categories: str = Query(default="", description="逗号分隔的分类；空值使用配置"),
+    stale_after_hours: float | None = Query(default=None, gt=0),
+) -> dict[str, Any]:
+    """只读同步计划；不会联网，也不会修改事实表。"""
+    cfg = get_config()
+    raw = (
+        [item.strip() for item in categories.split(",") if item.strip()]
+        if categories
+        else cfg.get("knowledge_sync.categories", [spec.name for spec in CATEGORY_SPECS])
+    )
+    if not isinstance(raw, list):
+        raise HTTPException(status_code=503, detail="knowledge_sync.categories 配置无效")
+    try:
+        selected = validate_categories(str(item) for item in raw)
+        plan = build_plan(
+            dbmod.get_conn(),
+            categories=selected,
+            stale_after_hours=(
+                stale_after_hours
+                if stale_after_hours is not None
+                else float(cfg.get("knowledge_sync.stale_after_hours", 168))
+            ),
+        )
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {
+        "items": [item.as_dict() for item in plan],
+        "due": [item.category for item in plan if item.due],
+        "boundary": "read_only_plan_use_scripts_sync_knowledge_py_apply_to_execute",
+    }
+
+
+@router.get("/sync/runs")
+def sync_runs(limit: int = Query(default=20, ge=1, le=100)) -> dict[str, Any]:
+    """最近的跨分类同步运行与汇总，不展开逐行样例。"""
+    rows = []
+    for row in dbmod.get_conn().execute(
+        "SELECT sync_id,mode,requested,planned,status,started_at,finished_at,summary,error "
+        "FROM knowledge_sync_run ORDER BY started_at DESC LIMIT ?",
+        (limit,),
+    ):
+        item = dict(row)
+        for field in ("requested", "planned", "summary"):
+            if item.get(field):
+                item[field] = json.loads(item[field])
+        rows.append(item)
+    return {"items": rows}
+
+
+@router.get("/sync/runs/{sync_id}")
+def sync_run_detail(sync_id: str) -> dict[str, Any]:
+    """一次同步的分类级新增、删除、修改、版本字段变化与样例键。"""
+    result = load_sync_run(dbmod.get_conn(), sync_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="同步记录不存在")
+    return result
 
 
 @router.get("/stats")
