@@ -497,9 +497,17 @@ cases:
     expect_tool: tag_weight_lookup
     lesson: >-
       **裸的「化石」不能进意图词**：化石的词缀池早就入库成 1983 条
-      `category='delve'`，「某个化石能开出哪些词缀」是词缀卡与 `mod_tiers` 的活。
-      分界是**问的是哪一侧**——给定化石问它的词缀池归词缀表，
-      给定标签问哪个化石偏向它才归这张权重表。
+      `category='delve'`。分界是**问的是哪一侧**——给定标签反查哪个化石偏向它，
+      只需 `tag_weight_lookup`；给定精确化石与底材问地渊目录，则由
+      `fossil_operation_state` 同时披露标签规则与目录边界。
+
+  - id: route_fossil_operation_state
+    query: 物等60的胸甲用炽炎化石会怎样，有哪些地渊词缀
+    kind: tool_route
+    expect_tool: fossil_operation_state
+    note: >-
+      具名化石与明确底材走保守状态机；只给标签乘数和 category=delve 目录，
+      不把目录或页面基础权重换算成单次结果概率，也不猜共鸣器组合
 
   - id: gap_fossil_success_rate
     query: 用化石打造的成功率有多高

@@ -143,7 +143,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 1687 项，秒级
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 1698 项，秒级
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选
@@ -160,7 +160,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 .venv/bin/python scripts/eval_run.py --record        # 重录真实响应（**要凭证、烧 token**）
 ```
 
-黄金问答集是 `tests/golden/questions.yaml`（157 条，六类），基线与全部结论在
+黄金问答集是 `tests/golden/questions.yaml`（158 条，六类），基线与全部结论在
 `tests/golden/BASELINE.md`——**动闸门前先读它**，里面记了多个已修缺陷与三条已知未修边界，
 以及两次「测量本身写错」的教训。
 
@@ -788,14 +788,20 @@ POEDB 页面仍是旧版」：`号召` PoB 侧是 `ConvocationNew`（各级需�
 - **证据里的乘数不能渲染成 `x10.0`**：页面写 `x10`，模型照页面复述时数值回填
   会因为多出来的那一位小数点在证据里找不到，于是一句完全正确的话被自己的闸门拦掉
   （与第二十轮减抗那次同型，判据在 `_fmt_multiplier`）。
-- **裸的「化石」不能进意图词**：化石的**词缀池**早就入库成 1983 条
-  `category='delve'`，「某个化石能开出哪些词缀」是词缀卡与 `mod_tiers` 的活。
-  分界是**问的是哪一侧**——给定化石问它的词缀池归词缀表，给定标签问哪个化石偏向它
-  才归这张权重表（`哪个化石能开出最大生命词缀` → `原始化石 x10` / `致密化石 x0`）。
+- **裸的「化石」不能进权重意图词**：化石的**词缀池**早就入库成 1983 条
+  `category='delve'`。给定标签反查哪个化石偏向它，走 `tag_weight_lookup`
+  （`哪个化石能开出最大生命词缀` → `原始化石 x10` / `致密化石 x0`）；给定唯一
+  化石名与底材问地渊目录，走 `fossil_operation_state`，同时保留“不是完整生成池”的边界。
 
 `missing_dimension_hints` 里的**「乘数」因此删掉、「成功率」留着**：有了权重
 不等于有了成功率，而共鸣器的组合规则同样未采集。两者成对钉在
 `tests/unit/test_dimension_gate.FossilDomainTest` 里。
+
+`fossil_operation_state`（第八十四轮）把上述两张已有表接成一个保守出口：18 件化石
+按唯一精确中文名解析，逐标签披露 37 条乘数；底材类别落到
+`mod_affix.category='delve'`，可再用用户明确给出的物等过滤。两层数据仍不能推出多标签
+乘数如何合并、共鸣器组合、稀有度变化或成功率，所以结构化 verdict 保持 `unknown`；
+`craft_metamod_interaction.operation_text='化石'` 的四格只并列原值，不解释执行语义。
 
 **同一轮修掉一个「早退让修好写不进台账」**：`_record_harvest_gaps` 原先
 `if not points: return 0`，于是第三张表入库之后那条「催化剂等参考表有 41 行未入库」

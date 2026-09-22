@@ -22,6 +22,7 @@ ALLOWED_TOOLS = [
     "essence_operation_state",  # 精确：精华稀有度/物等/类别检查与保底词缀
     "eldritch_operation_state",  # 精确：12 种古灵通货、首要影响与条件状态转移
     "veiled_operation_state",  # 精确：2 种加密通货与按类别隐匿候选目录
+    "fossil_operation_state",  # 精确：18 种化石标签乘数与按类别地渊候选目录
     "harvest_reforge_state",  # 精确：20 条 Harvest 装备重铸与原始费用
     "harvest_modifier_state",  # 精确：23 条 Harvest 元素转换与新增/移除词缀
     "harvest_quality_enchant_state",  # 精确：14 条 Harvest 护甲/武器品质附魔
@@ -94,6 +95,11 @@ POE1 的机制耦合极深，一个错误的小前提会让整条结论反向。
   `veiled_operation_state`。只按两条通货效果原文判断稀有度、随机移除与全词缀重置；
   类别候选来自 `mod_affix.category='veiled'`，只是目录，不是单次揭露选项，页面权重也不是
   加密通货结果概率。爱斯林只有元词缀矩阵、没有操作效果契约，不得据此补状态转移。
+- **具名化石对标签权重的影响 / 给定底材类别的地渊来源词缀目录** →
+  `fossil_operation_state`。只逐条披露 `poedb_tag_weight` 的 x0、提高或降低乘数，并将
+  `mod_affix.category='delve'` 按类别汇总；不得把目录当成单颗化石的完整生成池，
+  不得合并多个标签乘数或换算最终成功率。共鸣器组合、稀有度变化、具体结果数量、
+  步骤、成本与路线没有来源，必须保持 unknown。
 - **Harvest 某类重铸对明确稀有度/影响状态会做什么** → `harvest_reforge_state`。
   只支持已审计的 20 条装备重铸原文，携带的是页面原始命能费用而非市场成本。
   保底标签不等于具体词缀，“大概率”不换算成概率；不得扩写词缀结果、成功率、步骤、

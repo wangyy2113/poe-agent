@@ -515,14 +515,16 @@ DOMAINS: tuple[DomainSpec, ...] = (
         category=Category.CRAFTING,
         authority_url=f"{POEDB_BASE}/Modifiers",
         count_sql="SELECT count(*) FROM mod_affix WHERE category='delve'",
-        tools=("tag_weight_lookup", "stat_sources"),
+        tools=("fossil_operation_state", "tag_weight_lookup", "stat_sources"),
         hints=("化石", "共鸣器", "地心探索"),
         question_hints=("化石能出什么词缀", "某个化石屏蔽或放大哪些词缀标签"),
         partial_note=(
-            "化石**词缀池**已入库（1,978 条 `category='delve'`）；"
+            "化石**词缀池**已入库（1,983 条 `category='delve'`）；"
             "**按标签的权重乘数第六十五轮补上**（`poedb_tag_weight`，化石 18 件共 37 行，"
             "如 `炽炎化石 → 冰霜 x0、火焰 x10`，走 `tag_weight_lookup`）；"
-            "**未采集**：共鸣器的组合规则、以及一次使用的成功率"
+            "**化石状态机 v1 已结构化**（逐标签乘数 × 底材类别 × 可选物等的地渊目录；"
+            "完整执行状态保持 unknown，走 `fossil_operation_state`）；"
+            "**未采集**：共鸣器的组合规则、完整使用契约、稀有度变化、以及一次使用的成功率"
         ),
         missing_dimension_hints=(
             # 「乘数」第六十五轮**删掉了**：`poedb_tag_weight` 入库后

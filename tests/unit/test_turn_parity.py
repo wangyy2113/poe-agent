@@ -869,6 +869,66 @@ class VeiledOperationAnswerTest(unittest.TestCase):
         )
 
 
+class FossilOperationAnswerTest(unittest.TestCase):
+    """化石的有据权重变换由代码直出，批量与流式不得补成成功率。"""
+
+    ANSWER = (
+        "### 炽炎化石的已知权重变换\n\n"
+        "**结论：只能确认标签权重变换；完整化石操作仍未知**\n\n"
+        "> 火焰 x10、冰霜 x0；不提供共鸣器组合或最终成功率。"
+    )
+
+    def _patches(self):
+        def call(name, arguments):
+            if name == "kb_search":
+                return ToolResult(
+                    ok=True,
+                    data={"sufficient": False, "reason": "状态转移不在静态卡片", "missing_terms": []},
+                    citations=[],
+                    meta={"channels": ["bm25"], "degraded": False},
+                )
+            if name == "fossil_operation_state":
+                args = json.loads(arguments)
+                self.assertEqual("炽炎化石", args["fossil"])
+                self.assertEqual("胸甲", args["item_class"])
+                self.assertEqual(60, args["item_level"])
+                return ToolResult(
+                    ok=True,
+                    data={"answer": self.ANSWER, "found": True, "verdict": "unknown"},
+                    citations=[{
+                        "chunk_id": "fossil_operation:炽炎化石",
+                        "entity_id": None,
+                        "title": "炽炎化石标签权重变换",
+                        "url": "https://poedb.tw/cn/Horticrafting",
+                        "source": "POEDB",
+                        "source_priority": 1,
+                        "can_support_facts": True,
+                        "text": self.ANSWER,
+                        "channel": "structured",
+                    }],
+                    meta={"channel": "structured"},
+                )
+            raise AssertionError(name)
+
+        return [
+            patch.object(loop, "get_config", lambda: _FakeConfig()),
+            patch.object(loop, "_persist", lambda *a, **k: None),
+            patch.object(loop, "_record_gaps", lambda *a, **k: None),
+            patch.object(loop.REGISTRY, "call", call),
+        ]
+
+    def test_两条路径直接返回同一化石边界答案(self) -> None:
+        question = "物等60的胸甲用炽炎化石会怎样，有哪些地渊词缀"
+        batch, events = _both_paths(question, self._patches)
+        self.assertFalse(batch.evidence_gap)
+        self.assertEqual(self.ANSWER, batch.answer)
+        self.assertEqual(self.ANSWER, _answer_of(events))
+        self.assertEqual(
+            ["kb_search", "fossil_operation_state"],
+            [call["tool"] for call in batch.tool_calls],
+        )
+
+
 class PartialDimensionDisclosureTest(unittest.TestCase):
     """复合问题继续回答有据部分，同时由代码保证披露无据部分。"""
 
