@@ -56,7 +56,7 @@ PoB Community 的 PoE1 版（库里 `game_version` 全是 `3.29`；POE2 用 0.x 
   新证据，而这里没有引入新证据。
 - **偏好工具只豁免「BM25 命不中」，不豁免维度闸门。** 两者是不同的判断：前者说证据
   不在 chunk 里（那正是工具要去查的），后者说**这一维根本没有数据**——工具也造不出来。
-  实测（第十八轮）：「大星团珠宝的斧剑伤害能开出哪些核心天赋」这个映射本库没有，
+  实测（第十八轮当时）：「大星团珠宝的斧剑伤害能开出哪些核心天赋」这个映射尚未接通，
   而「星团」命中偏好工具后整轮被豁免、进了模型，结果模型写 12 句、出口拦掉 11 句，
   用户看到一篇拦截说明。**该拦的地方是入口，不是出口。**
   同一处还修了另一半：覆盖层先前只在「检索充分」时才被问，于是偏好工具那条路上它从未被咨询。
@@ -146,7 +146,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 1741 项，秒级
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 1785 项，秒级
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选
@@ -886,11 +886,13 @@ stat id）」——**那句话描述的是错的那一页**：真正的来源是
 
 `pob_cluster_notable` **308** 条星团珠宝核心天赋与基石（中文名由已入库的天赋卡按英文名桥接，
 100% 命中）+ `pob_cluster_jewel` 3 个尺寸（小 2–3 / 中 4–6 / 大 8–12 个小天赋）
-+ `pob_cluster_skill` 55 条小天赋类型（**仅 PoB 英文原文**——中文附魔文本不在任何已缓存页上）。
++ `pob_cluster_skill` 55 条小天赋类型。类型名按英文名从 POEDB 天赋树同名节点桥接中文，
+效果文本仍保留 PoB 英文原文。
 **这一轮补的是分类不是数据**：那 300 个核心天赋的属性早就随天赋树入库成了天赋卡，
 缺的是「它们只能从星团珠宝拿、不在主树上」这个事实——`passive_path` 先前只能说
-「可能只存在于星团珠宝或升华子树」。**哪些核心天赋出现在哪种小天赋类型上仍未采集**
-（本地来源没有这个映射）。
+「可能只存在于星团珠宝或升华子树」。第九十一轮又把 `ClusterJewels.lua` 的类型 tag 与
+同 commit `ModJewelCluster.lua` 的核心天赋正权重连接起来，当前覆盖 52 个类型、568 条
+类型—核心关系；基础权重不换算成单次概率。
 
 `passive_graph_node` **3390** 个天赋树节点（其中可经过 **2478**）+ `passive_graph_edge`
 **3382** 条无向连线 + `passive_tree_meta`（`totalPoints` 123、`ascendancyPoints` 8）。

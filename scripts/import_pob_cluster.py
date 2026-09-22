@@ -117,9 +117,10 @@ def main() -> int:
         )
         conn.execute("DELETE FROM pob_cluster_skill")
         conn.executemany(
-            "INSERT INTO pob_cluster_skill(size,tag,name_en,stats_en,enchant_en) "
-            "VALUES (?,?,?,?,?)",
-            [(s.size, s.tag, s.name_en, as_json(s.stats_en), as_json(s.enchant_en))
+            "INSERT INTO pob_cluster_skill(size,tag,weight_tag,name_en,stats_en,enchant_en) "
+            "VALUES (?,?,?,?,?,?)",
+            [(s.size, s.skill_id, s.weight_tag, s.name_en,
+              as_json(s.stats_en), as_json(s.enchant_en))
              for s in data.skills],
         )
         conn.execute("DELETE FROM pob_cluster_notable")
@@ -143,7 +144,10 @@ def main() -> int:
             "notables": len(notables),
             "keystones": len(keystones),
             "name_zh_bridged": bridged,
-            "note": "哪些核心天赋出现在哪种小天赋类型上：本地无此映射，未采集",
+            "note": (
+                "尺寸与类型来自 ClusterJewels.lua；核心天赋池由查询工具按同 commit "
+                "连接 pob_mod 中 ModJewelCluster.lua 的正权重键"
+            ),
         },
         ensure_ascii=False,
     )

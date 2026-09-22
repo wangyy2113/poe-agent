@@ -70,12 +70,11 @@ class DimensionGapTest(unittest.TestCase):
     def test_partial_domain_gaps_when_asked_dimension_is_the_missing_one(self) -> None:
         """partial 领域被问到它缺的那一维时必须拒答。
 
-        例子换过一次：原先用「点到某节点要花几点」，那一维在 2026-08-19 第十五轮
-        随连接关系入库而变成能力（见 `num_passive_path_cost`）。现在用同一个领域
-        **当前**仍缺的那维——星团珠宝上的天赋不在主树上。
+        例子换过两次：「点到某节点要花几点」随连接关系入库而变成能力，星团核心池也在
+        第九十一轮接通。现在用同一领域仍明确不覆盖的取舍建议。
         用例要跟着数据走，留着一句已经不成立的边界比没有用例更糟。
         """
-        v = self._verdict("星团珠宝上的天赋要花几个天赋点")
+        v = self._verdict("这个天赋值不值得点")
         self.assertTrue(v.is_gap)
         self.assertIn("passive_tree", [s.key for s in v.uncovered])
         self.assertIn("未采集的部分", v.reason())
@@ -84,6 +83,16 @@ class DimensionGapTest(unittest.TestCase):
         """星团珠宝一条都没入库 —— 未采集的领域整个维度都是缺的。"""
         v = self._verdict("大型星团珠宝能开出哪些天赋")
         self.assertTrue(any(s.key == "cluster_jewel" for s in v.uncovered))
+
+    def test_cluster_notable_pool_passes_after_mapping_is_available(self) -> None:
+        """类型—核心映射接通后，「能开出哪些」不再属于 partial 域的缺口。"""
+        self.rows = [
+            _status("cluster_jewel", "partial", 308) if row.spec.key == "cluster_jewel" else row
+            for row in self.rows
+        ]
+        v = self._verdict("大星团珠宝的斧剑伤害能开出哪些核心天赋")
+        self.assertFalse(v.is_gap)
+        self.assertIn("cluster_jewel", [s.key for s in v.covered])
 
     # ── 该放的放行 ──
 

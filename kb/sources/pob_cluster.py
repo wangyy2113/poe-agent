@@ -21,11 +21,12 @@ PoB 只有英文名。不另抓树数据：按英文名对 `entity.name_en`（�
 一句「小天赋」都没有）。所以按 PoB 原文存，卡片上标明是英文——与宝石的
 `description_en` 同一处理，不自己翻译。
 
-## 拿不到的那一维
+## 核心天赋池来自另一张自动生成表
 
-**哪些核心天赋出现在哪种小天赋类型上**——这个映射在本地找不到：
-`ClusterJewels.lua` 只给「尺寸 → 类型」与一份扁平的 300 个 notable 清单，
-树 JSON 的节点字段里也没有 affliction 标签。所以它明确划进未采集，不猜。
+`ClusterJewels.lua` 自身只给「尺寸 → 类型」与一份扁平 notable 清单；同一 PoB commit 的
+`ModJewelCluster.lua` 则在每条核心天赋词缀的 `weightKey` / `weightVal` 中给出类型 tag、
+正权重和物等门槛。抽取器保持两类原始数据独立，查询工具再按 tag 与 commit 连接，避免
+把跨版本数据拼成一张看似完整的表。
 """
 
 from __future__ import annotations
@@ -67,7 +68,8 @@ class ClusterSkill:
     """一个尺寸下可选的「增加的小天赋给予…」类型。全为 PoB 英文原文。"""
 
     size: str
-    tag: str
+    skill_id: str
+    weight_tag: str
     name_en: str
     stats_en: tuple[str, ...]
     enchant_en: tuple[str, ...]
@@ -133,16 +135,20 @@ def extract_cluster_data(pob_root: Path) -> ClusterData:
         skills = jewel.get("skills")
         if not isinstance(skills, dict) or not skills:
             raise ClusterStructureError(f"{size} 没有 skills 表")
-        for tag, skill in skills.items():
+        for skill_id, skill in skills.items():
             if not isinstance(skill, dict):
                 continue
             name = skill.get("name")
             if not isinstance(name, str) or not name:
-                raise ClusterStructureError(f"{size}.{tag} 缺 name")
+                raise ClusterStructureError(f"{size}.{skill_id} 缺 name")
+            weight_tag = skill.get("tag")
+            if not isinstance(weight_tag, str) or not weight_tag:
+                raise ClusterStructureError(f"{size}.{skill_id} 缺 tag")
             out.skills.append(
                 ClusterSkill(
                     size=size,
-                    tag=str(tag),
+                    skill_id=str(skill_id),
+                    weight_tag=weight_tag,
                     name_en=name,
                     stats_en=tuple(str(s) for s in _positional(skill.get("stats"))),
                     enchant_en=tuple(str(s) for s in _positional(skill.get("enchant"))),
