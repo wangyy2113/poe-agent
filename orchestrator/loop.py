@@ -1400,6 +1400,51 @@ def _veiled_operation_args(question: str) -> dict[str, Any] | None:
     return args
 
 
+_FOSSIL_OPERATION_SIGNALS = (
+    "能用", "可以用", "能不能用", "会怎样", "状态转移", "地渊词缀", "候选目录",
+)
+
+
+def _fossil_operation_args(question: str) -> dict[str, Any] | None:
+    """抽取具名化石及目录筛选条件；不猜共鸣器组合或完整执行语义。"""
+    if any(term in question for term in (
+        "多少钱", "价格", "成本", "哪里刷", "怎么获得", "成功率", "概率", "几率",
+        "共鸣器", "屏蔽", "提高", "权重乘数", "有什么用",
+    )):
+        return None
+    if not any(signal in question for signal in _FOSSIL_OPERATION_SIGNALS):
+        return None
+    try:
+        from craft.fossil_operations import FOSSIL_NAMES  # noqa: PLC0415
+    except Exception:  # noqa: BLE001
+        return None
+    matched = [name for name in FOSSIL_NAMES if name in question]
+    if len(matched) != 1:
+        return None
+    args: dict[str, Any] = {"fossil": matched[0]}
+    classes = [name for name in _ESSENCE_ITEM_CLASSES if name in question]
+    if classes:
+        args["item_class"] = classes[0]
+    level = re.search(r"(?:物品等级|物等|ilvl)\s*[:：]?\s*(\d{1,3})", question, re.I)
+    if level:
+        args["item_level"] = int(level.group(1))
+    if "稀有" in question or "黄装" in question:
+        args["rarity"] = "稀有"
+    elif "魔法" in question or "蓝装" in question:
+        args["rarity"] = "魔法"
+    elif "普通" in question or "白装" in question:
+        args["rarity"] = "普通"
+    elif "传奇" in question or "暗金" in question:
+        args["rarity"] = "传奇"
+    if "已腐化" in question:
+        args["corrupted"] = True
+    if "已镜像" in question or "已鏡像" in question:
+        args["mirrored"] = True
+    if "裂隙词缀" in question or "裂隙詞綴" in question:
+        args["fractured"] = True
+    return args
+
+
 _HARVEST_REFORGE_TAGS = (
     "召唤生物", "元素", "冰霜", "属性", "掉落", "攻击", "施法", "暴击",
     "混沌", "火焰", "物理", "生命", "速度", "闪电", "防御", "魔力",
@@ -1656,6 +1701,9 @@ def _preferred_tool_route(question: str) -> str:
     veiled_args = _veiled_operation_args(question)
     if veiled_args is not None:
         return "veiled_operation_state"
+    fossil_args = _fossil_operation_args(question)
+    if fossil_args is not None:
+        return "fossil_operation_state"
     eldritch_args = _eldritch_operation_args(question)
     if eldritch_args is not None:
         return "eldritch_operation_state"
@@ -2107,6 +2155,7 @@ _CODE_INVOKED_TOOLS: dict[str, Any] = {
     "essence_operation_state": _essence_operation_args,
     "eldritch_operation_state": _eldritch_operation_args,
     "veiled_operation_state": _veiled_operation_args,
+    "fossil_operation_state": _fossil_operation_args,
     "harvest_reforge_state": _harvest_reforge_args,
     "harvest_modifier_state": _harvest_modifier_args,
     "harvest_quality_enchant_state": _harvest_quality_enchant_args,
@@ -2140,6 +2189,7 @@ _DETERMINISTIC_DIRECT_TOOLS = frozenset({
     "essence_operation_state",
     "eldritch_operation_state",
     "veiled_operation_state",
+    "fossil_operation_state",
     "harvest_reforge_state",
     "harvest_modifier_state",
     "harvest_quality_enchant_state",
