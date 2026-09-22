@@ -146,7 +146,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 1795 项，秒级
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 1804 项，秒级
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选
@@ -256,12 +256,12 @@ POE1/POE2 边界顺带落在同一张表上：poe.ninja 两款游戏都服务，
 | `orchestrator/` | `loop.py` 主循环与轨迹（批量与流式**共用** `_prepare_turn` / `_handle_tool_call` / `_terminal_gap`，只在「怎么把文本交给用户」上不同——不要在任一侧重新写判据，`tests/unit/test_turn_parity.py` 会挡）、`binding.py` 出口闸门（1400+ 行，改动前先读它的模块 docstring）、`citation.py` 引用装配 |
 | `agents/` | `knowledge.py`：系统提示词 + `ALLOWED_TOOLS` + 缺据声明模板。提示词是第一道约束不是唯一约束 |
 | `tools/` | `registry.py` 注册与 schema 导出，`impl/` 各工具；返回值统一 `ToolResult`，`citations` 是结构化引用而非拼进正文的字符串（要参与出口校验） |
-| `core/mcp_protocol.py` / `mcp_server.py` | MCP `2025-06-18` stdio 协议层与入口；默认复用 Knowledge Agent 的 45 个只读工具，`--tools` 可收窄暴露面。stdout 只能写逐行 JSON-RPC，日志必须走 stderr；EOF 必须关闭 SQLite |
+| `core/mcp_protocol.py` / `mcp_server.py` | MCP `2025-06-18` stdio 协议层与入口；默认复用 Knowledge Agent 的 48 个只读工具，`--tools` 可收窄暴露面。stdout 只能写逐行 JSON-RPC，日志必须走 stderr；EOF 必须关闭 SQLite |
 | `kb/sync.py` / `scripts/sync_knowledge.py` | 过期分类计划、现有采集器编排、事实行快照与版本 diff。默认 CLI 只预览，`--apply` 才执行；记录删除提升为 `attention`。唯一装备不得加入自动集合，直到主列表 + 1,342 页详情补全可原子执行 |
 | `retrieval/` | FTS5、别名、RRF 融合、jieba 分词、领域词表 |
 | `kb/` | `pipeline.py` 采集管线、`sources/` 各来源抽取器、`coverage.py` 知识库自描述层、`stat_channels.py` 属性来源渠道注册表、`render*.py` 卡片切片 |
 | `parsers/` | `item_text.py`（纯文本，不连库）→ `item_mods.py` T 级匹配 → `mod_bridge.py` 英文桥接 → `item_report.py` 报告 |
-| `craft/` | `feasibility.py` 词缀组合三态可行性、`pool.py` 胸甲普通词缀有效池与条件概率 |
+| `craft/` | `feasibility.py` 词缀组合三态可行性、`pool.py` 胸甲普通词缀有效池与条件概率、`awakener_operations.py` 觉醒者之石双物品状态转移；各制作状态机只实现来源原文明示的变化，随机结果与未证实前提保留 unknown |
 | `calc/` | `constants.py` 常量访问层，**缺失即抛异常，绝不给默认值**；`derive.py` 各计算器共用的推导件（`Step` / 引用推导）；`resistance.py` 抗性结算；`mitigation.py` 受击结算（闪避/命中、格挡、法术压制、护甲）；`recovery.py` 回复（护盾回充、偷取、魔力再生）；`reservation.py` 保留（取整是难点）；`ailment.py` 持续伤害；`threshold.py` 门槛型异常；`maxhit.py` 一发最大承受伤害；`crit.py` 暴击；`accuracy.py` 命中率（攻击侧，与 `mitigation` 共用同一个 `hitChance`）；`attack_speed.py` 攻击速度。**DPS 仍未实现**——整条加成链（增加/更多/转化/穿透）没有采集，伤害转化下的 Max Hit、冰冻时长曲线同样未实现 |
 | `static/` | 单页前端三个文件，无构建步骤、无 Node、无第三方 JS（Markdown 渲染器自写，为了强制先转义再解析） |
 | `tests/golden/` | 评测资产：`questions.yaml` 黄金问答集、`loader.py` 严格校验、`recording.py` 录制回放、`recordings/` 真实响应、`audit.yaml` 人工结论、`BASELINE.md` 指标基线 |
@@ -273,6 +273,7 @@ POE1/POE2 边界顺带落在同一张表上：poe.ninja 两款游戏都服务，
 
 `affix_pool_odds`（胸甲同侧普通词缀条件概率）→ `check_mod_combination`（三态可行性）→
 `bench_recipe_catalog`（工艺台目录）→ `harvest_craft_catalog`（收获定向工艺目录与命能费用）→
+`awakener_orb_state`（觉醒者之石双物品状态）→
 `craft_operation_state`（基础通货状态）→ `essence_operation_state`（精华状态）→
 `harvest_reforge_state`（20 条 Harvest 重铸）→
 `harvest_modifier_state`（23 条 Harvest 元素转换与新增/移除）→
@@ -731,7 +732,9 @@ POEDB 页面仍是旧版」：`号召` PoB 侧是 `ConvocationNew`（各级需�
 而 `possible` 的判据是**「这一页一条缺口都没有」**而不是「容量过了」——
 来源规则将来补上时，这里一行都不用改。影响力这一维已在后续轮次接通：给定具体底材、
 单一影响与可选物等时，按 PoB `tags` / `influenceTags` 和 POEDB `spawn_tags` 过滤候选；
-没有具体底材、多影响组合或影响底材获得方式仍保持 `unknown`。
+没有具体底材、多影响词缀池组合或影响底材获得方式仍保持 `unknown`。觉醒者之石另由
+`awakener_orb_state` 逐字绑定 POEDB 效果：只确认供体销毁、同类目标重铸为稀有并兼有
+两种影响；**不补“各保留一条影响词缀”**，也不补具体结果、概率、成本或路线。
 
 **`possible` 的含义只是「这些词缀能共存」，不是「能做出来」**，这条区别写在
 工具描述、系统提示词与证据正文三处。超出名额则判 `impossible`——这是新增的真负例。

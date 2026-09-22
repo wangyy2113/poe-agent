@@ -79,7 +79,10 @@ def main() -> int:
     for s in rows:
         if not s.spec.authority_url:
             problems.append(f"{s.key} 缺权威来源 URL（未采集时无法指路）")
-        if s.usable and s.item_count <= 0:
+        # Live adapters are capabilities, not static corpora.  A cold cache may
+        # legitimately contain zero rows; the tool reports upstream/cache
+        # availability per request.
+        if s.usable and s.item_count <= 0 and not s.spec.live_source:
             problems.append(f"{s.key} 声明可用但条目数为 0")
         if not s.usable and s.item_count > 0:
             problems.append(f"{s.key} 声明不可用但库里有 {s.item_count} 条")

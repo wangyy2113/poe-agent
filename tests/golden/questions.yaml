@@ -1571,21 +1571,17 @@ cases:
       partial_note 与 missing_dimension_hints 必须把「打法仍未采集」写死，
       否则「已采集」会替打法那一维背书。
 
-  # ── 制作规则：名额已补，另外两件仍缺（2026-08-27 第三十七轮）──────
-  - id: gap_craft_metamod_rule
+  # ── 制作规则：觉醒者之石双物品状态机（2026-09-22）──────────────
+  - id: route_awakener_orb_state
     query: 觉醒者之石如何约束制作操作
-    kind: gap
-    expect_gap: true
+    kind: tool_route
+    expect_tool: awakener_orb_state
     note: >-
-      「制作规则」这个域是三件事的合称，第三十七轮只补了前后缀名额那一件；
-      影响力底材条件与元词缀操作状态机仍未结构化
+      逐字绑定 POEDB 效果，缺少两件输入时由工具精确说明需要补什么；不再把
+      “来源已入库但参数未给”误报为整个领域未采集
     lesson: >-
-      域从 harvested 变成 partial **不等于**三件事都有了。partial_note 与
-      missing_dimension_hints 必须逐条写清还缺哪一件，否则「已采集」会替
-      没采集的那两件背书。
-      另：本来写的是「影响力词缀需要什么底材，觉醒者之石怎么约束制作」，实测**不判缺据**——
-      那是个复合问句，「底材」「词缀」各自命中了有据的领域，而 `is_gap` 的语义
-      正是「有一个领域覆盖到就不拦」。要钉住某一维缺据，问句就得只落在那一维上。
+      `compatible` 只证明同类输入与双方不同传统影响满足已审计原文；原文没说
+      “各保留一条影响词缀”，因此工具必须把具体保留词缀与重铸结果继续列为 unknown。
 
   - id: route_bench_recipe
     query: 工艺工作台上有没有加最大生命的选项，费用是多少

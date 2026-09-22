@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, model_validator
 
 from api.deps import require_user
+from tools.impl.awakener_operation import awakener_orb_state
 from tools.impl.craft_operation import craft_operation_state
 from tools.impl.eldritch_operation import eldritch_operation_state
 from tools.impl.essence_operation import essence_operation_state
@@ -53,6 +54,57 @@ class CraftOperationResponse(BaseModel):
     source_url: str
     fetched_at: str
     before: dict[str, Any]
+    after: dict[str, Any]
+    checks: list[dict[str, Any]]
+    unknown_fields: list[str]
+    boundary: str
+    answer: str
+
+
+class AwakenerOrbRequest(BaseModel):
+    donor_item_text: str | None = Field(default=None, max_length=20_000)
+    target_item_text: str | None = Field(default=None, max_length=20_000)
+    donor_item_class: str = Field(default="", max_length=80)
+    target_item_class: str = Field(default="", max_length=80)
+    donor_rarity: Literal["普通", "魔法", "稀有", "传奇"] | None = None
+    target_rarity: Literal["普通", "魔法", "稀有", "传奇"] | None = None
+    donor_influences: list[str] = Field(default_factory=list, max_length=4)
+    target_influences: list[str] = Field(default_factory=list, max_length=4)
+    donor_corrupted: bool = False
+    target_corrupted: bool = False
+    donor_mirrored: bool = False
+    target_mirrored: bool = False
+    donor_fractured: bool = False
+    target_fractured: bool = False
+
+    @model_validator(mode="after")
+    def no_mixed_state(self) -> "AwakenerOrbRequest":
+        if self.donor_item_text and any((
+            self.donor_item_class, self.donor_rarity, self.donor_influences,
+            self.donor_corrupted, self.donor_mirrored, self.donor_fractured,
+        )):
+            raise ValueError("donor_item_text 与供体手工状态字段不能混用")
+        if self.target_item_text and any((
+            self.target_item_class, self.target_rarity, self.target_influences,
+            self.target_corrupted, self.target_mirrored, self.target_fractured,
+        )):
+            raise ValueError("target_item_text 与目标手工状态字段不能混用")
+        return self
+
+
+class AwakenerOrbResponse(BaseModel):
+    found: bool
+    verdict: str
+    operation: str
+    operation_en: str
+    metadata_id: str
+    effect_text: str
+    source: str
+    source_priority: int
+    source_url: str
+    fetched_at: str
+    donor: dict[str, Any]
+    target: dict[str, Any]
     after: dict[str, Any]
     checks: list[dict[str, Any]]
     unknown_fields: list[str]
@@ -395,6 +447,38 @@ def operation_state(
             "supported_operations": (result.data or {}).get("supported_operations", []),
         })
     return CraftOperationResponse(**result.data)
+
+
+@router.post("/craft/awakener", response_model=AwakenerOrbResponse)
+def awakener_state(
+    req: AwakenerOrbRequest, _caller: str = Depends(require_user)
+) -> AwakenerOrbResponse:
+    result = awakener_orb_state(
+        donor_item_text=req.donor_item_text,
+        target_item_text=req.target_item_text,
+        donor_item_class=req.donor_item_class,
+        target_item_class=req.target_item_class,
+        donor_rarity=req.donor_rarity or "",
+        target_rarity=req.target_rarity or "",
+        donor_influences=req.donor_influences,
+        target_influences=req.target_influences,
+        donor_corrupted=req.donor_corrupted,
+        target_corrupted=req.target_corrupted,
+        donor_mirrored=req.donor_mirrored,
+        target_mirrored=req.target_mirrored,
+        donor_fractured=req.donor_fractured,
+        target_fractured=req.target_fractured,
+    )
+    if not result.ok:
+        raise HTTPException(status_code=422, detail={
+            "error": "invalid_awakener_operation", "reason": result.error,
+        })
+    if not (result.data or {}).get("found"):
+        raise HTTPException(status_code=422, detail={
+            "error": "awakener_source_unavailable",
+            "reason": (result.data or {}).get("reason", "觉醒者之石来源记录不可用"),
+        })
+    return AwakenerOrbResponse(**result.data)
 
 
 @router.post("/craft/essence", response_model=EssenceOperationResponse)
