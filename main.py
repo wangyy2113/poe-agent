@@ -96,6 +96,10 @@ def health() -> dict[str, Any]:
         out["economy"] = {
             "enabled": bool(cfg.get("economy.enabled", True)),
             "source": "poe.watch",
+            "trade_fallback_enabled": bool(
+                cfg.get("economy.trade_fallback.enabled", True)
+            ),
+            "fallback_source": "GGG Trade API",
             "cached_snapshots": int(economy_row["snapshots"] or 0),
             "latest_fetched_at": economy_row["latest"],
         }

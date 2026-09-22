@@ -21,8 +21,10 @@ from core import db as dbmod
 from economy.models import MaterialRequest
 from economy.poe_watch import PoeWatchClient, PoeWatchError
 from economy.service import EconomyService, EconomyUnavailable, InvalidEconomyQuery
+from economy.trade_api import TradeApiClient, TradeApiError
 from kb.coverage import probe
 from tools.impl.economy import (
+    economy_price_lookup,
     economy_price_trend,
     render_material_cost,
     render_price,
@@ -94,6 +96,54 @@ class EconomyServiceTest(unittest.TestCase):
     def tearDown(self) -> None:
         self.conn.close()
 
+    def trade_client(
+        self,
+        calls: list[tuple[str, str, dict | None]],
+        *,
+        fail: bool = False,
+        prices: tuple[float, ...] = (350, 355, 360, 365, 370, 5),
+    ) -> TradeApiClient:
+        def request(method: str, path: str, payload: dict | None):
+            calls.append((method, path, payload))
+            if fail:
+                raise TradeApiError("trade down")
+            if path.startswith("/api/leagues"):
+                return [{"id": "Allflame"}, {"id": "Standard"}]
+            if path == "/api/trade/data/static":
+                return {"result": [{
+                    "label": "Currency",
+                    "entries": [
+                        {"id": "chaos", "text": "Chaos Orb"},
+                        {"id": "divine", "text": "Divine Orb"},
+                    ],
+                }]}
+            rows = {}
+            for index, value in enumerate(prices):
+                rows[str(index)] = {"listing": {
+                    "indexed": f"2026-09-22T08:0{index}:00+00:00",
+                    "account": {"online": {"league": "Allflame"}},
+                    "offers": [{
+                        "exchange": {"currency": "chaos", "amount": value},
+                        "item": {"currency": "divine", "amount": 1, "stock": 100},
+                    }],
+                }}
+            rows["wrong-league"] = {"listing": {
+                "indexed": "2026-09-22T08:09:00+00:00",
+                "account": {"online": {"league": "Standard"}},
+                "offers": [{
+                    "exchange": {"currency": "chaos", "amount": 1},
+                    "item": {"currency": "divine", "amount": 1, "stock": 100},
+                }],
+            }}
+            return {"result": rows}
+
+        return TradeApiClient(
+            request_json=request,
+            requests_per_second=0,
+            minimum_samples=5,
+            now=self.clock,
+        )
+
     def test_fetches_current_league_and_returns_all_provenance(self) -> None:
         result = self.service.price("Divine Orb", category="currency")
         self.assertTrue(result.found)
@@ -139,6 +189,103 @@ class EconomyServiceTest(unittest.TestCase):
         self.fail = True
         with self.assertRaises(EconomyUnavailable):
             self.service.price("Divine Orb", category="currency")
+
+    def test_no_cache_primary_failure_uses_disclosed_trade_fallback(self) -> None:
+        trade_calls: list[tuple[str, str, dict | None]] = []
+        self.service.trade_client = self.trade_client(trade_calls)
+        self.fail = True
+
+        result = self.service.price("Divine Orb", category="currency")
+
+        self.assertTrue(result.fallback)
+        self.assertTrue(result.degraded)
+        self.assertEqual("GGG Trade API", result.source)
+        self.assertEqual(360, result.prices[0].median_chaos)
+        self.assertEqual(360, result.prices[0].representative_chaos)
+        self.assertIsNone(result.prices[0].mean_chaos)
+        self.assertEqual(5, result.prices[0].sample_count)
+        self.assertEqual(1, result.prices[0].cross_league_filtered_count)
+        self.assertEqual(1, result.prices[0].outlier_filtered_count)
+        rendered = render_price(result)
+        self.assertIn("在线挂单中位数", rendered)
+        self.assertIn("主源失败后使用官方备用源", rendered)
+        self.assertIn("不是报价承诺或保证成交价", rendered)
+        with patch("api.economy.service_from_config", return_value=self.service):
+            response = price_endpoint(
+                PriceRequest(query="Divine Orb", category="currency"), _caller="test"
+            )
+        self.assertTrue(response.fallback)
+        self.assertEqual("poe.watch 无可用缓存且刷新失败", response.fallback_reason)
+        with patch("tools.impl.economy.service_from_config", return_value=self.service):
+            tool_result = economy_price_lookup("Divine Orb", category="currency")
+        self.assertTrue(tool_result.ok)
+        self.assertEqual("GGG Trade API", tool_result.citations[0]["source"])
+        self.assertEqual(1, tool_result.citations[0]["source_priority"])
+
+    def test_existing_primary_cache_wins_over_trade_fallback(self) -> None:
+        self.service.price("Divine Orb", category="currency")
+        self.clock.value += timedelta(hours=7)
+        self.fail = True
+        trade_calls: list[tuple[str, str, dict | None]] = []
+        self.service.trade_client = self.trade_client(trade_calls)
+
+        result = self.service.price("Divine Orb", category="currency")
+
+        self.assertEqual("poe.watch", result.source)
+        self.assertFalse(result.fallback)
+        self.assertTrue(result.stale)
+        self.assertEqual([], trade_calls)
+
+    def test_unique_item_does_not_use_exchange_fallback(self) -> None:
+        self.conn.execute(
+            "INSERT INTO entity(entity_id,name_en,attributes) VALUES(?,?,?)",
+            ("unique_item:Headhunter", "Headhunter", json.dumps({"base_type_en": "Leather Belt"})),
+        )
+        self.conn.execute(
+            "INSERT INTO alias(alias,alias_norm,entity_id,kind) VALUES(?,?,?,?)",
+            ("猎首", "猎首", "unique_item:Headhunter", "name_zh"),
+        )
+        trade_calls: list[tuple[str, str, dict | None]] = []
+        self.service.trade_client = self.trade_client(trade_calls)
+        self.fail = True
+
+        with self.assertRaisesRegex(EconomyUnavailable, "不支持唯一装备估值"):
+            self.service.price("猎首")
+        self.assertEqual([], trade_calls)
+
+    def test_both_sources_failing_remains_unavailable(self) -> None:
+        trade_calls: list[tuple[str, str, dict | None]] = []
+        self.service.trade_client = self.trade_client(trade_calls, fail=True)
+        self.fail = True
+        with self.assertRaisesRegex(EconomyUnavailable, "备用查询也不可用"):
+            self.service.price("Divine Orb", category="currency")
+
+    def test_insufficient_trade_samples_are_disclosed_without_price(self) -> None:
+        trade_calls: list[tuple[str, str, dict | None]] = []
+        self.service.trade_client = self.trade_client(trade_calls, prices=(350, 360))
+        self.fail = True
+        result = self.service.price("Divine Orb", category="currency")
+        point = result.prices[0]
+        self.assertIsNone(point.representative_chaos)
+        self.assertTrue(point.low_confidence)
+        self.assertIn("低于最低样本数 5", result.warning)
+        self.assertIn("不输出代表价", render_price(result))
+
+    def test_material_cost_can_use_trade_median_without_calling_it_a_mean(self) -> None:
+        trade_calls: list[tuple[str, str, dict | None]] = []
+        self.service.trade_client = self.trade_client(trade_calls)
+        self.fail = True
+        result = self.service.material_cost([
+            MaterialRequest("Divine Orb", 2, "currency"),
+            MaterialRequest("Chaos Orb", 100, "currency"),
+        ])
+        self.assertTrue(result.calculable)
+        self.assertTrue(result.fallback)
+        self.assertEqual(820, result.total_representative_chaos)
+        self.assertIsNone(result.total_mean_chaos)
+        rendered = render_material_cost(result)
+        self.assertIn("代表价总成本：820 混沌石", rendered)
+        self.assertIn("官方在线挂单中位数", rendered)
 
     def test_invalid_league_is_rejected_instead_of_silently_switching(self) -> None:
         with self.assertRaises(InvalidEconomyQuery):

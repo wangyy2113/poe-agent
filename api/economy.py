@@ -39,6 +39,8 @@ class PriceResponse(BaseModel):
     from_cache: bool
     stale: bool
     degraded: bool
+    fallback: bool
+    fallback_reason: str
     warning: str
     prices: list[dict[str, Any]]
     answer: str
@@ -65,6 +67,8 @@ class TrendResponse(BaseModel):
     from_cache: bool
     stale: bool
     degraded: bool
+    fallback: bool
+    fallback_reason: str
     warning: str
     window_hours: int
     minimum_observations: int
@@ -91,9 +95,11 @@ class MaterialCostResponse(BaseModel):
     from_cache: bool
     stale: bool
     degraded: bool
+    fallback: bool
     warning: str
     calculable: bool
     unresolved_count: int
+    total_representative_chaos: float | None
     total_mean_chaos: float | None
     total_min_chaos: float | None
     total_max_chaos: float | None

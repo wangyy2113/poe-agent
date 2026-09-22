@@ -1,4 +1,4 @@
-"""实时价格服务：名称解析、TTL 缓存、陈旧降级和结果规范化。"""
+"""实时价格服务：名称解析、TTL 缓存、陈旧缓存与官方 Trade API 备用降级。"""
 
 from __future__ import annotations
 
@@ -24,6 +24,12 @@ from economy.models import (
     PriceTrendSearch,
 )
 from economy.poe_watch import PoeWatchClient, PoeWatchError
+from economy.trade_api import (
+    SOURCE as TRADE_SOURCE,
+    SOURCE_URL as TRADE_SOURCE_URL,
+    TradeApiClient,
+    TradeApiError,
+)
 from retrieval.alias import lookup, normalize
 
 SOURCE = "poe.watch"
@@ -94,6 +100,7 @@ class EconomyService:
         conn: sqlite3.Connection,
         *,
         client: PoeWatchClient,
+        trade_client: TradeApiClient | None = None,
         cache_ttl: timedelta = timedelta(minutes=30),
         stale_after: timedelta = timedelta(hours=6),
         observation_retention: timedelta = timedelta(days=90),
@@ -102,6 +109,7 @@ class EconomyService:
     ) -> None:
         self.conn = conn
         self.client = client
+        self.trade_client = trade_client
         self.cache_ttl = cache_ttl
         self.stale_after = stale_after
         self.observation_retention = observation_retention
@@ -124,8 +132,6 @@ class EconomyService:
                 f"不支持的 category={requested!r}；可用：{', '.join(PUBLIC_CATEGORIES)}"
             )
 
-        leagues, league_snapshot = self._leagues()
-        selected_league = self._select_league(league, leagues)
         resolved_name, inferred, inferred_upstream = self._resolve_name(raw_query)
         logical_category = inferred if requested == "auto" and inferred else requested
         upstream_categories = (
@@ -136,7 +142,20 @@ class EconomyService:
             else tuple(c for values in CATEGORY_MAP.values() for c in values)
         )
 
-        snapshots = [self._prices(selected_league, c) for c in upstream_categories]
+        selected_league: str | None = None
+        try:
+            leagues, league_snapshot = self._leagues()
+            selected_league = self._select_league(league, leagues)
+            snapshots = [self._prices(selected_league, c) for c in upstream_categories]
+        except EconomyUnavailable as exc:
+            return self._fallback_price(
+                raw_query=raw_query,
+                requested_category=requested,
+                resolved_name=resolved_name,
+                logical_category=logical_category,
+                requested_league=league or selected_league,
+                primary_error=exc,
+            )
         wanted = normalize(resolved_name)
         prices: list[PricePoint] = []
         observed_at_by_item: dict[tuple[str, str], datetime] = {}
@@ -174,7 +193,10 @@ class EconomyService:
                 name="Chaos Orb",
                 category="currency",
                 group="quote_unit",
+                representative_chaos=1.0,
+                price_basis="quote_unit_identity",
                 mean_chaos=1.0,
+                median_chaos=None,
                 min_chaos=1.0,
                 max_chaos=1.0,
                 divine=None,
@@ -226,8 +248,119 @@ class EconomyService:
             from_cache=all(s.from_cache for s in snapshots),
             stale=stale,
             degraded=degraded,
+            fallback=False,
+            fallback_reason="",
             warning=warning,
             prices=tuple(prices),
+        )
+
+    def _fallback_price(
+        self,
+        *,
+        raw_query: str,
+        requested_category: str,
+        resolved_name: str,
+        logical_category: str,
+        requested_league: str | None,
+        primary_error: EconomyUnavailable,
+    ) -> PriceSearch:
+        """主源没有任何可用缓存时，才查询官方在线交换挂单。"""
+        if self.trade_client is None:
+            raise primary_error
+        if logical_category == "unique":
+            raise EconomyUnavailable(
+                f"{primary_error}；GGG Trade API 备用源不支持唯一装备估值"
+            ) from primary_error
+        if logical_category not in {"auto", "currency", "scarab", "card", "fragment"}:
+            raise primary_error
+
+        try:
+            official_leagues = [{"name": name} for name in self.trade_client.leagues()]
+            selected_league = self._select_league(
+                requested_league, official_leagues, source=TRADE_SOURCE
+            )
+            if (
+                logical_category in {"auto", "currency"}
+                and normalize(resolved_name) == normalize("Chaos Orb")
+            ):
+                point = PricePoint(
+                    item_id="chaos-quote-unit",
+                    name="Chaos Orb",
+                    category="currency",
+                    group="quote_unit",
+                    representative_chaos=1.0,
+                    price_basis="quote_unit_identity",
+                    mean_chaos=1.0,
+                    median_chaos=None,
+                    min_chaos=1.0,
+                    max_chaos=1.0,
+                    divine=None,
+                    daily=None,
+                    change_percent=None,
+                    low_confidence=False,
+                )
+                searched = ("currency",)
+                warning = (
+                    "poe.watch 无可用缓存且刷新失败，已显式降级；混沌石价格为计价单位恒等式"
+                )
+            else:
+                quote = self.trade_client.quote(
+                    selected_league, resolved_name, logical_category
+                )
+                point = PricePoint(
+                    item_id=f"trade:{quote.item_id}",
+                    name=quote.name,
+                    category=quote.category,
+                    group="exchange_listing",
+                    representative_chaos=quote.median_chaos,
+                    price_basis="ggg_listing_median",
+                    mean_chaos=None,
+                    median_chaos=quote.median_chaos,
+                    min_chaos=quote.min_chaos,
+                    max_chaos=quote.max_chaos,
+                    divine=None,
+                    daily=None,
+                    change_percent=None,
+                    low_confidence=not quote.sufficient,
+                    sample_count=quote.sample_count,
+                    minimum_sample_count=quote.minimum_sample_count,
+                    raw_listing_count=quote.raw_listing_count,
+                    cross_league_filtered_count=quote.cross_league_filtered_count,
+                    invalid_quote_filtered_count=quote.invalid_quote_filtered_count,
+                    outlier_filtered_count=quote.outlier_filtered_count,
+                    earliest_listing_at=quote.earliest_listing_at,
+                    latest_listing_at=quote.latest_listing_at,
+                )
+                searched = (quote.category,)
+                warning = (
+                    "poe.watch 无可用缓存且刷新失败，已显式降级到 GGG Trade API 在线挂单"
+                )
+                if not quote.sufficient:
+                    warning += (
+                        f"；过滤后只有 {quote.sample_count} 条有效挂单，低于最低样本数 "
+                        f"{quote.minimum_sample_count}，未输出代表价"
+                    )
+        except TradeApiError as exc:
+            raise EconomyUnavailable(
+                f"{primary_error}；官方 Trade API 备用查询也不可用：{exc}"
+            ) from exc
+
+        return PriceSearch(
+            query=raw_query,
+            resolved_name=point.name,
+            requested_category=requested_category,
+            categories_searched=searched,
+            league=selected_league,
+            source=TRADE_SOURCE,
+            source_url=TRADE_SOURCE_URL,
+            fetched_at=_iso(self.now()),
+            from_cache=False,
+            stale=False,
+            degraded=True,
+            fallback=True,
+            fallback_reason="poe.watch 无可用缓存且刷新失败",
+            warning=warning,
+            prices=(point,),
         )
 
     def trend(
@@ -281,6 +414,8 @@ class EconomyService:
             from_cache=current.from_cache,
             stale=current.stale,
             degraded=current.degraded,
+            fallback=current.fallback,
+            fallback_reason=current.fallback_reason,
             warning=warning,
             window_hours=window_hours,
             minimum_observations=minimum_observations,
@@ -325,8 +460,19 @@ class EconomyService:
                 status, reason = "not_found", "未找到同名条目；未做模糊匹配"
             elif len(matches) > 1:
                 status, reason = "ambiguous", f"同名匹配到 {len(matches)} 个条目，未擅自选价"
-            elif point is not None and point.mean_chaos is None:
-                status, reason = "missing_price", "上游未提供混沌石均价"
+            elif point is not None and point.representative_chaos is None:
+                if (
+                    point.minimum_sample_count is not None
+                    and point.sample_count is not None
+                    and point.sample_count < point.minimum_sample_count
+                ):
+                    status, reason = (
+                        "insufficient_samples",
+                        f"有效挂单 {point.sample_count} 条，低于最低样本数 "
+                        f"{point.minimum_sample_count}",
+                    )
+                else:
+                    status, reason = "missing_price", "上游未提供可用混沌石代表价"
             else:
                 status, reason = "priced", ""
 
@@ -351,10 +497,15 @@ class EconomyService:
                 from_cache=result.from_cache,
                 stale=result.stale,
                 degraded=result.degraded,
+                fallback=result.fallback,
+                fallback_reason=result.fallback_reason,
                 warning=result.warning,
                 low_confidence=bool(point and point.low_confidence),
                 unit_price=point,
                 candidate_count=len(matches),
+                subtotal_representative_chaos=subtotal(
+                    point.representative_chaos if point else None
+                ),
                 subtotal_mean_chaos=subtotal(point.mean_chaos if point else None),
                 subtotal_min_chaos=subtotal(point.min_chaos if point else None),
                 subtotal_max_chaos=subtotal(point.max_chaos if point else None),
@@ -366,29 +517,37 @@ class EconomyService:
                 return None
             return float(sum((Decimal(str(value)) for value in values), Decimal("0")))
 
+        representative_total = total("subtotal_representative_chaos")
         mean_total = total("subtotal_mean_chaos")
         unresolved = sum(line.status != "priced" for line in lines)
         warnings: list[str] = []
         if unresolved:
-            warnings.append(f"{unresolved} 项未取得唯一可用均价，总成本不可计算")
+            warnings.append(f"{unresolved} 项未取得唯一可用代表价，总成本不可计算")
         if any(line.stale for line in lines):
             warnings.append("至少一个材料使用陈旧快照")
+        elif any(line.fallback for line in lines):
+            warnings.append("至少一个材料在主源失败后使用 GGG Trade API 在线挂单")
         elif any(line.degraded for line in lines):
             warnings.append("至少一个材料在上游刷新失败后使用缓存")
         if any(line.low_confidence for line in lines):
-            warnings.append("至少一个材料被 poe.watch 标记为低置信度")
+            warnings.append("至少一个材料价格置信度不足")
+
+        sources = list(dict.fromkeys(line.source for line in lines))
+        source_urls = list(dict.fromkeys(line.source_url for line in lines))
 
         return MaterialCostEstimate(
             league=selected_league,
-            source=SOURCE,
-            source_url=SOURCE_URL,
+            source=sources[0] if len(sources) == 1 else "mixed",
+            source_url=source_urls[0] if len(source_urls) == 1 else "",
             fetched_at=min(line.fetched_at for line in lines),
             from_cache=all(line.from_cache for line in lines),
             stale=any(line.stale for line in lines),
             degraded=any(line.degraded for line in lines),
+            fallback=any(line.fallback for line in lines),
             warning="；".join(warnings),
-            calculable=mean_total is not None,
+            calculable=representative_total is not None,
             unresolved_count=unresolved,
+            total_representative_chaos=representative_total,
             total_mean_chaos=mean_total,
             total_min_chaos=total("subtotal_min_chaos"),
             total_max_chaos=total("subtotal_max_chaos"),
@@ -620,17 +779,22 @@ class EconomyService:
         return [observations[index] for index in sorted(indexes)]
 
     @staticmethod
-    def _select_league(requested: str | None, leagues: list[dict[str, Any]]) -> str:
+    def _select_league(
+        requested: str | None,
+        leagues: list[dict[str, Any]],
+        *,
+        source: str = SOURCE,
+    ) -> str:
         names = [str(row.get("name") or "").strip() for row in leagues]
         names = [name for name in names if name]
         if not names:
-            raise EconomyUnavailable("poe.watch 没有返回可用联盟")
+            raise EconomyUnavailable(f"{source} 没有返回可用联盟")
         if requested and requested.strip():
             wanted = requested.strip()
             exact = next((name for name in names if name.casefold() == wanted.casefold()), None)
             if exact is None:
                 raise InvalidEconomyQuery(
-                    f"poe.watch 当前没有联盟 {wanted!r}；可用：{', '.join(names)}"
+                    f"{source} 当前没有联盟 {wanted!r}；可用：{', '.join(names)}"
                 )
             return exact
         # API 按当前挑战联盟在前、永久区在后返回；排除 HC/Ruthless/SSF 与永久区。
@@ -721,7 +885,10 @@ class EconomyService:
             name=str(row.get("name") or ""),
             category=str(row.get("category") or ""),
             group=str(row.get("group") or ""),
+            representative_chaos=_number(row.get("mean")),
+            price_basis="poe_watch_mean",
             mean_chaos=_number(row.get("mean")),
+            median_chaos=None,
             min_chaos=_number(row.get("min")),
             max_chaos=_number(row.get("max")),
             divine=_number(row.get("divine")),

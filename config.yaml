@@ -124,7 +124,7 @@ retrieval:
     - 掉落
 
 sources:
-  # P1 POEDB > P2 PoB src/Data > P3 Wiki > P4 Craft of Exile > P5 经济
+  # P1 官方 Trade API / POEDB > P2 PoB src/Data > P3 Wiki > P4 Craft of Exile > P5 经济聚合
   # > P6 官方 Patch Notes > P7 社区
   # P7 不得支撑事实断言，仅可标注为社区观点用于建议类内容。
   #
@@ -132,6 +132,7 @@ sources:
   # 但不含中文名与页面说明，且社区分支存在人工修补。POEDB 保持最高优先级，
   # 冲突时推荐 POEDB（需求 15.5）。
   priority:
+    GGG Trade API: 1
     POEDB: 1
     Path of Building: 2
     PoE Wiki: 3
@@ -188,6 +189,15 @@ economy:
   timeout_seconds: 15
   # 与采集器一致，对公共 API 保持克制；0 表示不做客户端节流。
   requests_per_second: 0.5
+  trade_fallback:
+    # 仅在 poe.watch 无任何可用缓存且请求失败时启用；不会覆盖已有缓存降级。
+    enabled: true
+    timeout_seconds: 15
+    requests_per_second: 0.25
+    user_agent: "poe1-agent/0.2 (local economy fallback; github.com/wangyy2113/poe-agent)"
+    static_ttl_hours: 24
+    # 过滤跨联盟、无效结构和 Tukey 离群报价后，低于此数量不输出中位代表价。
+    minimum_samples: 5
 
 logging:
   level: "INFO"
