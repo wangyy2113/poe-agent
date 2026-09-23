@@ -32,6 +32,9 @@ class CraftOperationRequest(BaseModel):
     corrupted: bool = False
     mirrored: bool = False
     fractured: bool = False
+    metamod_guard: Literal[
+        "前缀无法被变更", "后缀无法被变更", "无法骰出攻击词缀", "无法骰出法术词缀",
+    ] | None = None
 
     @model_validator(mode="after")
     def no_mixed_state(self) -> "CraftOperationRequest":
@@ -57,6 +60,9 @@ class CraftOperationResponse(BaseModel):
     after: dict[str, Any]
     checks: list[dict[str, Any]]
     unknown_fields: list[str]
+    operation_verdict: str
+    metamod_guard: str = ""
+    metamod_interaction: dict[str, Any]
     boundary: str
     answer: str
 
@@ -435,6 +441,7 @@ def operation_state(
         corrupted=req.corrupted,
         mirrored=req.mirrored,
         fractured=req.fractured,
+        metamod_guard=req.metamod_guard,
     )
     if not result.ok:
         raise HTTPException(status_code=422, detail={

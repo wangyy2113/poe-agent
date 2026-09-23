@@ -10,10 +10,17 @@ from craft.capacity import infer_item_kind
 from craft.operations import ItemState, OPERATION_NAMES, OperationResult, evaluate_operation
 from parsers.item_mods import analyze_mods
 from parsers.item_text import ItemParseError, parse_item
+from tools.impl.metamods import metamod_interaction_matrix
 from tools.registry import REGISTRY, ToolResult
 
 MAX_ITEM_TEXT_CHARS = 20_000
 ITEM_KINDS = ("default", "jewel", "flask", "graft", "jewel_abyss_corrupted")
+METAMOD_GUARDS = (
+    "前缀无法被变更", "后缀无法被变更", "无法骰出攻击词缀", "无法骰出法术词缀",
+)
+# 基础通货状态机沿用当前游戏中文名；来源矩阵仍使用旧译名“无效石”。只在这张
+# 逐字桥接表内转换，不能把任意相似通货名猜成矩阵操作。
+_METAMOD_OPERATION_NAMES = {"剥离石": "无效石"}
 
 
 def _state_from_item_text(text: str) -> ItemState:
@@ -109,8 +116,8 @@ def render_operation(result: OperationResult) -> str:
         "",
         f"> 来源：[POEDB]({result.source_url})；抓取时间：{result.fetched_at}。",
         f"> 边界：{result.boundary}。",
-        "> 腐化、镜像、裂隙、影响力、隐匿、Eldritch 与完整 Metamod 交互未在本状态机中"
-        "自动补全；命中这些状态时保持未知。",
+        "> 腐化、镜像、裂隙、影响力、隐匿与 Eldritch 未在本状态机中自动补全；"
+        "Metamod 只有在显式提供逐字 guard 时并列披露来源矩阵原值。",
     ]
     return "\n".join(lines)
 
@@ -143,13 +150,76 @@ def _citations(result: OperationResult, rendered: str) -> list[dict[str, Any]]:
     return citations
 
 
+def _metamod_context(
+    result: OperationResult, guard: str
+) -> tuple[dict[str, Any], list[dict[str, Any]], str]:
+    """读取一个明确 guard 的矩阵原值；不解释 YES/NO 的游戏语义。"""
+    matrix_operation = _METAMOD_OPERATION_NAMES.get(result.operation, result.operation)
+    lookup = metamod_interaction_matrix(matrix_operation, guard)
+    if not lookup.ok:
+        reason = lookup.error or "Metamod 矩阵查询失败"
+        return ({
+            "status": "error",
+            "operation": matrix_operation,
+            "guard": guard,
+            "reason": reason,
+        }, [], f"\n\nMetamod 交互：{reason}；因此不生成该元词缀下的结论。")
+    data = lookup.data or {}
+    if not data.get("found"):
+        status = "source_blank" if data.get("source_blank") else "not_recorded"
+        reason = str(data.get("missing_reason") or "没有逐字匹配的来源矩阵记录")
+        return ({
+            "status": status,
+            "operation": matrix_operation,
+            "guard": guard,
+            "reason": reason,
+        }, [], "\n".join([
+            "",
+            "Metamod 交互：",
+            f"- {matrix_operation} × {guard}：{reason}",
+            "- 因此只保留基础通货效果，不能给出该元词缀下的交互结论。",
+        ]))
+
+    citations = list(lookup.citations)
+    if len(citations) != 1 or not citations[0].get("claim_data"):
+        return ({
+            "status": "error",
+            "operation": matrix_operation,
+            "guard": guard,
+            "reason": "矩阵记录缺少唯一结构化引用，拒绝合成",
+        }, [], "\n\nMetamod 交互：矩阵记录缺少唯一结构化引用，拒绝合成。")
+    claim = dict(citations[0].get("claim_data") or {}) if citations else {}
+    context = {
+        "status": "recorded",
+        "operation": matrix_operation,
+        "guard": guard,
+        "section": claim.get("section", ""),
+        "outcome": claim.get("outcome", ""),
+        "raw_value": claim.get("raw_value", ""),
+        "note_text": claim.get("note_text") or "",
+        "version_scope": claim.get("version_scope", "unknown"),
+        "source_url": claim.get("source_url", ""),
+        "mirror_url": claim.get("mirror_url", ""),
+    }
+    note = f"；原始注释：{context['note_text']}" if context["note_text"] else ""
+    rendered = "\n".join([
+        "",
+        "Metamod 交互（来源矩阵原值）：",
+        f"- {matrix_operation} × {guard}：{context['raw_value']}{note}",
+        f"- 版本范围：{context['version_scope']}",
+        "- 该矩阵值只作为独立事实并列披露；不解释 YES/NO 的外延，也不据此改写上面的状态转移。",
+    ])
+    return context, citations, rendered
+
+
 @REGISTRY.register(
     name="craft_operation_state",
     description=(
         "按 POEDB 效果原文模拟 10 种基础通货的保守状态转移：增幅、崇高、重铸、神圣、"
         "剥离、改造、混沌、富豪、机会、点金。可直接接收游戏复制的装备文本，或接收"
         "稀有度与前后缀计数；新增词缀操作会查结构化名额规则。返回 compatible / "
-        "incompatible / unknown，不生成具体结果词缀、概率、步骤、成本或路线。"
+        "incompatible / unknown。可选逐字 metamod_guard 只并列来源矩阵原值；"
+        "不解释该值，不生成具体结果词缀、概率、步骤、成本或路线。"
     ),
     parameters={
         "type": "object",
@@ -163,6 +233,14 @@ def _citations(result: OperationResult, rendered: str) -> list[dict[str, Any]]:
             "corrupted": {"type": "boolean", "default": False},
             "mirrored": {"type": "boolean", "default": False},
             "fractured": {"type": "boolean", "default": False},
+            "metamod_guard": {
+                "type": "string",
+                "enum": list(METAMOD_GUARDS),
+                "description": (
+                    "可选的来源矩阵逐字列名；只并列返回该基础通货与元词缀的原始交互值，"
+                    "不解释其外延或改写状态转移。"
+                ),
+            },
         },
         "required": ["operation"],
         "additionalProperties": False,
@@ -178,6 +256,7 @@ def craft_operation_state(
     corrupted: bool = False,
     mirrored: bool = False,
     fractured: bool = False,
+    metamod_guard: str | None = None,
 ) -> ToolResult:
     if not (operation or "").strip():
         return ToolResult(ok=False, error="operation 不能为空")
@@ -187,6 +266,9 @@ def craft_operation_state(
         return ToolResult(ok=False, error=f"item_text 最多 {MAX_ITEM_TEXT_CHARS} 字符")
     if item_kind not in ITEM_KINDS:
         return ToolResult(ok=False, error=f"不支持的 item_kind={item_kind!r}")
+    guard = str(metamod_guard or "").strip()
+    if guard and guard not in METAMOD_GUARDS:
+        return ToolResult(ok=False, error="metamod_guard 必须是来源矩阵的逐字列名")
     for label, value in (("prefix_count", prefix_count), ("suffix_count", suffix_count)):
         if value is not None and (isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= 6):
             return ToolResult(ok=False, error=f"{label} 必须是 0 到 6 的整数")
@@ -218,13 +300,50 @@ def craft_operation_state(
             meta={"channel": "structured", "table": "poedb_currency"},
         )
     rendered = render_operation(result)
+    base_citations = _citations(result, rendered)
+    metamod = {
+        "status": "not_requested", "operation": "", "guard": "", "reason": "",
+    }
+    metamod_citations: list[dict[str, Any]] = []
+    unknown_fields = list(result.unknown_fields)
+    verdict = result.verdict
+    if guard:
+        metamod, metamod_citations, metamod_rendered = _metamod_context(result, guard)
+        rendered += metamod_rendered
+        if metamod["status"] != "recorded":
+            unknown_fields.append(f"{metamod['operation']} × {guard} 的明确 Metamod 矩阵结果")
+            if verdict == "compatible":
+                verdict = "unknown"
+        rendered += (
+            "\n\n> 合流边界：基础通货效果来自 POEDB；Metamod 交互来自 Craft of Exile "
+            "矩阵镜像且版本范围未给。两者并列不等于完整制作可执行性。"
+        )
+    payload = result.as_dict()
+    payload.update({
+        "verdict": verdict,
+        "operation_verdict": result.verdict,
+        "unknown_fields": list(dict.fromkeys(unknown_fields)),
+        "metamod_guard": guard,
+        "metamod_interaction": metamod,
+        "boundary": (
+            result.boundary
+            + (
+                "；Metamod 只并列来源矩阵逐字原值，页面未给版本范围，不据此解释"
+                " YES/NO 或改写状态转移"
+                if guard else ""
+            )
+        ),
+        "answer": rendered,
+    })
     return ToolResult(
         ok=True,
-        data={"found": True, **result.as_dict(), "answer": rendered},
-        citations=_citations(result, rendered),
+        data={"found": True, **payload},
+        citations=base_citations + metamod_citations,
         meta={
             "channel": "structured",
             "table": "poedb_currency",
-            "verdict": result.verdict,
+            "tables": ["poedb_currency", "craft_metamod_interaction"] if guard
+            else ["poedb_currency"],
+            "verdict": verdict,
         },
     )

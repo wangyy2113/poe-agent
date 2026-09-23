@@ -146,7 +146,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 1829 项，秒级
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 1833 项，秒级
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选
@@ -163,7 +163,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 .venv/bin/python scripts/eval_run.py --record        # 重录真实响应（**要凭证、烧 token**）
 ```
 
-黄金问答集是 `tests/golden/questions.yaml`（159 条，六类），基线与全部结论在
+黄金问答集是 `tests/golden/questions.yaml`（160 条，六类），基线与全部结论在
 `tests/golden/BASELINE.md`——**动闸门前先读它**，里面记了多个已修缺陷与三条已知未修边界，
 以及两次「测量本身写错」的教训。
 
@@ -243,6 +243,12 @@ POE1/POE2 边界顺带落在同一张表上：poe.ninja 两款游戏都服务，
 全部匹配且对应 `*MaximumHitTaken` 已导出时，直接用 PoB 完整 Max Hit 快照与本库 Boss
 伤害区间比较；否则降级到生命/护盾、抗性、护甲基础模式，并返回 `fallback_reason`。
 两种模式都必须回传 `source_fields`，不能把 PlayerStat 写成本库重算值。
+
+**基础通货 × Metamod（第九十五轮）**：`craft_operation_state` 可选接收一个来源矩阵
+逐字 guard。基础通货效果/状态转移仍只由 POEDB 证据支撑，Metamod 的原始值与注释只由
+Craft of Exile 矩阵证据支撑；两条 Citation 不得互相夹带正文。矩阵空白或无记录时总
+`verdict` 降为 unknown；即使有 `YES / NO / N/A / YES & NO`，也只并列原值，不解释外延、
+不改写状态转移，并明确页面未给可验证版本范围。
 
 三条实测判据：
 

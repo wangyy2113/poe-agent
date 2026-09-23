@@ -1219,7 +1219,8 @@ def _economy_trend_args(question: str) -> dict[str, Any]:
 
 
 _CRAFT_OPERATION_SIGNALS = (
-    "能用", "可以用", "能不能用", "会变", "变成", "之后", "结果", "状态转移",
+    "能用", "可以用", "能不能用", "会怎样", "会变", "变成", "之后", "结果", "状态转移",
+    "互动", "交互",
     "有什么用", "什么效果", "添加词缀", "新增词缀", "移除词缀", "重置词缀",
 )
 
@@ -1247,7 +1248,7 @@ def _awakener_orb_args(question: str) -> dict[str, Any] | None:
 
 
 def _craft_operation_args(question: str) -> dict[str, Any] | None:
-    """抽取明确基础通货与用户逐字给出的状态；不从目标装备反推制作步骤。"""
+    """抽取基础通货、状态与一个逐字 Metamod guard；不反推制作步骤。"""
     if "多少钱" in question or not any(signal in question for signal in _CRAFT_OPERATION_SIGNALS):
         return None
     try:
@@ -1262,6 +1263,15 @@ def _craft_operation_args(question: str) -> dict[str, Any] | None:
     if len(unique) != 1:
         return None
     args: dict[str, Any] = {"operation": unique[0].name_zh}
+    guards = [guard for guard in (
+        "前缀无法被变更", "后缀无法被变更", "无法骰出攻击词缀", "无法骰出法术词缀",
+    ) if guard in question]
+    if len(guards) > 1:
+        return None
+    if guards:
+        if _metamod_source_policy(question) == "excluded":
+            return None
+        args["metamod_guard"] = guards[0]
     rarities = []
     for rarity, markers in (
         ("普通", ("普通物品", "普通装备", "白装")),
