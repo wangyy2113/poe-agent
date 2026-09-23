@@ -9,6 +9,7 @@ from unittest.mock import patch
 from api.craft import CraftOperationRequest, operation_state
 from core.db import SCHEMA
 from craft.operations import ItemState, OPERATION_SPECS, evaluate_operation
+from orchestrator import loop
 from tools.impl.craft_operation import craft_operation_state
 from tools.registry import REGISTRY
 
@@ -38,6 +39,22 @@ def _conn() -> sqlite3.Connection:
                 rarity, "default", prefix, suffix, "both", f"{rarity}名额规则", "PoB rule",
                 "POEDB", 1, "https://poedb.tw/cn/Modifiers", None, None,
                 "2026-09-21T00:00:00Z",
+            ),
+        )
+    for interaction_id, operation, guard, outcome, raw in (
+        ("metamod:divine-prefix", "神圣石", "前缀无法被变更", "yes", "YES"),
+        ("metamod:annul-suffix", "无效石", "后缀无法被变更", "no", "NO"),
+    ):
+        conn.execute(
+            "INSERT INTO craft_metamod_interaction(interaction_id,section,operation_text,"
+            "guard_text,outcome,raw_value,note_text,row_order,column_order,source,"
+            "source_priority,source_url,mirror_url,content_hash,fetched_at,version_scope,"
+            "updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                interaction_id, "工艺方式", operation, guard, outcome, raw, None, 1, 0,
+                "Craft of Exile", 4, "https://www.craftofexile.com/metamods",
+                "https://poedb.tw/cn/metamods", "matrix-hash",
+                "2026-09-21T00:00:00Z", "unknown", "2026-09-21T00:00:00Z",
             ),
         )
     conn.commit()
@@ -163,12 +180,67 @@ class CraftOperationToolAndApiTest(unittest.TestCase):
         self.assertEqual("compatible", result.data["verdict"])
         self.assertEqual("普通", result.data["before"]["rarity"])
 
+    def test_基础通货可并列返回逐字Metamod矩阵原值(self) -> None:
+        result = craft_operation_state(
+            "神圣石", rarity="稀有", prefix_count=2, suffix_count=1,
+            metamod_guard="前缀无法被变更",
+        )
+        self.assertTrue(result.ok)
+        self.assertEqual("compatible", result.data["verdict"])
+        self.assertEqual("compatible", result.data["operation_verdict"])
+        self.assertEqual("recorded", result.data["metamod_interaction"]["status"])
+        self.assertEqual("YES", result.data["metamod_interaction"]["raw_value"])
+        self.assertEqual("unknown", result.data["metamod_interaction"]["version_scope"])
+        self.assertIn("不解释 YES/NO", result.data["answer"])
+        self.assertEqual(2, len(result.citations))
+        self.assertNotIn("Metamod 交互", result.citations[0]["text"])
+        self.assertEqual("metamod_matrix", result.citations[1]["claim_scope"])
+        self.assertEqual(
+            "metamod_interaction:metamod:divine-prefix",
+            result.citations[-1]["chunk_id"],
+        )
+
+    def test_剥离石只通过显式桥接查询矩阵旧译名(self) -> None:
+        result = craft_operation_state(
+            "剥离石", rarity="稀有", prefix_count=2, suffix_count=1,
+            metamod_guard="后缀无法被变更",
+        )
+        self.assertEqual("无效石", result.data["metamod_interaction"]["operation"])
+        self.assertEqual("NO", result.data["metamod_interaction"]["raw_value"])
+
+    def test_矩阵没有记录时不拿基础状态冒充完整结论(self) -> None:
+        result = craft_operation_state(
+            "机会石", rarity="普通", metamod_guard="前缀无法被变更",
+        )
+        self.assertTrue(result.ok)
+        self.assertEqual("unknown", result.data["verdict"])
+        self.assertEqual("compatible", result.data["operation_verdict"])
+        self.assertEqual("not_recorded", result.data["metamod_interaction"]["status"])
+        self.assertIn("明确 Metamod 矩阵结果", result.data["unknown_fields"][-1])
+        self.assertEqual(1, len(result.citations))
+
+    def test_自然元词缀问法代码直达合流工具(self) -> None:
+        for question in (
+            "神圣石在前缀无法被变更下的结果是什么",
+            "神圣石与前缀无法被变更怎么互动",
+        ):
+            with self.subTest(question=question):
+                self.assertEqual(
+                    "craft_operation_state", loop._preferred_tool_route(question)
+                )
+                self.assertEqual({
+                    "operation": "神圣石", "metamod_guard": "前缀无法被变更",
+                }, loop._craft_operation_args(question))
+        excluded = "不要用元词缀矩阵，神圣石与前缀无法被变更怎么互动"
+        self.assertIsNone(loop._craft_operation_args(excluded))
+
     def test_API与工具共用同一结果(self) -> None:
         response = operation_state(CraftOperationRequest(
-            operation="机会石", rarity="普通", prefix_count=0, suffix_count=0
+            operation="神圣石", rarity="稀有", prefix_count=2, suffix_count=1,
+            metamod_guard="前缀无法被变更",
         ), _caller="test")
         self.assertEqual("compatible", response.verdict)
-        self.assertEqual(["魔法", "稀有", "传奇"], response.after["possible_rarities"])
+        self.assertEqual("YES", response.metamod_interaction["raw_value"])
 
 
 if __name__ == "__main__":

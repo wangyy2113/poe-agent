@@ -1603,6 +1603,15 @@ cases:
     expect_tool: craft_operation_state
     note: 基础通货操作状态与已知名额 → craft_operation_state；不得改写成制作路线或成功率
 
+  - id: route_craft_operation_metamod_context
+    query: 神圣石在前缀无法被变更下的结果是什么
+    kind: tool_route
+    expect_tool: craft_operation_state
+    note: >-
+      自然问法不必显式说“来源矩阵”；基础通货效果与唯一逐字 guard 一起进入
+      craft_operation_state，由它并列返回 POEDB 状态转移和 Craft of Exile 矩阵原值。
+      矩阵值不得被解释成完整执行规则，缺记录时必须保持 unknown。
+
   - id: route_spectre_stats
     query: 生命倍率最高的幽魂是哪个
     kind: tool_route
