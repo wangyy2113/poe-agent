@@ -29,7 +29,7 @@ POE1 的机制耦合极深，一个错误的小前提会让整条结论反向。
 | 通货 | 113 条（中英文名、堆叠上限、效果原文）；工艺台费用引用的 18 个通货全部能对上；**获取途径与兑换比例未采集**；市场价格以 poe.watch 为主、GGG Trade API 在线挂单为备用 |
 | 圣甲虫 | 118 个（效果、堆叠上限、地图装置放置上限）；**掉落来源未采集**；市场价格以 poe.watch 为主、GGG Trade API 在线挂单为备用 |
 | 实时经济价格、趋势与材料清单成本 | `POST /economy/price` 查询当前快照；`POST /economy/trend` 查询历史；`POST /economy/material-cost` 汇总明确清单；`POST /economy/rare-comparables` 把稀有装备中经 PoB tradeHashes 与 GGG stat 字典双重确认的显式词缀用于同底材、同物等/腐化状态在线挂单比较。SQLite 价格缓存 TTL 30 分钟、历史保留 90 天；主源无缓存时标准条目与唯一装备可显式降级官方 Trade API。**不足两个趋势点不判趋势；官方挂单过滤后不足 5 条不报代表价；稀有装比较不按 roll/隐式/附魔/品质/插槽/链接归一化，不冒充精确成交价；不生成制作路径、成功率、利润与 Flip 建议** |
-| Boss 技能伤害与单击生存校验 | 10 条 Boss 技能的伤害建模 + 22 个 Boss 的护甲/闪避倍率；`boss_skill_damage` 按 `monsterDamageTable` 与 PoB 系数算出某等级的一击伤害，`boss_survival_check` / `POST /boss/survival` 再将它与明确提供的防御池、抗性、护甲/物理减伤和承受倍率合并，给出全掷骰区间可承受 / 取决于掷骰 / 全区间耗尽池子三态。**只校验一次单类型命中，不给打法**；DoT、多击序列、转化、暴击、格挡/闪避/法压、守护技能、Ward、MoM、恢复、阶段与应对未覆盖；数字是 PoB 建模值，GGG 未公布 |
+| Boss 技能伤害与单击生存校验 | 10 条 Boss 技能的伤害建模 + 22 个 Boss 的护甲/闪避倍率；`boss_skill_damage` 按 `monsterDamageTable` 与 PoB 系数算出某等级的一击伤害，`boss_survival_check` / `POST /boss/survival` 再将它与明确提供的防御池、抗性、护甲/物理减伤和承受倍率合并，给出全掷骰区间可承受 / 取决于掷骰 / 全区间耗尽池子三态。`POST /build` 也可用 `boss_survival` 直接消费该 Build 的 PoB `PlayerStat` 快照，并回传逐字段来源。**只校验一次单类型命中，不给打法**；DoT、多击序列、转化、暴击、格挡/闪避/法压、守护技能、Ward、MoM、恢复、阶段与应对未覆盖；数字是 PoB 建模值，GGG 未公布 |
 | 制作规则（名额与影响力） | 7 条前后缀名额规则（魔法 1+1、稀有 3+3、传奇不受限制、药剂随魔法，另有 PoB 独有的珠宝/Graft 2+2 与「已腐化深渊珠宝回到 3+3」）；`base_influence_profile` 可查 1,022 条具体底材的六类传统影响 `influenceTags`，`check_mod_combination` 在给定具体底材、单一影响与可选物等时，会用 PoB 底材标签和 POEDB 词缀 `spawn_tags` 验证影响词缀适用性。`possible` 只表示词缀能共存，不表示能制作；古灵基底由独立状态机处理。**影响底材获得方式、多影响词缀池组合与完整元词缀状态机仍未采集** |
 | 觉醒者之石状态机 | `awakener_orb_state` / `POST /craft/awakener`：接受供体与目标的两段装备复制文本，或显式物品类别与传统影响；逐字绑定 POEDB 效果，检查同类物品、双方唯一且不同的传统影响，输出供体销毁、目标重铸为稀有并兼有两种影响的条件后状态。**不声称各保留一条影响词缀，不生成重铸后的具体词缀、数量、数值、概率、成本或路线** |
 | 收获（古灵庄园） | 74 条定向工艺 + 98 条命能费用，且 **74/74 条均有结构化语义**：20 条装备重铸、23 条元素转换与新增/移除、14 条品质附魔、14 条材料随机转换、3 条地图/技能石/命运卡牺牲；另有 **51 个种子怪物**按颜色对应四种命能中的三种。随机类型与概率、堆叠输出数量、费用缩放基准和市场成本未采集时保持未知 |
@@ -678,6 +678,18 @@ curl -s http://127.0.0.1:8787/poe_agent/build/characters
 curl -s -X POST http://127.0.0.1:8787/poe_agent/build \
   -H 'Content-Type: application/json' \
   -d '{"character_name": "你的角色名"}'
+
+# PoB 导入后同时校验一记 Boss 命中；防御池默认取未保留生命 + 能量护盾
+curl -s -X POST http://127.0.0.1:8787/poe_agent/build \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "code": "https://pobb.in/你的分享ID",
+    "boss_survival": {
+      "skill": "Shaper Ball",
+      "level": 84,
+      "pool_mode": "life_and_energy_shield"
+    }
+  }'
 ```
 
 返回输入中可取得的职业、技能组、装备与天赋；PoB 输入还会返回其自带的 `PlayerStat`。
@@ -702,6 +714,16 @@ PoB、天赋树、角色 API 与截图确认后的体检阶段不调用 LLM（�
 角色 API 使用 GGG 当前官方 `GET /character/<name>`，token 只保存在服务端且不落缓存；
 导入已装备物品、插槽连接组、珠宝、天赋、盗贼、万神殿与版本。背包不属于已装备 Build，
 不会混入体检；官方响应不含 PoB PlayerStat 和主技能选择，这些维度同样保持“未知”。
+
+可选的 `boss_survival` 会把 Boss 伤害模型与这份 Build 保存的防御快照接起来。
+默认 `pool_mode=life_and_energy_shield`，生命优先使用 `LifeUnreserved`；标准 PoB 导出在生命
+未保留时不写该字段，此时才回退 `Life`。对应元素抗性和物理命中的护甲也只按原字段映射，
+响应通过 `source_fields` 列出每一个实际采用的字段。也可选 `pool_mode=life`，只校验生命池。
+缺少池、对应抗性或护甲时返回 `unknown`；混沌命中选择生命+护盾而 Build 有护盾时，因为
+无法仅从这些字段判断 CI、Shavronne 等绕过规则，也返回 `unknown`。`PhysicalDamageReduction`
+是 PoB 对某个伤害口径的面板估算，不会被冒充额外固定物理减伤；承伤倍率、格挡、闪避、
+法压、守护技能、Ward、MoM 和恢复也不从局部字段反推，所以这仍是基础单击校验，不是整场
+Boss 战保证。Boss 技能和公式引用会随 `boss_survival.citations` 一起返回。
 
 **截图识别** —— 聊天页点击“上传截图”，支持不超过 5 MB 的 PNG、JPEG 与 WebP。
 先在 `config.yaml` 的 `llm.vision_model` 填入网关中实际支持 OpenAI `image_url` 消息的
@@ -894,7 +916,7 @@ PoB 排 P2 而不是 P1：它在数值上更接近一手，但不含中文名与
 .venv/bin/python -m unittest discover -s tests -t .
 ```
 
-目前 1814 项，其中与「无据不答」直接相关的：
+目前 1821 项，其中与「无据不答」直接相关的：
 
 | 组 | 项数 | 重点 |
 | --- | --- | --- |

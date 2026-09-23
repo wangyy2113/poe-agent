@@ -8,11 +8,13 @@ import unittest
 from unittest.mock import patch
 
 from api.boss import BossSurvivalRequest, survival
+from api.build import BuildRequest
 from calc import boss_survival, constants
 from core import db as dbmod
 from core.db import SCHEMA
 from orchestrator import loop
-from tools.impl.boss import boss_survival_check
+from parsers.pob_build import PobBuild
+from tools.impl.boss import boss_survival_check, boss_survival_from_build
 from tools.registry import REGISTRY
 
 
@@ -41,6 +43,28 @@ def _conn() -> sqlite3.Connection:
     common = (
         1400, None, 0, 0, "Path of Building", 2,
         "https://example.test/pob/boss-skills", "a" * 40, "now",
+    )
+    conn.execute(
+        "INSERT INTO pob_boss_skill(name,damage_type,damage_mults,penetrations,"
+        "uber_penetrations,uber_damage_mult,speed,uber_speed,crit_chance,earlier_uber,"
+        "tooltip,source,source_priority,pob_url,source_commit,updated_at) "
+        "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (
+            "Test Slam", "Attack",
+            json.dumps({"Physical": [10, 0.02]}), "{}", "{}", None,
+            1000, None, 0, 0, "Physical test hit", *common[4:],
+        ),
+    )
+    conn.execute(
+        "INSERT INTO pob_boss_skill(name,damage_type,damage_mults,penetrations,"
+        "uber_penetrations,uber_damage_mult,speed,uber_speed,crit_chance,earlier_uber,"
+        "tooltip,source,source_priority,pob_url,source_commit,updated_at) "
+        "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (
+            "Test Chaos Hit", "Spell",
+            json.dumps({"Chaos": [10, 0.02]}), "{}", "{}", None,
+            1000, None, 0, 0, "Chaos test hit", *common[4:],
+        ),
     )
     conn.execute(
         "INSERT INTO pob_boss_skill(name,damage_type,damage_mults,penetrations,"
@@ -164,6 +188,120 @@ class BossSurvivalFormulaTest(unittest.TestCase):
             "cold_resist_pct": 75,
         }, loop._boss_survival_args(question))
         self.assertIsNone(loop._boss_survival_args("Shaper Ball 能扛得住吗"))
+
+
+class BuildBossSurvivalTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.conn = _conn()
+        self.patcher = patch.object(dbmod, "get_conn", return_value=self.conn)
+        self.patcher.start()
+        constants.reset_cache()
+
+    def tearDown(self) -> None:
+        constants.reset_cache()
+        self.patcher.stop()
+        self.conn.close()
+
+    def test_Build请求可携带Boss校验且默认生命加护盾(self) -> None:
+        req = BuildRequest(code="abc", boss_survival={
+            "skill": "Shaper Ball", "level": 84,
+        })
+        self.assertEqual("life_and_energy_shield", req.boss_survival.pool_mode)
+        from main import create_app
+
+        schema = create_app().openapi()
+        self.assertIn("boss_survival", schema["components"]["schemas"]["BuildRequest"]["properties"])
+
+    def test_直接使用Build快照的未保留生命护盾和对应抗性(self) -> None:
+        build = PobBuild(player_stats={
+            "Life": 5000, "LifeUnreserved": 4000, "EnergyShield": 2000,
+            "ColdResist": 75, "Armour": 999999,
+        })
+        result = boss_survival_from_build(
+            build, skill="Shaper Ball", level=84,
+        )
+        self.assertTrue(result.ok)
+        self.assertTrue(result.data["assessable"])
+        self.assertEqual("roll_dependent", result.data["verdict"])
+        self.assertEqual(6000, result.data["pool"])
+        self.assertEqual({
+            "LifeUnreserved": 4000.0, "EnergyShield": 2000.0, "ColdResist": 75.0,
+        }, result.data["source_fields"])
+        self.assertEqual("pob_player_stat", result.data["input_source"])
+        self.assertIn("本库没有重算 Build", result.data["answer"])
+        self.assertNotIn("Armour", result.data["source_fields"])
+
+    def test_可显式只用生命池并在未保留生命缺席时回退总生命(self) -> None:
+        build = PobBuild(player_stats={
+            "Life": 4000, "EnergyShield": 9000, "ColdResist": 75,
+        })
+        result = boss_survival_from_build(
+            build, skill="Shaper Ball", level=84, pool_mode="life",
+        )
+        self.assertEqual(4000, result.data["pool"])
+        self.assertEqual("fails_full_range", result.data["verdict"])
+        self.assertEqual({"Life": 4000.0, "ColdResist": 75.0}, result.data["source_fields"])
+
+    def test_缺池或对应抗性时保持unknown且列出原始字段名(self) -> None:
+        missing_es = boss_survival_from_build(
+            PobBuild(player_stats={"Life": 5000, "ColdResist": 75}),
+            skill="Shaper Ball", level=84,
+        )
+        self.assertFalse(missing_es.data["assessable"])
+        self.assertEqual("unknown", missing_es.data["verdict"])
+        self.assertEqual(["EnergyShield"], missing_es.data["missing_inputs"])
+        self.assertEqual(1, len(missing_es.citations))
+
+        missing_resist = boss_survival_from_build(
+            PobBuild(player_stats={"Life": 5000, "EnergyShield": 0}),
+            skill="Shaper Ball", level=84,
+        )
+        self.assertEqual(["ColdResist"], missing_resist.data["missing_inputs"])
+
+    def test_混沌命中不能擅自认定护盾保护生命(self) -> None:
+        result = boss_survival_from_build(
+            PobBuild(player_stats={
+                "Life": 5000, "EnergyShield": 1000, "ChaosResist": 0,
+            }),
+            skill="Test Chaos Hit", level=84,
+        )
+        self.assertFalse(result.data["assessable"])
+        self.assertTrue(any(
+            "混沌伤害是否绕过能量护盾" in item
+            for item in result.data["missing_inputs"]
+        ))
+
+        life_only = boss_survival_from_build(
+            PobBuild(player_stats={
+                "Life": 5000, "EnergyShield": 1000, "ChaosResist": 0,
+            }),
+            skill="Test Chaos Hit", level=84, pool_mode="life",
+        )
+        self.assertTrue(life_only.data["assessable"])
+        self.assertEqual(5000, life_only.data["pool"])
+
+    def test_物理命中只映射护甲不误用面板物理减伤(self) -> None:
+        result = boss_survival_from_build(
+            PobBuild(player_stats={
+                "Life": 5000, "EnergyShield": 0, "Armour": 10000,
+                "PhysicalDamageReduction": 78,
+            }),
+            skill="Test Slam", level=84,
+        )
+        self.assertTrue(result.data["assessable"])
+        self.assertEqual(10000, result.data["source_fields"]["Armour"])
+        self.assertNotIn("PhysicalDamageReduction", result.data["source_fields"])
+        self.assertIn("不会把 PhysicalDamageReduction", result.data["boundary"])
+
+    def test_持续伤害沿用核心unknown且不伪造防御池(self) -> None:
+        result = boss_survival_from_build(
+            PobBuild(player_stats={"Life": 5000, "EnergyShield": 0, "ColdResist": 75}),
+            skill="Shaper Beam", level=84,
+        )
+        self.assertFalse(result.data["assessable"])
+        self.assertEqual("unknown", result.data["verdict"])
+        self.assertIsNone(result.data["pool"])
+        self.assertIn("持续伤害", result.data["reason"])
 
 
 if __name__ == "__main__":
