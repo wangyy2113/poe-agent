@@ -531,6 +531,16 @@ def boss_survival_from_build(
                 "latest_depletion_hit": None,
                 "guaranteed_survivable_hits": None,
                 "maximum_survivable_hits": None,
+                "minimum_pool_for_any_roll": None,
+                "minimum_pool_for_full_range": None,
+                "pool_shortfall_for_any_roll": None,
+                "pool_shortfall_for_full_range": None,
+                "required_resist_for_full_range_pct": None,
+                "resist_shortfall_pct": None,
+                "required_resist_status": "unknown_from_pob_max_hit",
+                "required_armour_for_full_range": None,
+                "armour_shortfall": None,
+                "required_armour_status": "unknown_from_pob_max_hit",
                 "capacity_reason": (
                     "PoB *MaximumHitTaken 只是当前配置的单击阈值，"
                     "无法证明每击后防御状态不变"
@@ -731,6 +741,31 @@ def _render_survival(
             f"最好掷骰下最多承受 {result.maximum_survivable_hits} 击"
             f"（第 {result.latest_depletion_hit} 击耗尽）"
         )
+    lines += [
+        f"- 防御池门槛：低掷骰至少 "
+        f"{result.minimum_pool_for_any_roll:,}；全掷骰区间至少 "
+        f"{result.minimum_pool_for_full_range:,}",
+        f"- 当前池子缺口：低掷骰 "
+        f"{result.pool_shortfall_for_any_roll:,.2f}；全掷骰区间 "
+        f"{result.pool_shortfall_for_full_range:,.2f}",
+    ]
+    if result.damage_type == "Physical":
+        if result.required_armour_status == "reachable":
+            lines.append(
+                f"- 只调护甲的全区间门槛：至少 "
+                f"{result.required_armour_for_full_range:,} 护甲"
+                f"（当前还差 {result.armour_shortfall:,.2f}）"
+            )
+        else:
+            lines.append("- 只调护甲的全区间门槛：在已建模减伤上限内无法达成")
+    elif result.required_resist_status == "reachable":
+        lines.append(
+            f"- 只调穿透前抗性的全区间门槛：至少 "
+            f"{result.required_resist_for_full_range_pct}%"
+            f"（当前还差 {result.resist_shortfall_pct:g} 个百分点）"
+        )
+    else:
+        lines.append("- 只调穿透前抗性的全区间门槛：90% 上限内无法达成")
     if row["tooltip"]:
         lines.append(f"- PoB 技能说明原文：{row['tooltip']}")
     assumption = (
@@ -741,6 +776,81 @@ def _render_survival(
     lines += [
         "",
         f"> {assumption}；等于池子按耗尽处理。",
+        f"> 边界：{_SURVIVAL_BOUNDARY}。",
+        f"> Boss 技能来源：[Path of Building]({row['pob_url']})。",
+    ]
+    return "\n".join(lines)
+
+
+def _render_defence_threshold(
+    row: sqlite3.Row,
+    data: dict[str, Any],
+    *,
+    level: int,
+    uber: bool,
+    roll_range: float | None,
+    target_pool: float | None,
+    armour: float,
+    flat_physical_reduction_pct: float,
+    taken_mult: float,
+) -> str:
+    """把生存计算结果收束成防御规划答案，不冒充完整 Boss 战建议。"""
+    hit_count = int(data["hit_count"])
+    title = "单次命中" if hit_count == 1 else f"连续 {hit_count} 次命中"
+    roll_note = (
+        f"固定 {roll_range:g}% 掷骰点" if roll_range is not None else "0%..100% 掷骰区间"
+    )
+    dtype = str(data["damage_type"])
+    lines = [
+        f"### {row['name']} {title}防御门槛" + ("（Uber）" if uber else ""),
+        "",
+        f"- 口径：敌人等级 {level}；{roll_note}；每次都命中、期间无恢复",
+        f"- 每击原始{_DAMAGE_TYPE_ZH[dtype]}伤害："
+        f"{data['raw_low']:,.0f} — {data['raw_high']:,.0f}",
+    ]
+    if dtype == "Physical":
+        lines.append(
+            f"- 当前防御输入：护甲 {armour:g}；额外物理减伤 "
+            f"{flat_physical_reduction_pct:g}%；承受倍率 {taken_mult:g}"
+        )
+    else:
+        lines.append(
+            f"- 当前抗性：穿透前 {data['resist_before_penetration']:g}%"
+            f" − 技能穿透 {data['penetration_pct']:g}%"
+            f" = 实际结算 {data['effective_resist_pct']:g}%"
+            f"；承受倍率 {taken_mult:g}"
+        )
+    lines += [
+        f"- 当前配置下，低掷骰至少需要 {data['minimum_pool_for_any_roll']:,} 防御池",
+        f"- 要覆盖完整掷骰区间，至少需要 "
+        f"{data['minimum_pool_for_full_range']:,} 防御池",
+    ]
+    if target_pool is not None:
+        lines += [
+            f"- 目标防御池：{target_pool:g}",
+            f"- 防御池缺口：低掷骰 {data['pool_shortfall_for_any_roll']:,.2f}；"
+            f"完整区间 {data['pool_shortfall_for_full_range']:,.2f}",
+        ]
+        if dtype == "Physical":
+            if data["required_armour_status"] == "reachable":
+                lines.append(
+                    f"- 保持其余输入不变，要覆盖完整区间至少需要 "
+                    f"{data['required_armour_for_full_range']:,} 护甲"
+                    f"（还差 {data['armour_shortfall']:,.2f}）"
+                )
+            else:
+                lines.append("- 只增加护甲：在已建模物理减伤上限内仍不可达")
+        elif data["required_resist_status"] == "reachable":
+            lines.append(
+                f"- 保持其余输入不变，要覆盖完整区间至少需要穿透前抗性 "
+                f"{data['required_resist_for_full_range_pct']}%"
+                f"（还差 {data['resist_shortfall_pct']:g} 个百分点）"
+            )
+        else:
+            lines.append("- 只增加穿透前抗性：在 90% 抗性上限内仍不可达")
+    lines += [
+        "",
+        "> 防御池必须严格大于累计承伤；恰好相等仍按耗尽处理。",
         f"> 边界：{_SURVIVAL_BOUNDARY}。",
         f"> Boss 技能来源：[Path of Building]({row['pob_url']})。",
     ]
@@ -846,6 +956,7 @@ def boss_skill_damage(
         "把 PoB 的 Boss 技能单次原始伤害与角色明确提供的防御池、抗性、护甲和承受倍率"
         "串起来，判断整个伤害掷骰区间都不耗尽池子、取决于掷骰，还是整个区间都会耗尽。"
         "同时反解最坏/最好掷骰下可承受几击，以及第几击会耗尽池子。"
+        "还会在其余输入不变的前提下，计算所需整数防御池与元素/混沌抗性或物理护甲门槛。"
         "元素穿透取自 Boss 技能预设。可按每次都命中且期间无恢复，累加同一命中 1..100 次；"
         "持续伤害、真实 Boss 连招、不同技能组合、"
         "伤害转化、暴击、格挡/闪避/压制、守护技能、Ward、MoM、恢复与打法均不在结论内。"
@@ -1072,4 +1183,152 @@ def boss_survival_check(
             "tables": ["pob_boss_skill", "game_constant"],
             "verdict": result.outcome,
         },
+    )
+
+
+@REGISTRY.register(
+    name="boss_defence_threshold",
+    description=(
+        "规划承受 PoB Boss 技能同一命中 1..100 次所需的防御门槛。"
+        "不给 target_pool 时，按明确提供的抗性、护甲和承受倍率回答至少需要多少整数防御池；"
+        "给 target_pool 时，还会计算当前防御池缺口，并反解覆盖完整伤害掷骰区间所需的"
+        "穿透前元素/混沌抗性或物理护甲。超过 90% 抗性或物理减伤上限时明确返回不可达。"
+        "只计算同一技能每次都命中且期间无恢复的局部门槛，不计算真实连招、概率、恢复、"
+        "阶段、药剂或打法。"
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "skill": {
+                "type": "string", "minLength": 2,
+                "description": "PoB Boss 技能英文名，如 Shaper Ball、Maven Fireball。",
+            },
+            "level": {"type": "integer", "minimum": 1, "maximum": 100},
+            "target_pool": {
+                "type": "number", "exclusiveMinimum": 0,
+                "description": "可选目标生命 + 能量护盾池；提供后才反解抗性/护甲门槛。",
+            },
+            "hit_count": {
+                "type": "integer", "minimum": 1, "maximum": 100, "default": 1,
+                "description": "同一技能连续命中次数；假设每次命中且期间无恢复。",
+            },
+            "uber": {"type": "boolean", "default": False},
+            "roll_range": {"type": "number", "minimum": 0, "maximum": 100},
+            "fire_resist_pct": {"type": "number", "minimum": -200, "maximum": 90},
+            "cold_resist_pct": {"type": "number", "minimum": -200, "maximum": 90},
+            "lightning_resist_pct": {"type": "number", "minimum": -200, "maximum": 90},
+            "chaos_resist_pct": {"type": "number", "minimum": -200, "maximum": 90},
+            "armour": {"type": "number", "minimum": 0, "default": 0},
+            "flat_physical_reduction_pct": {
+                "type": "number", "minimum": 0, "maximum": 90, "default": 0,
+            },
+            "taken_mult": {"type": "number", "exclusiveMinimum": 0, "default": 1},
+            "overwhelm_pct": {
+                "type": "number", "minimum": 0, "maximum": 100, "default": 0,
+            },
+        },
+        "required": ["skill", "level"],
+        "additionalProperties": False,
+    },
+)
+def boss_defence_threshold(
+    skill: str,
+    level: int,
+    target_pool: float | None = None,
+    hit_count: int = 1,
+    uber: bool = False,
+    roll_range: float | None = None,
+    fire_resist_pct: float | None = None,
+    cold_resist_pct: float | None = None,
+    lightning_resist_pct: float | None = None,
+    chaos_resist_pct: float | None = None,
+    armour: float = 0.0,
+    flat_physical_reduction_pct: float = 0.0,
+    taken_mult: float = 1.0,
+    overwhelm_pct: float = 0.0,
+) -> ToolResult:
+    """复用同一伤害/防御闭式，提供面向规划的稳定工具契约。"""
+    if target_pool is not None and target_pool <= 0:
+        return ToolResult(ok=False, error="target_pool 必须大于 0")
+    calculation_pool = float(target_pool) if target_pool is not None else 1.0
+    result = boss_survival_check(
+        skill=skill,
+        level=level,
+        pool=calculation_pool,
+        hit_count=hit_count,
+        uber=uber,
+        roll_range=roll_range,
+        fire_resist_pct=fire_resist_pct,
+        cold_resist_pct=cold_resist_pct,
+        lightning_resist_pct=lightning_resist_pct,
+        chaos_resist_pct=chaos_resist_pct,
+        armour=armour,
+        flat_physical_reduction_pct=flat_physical_reduction_pct,
+        taken_mult=taken_mult,
+        overwhelm_pct=overwhelm_pct,
+    )
+    if not result.ok:
+        return result
+
+    data = dict(result.data or {})
+    data["target_pool"] = target_pool
+    if not data.get("assessable"):
+        if target_pool is None:
+            data["pool"] = None
+            reason = str(data.get("reason") or "缺少安全计算所需输入")
+            data["answer"] = _unknown_survival_answer(
+                str(data.get("skill") or skill), reason, level=level, uber=uber,
+                pool=None, hit_count=hit_count,
+            ).replace("生存校验", "防御门槛")
+        return ToolResult(ok=True, data=data, citations=result.citations, meta=result.meta)
+
+    rows = _rows(dbmod.get_conn(), str(data["skill"]))
+    if len(rows) != 1:  # 正常路径已唯一命中；保留防御性边界。
+        return ToolResult(ok=False, error="Boss 技能门槛结果无法重新定位唯一预设")
+    data["answer"] = _render_defence_threshold(
+        rows[0], data, level=int(level), uber=bool(uber), roll_range=roll_range,
+        target_pool=target_pool, armour=float(armour),
+        flat_physical_reduction_pct=float(flat_physical_reduction_pct),
+        taken_mult=float(taken_mult),
+    )
+    if target_pool is None:
+        data.update({
+            "pool": None,
+            "verdict": None,
+            "outcome": None,
+            "remaining_low": None,
+            "remaining_high": None,
+            "margin_low": None,
+            "margin_high": None,
+            "max_raw_hit": None,
+            "earliest_depletion_hit": None,
+            "latest_depletion_hit": None,
+            "guaranteed_survivable_hits": None,
+            "maximum_survivable_hits": None,
+            "pool_shortfall_for_any_roll": None,
+            "pool_shortfall_for_full_range": None,
+            "required_resist_for_full_range_pct": None,
+            "resist_shortfall_pct": None,
+            "required_resist_status": (
+                "not_applicable" if data["damage_type"] == "Physical"
+                else "not_requested_without_target_pool"
+            ),
+            "required_armour_for_full_range": None,
+            "armour_shortfall": None,
+            "required_armour_status": (
+                "not_requested_without_target_pool" if data["damage_type"] == "Physical"
+                else "not_applicable"
+            ),
+            "capacity_reason": (
+                "未提供目标防御池，因此不计算当前池子的可承受击数或原始 Max Hit"
+            ),
+        })
+    meta = dict(result.meta)
+    meta["mode"] = "defence_threshold"
+    answer = str(data["answer"])
+    return ToolResult(
+        ok=True,
+        data=data,
+        citations=[_citation(rows[0], answer), _maxhit_citation(answer)],
+        meta=meta,
     )

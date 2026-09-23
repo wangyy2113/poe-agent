@@ -973,6 +973,12 @@ _PREFERRED_TOOL_INTENTS: tuple[tuple[str, tuple[str, ...]], ...] = (
     # Boss 技能伤害也**没有卡片**（10 条系数，真实伤害要按等级算出来）。
     # 意图词必须专指到「技能名 / 那一击」：裸的「Boss」是当年把「怪物」当意图词
     # 那个错的同一形状，裸的「伤害」会横扫一大片有卡片可答的问题。
+    ("boss_defence_threshold", (
+        "防御门槛", "需要多少血", "要多少血", "需要多少防御池", "要多少防御池",
+        "需要多少火抗", "需要多少冰抗", "需要多少电抗", "需要多少混抗",
+        "要多少火抗", "要多少冰抗", "要多少电抗", "要多少混抗",
+        "需要多少护甲", "要多少护甲",
+    )),
     ("boss_survival_check", (
         "扛得住", "扛不住", "会不会被秒", "会被秒吗", "能不能吃", "能吃下",
         "能不能承受", "能扛几下", "能吃几发", "可以扛几下",
@@ -1883,6 +1889,10 @@ def _preferred_tool_route(question: str) -> str:
     for tool, intents in _PREFERRED_TOOL_INTENTS:
         if not any(intent in question for intent in intents):
             continue
+        if tool == "boss_defence_threshold" and _boss_defence_threshold_args(question) is None:
+            # 「需要多少护甲」本身也可能是普通护甲公式问题；只有 Boss 技能名与等级
+            # 都能逐字冻结时，才把这类问法升级为 Boss 门槛规划。
+            continue
         if enumeration and tool in _YIELDS_TO_ENUMERATION:
             continue
         return tool
@@ -2217,8 +2227,10 @@ def _maxhit_args(question: str) -> dict[str, Any] | None:
     return args or None
 
 
-def _boss_survival_args(question: str) -> dict[str, Any] | None:
-    """只在技能名、等级与防御池都能逐字冻结时直接执行 Boss 生存校验。"""
+def _boss_hit_args(
+    question: str, *, require_pool: bool, pool_key: str
+) -> dict[str, Any] | None:
+    """抽取 Boss 命中公共参数；目标工具决定防御池是必填还是可选。"""
     try:
         names = [
             str(row[0]) for row in dbmod.get_conn().execute(
@@ -2226,7 +2238,7 @@ def _boss_survival_args(question: str) -> dict[str, Any] | None:
             )
         ]
     except Exception as exc:  # noqa: BLE001
-        logger.debug("Boss 技能表不可用，生存校验不走代码路由：%s", exc)
+        logger.debug("Boss 技能表不可用，命中计算不走代码路由：%s", exc)
         return None
     folded = question.casefold()
     matched = [name for name in names if name.casefold() in folded]
@@ -2239,13 +2251,14 @@ def _boss_survival_args(question: str) -> dict[str, Any] | None:
     pools = _slot_values(
         question, ("防御池", "有效生命", "生命加护盾", "生命+护盾", "池子", "血量", "血")
     )
-    if len(levels) != 1 or len(pools) != 1:
+    if len(levels) != 1 or len(pools) > 1 or (require_pool and len(pools) != 1):
         return None
     args: dict[str, Any] = {
         "skill": matched[0],
         "level": int(next(iter(levels))),
-        "pool": next(iter(pools)),
     }
+    if pools:
+        args[pool_key] = next(iter(pools))
     hit_counts: set[int] = set()
     for pattern in (
         r"连续\s*(\d{1,4})\s*(?:次|发|下)(?:命中)?",
@@ -2275,6 +2288,16 @@ def _boss_survival_args(question: str) -> dict[str, Any] | None:
         if values:
             args[slot] = values.pop()
     return args
+
+
+def _boss_survival_args(question: str) -> dict[str, Any] | None:
+    """只在技能名、等级与防御池都能逐字冻结时直接执行 Boss 生存校验。"""
+    return _boss_hit_args(question, require_pool=True, pool_key="pool")
+
+
+def _boss_defence_threshold_args(question: str) -> dict[str, Any] | None:
+    """防御门槛允许省略目标池；其余输入仍必须能从原句唯一冻结。"""
+    return _boss_hit_args(question, require_pool=False, pool_key="target_pool")
 
 
 def _threshold_args(question: str) -> dict[str, Any] | None:
@@ -2365,6 +2388,7 @@ def _resistance_args(question: str) -> dict[str, Any] | None:
 #: 「我有 10000 护甲能减多少伤害」**碰巧**也拒答了，但拒答理由是「工具没返回证据」
 #: 而不是工具想说的「你没给这一击的伤害」——契约过了、机制却是坏的。
 _CODE_INVOKED_TOOLS: dict[str, Any] = {
+    "boss_defence_threshold": _boss_defence_threshold_args,
     "boss_survival_check": _boss_survival_args,
     "awakener_orb_state": _awakener_orb_args,
     "craft_operation_state": _craft_operation_args,
@@ -2405,7 +2429,8 @@ _CODE_INVOKED_TOOLS: dict[str, Any] = {
 _TOOLS_WITHOUT_CITATIONS = frozenset({"kb_coverage"})
 _DETERMINISTIC_DIRECT_TOOLS = frozenset({
     "economy_price_lookup", "economy_price_trend", "economy_material_cost",
-    "economy_rare_comparables", "boss_survival_check", "awakener_orb_state",
+    "economy_rare_comparables", "boss_defence_threshold", "boss_survival_check",
+    "awakener_orb_state",
     "craft_operation_state",
     "essence_operation_state",
     "eldritch_operation_state",

@@ -1583,6 +1583,22 @@ cases:
       不指定 hit_count 时仍用同一防御链反解最坏/最好掷骰下的可承受击数；
       等于池子的首个击数算耗尽，不引入恢复或命中概率
 
+  - id: route_boss_required_pool
+    query: 84级 Shaper Ball，75冰抗，连续3次需要多少血
+    kind: tool_route
+    expect_tool: boss_defence_threshold
+    note: >-
+      未给目标池时独立门槛工具按当前抗性反解覆盖低掷骰与完整区间所需的最小整数防御池；
+      不使用虚构的当前血量，也不把连续命中扩写成真实 Boss 连招
+
+  - id: route_boss_required_resistance
+    query: 84级 Shaper Ball，5000血，连续2次需要多少冰抗
+    kind: tool_route
+    expect_tool: boss_defence_threshold
+    note: >-
+      给出目标池时反解穿透前抗性并披露缺口；90% 上限仍不能严格覆盖累计承伤时返回不可达，
+      不伪造超上限抗性
+
   - id: gap_boss_fight_mechanics
     query: 谢勒怎么打，有什么机制要躲
     kind: gap
