@@ -885,6 +885,11 @@ V1 完成的判定标准（逐条实测，不以「无报错」代替验证）�
     配置完全一致时，直接比较 PoB 导出的对应 `*MaximumHitTaken`，保留其完整防御配置。
     不匹配或未导出时降级到逐字段披露的生命/护盾、抗性、护甲基础模式；缺项、DoT、
     多伤害类型、暴击及混沌护盾绕过语义不明时保持 unknown
+  - [x] 同一命中重复序列 v1（2026-09-23）：`boss_survival_check`、
+    `POST /boss/survival` 与 `POST /build` 接受 `hit_count=1..100`，按每次都命中、
+    期间无恢复累加每击承伤，返回每击、累计伤害与剩余池子。PoB
+    `*MaximumHitTaken` 只作为单击阈值；多击强制降级到基础防御快照，
+    缺字段则 unknown。真实 Boss 连招、不同技能组合、命中/格挡/闪避概率与阶段仍未建模
 - [x] 官方角色 API 导入 v1（2026-09-08）：接入 OAuth `account:characters` 的当前
   `GET /character[/<realm>]/<name>` 契约；支持列出账号角色，并将 PoE1 PC 角色的已装备物品、
   插槽连接组、珠宝、天赋、大师选择、盗贼、万神殿、升华/Bloodline 与版本送入现有 Build

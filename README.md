@@ -29,7 +29,7 @@ POE1 的机制耦合极深，一个错误的小前提会让整条结论反向。
 | 通货 | 113 条（中英文名、堆叠上限、效果原文）；工艺台费用引用的 18 个通货全部能对上；**获取途径与兑换比例未采集**；市场价格以 poe.watch 为主、GGG Trade API 在线挂单为备用 |
 | 圣甲虫 | 118 个（效果、堆叠上限、地图装置放置上限）；**掉落来源未采集**；市场价格以 poe.watch 为主、GGG Trade API 在线挂单为备用 |
 | 实时经济价格、趋势与材料清单成本 | `POST /economy/price` 查询当前快照；`POST /economy/trend` 查询历史；`POST /economy/material-cost` 汇总明确清单；`POST /economy/rare-comparables` 把稀有装备中经 PoB tradeHashes 与 GGG stat 字典双重确认的显式词缀用于同底材、同物等/腐化状态在线挂单比较。SQLite 价格缓存 TTL 30 分钟、历史保留 90 天；主源无缓存时标准条目与唯一装备可显式降级官方 Trade API。**不足两个趋势点不判趋势；官方挂单过滤后不足 5 条不报代表价；稀有装比较不按 roll/隐式/附魔/品质/插槽/链接归一化，不冒充精确成交价；不生成制作路径、成功率、利润与 Flip 建议** |
-| Boss 技能伤害与单击生存校验 | 10 条 Boss 技能的伤害建模 + 22 个 Boss 的护甲/闪避倍率；`boss_skill_damage` 按 `monsterDamageTable` 与 PoB 系数算出某等级的一击伤害，`boss_survival_check` / `POST /boss/survival` 再将它与明确提供的防御池、抗性、护甲/物理减伤和承受倍率合并，给出全掷骰区间可承受 / 取决于掷骰 / 全区间耗尽池子三态。`POST /build` 也可用 `boss_survival` 直接消费该 Build 的 PoB 快照：已保存的 Boss 技能、档位与等级完全匹配时优先比较 PoB 完整 Max Hit，否则降级到基础字段模式并披露原因。**只校验一次单类型、非暴击命中，不给打法**；DoT、多击序列、恢复、阶段与应对未覆盖；数字是 PoB 建模值，GGG 未公布 |
+| Boss 技能伤害与重复命中生存校验 | 10 条 Boss 技能的伤害建模 + 22 个 Boss 的护甲/闪避倍率；`boss_skill_damage` 按 `monsterDamageTable` 与 PoB 系数算出某等级的一击伤害，`boss_survival_check` / `POST /boss/survival` 可将同一命中按“每次命中、期间无恢复”累加 1–100 次，给出全掷骰区间可承受 / 取决于掷骰 / 全区间耗尽池子三态。`POST /build` 也可直接消费 PoB 快照：单击配置完全匹配时优先比较完整 Max Hit；多击或配置不匹配时降级到基础字段模式并披露原因。**只校验同一单类型、非暴击命中，不给打法**；DoT、真实连招/不同技能组合、命中概率、恢复、阶段与应对未覆盖；数字是 PoB 建模值，GGG 未公布 |
 | 制作规则（名额与影响力） | 7 条前后缀名额规则（魔法 1+1、稀有 3+3、传奇不受限制、药剂随魔法，另有 PoB 独有的珠宝/Graft 2+2 与「已腐化深渊珠宝回到 3+3」）；`base_influence_profile` 可查 1,022 条具体底材的六类传统影响 `influenceTags`，`check_mod_combination` 在给定具体底材、单一影响与可选物等时，会用 PoB 底材标签和 POEDB 词缀 `spawn_tags` 验证影响词缀适用性。`possible` 只表示词缀能共存，不表示能制作；古灵基底由独立状态机处理。**影响底材获得方式、多影响词缀池组合与完整元词缀状态机仍未采集** |
 | 觉醒者之石状态机 | `awakener_orb_state` / `POST /craft/awakener`：接受供体与目标的两段装备复制文本，或显式物品类别与传统影响；逐字绑定 POEDB 效果，检查同类物品、双方唯一且不同的传统影响，输出供体销毁、目标重铸为稀有并兼有两种影响的条件后状态。**不声称各保留一条影响词缀，不生成重铸后的具体词缀、数量、数值、概率、成本或路线** |
 | 收获（古灵庄园） | 74 条定向工艺 + 98 条命能费用，且 **74/74 条均有结构化语义**：20 条装备重铸、23 条元素转换与新增/移除、14 条品质附魔、14 条材料随机转换、3 条地图/技能石/命运卡牺牲；另有 **51 个种子怪物**按颜色对应四种命能中的三种。随机类型与概率、堆叠输出数量、费用缩放基准和市场成本未采集时保持未知 |
@@ -473,19 +473,20 @@ curl -s -X POST http://127.0.0.1:8787/poe_agent/economy/material-cost \
 若任一材料未找到、同名结果不唯一或缺少代表价，`calculable=false` 且代表价总计为空，绝不会把
 已查到的部分冒充完整总成本。它只计算输入清单，不会反推某件装备需要哪些材料、成功率或工艺步骤。
 
-**Boss 单次命中生存校验** —— `POST /boss/survival`。技能名与等级决定 PoB 建模的
+**Boss 同一命中重复校验** —— `POST /boss/survival`。技能名与等级决定 PoB 建模的
 原始伤害区间，用户明确提供的防御池和对应抗性进入 Max Hit 链路；技能自带的普通/Uber
 元素穿透会在结算前扣除。
 
 ```bash
 curl -s -X POST http://127.0.0.1:8787/poe_agent/boss/survival \
   -H 'Content-Type: application/json' \
-  -d '{"skill":"Shaper Ball","level":84,"pool":6000,"cold_resist_pct":75}'
+  -d '{"skill":"Shaper Ball","level":84,"pool":10000,"hit_count":2,"cold_resist_pct":75}'
 ```
 
-返回 `survives_full_range / roll_dependent / fails_full_range` 三态，并同时给出原始伤害、
-实际扣除池子、余量和同口径 Max Hit。等于池子按耗尽处理。这个端点只比较一次单伤害类型
-命中；DoT、多击序列、转化、暴击、格挡/闪避/法压、守护技能、Ward、MoM、恢复以及
+返回 `survives_full_range / roll_dependent / fails_full_range` 三态，并同时给出每击与累计原始伤害、
+每击与累计承伤、剩余池子和同口径 Max Hit。`hit_count` 默认 1，可设为 1–100；
+等于池子按耗尽处理。多击只表示同一技能每次都命中且期间无恢复；DoT、真实 Boss 连招、
+不同技能组合、转化、暴击、格挡/闪避/法压、守护技能、Ward、MoM、恢复以及
 Boss 阶段与打法都不会被偷偷算进结论。
 
 **基础通货状态转移** —— `POST /craft/operation`。支持 10 种已审计基础通货，输入可为
@@ -728,6 +729,7 @@ PoB、天赋树、角色 API 与截图确认后的体检阶段不调用 LLM（�
 配置下的伤害转化、承伤修正、守护技能、Ward、MoM 等复杂防御，不再用局部字段近似。
 PoB 在三种元素 Max Hit 相等时只导出 `LightningMaximumHitTaken`，该导出契约也被显式识别。
 需要刻意查看基础生命/护盾口径时，可传 `use_pob_max_hit=false` 禁用优先路径。
+`hit_count>1` 时也必定禁用这条路径，因为 `*MaximumHitTaken` 只是单击阈值，不能相加。
 
 配置不匹配或未导出 Max Hit 时，结果会通过 `fallback_reason` 说明原因，再降级到基础模式：
 默认 `pool_mode=life_and_energy_shield`，生命优先使用 `LifeUnreserved`；标准 PoB 导出在生命
@@ -735,8 +737,8 @@ PoB 在三种元素 Max Hit 相等时只导出 `LightningMaximumHitTaken`，该�
 响应通过 `source_fields` 列出每一个实际采用的字段。也可选 `pool_mode=life`，只校验生命池。
 缺少池、对应抗性或护甲时返回 `unknown`；混沌命中选择生命+护盾而 Build 有护盾时，因为
 无法仅从这些字段判断 CI、Shavronne 等绕过规则，也返回 `unknown`。`PhysicalDamageReduction`
-是 PoB 对某个伤害口径的面板估算，不会被冒充额外固定物理减伤。两种模式都只校验单次
-命中，不覆盖多击序列、持续伤害、恢复、阶段与打法。Boss 技能和公式引用会随
+是 PoB 对某个伤害口径的面板估算，不会被冒充额外固定物理减伤。基础模式可累加同一命中，
+但不覆盖真实连招、不同技能组合、持续伤害、恢复、阶段与打法。Boss 技能和公式引用会随
 `boss_survival.citations` 一起返回。
 
 **截图识别** —— 聊天页点击“上传截图”，支持不超过 5 MB 的 PNG、JPEG 与 WebP。
@@ -899,7 +901,7 @@ PoB 排 P2 而不是 P1：它在数值上更接近一手，但不含中文名与
 ### 评测：四项指标与黄金问答集
 
 `config.yaml` 里的阈值与 `orchestrator/binding.py` 的闸门规则都需要判据，否则改动之后
-无法判断是变好还是变坏。判据来自 `tests/golden/questions.yaml`（160 条，六类样本：
+无法判断是变好还是变坏。判据来自 `tests/golden/questions.yaml`（161 条，六类样本：
 专名 / 描述性 / 数值 / 跨来源 / **确定不覆盖** / 工具路由），基线与结论记在
 `tests/golden/BASELINE.md`。
 
@@ -930,7 +932,7 @@ PoB 排 P2 而不是 P1：它在数值上更接近一手，但不含中文名与
 .venv/bin/python -m unittest discover -s tests -t .
 ```
 
-目前 1833 项，其中与「无据不答」直接相关的：
+目前 1839 项，其中与「无据不答」直接相关的：
 
 | 组 | 项数 | 重点 |
 | --- | --- | --- |

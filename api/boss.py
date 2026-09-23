@@ -17,6 +17,7 @@ class BossSurvivalRequest(BaseModel):
     skill: str = Field(min_length=2, max_length=120)
     level: int = Field(ge=1, le=100)
     pool: float = Field(gt=0, le=1_000_000_000, allow_inf_nan=False)
+    hit_count: int = Field(default=1, ge=1, le=100)
     uber: bool = False
     roll_range: float | None = Field(default=None, ge=0, le=100, allow_inf_nan=False)
     fire_resist_pct: float | None = Field(default=None, ge=-200, le=90, allow_inf_nan=False)
@@ -43,11 +44,18 @@ class BossSurvivalResponse(BaseModel):
     pool: float | None = None
     raw_low: float | None = None
     raw_high: float | None = None
+    hit_count: int = 1
+    total_raw_low: float | None = None
+    total_raw_high: float | None = None
     resist_before_penetration: float | None = None
     penetration_pct: float | None = None
     effective_resist_pct: float | None = None
     taken_low: float | None = None
     taken_high: float | None = None
+    total_taken_low: float | None = None
+    total_taken_high: float | None = None
+    remaining_low: float | None = None
+    remaining_high: float | None = None
     max_raw_hit: float | None = None
     margin_low: float | None = None
     margin_high: float | None = None

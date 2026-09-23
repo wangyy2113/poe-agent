@@ -2245,6 +2245,16 @@ def _boss_survival_args(question: str) -> dict[str, Any] | None:
         "level": int(next(iter(levels))),
         "pool": next(iter(pools)),
     }
+    hit_counts: set[int] = set()
+    for pattern in (
+        r"连续\s*(\d{1,4})\s*(?:次|发|下)(?:命中)?",
+        r"(?<!\d)(\d{1,4})\s*(?:发|下)(?:命中)?",
+    ):
+        hit_counts.update(int(match.group(1)) for match in re.finditer(pattern, question))
+    if len(hit_counts) > 1 or any(count < 1 or count > 100 for count in hit_counts):
+        return None
+    if hit_counts:
+        args["hit_count"] = hit_counts.pop()
     if "uber" in folded:
         args["uber"] = True
     for slot, keywords in (
