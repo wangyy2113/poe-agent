@@ -7,14 +7,23 @@ import sqlite3
 import unittest
 from unittest.mock import patch
 
-from api.boss import BossSurvivalRequest, survival
+from api.boss import (
+    BossDefenceThresholdRequest,
+    BossSurvivalRequest,
+    defence_threshold,
+    survival,
+)
 from api.build import BuildRequest
-from calc import boss_survival, constants
+from calc import boss_survival, constants, maxhit
 from core import db as dbmod
 from core.db import SCHEMA
 from orchestrator import loop
 from parsers.pob_build import PobBuild
-from tools.impl.boss import boss_survival_check, boss_survival_from_build
+from tools.impl.boss import (
+    boss_defence_threshold,
+    boss_survival_check,
+    boss_survival_from_build,
+)
 from tools.registry import REGISTRY
 
 
@@ -171,6 +180,48 @@ class BossSurvivalFormulaTest(unittest.TestCase):
         self.assertIsNone(zero.earliest_depletion_hit)
         self.assertIsNone(zero.latest_depletion_hit)
 
+    def test_反解防御池与抗性门槛(self) -> None:
+        result = boss_survival.assess_repeated_hits(
+            damage_type="Fire", raw_low=2000, raw_high=3000, pool=5000,
+            resist_pct=0, hit_count=2,
+        )
+        self.assertEqual(4001, result.minimum_pool_for_any_roll)
+        self.assertEqual(6001, result.minimum_pool_for_full_range)
+        self.assertEqual(0, result.pool_shortfall_for_any_roll)
+        self.assertEqual(1001, result.pool_shortfall_for_full_range)
+        self.assertEqual("reachable", result.required_resist_status)
+        self.assertEqual(17, result.required_resist_for_full_range_pct)
+        self.assertEqual(17, result.resist_shortfall_pct)
+        self.assertEqual("not_applicable", result.required_armour_status)
+
+    def test_抗性上限不足时不伪造可达门槛(self) -> None:
+        result = boss_survival.assess_repeated_hits(
+            damage_type="Cold", raw_low=100000, raw_high=100000, pool=5000,
+            resist_pct=75,
+        )
+        self.assertEqual("unreachable_at_90", result.required_resist_status)
+        self.assertIsNone(result.required_resist_for_full_range_pct)
+        self.assertIsNone(result.resist_shortfall_pct)
+
+    def test_反解物理护甲门槛并尊重减伤上限(self) -> None:
+        reachable = boss_survival.assess_repeated_hits(
+            damage_type="Physical", raw_low=1000, raw_high=1000, pool=1500,
+            resist_pct=0, hit_count=2,
+        )
+        self.assertEqual("reachable", reachable.required_armour_status)
+        self.assertEqual(1667, reachable.required_armour_for_full_range)
+        self.assertEqual(1667, reachable.armour_shortfall)
+        self.assertLess(
+            maxhit.taken_from(1000, armour=1667) * 2,
+            1500,
+        )
+        impossible = boss_survival.assess_repeated_hits(
+            damage_type="Physical", raw_low=10000, raw_high=10000, pool=1000,
+            resist_pct=0,
+        )
+        self.assertEqual("unreachable", impossible.required_armour_status)
+        self.assertIsNone(impossible.required_armour_for_full_range)
+
     def test_非物理伤害不误用护甲(self) -> None:
         plain = boss_survival.assess_single_hit(
             damage_type="Lightning", raw_low=10000, raw_high=10000, pool=6000,
@@ -211,6 +262,10 @@ class BossSurvivalFormulaTest(unittest.TestCase):
         self.assertEqual(2, result.data["earliest_depletion_hit"])
         self.assertEqual(3, result.data["latest_depletion_hit"])
         self.assertIn("最坏掷骰下保证承受 1 击", result.data["answer"])
+        self.assertEqual(9589, result.data["minimum_pool_for_any_roll"])
+        self.assertEqual(14383, result.data["minimum_pool_for_full_range"])
+        self.assertEqual("unreachable_at_90", result.data["required_resist_status"])
+        self.assertIn("90% 上限内无法达成", result.data["answer"])
         for count in (0, 101, True):
             with self.subTest(hit_count=count):
                 invalid = boss_survival_check(
@@ -252,9 +307,56 @@ class BossSurvivalFormulaTest(unittest.TestCase):
         self.assertIsNotNone(response.total_taken_high)
         self.assertEqual(2, response.earliest_depletion_hit)
         self.assertEqual(3, response.latest_depletion_hit)
+        self.assertEqual(14383, response.minimum_pool_for_full_range)
         from main import create_app
 
         self.assertIn("/poe_agent/boss/survival", create_app().openapi()["paths"])
+
+    def test_独立门槛工具无需当前池子即可回答需要多少血(self) -> None:
+        result = boss_defence_threshold(
+            "Shaper Ball", level=84, hit_count=3, cold_resist_pct=75,
+        )
+        self.assertTrue(result.ok)
+        self.assertTrue(result.data["assessable"])
+        self.assertIsNone(result.data["target_pool"])
+        self.assertIsNone(result.data["pool"])
+        self.assertIsNone(result.data["verdict"])
+        self.assertIsNone(result.data["max_raw_hit"])
+        self.assertEqual(21574, result.data["minimum_pool_for_full_range"])
+        self.assertEqual(
+            "not_requested_without_target_pool", result.data["required_resist_status"]
+        )
+        self.assertIn("至少需要 21,574 防御池", result.data["answer"])
+        spec = REGISTRY.spec("boss_defence_threshold")
+        self.assertEqual(["skill", "level"], spec.parameters["required"])
+        self.assertFalse(spec.parameters["additionalProperties"])
+
+    def test_独立门槛工具有目标池时反解抗性与不可达状态(self) -> None:
+        reachable = boss_defence_threshold(
+            "Shaper Ball", level=84, target_pool=10000, cold_resist_pct=75,
+        )
+        self.assertEqual("reachable", reachable.data["required_resist_status"])
+        self.assertEqual(56, reachable.data["required_resist_for_full_range_pct"])
+        self.assertEqual(10000, reachable.data["target_pool"])
+        self.assertIn("至少需要穿透前抗性 56%", reachable.data["answer"])
+        impossible = boss_defence_threshold(
+            "Shaper Ball", level=84, target_pool=1000, cold_resist_pct=75,
+        )
+        self.assertEqual("unreachable_at_90", impossible.data["required_resist_status"])
+        self.assertIn("90% 抗性上限内仍不可达", impossible.data["answer"])
+
+    def test_门槛API与OpenAPI公开独立契约(self) -> None:
+        response = defence_threshold(BossDefenceThresholdRequest(
+            skill="Test Slam", level=84, target_pool=15000, hit_count=2,
+            armour=0,
+        ), _caller="test")
+        self.assertEqual("Physical", response.damage_type)
+        self.assertEqual(15000, response.target_pool)
+        self.assertEqual("reachable", response.required_armour_status)
+        from main import create_app
+
+        schema = create_app().openapi()
+        self.assertIn("/poe_agent/boss/threshold", schema["paths"])
 
     def test_聊天路由只在参数能唯一冻结时直接执行(self) -> None:
         question = "84级 Shaper Ball，6000血、75冰抗，能扛得住吗"
@@ -277,6 +379,26 @@ class BossSurvivalFormulaTest(unittest.TestCase):
         self.assertNotIn("hit_count", capacity)
         self.assertEqual(
             "boss_survival_check", loop._preferred_tool_route(base + "能扛几下")
+        )
+
+    def test_防御门槛问法走独立工具并允许没有目标池(self) -> None:
+        pool_question = "84级 Shaper Ball，75冰抗，连续3次需要多少血"
+        self.assertEqual(
+            "boss_defence_threshold", loop._preferred_tool_route(pool_question)
+        )
+        self.assertEqual({
+            "skill": "Shaper Ball", "level": 84, "hit_count": 3,
+            "cold_resist_pct": 75,
+        }, loop._boss_defence_threshold_args(pool_question))
+        resist_question = "84级 Shaper Ball，5000血，连续2次需要多少冰抗"
+        self.assertEqual(
+            "boss_defence_threshold", loop._preferred_tool_route(resist_question)
+        )
+        self.assertEqual(5000, loop._boss_defence_threshold_args(
+            resist_question
+        )["target_pool"])
+        self.assertNotEqual(
+            "boss_defence_threshold", loop._preferred_tool_route("需要多少护甲")
         )
 
 
@@ -341,6 +463,10 @@ class BuildBossSurvivalTest(unittest.TestCase):
         self.assertIsNone(result.data["taken_low"])
         self.assertIsNone(result.data["earliest_depletion_hit"])
         self.assertIn("单击阈值", result.data["capacity_reason"])
+        self.assertIsNone(result.data["minimum_pool_for_full_range"])
+        self.assertEqual(
+            "unknown_from_pob_max_hit", result.data["required_resist_status"]
+        )
         self.assertEqual(12000, result.data["max_raw_hit"])
         self.assertEqual({"ColdMaximumHitTaken": 12000.0}, result.data["source_fields"])
         self.assertEqual({
@@ -383,6 +509,7 @@ class BuildBossSurvivalTest(unittest.TestCase):
         self.assertEqual(3, result.data["latest_depletion_hit"])
         self.assertIn("MaximumHitTaken 只是单击阈值", result.data["fallback_reason"])
         self.assertNotEqual(50000, result.data["max_raw_hit"])
+        self.assertEqual(14383, result.data["minimum_pool_for_full_range"])
 
     def test_连续多击降级后缺基础字段保持unknown(self) -> None:
         build = PobBuild(
