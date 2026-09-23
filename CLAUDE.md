@@ -146,7 +146,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 1814 项，秒级
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 1829 项，秒级
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选
@@ -237,6 +237,12 @@ POE1/POE2 边界顺带落在同一张表上：poe.ninja 两款游戏都服务，
 那正是卡住 DPS 的**同一个加成链问题**；做一个会与 PoB 悄悄不一致的部分重算，
 就是「带着引用的错数字」。重算留作后续一轮——那时 `PlayerStat` 正好是现成的对账口径。
 **DPS 只复述你 PoB 的数并注明本库不算**（边界是「本库不算」，不是「不许引用你的数」）。
+
+**Build × Boss（第九十三至九十四轮）**：`POST /build` 的可选 `boss_survival`
+会先核对 `presetBossSkills`、Boss/Pinnacle/Uber 档位、有效敌人等级和显式穿透覆盖。
+全部匹配且对应 `*MaximumHitTaken` 已导出时，直接用 PoB 完整 Max Hit 快照与本库 Boss
+伤害区间比较；否则降级到生命/护盾、抗性、护甲基础模式，并返回 `fallback_reason`。
+两种模式都必须回传 `source_fields`，不能把 PlayerStat 写成本库重算值。
 
 三条实测判据：
 

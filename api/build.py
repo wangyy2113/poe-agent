@@ -61,13 +61,20 @@ router = APIRouter(tags=["Build"])
 
 
 class BuildBossSurvivalRequest(BaseModel):
-    """让 Build 快照参与一次指定 Boss 命中的有界校验。"""
+    """用配置匹配的完整 Max Hit 或基础防御快照校验一次 Boss 命中。"""
 
     skill: str = Field(min_length=2, max_length=120)
     level: int = Field(ge=1, le=100)
     uber: bool = False
     roll_range: float | None = Field(default=None, ge=0, le=100, allow_inf_nan=False)
-    pool_mode: Literal["life", "life_and_energy_shield"] = "life_and_energy_shield"
+    use_pob_max_hit: bool = Field(
+        default=True,
+        description="配置完全匹配时优先使用 PoB 导出的完整 Max Hit 快照。",
+    )
+    pool_mode: Literal["life", "life_and_energy_shield"] = Field(
+        default="life_and_energy_shield",
+        description="基础字段降级模式使用的防御池；不改变 PoB Max Hit 快照本身的口径。",
+    )
 
 
 class BuildRequest(BaseModel):
@@ -86,8 +93,8 @@ class BuildRequest(BaseModel):
     boss_survival: BuildBossSurvivalRequest | None = Field(
         default=None,
         description=(
-            "可选 Boss 单次命中校验。防御输入只从导入 Build 的 PlayerStat 映射；"
-            "缺字段或机制不明时返回 unknown。"
+            "可选 Boss 单次命中校验。配置匹配时使用导入 Build 的完整 Max Hit；"
+            "否则降级到 PlayerStat 基础防御快照，缺字段或机制不明时返回 unknown。"
         ),
     )
 
@@ -237,7 +244,11 @@ class BuildBossSurvivalOut(BossSurvivalResponse):
     pool_mode: Literal["life", "life_and_energy_shield"]
     input_source: str = "pob_player_stat"
     source_fields: dict[str, float] = {}
+    source_config: dict[str, str] = {}
+    max_hit_field: str = ""
+    max_hit_field_note: str = ""
     calculation_mode: str | None = None
+    fallback_reason: str = ""
     citations: list[BuildBossCitationOut] = []
 
 
@@ -255,7 +266,7 @@ class BuildResponse(BaseModel):
     #: **PoB 自己算的快照**，见 `player_stats_note`
     player_stats: dict[str, float] = {}
     player_stats_note: str = ""
-    #: 可选：用当前 Build 快照对指定 Boss 单次命中做基础防御校验
+    #: 可选：用当前 Build 的完整 Max Hit 或基础防御快照校验指定 Boss 单次命中
     boss_survival: BuildBossSurvivalOut | None = None
     #: 需求 8.4 的逐项体检。**只判不算**：值取自 build，判据取自本库常量
     report: list[CheckOut] = []
@@ -487,6 +498,7 @@ def _build_response(
             level=boss_query.level,
             uber=boss_query.uber,
             roll_range=boss_query.roll_range,
+            use_pob_max_hit=boss_query.use_pob_max_hit,
             pool_mode=boss_query.pool_mode,
         )
         if not checked.ok:

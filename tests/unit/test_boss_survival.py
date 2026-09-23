@@ -230,6 +230,194 @@ class BuildBossSurvivalTest(unittest.TestCase):
         self.assertEqual("pob_player_stat", result.data["input_source"])
         self.assertIn("本库没有重算 Build", result.data["answer"])
         self.assertNotIn("Armour", result.data["source_fields"])
+        self.assertEqual("basic_defence_snapshot", result.data["calculation_mode"])
+        self.assertIn("presetBossSkills", result.data["fallback_reason"])
+
+    def test_配置精确匹配时优先直接比较PoB_Max_Hit(self) -> None:
+        build = PobBuild(
+            config={"presetBossSkills": "Shaper Ball", "enemyIsBoss": "Pinnacle"},
+            player_stats={
+                "Life": 100, "EnergyShield": 0, "ColdResist": -200,
+                "ColdMaximumHitTaken": 12000,
+            },
+        )
+        result = boss_survival_from_build(
+            build, skill="Shaper Ball", level=84,
+        )
+        self.assertTrue(result.data["assessable"])
+        self.assertEqual("roll_dependent", result.data["verdict"])
+        self.assertEqual("pob_max_hit_snapshot", result.data["calculation_mode"])
+        self.assertIsNone(result.data["pool"])
+        self.assertIsNone(result.data["taken_low"])
+        self.assertEqual(12000, result.data["max_raw_hit"])
+        self.assertEqual({"ColdMaximumHitTaken": 12000.0}, result.data["source_fields"])
+        self.assertEqual({
+            "presetBossSkills": "Shaper Ball", "enemyIsBoss": "Pinnacle",
+            "enemyLevel（PoB 默认）": "84",
+        }, result.data["source_config"])
+        self.assertEqual(2, len(result.citations))
+        self.assertIn("完整 Max Hit 快照", result.data["answer"])
+
+    def test_调用方可禁用PoB_Max_Hit并强制基础模式(self) -> None:
+        build = PobBuild(
+            config={"presetBossSkills": "Shaper Ball", "enemyIsBoss": "Pinnacle"},
+            player_stats={
+                "Life": 4000, "EnergyShield": 2000, "ColdResist": 75,
+                "ColdMaximumHitTaken": 50000,
+            },
+        )
+        result = boss_survival_from_build(
+            build, skill="Shaper Ball", level=84, use_pob_max_hit=False,
+        )
+        self.assertEqual("basic_defence_snapshot", result.data["calculation_mode"])
+        self.assertIn("use_pob_max_hit=false", result.data["fallback_reason"])
+        self.assertNotEqual(50000, result.data["max_raw_hit"])
+
+    def test_PoB元素三项相等时可用唯一导出的闪电Max_Hit(self) -> None:
+        build = PobBuild(
+            config={
+                "presetBossSkills": "Shaper Ball", "enemyIsBoss": "Boss",
+                "enemyLevel": "84",
+            },
+            player_stats={"LightningMaximumHitTaken": 15000},
+        )
+        result = boss_survival_from_build(
+            build, skill="Shaper Ball", level=84,
+        )
+        self.assertEqual("pob_max_hit_snapshot", result.data["calculation_mode"])
+        self.assertEqual(
+            {"LightningMaximumHitTaken": 15000.0},
+            result.data["source_fields"],
+        )
+        self.assertIn("Elemental Max Hit", result.data["max_hit_field_note"])
+        self.assertEqual("survives_full_range", result.data["verdict"])
+
+    def test_普通Boss默认敌人等级受角色等级限制(self) -> None:
+        build = PobBuild(
+            level=80,
+            config={"presetBossSkills": "Shaper Ball", "enemyIsBoss": "Boss"},
+            player_stats={"ColdMaximumHitTaken": 12000},
+        )
+        exact = boss_survival_from_build(
+            build, skill="Shaper Ball", level=80,
+        )
+        self.assertEqual("pob_max_hit_snapshot", exact.data["calculation_mode"])
+        self.assertEqual("80", exact.data["source_config"]["enemyLevel（PoB 默认）"])
+
+        mismatch = boss_survival_from_build(
+            build, skill="Shaper Ball", level=83,
+        )
+        self.assertEqual("unknown", mismatch.data["calculation_mode"])
+        self.assertIn("enemyLevel", mismatch.data["fallback_reason"])
+
+    def test_Boss预设或Uber档位不匹配时降级到基础字段模式(self) -> None:
+        stats = {
+            "Life": 4000, "EnergyShield": 2000, "ColdResist": 75,
+            "ColdMaximumHitTaken": 50000,
+        }
+        wrong_skill = boss_survival_from_build(
+            PobBuild(config={"presetBossSkills": "Maven Fireball"}, player_stats=stats),
+            skill="Shaper Ball", level=84,
+        )
+        self.assertEqual("basic_defence_snapshot", wrong_skill.data["calculation_mode"])
+        self.assertIn("presetBossSkills", wrong_skill.data["fallback_reason"])
+        self.assertNotEqual(50000, wrong_skill.data["max_raw_hit"])
+
+        wrong_tier = boss_survival_from_build(
+            PobBuild(
+                config={"presetBossSkills": "Shaper Ball", "enemyIsBoss": "Uber"},
+                player_stats=stats,
+            ),
+            skill="Shaper Ball", level=84, uber=False,
+        )
+        self.assertEqual("basic_defence_snapshot", wrong_tier.data["calculation_mode"])
+        self.assertIn("普通/Uber", wrong_tier.data["fallback_reason"])
+
+        wrong_level = boss_survival_from_build(
+            PobBuild(
+                config={"presetBossSkills": "Shaper Ball", "enemyIsBoss": "Pinnacle"},
+                player_stats=stats,
+            ),
+            skill="Shaper Ball", level=85,
+        )
+        self.assertEqual("basic_defence_snapshot", wrong_level.data["calculation_mode"])
+        self.assertIn("enemyLevel", wrong_level.data["fallback_reason"])
+
+    def test_显式穿透覆盖与技能预设不一致时不复用Max_Hit(self) -> None:
+        build = PobBuild(
+            config={
+                "presetBossSkills": "Shaper Ball", "enemyIsBoss": "Pinnacle",
+                "enemyColdPen": "10",
+            },
+            player_stats={
+                "Life": 4000, "EnergyShield": 2000, "ColdResist": 75,
+                "ColdMaximumHitTaken": 50000,
+            },
+        )
+        result = boss_survival_from_build(
+            build, skill="Shaper Ball", level=84,
+        )
+        self.assertEqual("basic_defence_snapshot", result.data["calculation_mode"])
+        self.assertIn("enemyColdPen", result.data["fallback_reason"])
+        self.assertEqual("10", result.data["source_config"]["enemyColdPen"])
+
+    def test_物理压制覆盖不匹配时不复用Max_Hit(self) -> None:
+        result = boss_survival_from_build(
+            PobBuild(
+                config={
+                    "presetBossSkills": "Test Slam", "enemyIsBoss": "Boss",
+                    "enemyPhysicalOverwhelm": "10",
+                },
+                player_stats={
+                    "Life": 5000, "EnergyShield": 0, "Armour": 10000,
+                    "PhysicalMaximumHitTaken": 50000,
+                },
+            ),
+            skill="Test Slam", level=83,
+        )
+        self.assertEqual("basic_defence_snapshot", result.data["calculation_mode"])
+        self.assertIn("enemyPhysicalOverwhelm", result.data["fallback_reason"])
+
+    def test_非整数或非有限Boss配置不复用Max_Hit(self) -> None:
+        stats = {
+            "Life": 4000, "EnergyShield": 2000, "ColdResist": 75,
+            "ColdMaximumHitTaken": 50000,
+        }
+        for raw_level in ("84.5", "NaN", "Infinity"):
+            with self.subTest(enemyLevel=raw_level):
+                result = boss_survival_from_build(
+                    PobBuild(
+                        config={
+                            "presetBossSkills": "Shaper Ball",
+                            "enemyIsBoss": "Pinnacle",
+                            "enemyLevel": raw_level,
+                        },
+                        player_stats=stats,
+                    ),
+                    skill="Shaper Ball", level=84,
+                )
+                self.assertEqual(
+                    "basic_defence_snapshot", result.data["calculation_mode"]
+                )
+                self.assertIn("有效整数", result.data["fallback_reason"])
+
+        for raw_penetration in ("NaN", "Infinity", "-Infinity"):
+            with self.subTest(enemyColdPen=raw_penetration):
+                result = boss_survival_from_build(
+                    PobBuild(
+                        config={
+                            "presetBossSkills": "Shaper Ball",
+                            "enemyIsBoss": "Pinnacle",
+                            "enemyColdPen": raw_penetration,
+                        },
+                        player_stats=stats,
+                    ),
+                    skill="Shaper Ball", level=84,
+                )
+                self.assertEqual(
+                    "basic_defence_snapshot", result.data["calculation_mode"]
+                )
+                self.assertIn("有效数值", result.data["fallback_reason"])
 
     def test_可显式只用生命池并在未保留生命缺席时回退总生命(self) -> None:
         build = PobBuild(player_stats={
