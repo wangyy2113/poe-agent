@@ -18,18 +18,21 @@
 
 `player_stats` 那一段**是 PoB 自己算的快照**，不是本库算的，也不是知识库证据——
 它反映用户自己那份 PoB 的版本与配置。字段名与 `source_note` 都写清这一点，
-免得下游把它与本库计算器的结论混在一起。
+免得下游把它与本库计算结果混为同一来源。只有显式请求 `boss_survival` 时，本库才把
+白名单字段当作已标注来源的输入送入单击计算器，并逐字段回传实际采用值。
 """
 
 from __future__ import annotations
 
 import logging
 import math
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from api.deps import require_user
+from api.boss import BossSurvivalResponse
 from core import db as dbmod
 from core.config import get_config, get_secrets
 from kb.fetcher import Fetcher, Poe2SourceRejected
@@ -51,9 +54,20 @@ from parsers.screenshot import (
     ScreenshotBuildFields,
     screenshot_build,
 )
+from tools.impl.boss import boss_survival_from_build
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["Build"])
+
+
+class BuildBossSurvivalRequest(BaseModel):
+    """让 Build 快照参与一次指定 Boss 命中的有界校验。"""
+
+    skill: str = Field(min_length=2, max_length=120)
+    level: int = Field(ge=1, le=100)
+    uber: bool = False
+    roll_range: float | None = Field(default=None, ge=0, le=100, allow_inf_nan=False)
+    pool_mode: Literal["life", "life_and_energy_shield"] = "life_and_energy_shield"
 
 
 class BuildRequest(BaseModel):
@@ -68,6 +82,13 @@ class BuildRequest(BaseModel):
     character_name: str = Field(
         default="", max_length=100,
         description="当前 POE_OAUTH_TOKEN 所属账号中的 PoE1 PC 角色名。",
+    )
+    boss_survival: BuildBossSurvivalRequest | None = Field(
+        default=None,
+        description=(
+            "可选 Boss 单次命中校验。防御输入只从导入 Build 的 PlayerStat 映射；"
+            "缺字段或机制不明时返回 unknown。"
+        ),
     )
 
     @model_validator(mode="after")
@@ -200,6 +221,26 @@ class BuildVersionOut(BaseModel):
     basis: str = ""
 
 
+class BuildBossCitationOut(BaseModel):
+    chunk_id: str
+    entity_id: str | None = None
+    title: str
+    url: str
+    source: str
+    source_priority: int
+    can_support_facts: bool
+    text: str
+    channel: str = "derived"
+
+
+class BuildBossSurvivalOut(BossSurvivalResponse):
+    pool_mode: Literal["life", "life_and_energy_shield"]
+    input_source: str = "pob_player_stat"
+    source_fields: dict[str, float] = {}
+    calculation_mode: str | None = None
+    citations: list[BuildBossCitationOut] = []
+
+
 class BuildResponse(BaseModel):
     input_type: str = "pob"
     level: int | None = None
@@ -214,6 +255,8 @@ class BuildResponse(BaseModel):
     #: **PoB 自己算的快照**，见 `player_stats_note`
     player_stats: dict[str, float] = {}
     player_stats_note: str = ""
+    #: 可选：用当前 Build 快照对指定 Boss 单次命中做基础防御校验
+    boss_survival: BuildBossSurvivalOut | None = None
     #: 需求 8.4 的逐项体检。**只判不算**：值取自 build，判据取自本库常量
     report: list[CheckOut] = []
     #: 需求 8.6：单体 / 清图 / Boss 分开，且显式绑定当前 PoB 配置
@@ -242,7 +285,7 @@ class BuildResponse(BaseModel):
 _STATS_NOTE = (
     "以上数值取自你粘贴的 build 自带的 <PlayerStat>，是 **PoB 自己算的**，"
     "既不是本库的计算结果、也不是知识库证据——它反映你那份 PoB 的版本与配置。"
-    "本库的计算器结论不与它混排。"
+    "本库不会把它冒充自己的重算值；若显式请求 Boss 单击校验，响应会另列实际采用字段。"
 )
 _ANALYSIS_NOTE = (
     "需求 8.4 的 16 项、8.5 的防御补充与 8.6 的输出场景已逐项核对，"
@@ -395,6 +438,7 @@ def analyze_build(req: BuildRequest, caller: str = Depends(require_user)) -> Bui
         caller=caller,
         tree_link=tree_link,
         character_meta=character_meta,
+        boss_query=req.boss_survival,
     )
 
 
@@ -428,12 +472,30 @@ def _build_response(
     caller: str,
     tree_link=None,
     character_meta=None,
+    boss_query: BuildBossSurvivalRequest | None = None,
 ) -> BuildResponse:  # noqa: ANN001
     """四类 Build 输入共用同一份确定性报告装配，避免入口间口径漂移。"""
     report = build_health_report(dbmod.get_conn(), build)
     sources = build_defence_sources(build)
     suggestions = build_suggestions(build)
     version = check_build_version(dbmod.get_conn(), build)
+    boss_result = None
+    if boss_query is not None:
+        checked = boss_survival_from_build(
+            build,
+            skill=boss_query.skill,
+            level=boss_query.level,
+            uber=boss_query.uber,
+            roll_range=boss_query.roll_range,
+            pool_mode=boss_query.pool_mode,
+        )
+        if not checked.ok:
+            raise HTTPException(status_code=422, detail={
+                "error": "invalid_build_boss_survival_query", "reason": checked.error,
+            })
+        boss_result = BuildBossSurvivalOut(
+            **(checked.data or {}), citations=checked.citations
+        )
     bridged = sum(1 for g in build.skill_groups for x in g.gems if x.gem_id)
     total_gems = sum(len(g.gems) for g in build.skill_groups)
     logger.info(
@@ -482,6 +544,7 @@ def _build_response(
             _SCREENSHOT_STATS_NOTE if input_type == "screenshot" and build.player_stats
             else _STATS_NOTE if build.player_stats else ""
         ),
+        boss_survival=boss_result,
         report=[_check_out(c) for c in report.items],
         output_report=[_check_out(c) for c in report.output_items],
         defence_sources=[DefenceSourceOut(**line.__dict__) for line in sources.lines],

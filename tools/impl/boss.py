@@ -24,14 +24,18 @@
 from __future__ import annotations
 
 import json
+import math
 import sqlite3
-from typing import Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from calc import boss_damage, boss_survival, constants, maxhit
 from calc.derive import pob_url, render_steps
 from core import db as dbmod
 from entities.taxonomy import MAX_FACTUAL_PRIORITY, Source
 from tools.registry import REGISTRY, ToolResult
+
+if TYPE_CHECKING:
+    from parsers.pob_build import PobBuild
 
 MAX_EVIDENCE_CHARS = 2400
 MAX_MATCHES = 8
@@ -56,6 +60,14 @@ _DAMAGE_TYPE_ZH = {
     "Lightning": "闪电",
     "Chaos": "混沌",
 }
+
+BuildPoolMode = Literal["life", "life_and_energy_shield"]
+
+_BUILD_SNAPSHOT_BOUNDARY = (
+    "防御输入逐项取自该 Build 保存的 PoB <PlayerStat> 快照；本库没有重算 Build。"
+    "基础模式只纳入生命/未保留生命、可选能量护盾、对应抗性与护甲；"
+    "不会把 PhysicalDamageReduction 面板值冒充额外固定物理减伤，也不补猜承伤倍率。"
+)
 
 
 def _rows(conn: sqlite3.Connection, query: str) -> list[sqlite3.Row]:
@@ -147,17 +159,225 @@ def _maxhit_citation(text: str) -> dict[str, Any]:
 
 
 def _unknown_survival_answer(
-    skill: str, reason: str, *, level: int, uber: bool, pool: float
+    skill: str, reason: str, *, level: int, uber: bool, pool: float | None
 ) -> str:
+    provided = f"敌人等级 {level}"
+    if pool is not None:
+        provided += f"；防御池 {pool:g}"
     return "\n".join([
         f"### {skill} 单次命中生存校验" + ("（Uber）" if uber else ""),
         "",
         "**结论：无法安全计算**",
         f"- 原因：{reason}",
-        f"- 已提供：敌人等级 {level}；防御池 {pool:g}",
+        f"- 已提供：{provided}",
         "",
         f"> 边界：{_SURVIVAL_BOUNDARY}。",
     ])
+
+
+def _build_unknown(
+    skill: str,
+    reason: str,
+    *,
+    level: int,
+    uber: bool,
+    pool_mode: BuildPoolMode,
+    found: bool = True,
+    damage_type: str | None = None,
+    pool: float | None = None,
+    source_fields: dict[str, float] | None = None,
+    missing_inputs: list[str] | None = None,
+    candidates: list[str] | None = None,
+    row: sqlite3.Row | None = None,
+) -> ToolResult:
+    answer = _unknown_survival_answer(
+        skill, reason, level=level, uber=uber, pool=pool
+    )
+    answer += f"\n> Build 快照边界：{_BUILD_SNAPSHOT_BOUNDARY}"
+    return ToolResult(
+        ok=True,
+        data={
+            "found": found,
+            "assessable": False,
+            "verdict": "unknown",
+            "skill": skill,
+            "level": int(level),
+            "uber": bool(uber),
+            "damage_type": damage_type,
+            "pool": pool,
+            "pool_mode": pool_mode,
+            "input_source": "pob_player_stat",
+            "source_fields": source_fields or {},
+            "missing_inputs": missing_inputs or [],
+            "candidates": candidates or [],
+            "reason": reason,
+            "boundary": f"{_SURVIVAL_BOUNDARY}；{_BUILD_SNAPSHOT_BOUNDARY}",
+            "answer": answer,
+        },
+        citations=[_citation(row, answer)] if row is not None else [],
+        meta={"channel": "derived", "table": "pob_boss_skill", "verdict": "unknown"}
+        if row is not None else {},
+    )
+
+
+def boss_survival_from_build(
+    build: "PobBuild",
+    *,
+    skill: str,
+    level: int,
+    uber: bool = False,
+    roll_range: float | None = None,
+    pool_mode: BuildPoolMode = "life_and_energy_shield",
+) -> ToolResult:
+    """用 Build 的 PoB 快照填充单次命中校验，不从职业或装备反推缺失字段。
+
+    ``LifeUnreserved`` 只在少于总生命时由 PoB 导出；缺少它时，标准 PoB 导出契约
+    表示可用生命等于 ``Life``。能量护盾是否纳入由调用方显式选择。混沌伤害下，
+    ES 是否保护生命取决于 CI、Shavronne 等机制，无法从这些数值字段唯一判断，因而
+    ``life_and_energy_shield`` 且 ES 大于零时保持 unknown。
+    """
+    name = (skill or "").strip()
+    if len(name) < 2:
+        return ToolResult(ok=False, error="skill 至少需要两个字符")
+    if pool_mode not in {"life", "life_and_energy_shield"}:
+        return ToolResult(ok=False, error="pool_mode 只支持 life 或 life_and_energy_shield")
+
+    rows = _rows(dbmod.get_conn(), name)
+    if not rows:
+        return _build_unknown(
+            name, f"PoB 的 Boss 技能预设里没有「{name}」", level=level,
+            uber=uber, pool_mode=pool_mode, found=False,
+        )
+    if len(rows) > 1:
+        candidates = [str(row["name"]) for row in rows]
+        return _build_unknown(
+            name, f"「{name}」匹配到 {len(rows)} 条，请指明技能", level=level,
+            uber=uber, pool_mode=pool_mode, found=False, candidates=candidates,
+        )
+
+    row = rows[0]
+    mults = json.loads(row["damage_mults"])
+    if str(row["damage_type"]) == "DamageOverTime":
+        result = boss_survival_check(
+            str(row["name"]), level=level, pool=1, uber=uber,
+            roll_range=roll_range, cold_resist_pct=0,
+        )
+        data = dict(result.data or {})
+        data.update({
+            "pool": None,
+            "pool_mode": pool_mode,
+            "input_source": "pob_player_stat",
+            "source_fields": {},
+            "boundary": f"{data['boundary']}；{_BUILD_SNAPSHOT_BOUNDARY}",
+            "answer": f"{data['answer']}\n> Build 快照边界：{_BUILD_SNAPSHOT_BOUNDARY}",
+        })
+        return ToolResult(ok=True, data=data, citations=result.citations, meta=result.meta)
+    if len(mults) != 1 or float(row["crit_chance"] or 0) > 0:
+        # 复用核心工具已经审计过的多类型与暴击 unknown 边界。
+        result = boss_survival_check(
+            str(row["name"]), level=level, pool=1, uber=uber,
+            roll_range=roll_range, fire_resist_pct=0, cold_resist_pct=0,
+            lightning_resist_pct=0, chaos_resist_pct=0,
+        )
+        data = dict(result.data or {})
+        data.update({
+            "pool": None,
+            "pool_mode": pool_mode,
+            "input_source": "pob_player_stat",
+            "source_fields": {},
+            "boundary": f"{data['boundary']}；{_BUILD_SNAPSHOT_BOUNDARY}",
+            "answer": f"{data['answer']}\n> Build 快照边界：{_BUILD_SNAPSHOT_BOUNDARY}",
+        })
+        return ToolResult(ok=True, data=data, citations=result.citations, meta=result.meta)
+
+    damage_type = str(next(iter(mults)))
+    source_fields: dict[str, float] = {}
+    missing: list[str] = []
+
+    life_key = "LifeUnreserved" if "LifeUnreserved" in build.player_stats else "Life"
+    life = build.player_stats.get(life_key)
+    if life is None:
+        missing.append("Life（或 LifeUnreserved）")
+    elif not math.isfinite(life) or life <= 0:
+        missing.append(f"有效的 {life_key}")
+    else:
+        source_fields[life_key] = float(life)
+
+    energy_shield = 0.0
+    if pool_mode == "life_and_energy_shield":
+        energy_shield_value = build.player_stats.get("EnergyShield")
+        if energy_shield_value is None:
+            missing.append("EnergyShield")
+        elif not math.isfinite(energy_shield_value) or energy_shield_value < 0:
+            missing.append("有效的 EnergyShield")
+        else:
+            energy_shield = float(energy_shield_value)
+            source_fields["EnergyShield"] = energy_shield
+
+    resist_keys = {
+        "Fire": "FireResist", "Cold": "ColdResist",
+        "Lightning": "LightningResist", "Chaos": "ChaosResist",
+    }
+    resist_key = resist_keys.get(damage_type)
+    resist: float | None = 0.0 if damage_type == "Physical" else None
+    if resist_key:
+        value = build.player_stats.get(resist_key)
+        if value is None:
+            missing.append(resist_key)
+        elif not math.isfinite(value) or not -200 <= value <= 90:
+            missing.append(f"有效的 {resist_key}")
+        else:
+            resist = float(value)
+            source_fields[resist_key] = resist
+
+    armour = 0.0
+    if damage_type == "Physical":
+        value = build.player_stats.get("Armour")
+        if value is None:
+            missing.append("Armour")
+        elif not math.isfinite(value) or value < 0:
+            missing.append("有效的 Armour")
+        else:
+            armour = float(value)
+            source_fields["Armour"] = armour
+
+    pool = float(life) + energy_shield if life is not None and math.isfinite(life) else None
+    if damage_type == "Chaos" and energy_shield > 0:
+        missing.append("混沌伤害是否绕过能量护盾的 Build 机制")
+    if missing or pool is None or pool <= 0:
+        return _build_unknown(
+            str(row["name"]), "Build 快照缺少安全计算所需字段或机制", level=level,
+            uber=uber, pool_mode=pool_mode, damage_type=damage_type, pool=pool,
+            source_fields=source_fields, missing_inputs=missing, row=row,
+        )
+
+    resist_args = {
+        "fire_resist_pct": resist if damage_type == "Fire" else None,
+        "cold_resist_pct": resist if damage_type == "Cold" else None,
+        "lightning_resist_pct": resist if damage_type == "Lightning" else None,
+        "chaos_resist_pct": resist if damage_type == "Chaos" else None,
+    }
+    result = boss_survival_check(
+        str(row["name"]), level=level, pool=pool, uber=uber,
+        roll_range=roll_range, armour=armour, **resist_args,
+    )
+    if not result.ok:
+        return result
+    data = dict(result.data or {})
+    data.update({
+        "pool_mode": pool_mode,
+        "input_source": "pob_player_stat",
+        "source_fields": source_fields,
+        "calculation_mode": "basic_defence_snapshot",
+        "boundary": f"{data['boundary']}；{_BUILD_SNAPSHOT_BOUNDARY}",
+        "answer": (
+            f"{data['answer']}\n"
+            f"> Build 快照输入：{', '.join(source_fields)}；{_BUILD_SNAPSHOT_BOUNDARY}"
+        ),
+    })
+    meta = dict(result.meta)
+    meta["input_source"] = "pob_player_stat"
+    return ToolResult(ok=True, data=data, citations=result.citations, meta=meta)
 
 
 def _render_survival(
