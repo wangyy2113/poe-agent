@@ -69,6 +69,13 @@ _BUILD_SNAPSHOT_BOUNDARY = (
     "不会把 PhysicalDamageReduction 面板值冒充额外固定物理减伤，也不补猜承伤倍率。"
 )
 
+_MAX_HIT_SNAPSHOT_BOUNDARY = (
+    "PoB Max Hit 快照会纳入该 Build 当前配置下的伤害转化、承伤修正、守护技能、Ward、"
+    "Mind over Matter 等防御；这里只在保存的 Boss 技能预设与普通/Uber 档位和请求一致时"
+    "直接比较，不把一种配置的 Max Hit 套到另一种 Boss 命中上。它仍不覆盖多击序列、"
+    "持续伤害、恢复、阶段机制或打法"
+)
+
 
 def _rows(conn: sqlite3.Connection, query: str) -> list[sqlite3.Row]:
     like = f"%{query.replace('%', '').replace('_', ' ')}%"
@@ -186,9 +193,11 @@ def _build_unknown(
     damage_type: str | None = None,
     pool: float | None = None,
     source_fields: dict[str, float] | None = None,
+    source_config: dict[str, str] | None = None,
     missing_inputs: list[str] | None = None,
     candidates: list[str] | None = None,
     row: sqlite3.Row | None = None,
+    fallback_reason: str = "",
 ) -> ToolResult:
     answer = _unknown_survival_answer(
         skill, reason, level=level, uber=uber, pool=pool
@@ -208,8 +217,11 @@ def _build_unknown(
             "pool_mode": pool_mode,
             "input_source": "pob_player_stat",
             "source_fields": source_fields or {},
+            "source_config": source_config or {},
             "missing_inputs": missing_inputs or [],
             "candidates": candidates or [],
+            "calculation_mode": "unknown",
+            "fallback_reason": fallback_reason,
             "reason": reason,
             "boundary": f"{_SURVIVAL_BOUNDARY}；{_BUILD_SNAPSHOT_BOUNDARY}",
             "answer": answer,
@@ -220,6 +232,136 @@ def _build_unknown(
     )
 
 
+def _snapshot_max_hit_field(
+    build: "PobBuild", damage_type: str
+) -> tuple[str, float, str] | None:
+    """返回 PoB 导出的对应 Max Hit；兼容“元素三抗相同只保存闪电栏”的契约。"""
+    key = f"{damage_type}MaximumHitTaken"
+    value = build.player_stats.get(key)
+    if value is not None and math.isfinite(value) and value > 0:
+        return key, float(value), ""
+    if (
+        damage_type in {"Fire", "Cold"}
+        and "FireMaximumHitTaken" not in build.player_stats
+        and "ColdMaximumHitTaken" not in build.player_stats
+    ):
+        value = build.player_stats.get("LightningMaximumHitTaken")
+        if value is not None and math.isfinite(value) and value > 0:
+            return (
+                "LightningMaximumHitTaken", float(value),
+                "PoB 在火/冰/闪三项相等时只导出 LightningMaximumHitTaken，界面标作 Elemental Max Hit",
+            )
+    return None
+
+
+def _matching_pob_boss_snapshot(
+    build: "PobBuild", row: sqlite3.Row, *, level: int, uber: bool, damage_type: str
+) -> tuple[bool, str, dict[str, str]]:
+    """判断 Max Hit 是否确实由同一 Boss 技能与变体配置生成。"""
+    preset = str(build.config.get("presetBossSkills") or "").strip()
+    tier = str(build.config.get("enemyIsBoss") or "").strip()
+    source = {}
+    if preset:
+        source["presetBossSkills"] = preset
+    if tier:
+        source["enemyIsBoss"] = tier
+    if preset.casefold() != str(row["name"]).casefold():
+        return False, "Build 没有保存与请求相同的 presetBossSkills", source
+
+    if tier not in {"Boss", "Pinnacle", "Uber"}:
+        return False, "Build 没有保存可核对的 Boss/Pinnacle/Uber 敌人档位", source
+
+    snapshot_uber = tier == "Uber" or (bool(row["earlier_uber"]) and tier == "Pinnacle")
+    if bool(uber) != snapshot_uber:
+        return False, "Build 保存的普通/Uber Boss 档位与请求不一致", source
+
+    default_level = {"Boss": 83, "Pinnacle": 84, "Uber": 85}[tier]
+    if tier == "Boss" and build.level is not None:
+        default_level = min(default_level, int(build.level))
+    raw_level = str(build.config.get("enemyLevel") or "").strip()
+    if raw_level:
+        source["enemyLevel"] = raw_level
+        try:
+            numeric_level = float(raw_level)
+        except ValueError:
+            return False, "Build 的 enemyLevel 不是有效整数", source
+        if not math.isfinite(numeric_level) or not numeric_level.is_integer():
+            return False, "Build 的 enemyLevel 不是有效整数", source
+        configured_level = int(numeric_level)
+        if tier in {"Pinnacle", "Uber"}:
+            configured_level = max(configured_level, default_level)
+    else:
+        configured_level = default_level
+        source["enemyLevel（PoB 默认）"] = str(default_level)
+    if int(level) != configured_level:
+        return False, "Build 保存或默认的 enemyLevel 与请求不一致", source
+
+    penetration_key = (
+        "enemyPhysicalOverwhelm" if damage_type == "Physical"
+        else f"enemy{damage_type}Pen"
+    )
+    if penetration_key in build.config:
+        raw = str(build.config[penetration_key]).strip()
+        source[penetration_key] = raw
+        try:
+            configured_penetration = float(raw)
+        except ValueError:
+            return False, f"Build 的 {penetration_key} 不是有效数值", source
+        if not math.isfinite(configured_penetration):
+            return False, f"Build 的 {penetration_key} 不是有效数值", source
+        penetrations = json.loads(row["uber_penetrations"] if uber else row["penetrations"])
+        expected_key = (
+            "PhysicalOverwhelm" if damage_type == "Physical"
+            else f"{damage_type}Pen"
+        )
+        expected_penetration = float(penetrations.get(expected_key) or 0)
+        if configured_penetration != expected_penetration:
+            return False, f"Build 显式 {penetration_key} 与技能预设不一致", source
+    return True, "", source
+
+
+def _render_build_max_hit(
+    row: sqlite3.Row,
+    *,
+    level: int,
+    uber: bool,
+    roll_range: float | None,
+    raw_low: float,
+    raw_high: float,
+    max_hit: float,
+    outcome: boss_survival.Outcome,
+    max_hit_field: str,
+    max_hit_field_note: str,
+    source_config: dict[str, str],
+) -> str:
+    labels = {
+        "survives_full_range": "整个已建模掷骰区间都低于 PoB Max Hit",
+        "roll_dependent": "是否超过 PoB Max Hit 取决于伤害掷骰",
+        "fails_full_range": "整个已建模掷骰区间都达到或超过 PoB Max Hit",
+    }
+    roll_note = (
+        f"固定 {roll_range:g}% 掷骰点" if roll_range is not None else "0%..100% 掷骰区间"
+    )
+    config_text = "；".join(f"{key}={value}" for key, value in source_config.items())
+    return "\n".join([
+        f"### {row['name']} 单次命中生存校验" + ("（Uber）" if uber else ""),
+        "",
+        f"**结论：{labels[outcome]}**",
+        f"- 口径：敌人等级 {level}；{roll_note}",
+        f"- 原始{_DAMAGE_TYPE_ZH[str(next(iter(json.loads(row['damage_mults']))))]}伤害："
+        f"{raw_low:,.0f} — {raw_high:,.0f}",
+        f"- PoB Max Hit：{max_hit:,.0f}（`{max_hit_field}`）"
+        + (f"；{max_hit_field_note}" if max_hit_field_note else ""),
+        f"- 低 / 高掷骰的原始伤害余量：{max_hit - raw_low:,.0f} / "
+        f"{max_hit - raw_high:,.0f}",
+        f"- 匹配的 Build 配置：{config_text}",
+        "",
+        "> 等于 Max Hit 按耗尽处理；这里直接消费 PoB 的完整 Max Hit 快照，不重复拆算防御链。",
+        f"> 边界：{_MAX_HIT_SNAPSHOT_BOUNDARY}。",
+        f"> Boss 技能来源：[Path of Building]({row['pob_url']})。",
+    ])
+
+
 def boss_survival_from_build(
     build: "PobBuild",
     *,
@@ -227,6 +369,7 @@ def boss_survival_from_build(
     level: int,
     uber: bool = False,
     roll_range: float | None = None,
+    use_pob_max_hit: bool = True,
     pool_mode: BuildPoolMode = "life_and_energy_shield",
 ) -> ToolResult:
     """用 Build 的 PoB 快照填充单次命中校验，不从职业或装备反推缺失字段。
@@ -291,6 +434,92 @@ def boss_survival_from_build(
         return ToolResult(ok=True, data=data, citations=result.citations, meta=result.meta)
 
     damage_type = str(next(iter(mults)))
+    snapshot_matches, fallback_reason, source_config = _matching_pob_boss_snapshot(
+        build, row, level=level, uber=uber, damage_type=damage_type
+    )
+    snapshot_max_hit = _snapshot_max_hit_field(build, damage_type)
+    if not use_pob_max_hit:
+        snapshot_matches = False
+        fallback_reason = "请求已通过 use_pob_max_hit=false 禁用 PoB Max Hit 优先路径"
+    if snapshot_matches and snapshot_max_hit is not None:
+        max_hit_field, max_hit, max_hit_field_note = snapshot_max_hit
+        try:
+            uber_mult = row["uber_damage_mult"] if uber else None
+            if roll_range is None:
+                low, high = boss_damage.hit_range(
+                    level=int(level), base_mult=float(next(iter(mults.values()))[0]),
+                    roll_mult=float(next(iter(mults.values()))[1]),
+                    damage_type=damage_type, uber_mult=uber_mult,
+                )
+            else:
+                hit = boss_damage.hit_damage(
+                    level=int(level), base_mult=float(next(iter(mults.values()))[0]),
+                    roll_mult=float(next(iter(mults.values()))[1]),
+                    damage_type=damage_type, roll_range=float(roll_range),
+                    uber_mult=uber_mult,
+                )
+                low = high = hit
+        except (boss_damage.BossDamageError, constants.MissingConstant,
+                constants.ConstantTypeError) as exc:
+            return ToolResult(ok=False, error=str(exc))
+
+        if high.damage < max_hit:
+            outcome: boss_survival.Outcome = "survives_full_range"
+        elif low.damage >= max_hit:
+            outcome = "fails_full_range"
+        else:
+            outcome = "roll_dependent"
+        answer = _render_build_max_hit(
+            row, level=int(level), uber=bool(uber), roll_range=roll_range,
+            raw_low=low.damage, raw_high=high.damage, max_hit=max_hit,
+            outcome=outcome, max_hit_field=max_hit_field,
+            max_hit_field_note=max_hit_field_note,
+            source_config=source_config,
+        )
+        return ToolResult(
+            ok=True,
+            data={
+                "found": True,
+                "assessable": True,
+                "verdict": outcome,
+                "skill": str(row["name"]),
+                "level": int(level),
+                "uber": bool(uber),
+                "roll_range": roll_range,
+                "damage_type": damage_type,
+                "pool": None,
+                "raw_low": low.damage,
+                "raw_high": high.damage,
+                "taken_low": None,
+                "taken_high": None,
+                "max_raw_hit": max_hit,
+                "margin_low": round(max_hit - low.damage, 2),
+                "margin_high": round(max_hit - high.damage, 2),
+                "outcome": outcome,
+                "pool_mode": pool_mode,
+                "input_source": "pob_player_stat",
+                "source_fields": {max_hit_field: max_hit},
+                "source_config": source_config,
+                "max_hit_field": max_hit_field,
+                "max_hit_field_note": max_hit_field_note,
+                "calculation_mode": "pob_max_hit_snapshot",
+                "fallback_reason": "",
+                "missing_inputs": [],
+                "candidates": [],
+                "boundary": _MAX_HIT_SNAPSHOT_BOUNDARY,
+                "answer": answer,
+            },
+            citations=[_citation(row, answer), _maxhit_citation(answer)],
+            meta={
+                "channel": "derived",
+                "tables": ["pob_boss_skill", "game_constant"],
+                "input_source": "pob_player_stat",
+                "verdict": outcome,
+            },
+        )
+    if snapshot_matches:
+        fallback_reason = f"Build 没有导出有效的 {damage_type} Maximum Hit"
+
     source_fields: dict[str, float] = {}
     missing: list[str] = []
 
@@ -348,7 +577,8 @@ def boss_survival_from_build(
         return _build_unknown(
             str(row["name"]), "Build 快照缺少安全计算所需字段或机制", level=level,
             uber=uber, pool_mode=pool_mode, damage_type=damage_type, pool=pool,
-            source_fields=source_fields, missing_inputs=missing, row=row,
+            source_fields=source_fields, source_config=source_config,
+            missing_inputs=missing, row=row, fallback_reason=fallback_reason,
         )
 
     resist_args = {
@@ -368,11 +598,14 @@ def boss_survival_from_build(
         "pool_mode": pool_mode,
         "input_source": "pob_player_stat",
         "source_fields": source_fields,
+        "source_config": source_config,
         "calculation_mode": "basic_defence_snapshot",
+        "fallback_reason": fallback_reason,
         "boundary": f"{data['boundary']}；{_BUILD_SNAPSHOT_BOUNDARY}",
         "answer": (
             f"{data['answer']}\n"
-            f"> Build 快照输入：{', '.join(source_fields)}；{_BUILD_SNAPSHOT_BOUNDARY}"
+            f"> Build 快照输入：{', '.join(source_fields)}；{_BUILD_SNAPSHOT_BOUNDARY}\n"
+            f"> 未采用 PoB Max Hit 快照：{fallback_reason}。"
         ),
     })
     meta = dict(result.meta)

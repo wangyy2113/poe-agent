@@ -5696,3 +5696,32 @@ PoB `<PlayerStat>` 快照，而不是本库重算值或知识库证据；Boss �
 | Knowledge/MCP 工具 | 49 | **49**（复用既有 `boss_survival_check`，不增加能力面） |
 | 黄金用例 | 159 | **159**（未改变聊天路由集合） |
 | LLM token | 0 | **0**（Build 映射与生存判定均为确定性代码） |
+
+---
+
+## 2026-09-23（第九十四轮）· Build Boss 校验优先复用 PoB Max Hit
+
+上一轮的 Build 直连仍然只把生命/护盾、对应抗性和护甲送进基础闭式，无法包含伤害转化、
+守护技能、Ward、Mind over Matter 或承伤修正。本轮增加更强但更严格的优先路径：只有
+`presetBossSkills`、`enemyIsBoss`、有效 `enemyLevel` 及显式穿透覆盖与请求全部一致时，
+才把同一份 PoB 快照里的对应 `*MaximumHitTaken` 直接与 Boss 原始伤害区间比较。
+
+该路径不把 Max Hit 拆回局部防御，因此保留 PoB 对复杂防御链的完整计算结果；等于阈值
+仍按耗尽处理。PoB 在火、冰、闪三项相等时只保存 `LightningMaximumHitTaken` 并把它显示为
+Elemental Max Hit，本轮按上游导出条件显式兼容该格式，同时仍在 `source_fields` 返回真实字段名。
+配置或等级不匹配、显式元素穿透/物理压制覆盖不同、Max Hit 缺失或无效时，响应通过
+`fallback_reason` 披露原因并降级到上一轮的基础字段模式，不会把旧配置快照套到新问题上。
+
+真实数据库与完整 `/build` 编排探针：保存 `Shaper Ball + Pinnacle` 配置、
+`ColdMaximumHitTaken=12000` 的 PoB 输入，对 84 级 9,588–14,382 原始伤害返回
+`roll_dependent / pob_max_hit_snapshot`，实际来源字段只有 `ColdMaximumHitTaken`，并带
+2 条结构化引用；生命、抗性等故意冲突的测试值没有混进这条优先路径。
+
+### 指标
+
+| | 上一轮 | 本轮 |
+| --- | --- | --- |
+| 单测 | 1,821 | **1,829**（+8 精确 Max Hit、显式禁用、元素等值导出、技能/档位/等级、穿透及畸形数值配置失配） |
+| Knowledge/MCP 工具 | 49 | **49**（扩展 Build 编排，不增加工具面） |
+| 黄金用例 | 159 | **159**（未改变聊天路由集合） |
+| LLM token | 0 | **0**（配置匹配、Boss 伤害与阈值比较均为确定性代码） |
