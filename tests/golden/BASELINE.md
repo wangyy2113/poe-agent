@@ -5773,3 +5773,27 @@ Build 的 `*MaximumHitTaken` 是单击阈值，不能相加成多击快照。因
 | Knowledge/MCP 工具 | 49 | **49**（扩展既有 `boss_survival_check`） |
 | 黄金用例 | 160 | **161**（+1 连续命中路由） |
 | LLM token | 0 | **0**（次数提取、逐击结算、累加与降级均为确定性代码） |
+
+---
+
+## 2026-09-23（第九十七轮）· Boss 可承受击数反解
+
+在已建模的每击低/高承伤上，新增一组严格的击数边界：
+`earliest_depletion_hit` 是最坏掷骰下首次耗尽池子的命中，
+`latest_depletion_hit` 是最好掷骰下首次耗尽的命中；两者减一分别得到
+`guaranteed_survivable_hits` 和 `maximum_survivable_hits`。计算使用
+`ceil(pool / per_hit_taken)`，因此累计承伤恰好等于池子的那击不会被误算为存活。
+
+工具回答现在直接列出“最坏掷骰保证承受 / 第几击耗尽”与“最好掷骰最多承受 /
+第几击耗尽”，聊天路由新增“能扛几下 / 能吃几发”问法。如果 Build 走的是完整 PoB
+`*MaximumHitTaken` 快照，四个击数字段保持空，并通过 `capacity_reason` 说明无法从
+单击阈值推出命中后状态；不把 Max Hit 相加。
+
+### 指标
+
+| | 上一轮 | 本轮 |
+| --- | --- | --- |
+| 单测 | 1,839 | **1,840**（+1 反解击数、精确耗尽边界；工具/API/Build/路由扩展在现有用例覆盖） |
+| Knowledge/MCP 工具 | 49 | **49**（扩展既有 `boss_survival_check`） |
+| 黄金用例 | 161 | **162**（+1 “能扛几下”路由） |
+| LLM token | 0 | **0**（击数反解与路由均为确定性本地逻辑） |

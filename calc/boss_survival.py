@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import Literal
 
@@ -46,12 +47,16 @@ class BossSurvivalResult:
     total_taken_high: float
     remaining_low: float
     remaining_high: float
+    earliest_depletion_hit: int | None
+    latest_depletion_hit: int | None
+    guaranteed_survivable_hits: int | None
+    maximum_survivable_hits: int | None
     max_raw_hit: float
     margin_low: float
     margin_high: float
     outcome: Outcome
 
-    def as_dict(self) -> dict[str, float | int | str]:
+    def as_dict(self) -> dict[str, float | int | str | None]:
         return {
             "damage_type": self.damage_type,
             "pool": self.pool,
@@ -69,6 +74,10 @@ class BossSurvivalResult:
             "total_taken_high": self.total_taken_high,
             "remaining_low": self.remaining_low,
             "remaining_high": self.remaining_high,
+            "earliest_depletion_hit": self.earliest_depletion_hit,
+            "latest_depletion_hit": self.latest_depletion_hit,
+            "guaranteed_survivable_hits": self.guaranteed_survivable_hits,
+            "maximum_survivable_hits": self.maximum_survivable_hits,
             "max_raw_hit": self.max_raw_hit,
             "margin_low": self.margin_low,
             "margin_high": self.margin_high,
@@ -174,6 +183,10 @@ def assess_repeated_hits(
     total_taken_low = taken_low * hit_count
     total_taken_high = taken_high * hit_count
     threshold = maxhit.max_hit(float(pool), **kwargs)
+    earliest_depletion_hit = (
+        math.ceil(pool / taken_high) if taken_high > 0 else None
+    )
+    latest_depletion_hit = math.ceil(pool / taken_low) if taken_low > 0 else None
 
     # 等于池子会把池子降到 0，不能写成“存活”。
     if total_taken_high < pool:
@@ -200,6 +213,14 @@ def assess_repeated_hits(
         total_taken_high=round(total_taken_high, 2),
         remaining_low=round(pool - total_taken_low, 2),
         remaining_high=round(pool - total_taken_high, 2),
+        earliest_depletion_hit=earliest_depletion_hit,
+        latest_depletion_hit=latest_depletion_hit,
+        guaranteed_survivable_hits=(
+            earliest_depletion_hit - 1 if earliest_depletion_hit is not None else None
+        ),
+        maximum_survivable_hits=(
+            latest_depletion_hit - 1 if latest_depletion_hit is not None else None
+        ),
         max_raw_hit=threshold.max_hit,
         margin_low=round(pool - total_taken_low, 2),
         margin_high=round(pool - total_taken_high, 2),

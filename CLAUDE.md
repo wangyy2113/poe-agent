@@ -146,7 +146,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 1839 项，秒级
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 1840 项，秒级
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选
@@ -163,7 +163,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 .venv/bin/python scripts/eval_run.py --record        # 重录真实响应（**要凭证、烧 token**）
 ```
 
-黄金问答集是 `tests/golden/questions.yaml`（161 条，六类），基线与全部结论在
+黄金问答集是 `tests/golden/questions.yaml`（162 条，六类），基线与全部结论在
 `tests/golden/BASELINE.md`——**动闸门前先读它**，里面记了多个已修缺陷与三条已知未修边界，
 以及两次「测量本身写错」的教训。
 
@@ -732,7 +732,9 @@ POEDB 页面仍是旧版」：`号召` PoB 侧是 `ConvocationNew`（各级需�
 使用的防御链确定性合并：元素抗性先扣普通或 Uber 预设中的技能穿透，再按抗性、
 护甲/物理减伤、承受倍率计算每击承伤；`hit_count=1..100` 可在“同一技能每次都命中、
 期间无恢复”假设下累加，输出全区间可承受、取决于掷骰、全区间耗尽池子三态，
-**等于池子按耗尽处理**。Build 的 `*MaximumHitTaken` 只支撑单击，多击必须降级到基础防御快照。
+**等于池子按耗尽处理**。同一结算还反解最坏/最好掷骰下的保证/最多可承受击数，
+以及对应的首个耗尽击。Build 的 `*MaximumHitTaken` 只支撑单击，无法安全反解连续命中容量；
+多击必须降级到基础防御快照。
 DoT 直接 unknown；多伤害类型、真实 Boss 连招、不同技能组合、转化、非零暴击、格挡/闪避/法压、
 守护技能、Ward、MoM、恢复、阶段和打法均不进入结论。这不是整场 Boss 战的生存保证。
 
