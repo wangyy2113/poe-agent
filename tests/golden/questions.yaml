@@ -1559,6 +1559,14 @@ cases:
       掷骰区间上界。未指定区间时工具给两端，**不替用户挑一个点**——
       「打多少伤害」的诚实答案是一个区间
 
+  - id: route_boss_survival_check
+    query: 84级 Shaper Ball，6000血、75冰抗，能扛得住吗
+    kind: tool_route
+    expect_tool: boss_survival_check
+    note: >-
+      只有技能名、等级、防御池和对应抗性都能逐字冻结时才代码直达；工具输出的三态
+      只覆盖一次单类型命中，不能改写成整场 Boss 战生存保证
+
   - id: gap_boss_fight_mechanics
     query: 谢勒怎么打，有什么机制要躲
     kind: gap

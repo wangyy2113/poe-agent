@@ -973,6 +973,10 @@ _PREFERRED_TOOL_INTENTS: tuple[tuple[str, tuple[str, ...]], ...] = (
     # Boss 技能伤害也**没有卡片**（10 条系数，真实伤害要按等级算出来）。
     # 意图词必须专指到「技能名 / 那一击」：裸的「Boss」是当年把「怪物」当意图词
     # 那个错的同一形状，裸的「伤害」会横扫一大片有卡片可答的问题。
+    ("boss_survival_check", (
+        "扛得住", "扛不住", "会不会被秒", "会被秒吗", "能不能吃", "能吃下",
+        "能不能承受", "生存校验", "生存检查",
+    )),
     ("boss_skill_damage", (
         "谢勒", "希雅斯", "阿兹里", "母树", "焚界者", "灭界者",
         "Shaper", "Sirus", "Maven", "Atziri", "Exarch", "Eater",
@@ -2202,6 +2206,56 @@ def _maxhit_args(question: str) -> dict[str, Any] | None:
     return args or None
 
 
+def _boss_survival_args(question: str) -> dict[str, Any] | None:
+    """只在技能名、等级与防御池都能逐字冻结时直接执行 Boss 生存校验。"""
+    try:
+        names = [
+            str(row[0]) for row in dbmod.get_conn().execute(
+                "SELECT name FROM pob_boss_skill ORDER BY length(name) DESC"
+            )
+        ]
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("Boss 技能表不可用，生存校验不走代码路由：%s", exc)
+        return None
+    folded = question.casefold()
+    matched = [name for name in names if name.casefold() in folded]
+    if len(matched) != 1:
+        return None
+    levels = {
+        float(match.group(1))
+        for match in re.finditer(r"(\d{1,3})\s*级", question)
+    }
+    pools = _slot_values(
+        question, ("防御池", "有效生命", "生命加护盾", "生命+护盾", "池子", "血量", "血")
+    )
+    if len(levels) != 1 or len(pools) != 1:
+        return None
+    args: dict[str, Any] = {
+        "skill": matched[0],
+        "level": int(next(iter(levels))),
+        "pool": next(iter(pools)),
+    }
+    if "uber" in folded:
+        args["uber"] = True
+    for slot, keywords in (
+        ("fire_resist_pct", ("火焰抗性", "火抗")),
+        ("cold_resist_pct", ("冰霜抗性", "冰抗")),
+        ("lightning_resist_pct", ("闪电抗性", "电抗")),
+        ("chaos_resist_pct", ("混沌抗性", "混抗")),
+        ("armour", ("护甲",)),
+        ("flat_physical_reduction_pct", ("物理减伤", "物理伤害减免")),
+        ("taken_mult", ("承受倍率", "受到伤害倍率")),
+        ("overwhelm_pct", ("压制物理减伤", "压制")),
+        ("roll_range", ("掷骰", "伤害掷骰")),
+    ):
+        values = _slot_values(question, keywords)
+        if len(values) > 1:
+            return None
+        if values:
+            args[slot] = values.pop()
+    return args
+
+
 def _threshold_args(question: str) -> dict[str, Any] | None:
     """`ailment_threshold_calc` 的参数：异常名、这一击的伤害、目标等级与是否头目。
 
@@ -2290,6 +2344,7 @@ def _resistance_args(question: str) -> dict[str, Any] | None:
 #: 「我有 10000 护甲能减多少伤害」**碰巧**也拒答了，但拒答理由是「工具没返回证据」
 #: 而不是工具想说的「你没给这一击的伤害」——契约过了、机制却是坏的。
 _CODE_INVOKED_TOOLS: dict[str, Any] = {
+    "boss_survival_check": _boss_survival_args,
     "awakener_orb_state": _awakener_orb_args,
     "craft_operation_state": _craft_operation_args,
     "essence_operation_state": _essence_operation_args,
@@ -2329,7 +2384,8 @@ _CODE_INVOKED_TOOLS: dict[str, Any] = {
 _TOOLS_WITHOUT_CITATIONS = frozenset({"kb_coverage"})
 _DETERMINISTIC_DIRECT_TOOLS = frozenset({
     "economy_price_lookup", "economy_price_trend", "economy_material_cost",
-    "economy_rare_comparables", "awakener_orb_state", "craft_operation_state",
+    "economy_rare_comparables", "boss_survival_check", "awakener_orb_state",
+    "craft_operation_state",
     "essence_operation_state",
     "eldritch_operation_state",
     "veiled_operation_state",

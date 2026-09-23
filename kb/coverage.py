@@ -863,7 +863,7 @@ DOMAINS: tuple[DomainSpec, ...] = (
         category=Category.ATLAS,
         authority_url=f"{POEDB_BASE}/Monsters",
         count_sql="SELECT count(*) FROM pob_boss_skill",
-        tools=("boss_skill_damage",),
+        tools=("boss_skill_damage", "boss_survival_check"),
         hints=("boss", "首领", "怪物技能", "怪物机制", "打法", "怎么打", "应对"),
         question_hints=(
             "某 Boss 技能在某等级打多少伤害、穿多少抗性",
@@ -874,7 +874,8 @@ DOMAINS: tuple[DomainSpec, ...] = (
         partial_note=(
             "已入库 **10 条 Boss 技能的伤害建模**（伤害系数 / 穿透 / Uber 倍率 / 速度 / 暴击）"
             "与 **22 个 Boss 的护甲与闪避倍率**，真实伤害按 PoB 原式配 `monsterDamageTable` "
-            "算出（`boss_skill_damage` 工具）；"
+            "算出（`boss_skill_damage` 工具）；`boss_survival_check` 可将一次单类型命中与"
+            "用户明确提供的防御池、抗性、护甲和承受倍率合并，输出完整掷骰区间的三态结论；"
             "**未采集**：技能的**机制说明与应对打法**（PoB 只给建模，POEDB 的 Monsters 页"
             "也没有打法）、Boss 的掉落、以及这些终局 Boss 的**中文名**"
             "（本地没有译名来源，只有英文）"

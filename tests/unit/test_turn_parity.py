@@ -511,6 +511,72 @@ class AwakenerOperationAnswerTest(unittest.TestCase):
         )
 
 
+class BossSurvivalAnswerTest(unittest.TestCase):
+    """Boss 生存校验由代码合成，批量与流式不得改写三态结论。"""
+
+    ANSWER = (
+        "### Shaper Ball 单次命中生存校验\n\n"
+        "**结论：是否耗尽池子取决于伤害掷骰**\n\n"
+        "> 只描述这一记已建模命中，不是整场 Boss 战的生存保证。"
+    )
+
+    def _patches(self):
+        expected = {
+            "skill": "Shaper Ball", "level": 84, "pool": 6000,
+            "cold_resist_pct": 75,
+        }
+
+        def call(name, arguments):
+            if name == "kb_search":
+                return ToolResult(
+                    ok=True,
+                    data={"sufficient": False, "reason": "动态防御计算不在卡片", "missing_terms": []},
+                    citations=[],
+                    meta={"channels": ["bm25"], "degraded": False},
+                )
+            if name == "boss_survival_check":
+                self.assertEqual(expected, json.loads(arguments))
+                return ToolResult(
+                    ok=True,
+                    data={"answer": self.ANSWER, "found": True, "assessable": True,
+                          "verdict": "roll_dependent"},
+                    citations=[{
+                        "chunk_id": "boss_survival:Shaper Ball",
+                        "entity_id": None,
+                        "title": "Shaper Ball 单次命中生存校验",
+                        "url": "https://github.com/PathOfBuildingCommunity/PathOfBuilding",
+                        "source": "Path of Building",
+                        "source_priority": 2,
+                        "can_support_facts": True,
+                        "text": self.ANSWER,
+                        "channel": "derived",
+                    }],
+                    meta={"channel": "derived"},
+                )
+            raise AssertionError(name)
+
+        return [
+            patch.object(loop, "get_config", lambda: _FakeConfig()),
+            patch.object(loop, "_persist", lambda *a, **k: None),
+            patch.object(loop, "_record_gaps", lambda *a, **k: None),
+            patch.dict(loop._CODE_INVOKED_TOOLS, {
+                "boss_survival_check": lambda _question: expected,
+            }),
+            patch.object(loop.REGISTRY, "call", call),
+        ]
+
+    def test_两条路径直接返回同一Boss生存结论(self) -> None:
+        question = "84级 Shaper Ball，6000血、75冰抗，能扛得住吗"
+        batch, events = _both_paths(question, self._patches)
+        self.assertFalse(batch.evidence_gap)
+        self.assertEqual(self.ANSWER, batch.answer)
+        self.assertEqual(self.ANSWER, _answer_of(events))
+        self.assertEqual(
+            ["kb_search", "boss_survival_check"],
+            [call["tool"] for call in batch.tool_calls],
+        )
+
+
 class EssenceOperationAnswerTest(unittest.TestCase):
     """精华状态转移由代码直接输出，批量与流式不得交给模型扩写。"""
 
