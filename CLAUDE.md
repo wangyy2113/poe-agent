@@ -146,7 +146,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 1804 项，秒级
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 1814 项，秒级
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选
@@ -163,7 +163,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 .venv/bin/python scripts/eval_run.py --record        # 重录真实响应（**要凭证、烧 token**）
 ```
 
-黄金问答集是 `tests/golden/questions.yaml`（158 条，六类），基线与全部结论在
+黄金问答集是 `tests/golden/questions.yaml`（159 条，六类），基线与全部结论在
 `tests/golden/BASELINE.md`——**动闸门前先读它**，里面记了多个已修缺陷与三条已知未修边界，
 以及两次「测量本身写错」的教训。
 
@@ -256,13 +256,13 @@ POE1/POE2 边界顺带落在同一张表上：poe.ninja 两款游戏都服务，
 | `orchestrator/` | `loop.py` 主循环与轨迹（批量与流式**共用** `_prepare_turn` / `_handle_tool_call` / `_terminal_gap`，只在「怎么把文本交给用户」上不同——不要在任一侧重新写判据，`tests/unit/test_turn_parity.py` 会挡）、`binding.py` 出口闸门（1400+ 行，改动前先读它的模块 docstring）、`citation.py` 引用装配 |
 | `agents/` | `knowledge.py`：系统提示词 + `ALLOWED_TOOLS` + 缺据声明模板。提示词是第一道约束不是唯一约束 |
 | `tools/` | `registry.py` 注册与 schema 导出，`impl/` 各工具；返回值统一 `ToolResult`，`citations` 是结构化引用而非拼进正文的字符串（要参与出口校验） |
-| `core/mcp_protocol.py` / `mcp_server.py` | MCP `2025-06-18` stdio 协议层与入口；默认复用 Knowledge Agent 的 48 个只读工具，`--tools` 可收窄暴露面。stdout 只能写逐行 JSON-RPC，日志必须走 stderr；EOF 必须关闭 SQLite |
+| `core/mcp_protocol.py` / `mcp_server.py` | MCP `2025-06-18` stdio 协议层与入口；默认复用 Knowledge Agent 的 49 个只读工具，`--tools` 可收窄暴露面。stdout 只能写逐行 JSON-RPC，日志必须走 stderr；EOF 必须关闭 SQLite |
 | `kb/sync.py` / `scripts/sync_knowledge.py` | 过期分类计划、现有采集器编排、事实行快照与版本 diff。默认 CLI 只预览，`--apply` 才执行；记录删除提升为 `attention`。唯一装备不得加入自动集合，直到主列表 + 1,342 页详情补全可原子执行 |
 | `retrieval/` | FTS5、别名、RRF 融合、jieba 分词、领域词表 |
 | `kb/` | `pipeline.py` 采集管线、`sources/` 各来源抽取器、`coverage.py` 知识库自描述层、`stat_channels.py` 属性来源渠道注册表、`render*.py` 卡片切片 |
 | `parsers/` | `item_text.py`（纯文本，不连库）→ `item_mods.py` T 级匹配 → `mod_bridge.py` 英文桥接 → `item_report.py` 报告 |
 | `craft/` | `feasibility.py` 词缀组合三态可行性、`pool.py` 胸甲普通词缀有效池与条件概率、`awakener_operations.py` 觉醒者之石双物品状态转移；各制作状态机只实现来源原文明示的变化，随机结果与未证实前提保留 unknown |
-| `calc/` | `constants.py` 常量访问层，**缺失即抛异常，绝不给默认值**；`derive.py` 各计算器共用的推导件（`Step` / 引用推导）；`resistance.py` 抗性结算；`mitigation.py` 受击结算（闪避/命中、格挡、法术压制、护甲）；`recovery.py` 回复（护盾回充、偷取、魔力再生）；`reservation.py` 保留（取整是难点）；`ailment.py` 持续伤害；`threshold.py` 门槛型异常；`maxhit.py` 一发最大承受伤害；`crit.py` 暴击；`accuracy.py` 命中率（攻击侧，与 `mitigation` 共用同一个 `hitChance`）；`attack_speed.py` 攻击速度。**DPS 仍未实现**——整条加成链（增加/更多/转化/穿透）没有采集，伤害转化下的 Max Hit、冰冻时长曲线同样未实现 |
+| `calc/` | `constants.py` 常量访问层，**缺失即抛异常，绝不给默认值**；`derive.py` 各计算器共用的推导件（`Step` / 引用推导）；`resistance.py` 抗性结算；`mitigation.py` 受击结算（闪避/命中、格挡、法术压制、护甲）；`recovery.py` 回复（护盾回充、偷取、魔力再生）；`reservation.py` 保留（取整是难点）；`ailment.py` 持续伤害；`threshold.py` 门槛型异常；`maxhit.py` 一发最大承受伤害；`boss_survival.py` Boss 单次命中与 Max Hit 合流；`crit.py` 暴击；`accuracy.py` 命中率（攻击侧，与 `mitigation` 共用同一个 `hitChance`）；`attack_speed.py` 攻击速度。**DPS 仍未实现**——整条加成链（增加/更多/转化/穿透）没有采集，伤害转化下的 Max Hit、冰冻时长曲线同样未实现 |
 | `static/` | 单页前端三个文件，无构建步骤、无 Node、无第三方 JS（Markdown 渲染器自写，为了强制先转义再解析） |
 | `tests/golden/` | 评测资产：`questions.yaml` 黄金问答集、`loader.py` 严格校验、`recording.py` 录制回放、`recordings/` 真实响应、`audit.yaml` 人工结论、`BASELINE.md` 指标基线 |
 
@@ -285,6 +285,7 @@ POE1/POE2 边界顺带落在同一张表上：poe.ninja 两款游戏都服务，
 `mod_tiers`（T 级梯度）→ `mod_class_summary`（某底材上一共有哪些词缀：总量 / 分布 / 梯度清单）→
 `skill_gem_levels`（宝石逐级字面值）→
 `spectre_stats`（幽魂倍率 / 抗性 / 排名）→ `boss_skill_damage`（Boss 技能某等级打多少 / 穿透 / Uber 差异）→
+`boss_survival_check`（Boss 单次命中 × 明确防御池的三态校验）→
 `passive_path`（点到某天赋要几点 + 逐节点路径）→
 `cluster_jewel_info`（星团珠宝尺寸 / 基石 / 是否在主树外）→
 `resistance_calc`（按 PoB 原式复算抗性，给逐步推导）→
@@ -713,6 +714,13 @@ POEDB 页面仍是旧版」：`号召` PoB 侧是 `ConvocationNew`（各级需�
 没有英文名，这些 Boss 也不能做幽魂）。加一列永远填不上的空列正是 `pob_skill_level`
 表注释警告过的坑。第一版还写过一个桥接函数，它不但 0/32 全空，
 还用 `except Exception` 吞掉了「没有 name_en 列」这个 schema 错误——已删。
+
+`boss_survival_check` / `POST /boss/survival` 将这条 Boss 原始命中链与 `max_hit_calc`
+使用的防御链确定性合并：元素抗性先扣普通或 Uber 预设中的技能穿透，再按抗性、
+护甲/物理减伤、承受倍率计算实际扣除池子；默认比较 0%..100% 掷骰区间，输出全区间
+可承受、取决于掷骰、全区间耗尽池子三态，**等于池子按耗尽处理**。DoT 直接 unknown；
+多伤害类型、多击序列、转化、非零暴击、格挡/闪避/法压、守护技能、Ward、MoM、恢复、
+阶段和打法均不进入结论。这是单次命中阈值，不是整场 Boss 战的生存保证。
 
 `craft_affix_capacity` **7** 条前后缀名额规则（POEDB `/cn/Modifiers` × PoB
 `Classes/Item.lua`）。这张表是 `check_mod_combination` 能说出 `possible` 的**唯一前提**：
