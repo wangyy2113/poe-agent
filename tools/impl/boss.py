@@ -48,8 +48,9 @@ _BOUNDARY = (
 )
 
 _SURVIVAL_BOUNDARY = (
-    "只比较 PoB 预设的一次单伤害类型命中与用户明确提供的防御池；"
-    "不含持续伤害、多击序列、伤害转化、暴击、格挡、闪避、法术压制、守护技能、"
+    "只比较 PoB 预设的同一单伤害类型命中与用户明确提供的防御池；"
+    "次数大于 1 时只按每次都命中、期间无恢复累加。不含持续伤害、真实 Boss 连招、"
+    "不同技能组合、伤害转化、暴击、格挡、闪避、法术压制、守护技能、"
     "Ward、Mind over Matter、恢复、阶段机制或打法。结论不是整场 Boss 战的生存保证"
 )
 
@@ -166,13 +167,22 @@ def _maxhit_citation(text: str) -> dict[str, Any]:
 
 
 def _unknown_survival_answer(
-    skill: str, reason: str, *, level: int, uber: bool, pool: float | None
+    skill: str,
+    reason: str,
+    *,
+    level: int,
+    uber: bool,
+    pool: float | None,
+    hit_count: int = 1,
 ) -> str:
     provided = f"敌人等级 {level}"
     if pool is not None:
         provided += f"；防御池 {pool:g}"
+    if hit_count > 1:
+        provided += f"；连续命中 {hit_count} 次"
+    title = "单次命中" if hit_count == 1 else f"连续 {hit_count} 次命中"
     return "\n".join([
-        f"### {skill} 单次命中生存校验" + ("（Uber）" if uber else ""),
+        f"### {skill} {title}生存校验" + ("（Uber）" if uber else ""),
         "",
         "**结论：无法安全计算**",
         f"- 原因：{reason}",
@@ -198,9 +208,10 @@ def _build_unknown(
     candidates: list[str] | None = None,
     row: sqlite3.Row | None = None,
     fallback_reason: str = "",
+    hit_count: int = 1,
 ) -> ToolResult:
     answer = _unknown_survival_answer(
-        skill, reason, level=level, uber=uber, pool=pool
+        skill, reason, level=level, uber=uber, pool=pool, hit_count=hit_count
     )
     answer += f"\n> Build 快照边界：{_BUILD_SNAPSHOT_BOUNDARY}"
     return ToolResult(
@@ -212,6 +223,7 @@ def _build_unknown(
             "skill": skill,
             "level": int(level),
             "uber": bool(uber),
+            "hit_count": hit_count,
             "damage_type": damage_type,
             "pool": pool,
             "pool_mode": pool_mode,
@@ -369,6 +381,7 @@ def boss_survival_from_build(
     level: int,
     uber: bool = False,
     roll_range: float | None = None,
+    hit_count: int = 1,
     use_pob_max_hit: bool = True,
     pool_mode: BuildPoolMode = "life_and_energy_shield",
 ) -> ToolResult:
@@ -382,6 +395,12 @@ def boss_survival_from_build(
     name = (skill or "").strip()
     if len(name) < 2:
         return ToolResult(ok=False, error="skill 至少需要两个字符")
+    if (
+        isinstance(hit_count, bool)
+        or not isinstance(hit_count, int)
+        or not 1 <= hit_count <= 100
+    ):
+        return ToolResult(ok=False, error="hit_count 必须是 1..100 的整数")
     if pool_mode not in {"life", "life_and_energy_shield"}:
         return ToolResult(ok=False, error="pool_mode 只支持 life 或 life_and_energy_shield")
 
@@ -389,13 +408,14 @@ def boss_survival_from_build(
     if not rows:
         return _build_unknown(
             name, f"PoB 的 Boss 技能预设里没有「{name}」", level=level,
-            uber=uber, pool_mode=pool_mode, found=False,
+            uber=uber, pool_mode=pool_mode, found=False, hit_count=hit_count,
         )
     if len(rows) > 1:
         candidates = [str(row["name"]) for row in rows]
         return _build_unknown(
             name, f"「{name}」匹配到 {len(rows)} 条，请指明技能", level=level,
             uber=uber, pool_mode=pool_mode, found=False, candidates=candidates,
+            hit_count=hit_count,
         )
 
     row = rows[0]
@@ -403,7 +423,7 @@ def boss_survival_from_build(
     if str(row["damage_type"]) == "DamageOverTime":
         result = boss_survival_check(
             str(row["name"]), level=level, pool=1, uber=uber,
-            roll_range=roll_range, cold_resist_pct=0,
+            roll_range=roll_range, hit_count=hit_count, cold_resist_pct=0,
         )
         data = dict(result.data or {})
         data.update({
@@ -419,7 +439,8 @@ def boss_survival_from_build(
         # 复用核心工具已经审计过的多类型与暴击 unknown 边界。
         result = boss_survival_check(
             str(row["name"]), level=level, pool=1, uber=uber,
-            roll_range=roll_range, fire_resist_pct=0, cold_resist_pct=0,
+            roll_range=roll_range, hit_count=hit_count,
+            fire_resist_pct=0, cold_resist_pct=0,
             lightning_resist_pct=0, chaos_resist_pct=0,
         )
         data = dict(result.data or {})
@@ -438,7 +459,13 @@ def boss_survival_from_build(
         build, row, level=level, uber=uber, damage_type=damage_type
     )
     snapshot_max_hit = _snapshot_max_hit_field(build, damage_type)
-    if not use_pob_max_hit:
+    if hit_count > 1:
+        snapshot_matches = False
+        fallback_reason = (
+            "PoB *MaximumHitTaken 只是单击阈值，不能用于累加"
+            f" {hit_count} 次连续命中"
+        )
+    elif not use_pob_max_hit:
         snapshot_matches = False
         fallback_reason = "请求已通过 use_pob_max_hit=false 禁用 PoB Max Hit 优先路径"
     if snapshot_matches and snapshot_max_hit is not None:
@@ -490,8 +517,15 @@ def boss_survival_from_build(
                 "pool": None,
                 "raw_low": low.damage,
                 "raw_high": high.damage,
+                "hit_count": 1,
+                "total_raw_low": low.damage,
+                "total_raw_high": high.damage,
                 "taken_low": None,
                 "taken_high": None,
+                "total_taken_low": None,
+                "total_taken_high": None,
+                "remaining_low": None,
+                "remaining_high": None,
                 "max_raw_hit": max_hit,
                 "margin_low": round(max_hit - low.damage, 2),
                 "margin_high": round(max_hit - high.damage, 2),
@@ -579,6 +613,7 @@ def boss_survival_from_build(
             uber=uber, pool_mode=pool_mode, damage_type=damage_type, pool=pool,
             source_fields=source_fields, source_config=source_config,
             missing_inputs=missing, row=row, fallback_reason=fallback_reason,
+            hit_count=hit_count,
         )
 
     resist_args = {
@@ -589,7 +624,7 @@ def boss_survival_from_build(
     }
     result = boss_survival_check(
         str(row["name"]), level=level, pool=pool, uber=uber,
-        roll_range=roll_range, armour=armour, **resist_args,
+        roll_range=roll_range, hit_count=hit_count, armour=armour, **resist_args,
     )
     if not result.ok:
         return result
@@ -633,8 +668,9 @@ def _render_survival(
     roll_note = (
         f"固定 {roll_range:g}% 掷骰点" if roll_range is not None else "0%..100% 掷骰区间"
     )
+    title = "单次命中" if result.hit_count == 1 else f"连续 {result.hit_count} 次命中"
     lines = [
-        f"### {row['name']} 单次命中生存校验" + ("（Uber）" if uber else ""),
+        f"### {row['name']} {title}生存校验" + ("（Uber）" if uber else ""),
         "",
         f"**结论：{labels[result.outcome]}**",
         f"- 口径：敌人等级 {level}；{roll_note}；防御池 {result.pool:g}",
@@ -654,16 +690,33 @@ def _render_survival(
         )
         if armour or flat_physical_reduction_pct:
             lines.append("- 忽略的输入：护甲与物理减伤不作用于这次非物理命中")
-    lines += [
-        f"- 实际扣除池子：{result.taken_low:,.2f} — {result.taken_high:,.2f}",
-        f"- 低 / 高掷骰后的池子余量：{result.margin_low:,.2f} / {result.margin_high:,.2f}",
-        f"- 同一防御口径下的原始 Max Hit：{result.max_raw_hit:,.0f}",
-    ]
+    if result.hit_count == 1:
+        lines += [
+            f"- 实际扣除池子：{result.taken_low:,.2f} — {result.taken_high:,.2f}",
+            f"- 低 / 高掷骰后的池子余量："
+            f"{result.margin_low:,.2f} / {result.margin_high:,.2f}",
+        ]
+    else:
+        lines += [
+            f"- 每击实际扣除池子：{result.taken_low:,.2f} — {result.taken_high:,.2f}",
+            f"- {result.hit_count} 击累计原始伤害："
+            f"{result.total_raw_low:,.2f} — {result.total_raw_high:,.2f}",
+            f"- {result.hit_count} 击累计承伤："
+            f"{result.total_taken_low:,.2f} — {result.total_taken_high:,.2f}",
+            f"- 低 / 高掷骰后的池子余量："
+            f"{result.remaining_low:,.2f} / {result.remaining_high:,.2f}",
+        ]
+    lines.append(f"- 同一防御口径下的原始 Max Hit：{result.max_raw_hit:,.0f}")
     if row["tooltip"]:
         lines.append(f"- PoB 技能说明原文：{row['tooltip']}")
+    assumption = (
+        "“不会耗尽池子”只描述这一记已建模命中"
+        if result.hit_count == 1
+        else "假设同一 Boss 技能每次都命中、期间无恢复"
+    )
     lines += [
         "",
-        "> “不会耗尽池子”只描述这一记已建模命中；等于池子按耗尽处理。",
+        f"> {assumption}；等于池子按耗尽处理。",
         f"> 边界：{_SURVIVAL_BOUNDARY}。",
         f"> Boss 技能来源：[Path of Building]({row['pob_url']})。",
     ]
@@ -768,7 +821,8 @@ def boss_skill_damage(
     description=(
         "把 PoB 的 Boss 技能单次原始伤害与角色明确提供的防御池、抗性、护甲和承受倍率"
         "串起来，判断整个伤害掷骰区间都不耗尽池子、取决于掷骰，还是整个区间都会耗尽。"
-        "元素穿透取自 Boss 技能预设。只支持一次单伤害类型命中；持续伤害、多击序列、"
+        "元素穿透取自 Boss 技能预设。可按每次都命中且期间无恢复，累加同一命中 1..100 次；"
+        "持续伤害、真实 Boss 连招、不同技能组合、"
         "伤害转化、暴击、格挡/闪避/压制、守护技能、Ward、MoM、恢复与打法均不在结论内。"
     ),
     parameters={
@@ -782,6 +836,10 @@ def boss_skill_damage(
             "pool": {
                 "type": "number", "exclusiveMinimum": 0,
                 "description": "这一次命中可消耗的生命 + 能量护盾池。",
+            },
+            "hit_count": {
+                "type": "integer", "minimum": 1, "maximum": 100, "default": 1,
+                "description": "同一技能连续命中次数；假设每次命中且期间无恢复。",
             },
             "uber": {"type": "boolean", "default": False},
             "roll_range": {
@@ -812,6 +870,7 @@ def boss_survival_check(
     skill: str,
     level: int,
     pool: float,
+    hit_count: int = 1,
     uber: bool = False,
     roll_range: float | None = None,
     fire_resist_pct: float | None = None,
@@ -828,16 +887,24 @@ def boss_survival_check(
         return ToolResult(ok=False, error="skill 至少需要两个字符")
     if pool <= 0:
         return ToolResult(ok=False, error="pool 必须大于 0")
+    if (
+        isinstance(hit_count, bool)
+        or not isinstance(hit_count, int)
+        or not 1 <= hit_count <= 100
+    ):
+        return ToolResult(ok=False, error="hit_count 必须是 1..100 的整数")
 
     rows = _rows(dbmod.get_conn(), name)
     if not rows:
         return ToolResult(ok=True, data={
             "found": False,
             "assessable": False,
+            "hit_count": hit_count,
             "reason": f"PoB 的 Boss 技能预设里没有「{name}」",
             "boundary": _SURVIVAL_BOUNDARY,
             "answer": _unknown_survival_answer(
-                name, "没有匹配的 PoB Boss 技能预设", level=level, uber=uber, pool=pool
+                name, "没有匹配的 PoB Boss 技能预设", level=level, uber=uber,
+                pool=pool, hit_count=hit_count
             ),
         })
     if len(rows) > 1:
@@ -845,11 +912,13 @@ def boss_survival_check(
         return ToolResult(ok=True, data={
             "found": False,
             "assessable": False,
+            "hit_count": hit_count,
             "reason": f"「{name}」匹配到 {len(rows)} 条，请指明技能",
             "candidates": candidates,
             "boundary": _SURVIVAL_BOUNDARY,
             "answer": _unknown_survival_answer(
-                name, f"匹配到多条：{'、'.join(candidates)}", level=level, uber=uber, pool=pool
+                name, f"匹配到多条：{'、'.join(candidates)}", level=level,
+                uber=uber, pool=pool, hit_count=hit_count
             ),
         })
 
@@ -865,7 +934,8 @@ def boss_survival_check(
 
     if unknown_reason:
         answer = _unknown_survival_answer(
-            str(row["name"]), unknown_reason, level=level, uber=uber, pool=pool
+            str(row["name"]), unknown_reason, level=level, uber=uber, pool=pool,
+            hit_count=hit_count
         )
         return ToolResult(
             ok=True,
@@ -874,6 +944,7 @@ def boss_survival_check(
                 "assessable": False,
                 "verdict": "unknown",
                 "skill": str(row["name"]),
+                "hit_count": hit_count,
                 "reason": unknown_reason,
                 "boundary": _SURVIVAL_BOUNDARY,
                 "answer": answer,
@@ -896,13 +967,15 @@ def boss_survival_check(
         unknown_reason = f"缺少{_DAMAGE_TYPE_ZH.get(dtype, dtype)}抗性，不能替用户假定"
     if unknown_reason:
         answer = _unknown_survival_answer(
-            str(row["name"]), unknown_reason, level=level, uber=uber, pool=pool
+            str(row["name"]), unknown_reason, level=level, uber=uber, pool=pool,
+            hit_count=hit_count
         )
         return ToolResult(
             ok=True,
             data={
                 "found": True, "assessable": False, "verdict": "unknown",
                 "skill": str(row["name"]), "reason": unknown_reason,
+                "hit_count": hit_count,
                 "missing_inputs": [f"{_DAMAGE_TYPE_ZH.get(dtype, dtype)}抗性"],
                 "boundary": _SURVIVAL_BOUNDARY, "answer": answer,
             },
@@ -927,11 +1000,12 @@ def boss_survival_check(
             row["uber_penetrations"] if uber else row["penetrations"]
         )
         penetration = float(penetrations.get(f"{dtype}Pen") or 0)
-        result = boss_survival.assess_single_hit(
+        result = boss_survival.assess_repeated_hits(
             damage_type=dtype,
             raw_low=low.damage,
             raw_high=high.damage,
             pool=float(pool),
+            hit_count=hit_count,
             resist_pct=float(resist_by_type[dtype] or 0),
             penetration_pct=penetration,
             armour=float(armour),

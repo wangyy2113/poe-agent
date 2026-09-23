@@ -61,11 +61,12 @@ router = APIRouter(tags=["Build"])
 
 
 class BuildBossSurvivalRequest(BaseModel):
-    """用配置匹配的完整 Max Hit 或基础防御快照校验一次 Boss 命中。"""
+    """用完整 Max Hit 或基础防御快照校验 Boss 重复命中。"""
 
     skill: str = Field(min_length=2, max_length=120)
     level: int = Field(ge=1, le=100)
     uber: bool = False
+    hit_count: int = Field(default=1, ge=1, le=100)
     roll_range: float | None = Field(default=None, ge=0, le=100, allow_inf_nan=False)
     use_pob_max_hit: bool = Field(
         default=True,
@@ -93,8 +94,9 @@ class BuildRequest(BaseModel):
     boss_survival: BuildBossSurvivalRequest | None = Field(
         default=None,
         description=(
-            "可选 Boss 单次命中校验。配置匹配时使用导入 Build 的完整 Max Hit；"
-            "否则降级到 PlayerStat 基础防御快照，缺字段或机制不明时返回 unknown。"
+            "可选 Boss 单击或同一命中重复校验。配置匹配时使用导入 Build 的完整 Max Hit；"
+            "否则降级到 PlayerStat 基础防御快照；连续多击不使用单击 Max Hit。"
+            "缺字段或机制不明时返回 unknown。"
         ),
     )
 
@@ -266,7 +268,7 @@ class BuildResponse(BaseModel):
     #: **PoB 自己算的快照**，见 `player_stats_note`
     player_stats: dict[str, float] = {}
     player_stats_note: str = ""
-    #: 可选：用当前 Build 的完整 Max Hit 或基础防御快照校验指定 Boss 单次命中
+    #: 可选：用当前 Build 的完整 Max Hit 或基础防御快照校验 Boss 命中
     boss_survival: BuildBossSurvivalOut | None = None
     #: 需求 8.4 的逐项体检。**只判不算**：值取自 build，判据取自本库常量
     report: list[CheckOut] = []
@@ -498,6 +500,7 @@ def _build_response(
             level=boss_query.level,
             uber=boss_query.uber,
             roll_range=boss_query.roll_range,
+            hit_count=boss_query.hit_count,
             use_pob_max_hit=boss_query.use_pob_max_hit,
             pool_mode=boss_query.pool_mode,
         )

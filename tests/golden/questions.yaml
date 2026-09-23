@@ -1567,6 +1567,14 @@ cases:
       只有技能名、等级、防御池和对应抗性都能逐字冻结时才代码直达；工具输出的三态
       只覆盖一次单类型命中，不能改写成整场 Boss 战生存保证
 
+  - id: route_boss_repeated_hit_check
+    query: 84级 Shaper Ball，10000血、75冰抗，连续3次能扛得住吗
+    kind: tool_route
+    expect_tool: boss_survival_check
+    note: >-
+      明确的“连续 3 次”提取为 hit_count=3；工具只按同一技能每次都命中、
+      期间无恢复累加，不冒充真实 Boss 连招模拟
+
   - id: gap_boss_fight_mechanics
     query: 谢勒怎么打，有什么机制要躲
     kind: gap

@@ -1,4 +1,4 @@
-"""Boss 单次命中与 Max Hit 合流的领域、工具、API 和路由契约。"""
+"""Boss 重复命中与 Max Hit 合流的领域、工具、API 和路由契约。"""
 
 from __future__ import annotations
 
@@ -123,6 +123,38 @@ class BossSurvivalFormulaTest(unittest.TestCase):
         )
         self.assertEqual("fails_full_range", result.outcome)
 
+    def test_连续命中按逐击承伤累加并保留三态(self) -> None:
+        survives = boss_survival.assess_repeated_hits(
+            damage_type="Fire", raw_low=1000, raw_high=2000, pool=5000,
+            resist_pct=0, hit_count=2,
+        )
+        dependent = boss_survival.assess_repeated_hits(
+            damage_type="Fire", raw_low=2000, raw_high=3000, pool=5000,
+            resist_pct=0, hit_count=2,
+        )
+        fails = boss_survival.assess_repeated_hits(
+            damage_type="Fire", raw_low=2500, raw_high=3000, pool=5000,
+            resist_pct=0, hit_count=2,
+        )
+        self.assertEqual("survives_full_range", survives.outcome)
+        self.assertEqual("roll_dependent", dependent.outcome)
+        self.assertEqual("fails_full_range", fails.outcome)
+        self.assertEqual(4000, dependent.total_taken_low)
+        self.assertEqual(6000, dependent.total_taken_high)
+        self.assertEqual(1000, dependent.remaining_low)
+        self.assertEqual(-1000, dependent.remaining_high)
+
+    def test_单击兼容入口与重复命中默认结果一致(self) -> None:
+        kwargs = {
+            "damage_type": "Cold", "raw_low": 8000, "raw_high": 12000,
+            "pool": 5000, "resist_pct": 75, "penetration_pct": 25,
+        }
+        single = boss_survival.assess_single_hit(**kwargs)
+        repeated = boss_survival.assess_repeated_hits(**kwargs)
+        self.assertEqual(single, repeated)
+        self.assertEqual(1, single.hit_count)
+        self.assertEqual(single.taken_high, single.total_taken_high)
+
     def test_非物理伤害不误用护甲(self) -> None:
         plain = boss_survival.assess_single_hit(
             damage_type="Lightning", raw_low=10000, raw_high=10000, pool=6000,
@@ -148,6 +180,26 @@ class BossSurvivalFormulaTest(unittest.TestCase):
         self.assertEqual(2, len(result.citations))
         self.assertFalse(REGISTRY.spec("boss_survival_check").parameters["additionalProperties"])
 
+    def test_工具累加两次并拒绝非法次数(self) -> None:
+        result = boss_survival_check(
+            "Shaper Ball", level=84, pool=10000, hit_count=2,
+            cold_resist_pct=75,
+        )
+        self.assertEqual("roll_dependent", result.data["verdict"])
+        self.assertEqual(2, result.data["hit_count"])
+        self.assertEqual(
+            round(result.data["taken_high"] * 2, 2),
+            result.data["total_taken_high"],
+        )
+        self.assertIn("每次都命中、期间无恢复", result.data["answer"])
+        for count in (0, 101, True):
+            with self.subTest(hit_count=count):
+                invalid = boss_survival_check(
+                    "Shaper Ball", level=84, pool=10000, hit_count=count,
+                    cold_resist_pct=75,
+                )
+                self.assertFalse(invalid.ok)
+
     def test_Uber使用Uber穿透而非普通穿透(self) -> None:
         result = boss_survival_check(
             "Shaper Ball", level=84, pool=7000, uber=True, cold_resist_pct=75,
@@ -172,10 +224,13 @@ class BossSurvivalFormulaTest(unittest.TestCase):
 
     def test_API复用同一确定性结果(self) -> None:
         response = survival(BossSurvivalRequest(
-            skill="Shaper Ball", level=84, pool=6000, cold_resist_pct=75,
+            skill="Shaper Ball", level=84, pool=10000, hit_count=2,
+            cold_resist_pct=75,
         ), _caller="test")
         self.assertEqual("roll_dependent", response.verdict)
         self.assertEqual(25, response.penetration_pct)
+        self.assertEqual(2, response.hit_count)
+        self.assertIsNotNone(response.total_taken_high)
         from main import create_app
 
         self.assertIn("/poe_agent/boss/survival", create_app().openapi()["paths"])
@@ -188,6 +243,15 @@ class BossSurvivalFormulaTest(unittest.TestCase):
             "cold_resist_pct": 75,
         }, loop._boss_survival_args(question))
         self.assertIsNone(loop._boss_survival_args("Shaper Ball 能扛得住吗"))
+
+    def test_聊天路由提取明确连续次数但不猜多解或越界(self) -> None:
+        base = "84级 Shaper Ball，10000血、75冰抗，"
+        for phrase in ("连续3次能扛吗", "3发能扛吗", "3下命中能扛吗"):
+            with self.subTest(phrase=phrase):
+                args = loop._boss_survival_args(base + phrase)
+                self.assertEqual(3, args["hit_count"])
+        self.assertIsNone(loop._boss_survival_args(base + "连续3次、4发能扛吗"))
+        self.assertIsNone(loop._boss_survival_args(base + "连续101次能扛吗"))
 
 
 class BuildBossSurvivalTest(unittest.TestCase):
@@ -272,6 +336,36 @@ class BuildBossSurvivalTest(unittest.TestCase):
         self.assertEqual("basic_defence_snapshot", result.data["calculation_mode"])
         self.assertIn("use_pob_max_hit=false", result.data["fallback_reason"])
         self.assertNotEqual(50000, result.data["max_raw_hit"])
+
+    def test_连续多击禁用单击Max_Hit并降级累加基础承伤(self) -> None:
+        build = PobBuild(
+            config={"presetBossSkills": "Shaper Ball", "enemyIsBoss": "Pinnacle"},
+            player_stats={
+                "Life": 10000, "EnergyShield": 0, "ColdResist": 75,
+                "ColdMaximumHitTaken": 50000,
+            },
+        )
+        result = boss_survival_from_build(
+            build, skill="Shaper Ball", level=84, hit_count=2,
+        )
+        self.assertEqual("basic_defence_snapshot", result.data["calculation_mode"])
+        self.assertEqual("roll_dependent", result.data["verdict"])
+        self.assertEqual(2, result.data["hit_count"])
+        self.assertIn("MaximumHitTaken 只是单击阈值", result.data["fallback_reason"])
+        self.assertNotEqual(50000, result.data["max_raw_hit"])
+
+    def test_连续多击降级后缺基础字段保持unknown(self) -> None:
+        build = PobBuild(
+            config={"presetBossSkills": "Shaper Ball", "enemyIsBoss": "Pinnacle"},
+            player_stats={"ColdMaximumHitTaken": 50000},
+        )
+        result = boss_survival_from_build(
+            build, skill="Shaper Ball", level=84, hit_count=2,
+        )
+        self.assertEqual("unknown", result.data["calculation_mode"])
+        self.assertEqual(2, result.data["hit_count"])
+        self.assertIn("MaximumHitTaken 只是单击阈值", result.data["fallback_reason"])
+        self.assertIn("Life（或 LifeUnreserved）", result.data["missing_inputs"])
 
     def test_PoB元素三项相等时可用唯一导出的闪电Max_Hit(self) -> None:
         build = PobBuild(
