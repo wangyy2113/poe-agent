@@ -29,7 +29,7 @@ POE1 的机制耦合极深，一个错误的小前提会让整条结论反向。
 | 通货 | 113 条（中英文名、堆叠上限、效果原文）；工艺台费用引用的 18 个通货全部能对上；**获取途径与兑换比例未采集**；市场价格以 poe.watch 为主、GGG Trade API 在线挂单为备用 |
 | 圣甲虫 | 118 个（效果、堆叠上限、地图装置放置上限）；**掉落来源未采集**；市场价格以 poe.watch 为主、GGG Trade API 在线挂单为备用 |
 | 实时经济价格、趋势与材料清单成本 | `POST /economy/price` 查询当前快照；`POST /economy/trend` 查询历史；`POST /economy/material-cost` 汇总明确清单；`POST /economy/rare-comparables` 把稀有装备中经 PoB tradeHashes 与 GGG stat 字典双重确认的显式词缀用于同底材、同物等/腐化状态在线挂单比较。SQLite 价格缓存 TTL 30 分钟、历史保留 90 天；主源无缓存时标准条目与唯一装备可显式降级官方 Trade API。**不足两个趋势点不判趋势；官方挂单过滤后不足 5 条不报代表价；稀有装比较不按 roll/隐式/附魔/品质/插槽/链接归一化，不冒充精确成交价；不生成制作路径、成功率、利润与 Flip 建议** |
-| Boss 技能伤害、生存校验与防御门槛 | 10 条 Boss 技能的伤害建模 + 22 个 Boss 的护甲/闪避倍率；`boss_skill_damage` 按 `monsterDamageTable` 与 PoB 系数算一击伤害，`boss_survival_check` / `POST /boss/survival` 校验同一命中连续 1–100 次，`boss_defence_threshold` / `POST /boss/threshold` 反解最低整数防御池、目标池缺口及穿透前抗性/物理护甲门槛，并明确 90% 上限内不可达。`POST /build` 也可消费 PoB 快照。**只校验同一单类型、非暴击命中，不给打法**；DoT、真实连招/不同技能组合、命中概率、恢复、阶段与应对未覆盖；数字是 PoB 建模值，GGG 未公布 |
+| Boss 技能伤害、生存校验与防御门槛 | 10 条 Boss 技能的伤害建模 + 22 个 Boss 的护甲/闪避倍率；`boss_survival_check` 校验同一命中连续 1–100 次，`boss_defence_threshold` 反解最低防御池、抗性/护甲门槛，`boss_sequence_check` / `POST /boss/sequence` 则按用户明确给出的多技能顺序逐击累计并返回耗尽位置。`POST /build` 也可消费 PoB 快照。**显式序列不是游戏真实连招，不给打法**；DoT、自动推断连招、命中概率、恢复、阶段与应对未覆盖；数字是 PoB 建模值，GGG 未公布 |
 | 制作规则（名额与影响力） | 7 条前后缀名额规则（魔法 1+1、稀有 3+3、传奇不受限制、药剂随魔法，另有 PoB 独有的珠宝/Graft 2+2 与「已腐化深渊珠宝回到 3+3」）；`base_influence_profile` 可查 1,022 条具体底材的六类传统影响 `influenceTags`，`check_mod_combination` 在给定具体底材、单一影响与可选物等时，会用 PoB 底材标签和 POEDB 词缀 `spawn_tags` 验证影响词缀适用性。`possible` 只表示词缀能共存，不表示能制作；古灵基底由独立状态机处理。**影响底材获得方式、多影响词缀池组合与完整元词缀状态机仍未采集** |
 | 觉醒者之石状态机 | `awakener_orb_state` / `POST /craft/awakener`：接受供体与目标的两段装备复制文本，或显式物品类别与传统影响；逐字绑定 POEDB 效果，检查同类物品、双方唯一且不同的传统影响，输出供体销毁、目标重铸为稀有并兼有两种影响的条件后状态。**不声称各保留一条影响词缀，不生成重铸后的具体词缀、数量、数值、概率、成本或路线** |
 | 收获（古灵庄园） | 74 条定向工艺 + 98 条命能费用，且 **74/74 条均有结构化语义**：20 条装备重铸、23 条元素转换与新增/移除、14 条品质附魔、14 条材料随机转换、3 条地图/技能石/命运卡牺牲；另有 **51 个种子怪物**按颜色对应四种命能中的三种。随机类型与概率、堆叠输出数量、费用缩放基准和市场成本未采集时保持未知 |
@@ -61,7 +61,7 @@ POE1 的机制耦合极深，一个错误的小前提会让整条结论反向。
 | **问答** | `POST /chat`：强制检索 → 充分性判定 → 生成 → 出口绑定校验 → 装配引用 |
 | **流式问答** | `POST /chat/stream`：SSE，**按句**校验通过才下发，未校验内容不外发 |
 | **OpenAI 兼容** | `POST /v1/chat/completions`：支持文本消息、非流式与标准 SSE `[DONE]`；内部仍强制检索与出口校验 |
-| **MCP stdio** | `mcp_server.py`：按 MCP `2025-06-18` 向 Codex、Claude Desktop 等客户端暴露 Knowledge Agent 的 50 个只读工具；支持 `--tools` 白名单，工具结果保留结构化数据、引用、unknown/boundary 与耗时 |
+| **MCP stdio** | `mcp_server.py`：按 MCP `2025-06-18` 向 Codex、Claude Desktop 等客户端暴露 Knowledge Agent 的 51 个只读工具；支持 `--tools` 白名单，工具结果保留结构化数据、引用、unknown/boundary 与耗时 |
 | **知识库自动同步与版本 diff** | `scripts/sync_knowledge.py`：按最后成功采集时间自动选择过期分类，复用现有结构断言与快照数量护栏；同步前后按稳定主键报告逐表新增/删除/修改与版本字段变化，历史可从 `/admin/sync/*` 查询。默认只预览，记录删除时整轮标记 `attention` |
 | **鉴权与限流** | 普通接口使用 `API_KEYS` 并按 Key 令牌桶限流；管理接口独立使用 `ADMIN_TOKEN`，可叠加 IP/CIDR 白名单 |
 | **出口闸门** | 逐句校验事实断言与计算派生是否绑定有效证据，未通过由代码拦截；47 项单测覆盖 |
@@ -136,7 +136,7 @@ Windows 把 `.venv/bin/python` 换成 `.venv\Scripts\python.exe`。
 ### 作为 MCP 工具服务器使用
 
 `mcp_server.py` 是本地 stdio 服务，不需要先启动 Web 服务，也不监听端口。默认暴露
-Knowledge Agent 的 50 个只读工具；需要缩小能力面时传入逗号分隔的白名单：
+Knowledge Agent 的 51 个只读工具；需要缩小能力面时传入逗号分隔的白名单：
 
 ```bash
 .venv/bin/python mcp_server.py --tools kb_coverage,entity_lookup
@@ -503,6 +503,19 @@ curl -s -X POST http://127.0.0.1:8787/poe_agent/boss/threshold \
 抗性只在 -200%–90% 内搜索；物理护甲也受 PoB 物理减伤上限约束。上限内无法让累计承伤
 严格低于目标池时返回不可达，不生成一个看似精确但游戏内无法达到的数值。该接口与生存
 校验使用相同的“同一技能每次都命中、期间无恢复”边界。
+
+**Boss 显式混合序列** —— `POST /boss/sequence`。调用方按顺序提交技能与可选重复次数，
+系统逐击应用对应伤害类型的抗性/穿透或护甲，返回每一步的承伤区间、累计承伤、最坏余量、
+最早可能耗尽与最迟必然耗尽的位置。
+
+```bash
+curl -s -X POST http://127.0.0.1:8787/poe_agent/boss/sequence \
+  -H 'Content-Type: application/json' \
+  -d '{"sequence":[{"skill":"Shaper Ball","count":2},{"skill":"Shaper Slam"}],"level":84,"pool":25000,"cold_resist_pct":75,"armour":10000}'
+```
+
+序列必须由调用方明确给出，展开后最多 100 击；任一步缺对应抗性、属于持续伤害、多伤害
+类型或非零暴击时，整条序列返回 `unknown`。系统不会从 Boss 名称或经验猜测真实连招。
 
 **基础通货状态转移** —— `POST /craft/operation`。支持 10 种已审计基础通货，输入可为
 稀有度与前后缀计数，也可直接给完整装备复制文本；两种状态输入不能混用。
@@ -916,7 +929,7 @@ PoB 排 P2 而不是 P1：它在数值上更接近一手，但不含中文名与
 ### 评测：四项指标与黄金问答集
 
 `config.yaml` 里的阈值与 `orchestrator/binding.py` 的闸门规则都需要判据，否则改动之后
-无法判断是变好还是变坏。判据来自 `tests/golden/questions.yaml`（164 条，六类样本：
+无法判断是变好还是变坏。判据来自 `tests/golden/questions.yaml`（165 条，六类样本：
 专名 / 描述性 / 数值 / 跨来源 / **确定不覆盖** / 工具路由），基线与结论记在
 `tests/golden/BASELINE.md`。
 
@@ -947,7 +960,7 @@ PoB 排 P2 而不是 P1：它在数值上更接近一手，但不含中文名与
 .venv/bin/python -m unittest discover -s tests -t .
 ```
 
-目前 1847 项，其中与「无据不答」直接相关的：
+目前 1853 项，其中与「无据不答」直接相关的：
 
 | 组 | 项数 | 重点 |
 | --- | --- | --- |

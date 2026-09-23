@@ -1599,6 +1599,14 @@ cases:
       给出目标池时反解穿透前抗性并披露缺口；90% 上限仍不能严格覆盖累计承伤时返回不可达，
       不伪造超上限抗性
 
+  - id: route_boss_explicit_sequence
+    query: 84级 Shaper Ball 2发，然后 Shaper Slam 1下，25000血、75冰抗、10000护甲，这套连招扛得住吗
+    kind: tool_route
+    expect_tool: boss_sequence_check
+    note: >-
+      只在用户逐字给出至少两种已知 Boss 技能、顺序、等级和防御池时直达序列工具；
+      每种伤害分别使用对应抗性或护甲，不把用户假设的序列称为真实 Boss 连招
+
   - id: gap_boss_fight_mechanics
     query: 谢勒怎么打，有什么机制要躲
     kind: gap

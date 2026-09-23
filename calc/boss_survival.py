@@ -5,17 +5,17 @@
 * ``calc.boss_damage`` 给出 Boss 技能的原始单次命中；
 * ``calc.maxhit`` 按抗性、护甲/物理减伤、承受倍率算实际承伤与 Max Hit。
 
-它只能把用户指定的同一技能按“每次命中、期间无恢复”累加。它刻意不处理
-持续伤害、真实 Boss 连招或不同技能组合、伤害转化、格挡/闪避/压制、
-守护技能、Ward、Mind over Matter 或恢复。缺少这些维度时输出边界，不用单次
-命中结论冒充完整 Boss 生存能力。
+它既能把同一技能重复累加，也能累计用户显式排列的多技能命中序列；两者都假设
+每次命中且期间无恢复。它刻意不从 Boss 名称推断真实连招，也不处理持续伤害、
+伤害转化、格挡/闪避/压制、守护技能、Ward、Mind over Matter 或恢复。
+缺少这些维度时输出边界，不用局部命中结论冒充完整 Boss 生存能力。
 """
 
 from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 
 from calc import constants, maxhit
 
@@ -115,6 +115,143 @@ class BossSurvivalResult:
             "margin_high": self.margin_high,
             "outcome": self.outcome,
         }
+
+
+@dataclass(frozen=True)
+class BossSequenceHit:
+    """一个已经解析出伤害区间与防御输入的显式序列命中。"""
+
+    skill: str
+    damage_type: str
+    raw_low: float
+    raw_high: float
+    resist_pct: float
+    penetration_pct: float = 0.0
+    armour: float = 0.0
+    flat_physical_reduction_pct: float = 0.0
+    taken_mult: float = 1.0
+    overwhelm_pct: float = 0.0
+
+
+@dataclass(frozen=True)
+class BossSequenceStepResult:
+    hit_index: int
+    skill: str
+    damage_type: str
+    raw_low: float
+    raw_high: float
+    taken_low: float
+    taken_high: float
+    cumulative_taken_low: float
+    cumulative_taken_high: float
+    remaining_best_case: float
+    remaining_worst_case: float
+
+    def as_dict(self) -> dict[str, Any]:
+        return dict(self.__dict__)
+
+
+@dataclass(frozen=True)
+class BossSequenceResult:
+    pool: float
+    hit_count: int
+    total_taken_low: float
+    total_taken_high: float
+    remaining_best_case: float
+    remaining_worst_case: float
+    earliest_possible_depletion_hit: int | None
+    guaranteed_depletion_hit: int | None
+    minimum_pool_for_any_roll: int
+    minimum_pool_for_full_range: int
+    outcome: Outcome
+    steps: tuple[BossSequenceStepResult, ...]
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "pool": self.pool,
+            "hit_count": self.hit_count,
+            "total_taken_low": self.total_taken_low,
+            "total_taken_high": self.total_taken_high,
+            "remaining_best_case": self.remaining_best_case,
+            "remaining_worst_case": self.remaining_worst_case,
+            "earliest_possible_depletion_hit": self.earliest_possible_depletion_hit,
+            "guaranteed_depletion_hit": self.guaranteed_depletion_hit,
+            "minimum_pool_for_any_roll": self.minimum_pool_for_any_roll,
+            "minimum_pool_for_full_range": self.minimum_pool_for_full_range,
+            "outcome": self.outcome,
+            "steps": [step.as_dict() for step in self.steps],
+        }
+
+
+def assess_hit_sequence(
+    *, hits: list[BossSequenceHit], pool: float
+) -> BossSequenceResult:
+    """按用户给出的顺序累加不同 Boss 命中，不引入命中概率或恢复。"""
+    if pool <= 0:
+        raise BossSurvivalError("防御池必须大于 0")
+    if not hits:
+        raise BossSurvivalError("命中序列不能为空")
+    if len(hits) > 100:
+        raise BossSurvivalError("命中序列最多包含 100 次命中")
+
+    cumulative_low = 0.0
+    cumulative_high = 0.0
+    earliest_possible: int | None = None
+    guaranteed: int | None = None
+    steps: list[BossSequenceStepResult] = []
+    for index, hit in enumerate(hits, start=1):
+        single = assess_single_hit(
+            damage_type=hit.damage_type,
+            raw_low=hit.raw_low,
+            raw_high=hit.raw_high,
+            pool=pool,
+            resist_pct=hit.resist_pct,
+            penetration_pct=hit.penetration_pct,
+            armour=hit.armour,
+            flat_physical_reduction_pct=hit.flat_physical_reduction_pct,
+            taken_mult=hit.taken_mult,
+            overwhelm_pct=hit.overwhelm_pct,
+        )
+        cumulative_low = _snap_near_integer(cumulative_low + single.taken_low)
+        cumulative_high = _snap_near_integer(cumulative_high + single.taken_high)
+        if earliest_possible is None and cumulative_high >= pool:
+            earliest_possible = index
+        if guaranteed is None and cumulative_low >= pool:
+            guaranteed = index
+        steps.append(BossSequenceStepResult(
+            hit_index=index,
+            skill=hit.skill,
+            damage_type=hit.damage_type,
+            raw_low=hit.raw_low,
+            raw_high=hit.raw_high,
+            taken_low=single.taken_low,
+            taken_high=single.taken_high,
+            cumulative_taken_low=round(cumulative_low, 2),
+            cumulative_taken_high=round(cumulative_high, 2),
+            remaining_best_case=round(pool - cumulative_low, 2),
+            remaining_worst_case=round(pool - cumulative_high, 2),
+        ))
+
+    if cumulative_high < pool:
+        outcome: Outcome = "survives_full_range"
+    elif cumulative_low >= pool:
+        outcome = "fails_full_range"
+    else:
+        outcome = "roll_dependent"
+    return BossSequenceResult(
+        pool=float(pool),
+        hit_count=len(hits),
+        total_taken_low=round(cumulative_low, 2),
+        total_taken_high=round(cumulative_high, 2),
+        remaining_best_case=round(pool - cumulative_low, 2),
+        remaining_worst_case=round(pool - cumulative_high, 2),
+        earliest_possible_depletion_hit=earliest_possible,
+        guaranteed_depletion_hit=guaranteed,
+        minimum_pool_for_any_roll=math.floor(cumulative_low) + 1,
+        minimum_pool_for_full_range=math.floor(cumulative_high) + 1,
+        outcome=outcome,
+        steps=tuple(steps),
+    )
 
 
 def assess_single_hit(

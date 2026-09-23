@@ -1885,6 +1885,9 @@ def _preferred_tool_route(question: str) -> str:
     harvest_args = _harvest_reforge_args(question)
     if harvest_args is not None:
         return "harvest_reforge_state"
+    if any(marker in question for marker in ("然后", "再接", "接着", "连招", "组合", "再吃")):
+        if _boss_sequence_args(question) is not None:
+            return "boss_sequence_check"
     enumeration = any(intent in question for intent in _ENUMERATION_INTENTS)
     for tool, intents in _PREFERRED_TOOL_INTENTS:
         if not any(intent in question for intent in intents):
@@ -2300,6 +2303,86 @@ def _boss_defence_threshold_args(question: str) -> dict[str, Any] | None:
     return _boss_hit_args(question, require_pool=False, pool_key="target_pool")
 
 
+def _boss_sequence_args(question: str) -> dict[str, Any] | None:
+    """解析明确写出的多技能顺序；不从 Boss 名或战斗机制猜真实连招。"""
+    try:
+        names = [
+            str(row[0]) for row in dbmod.get_conn().execute(
+                "SELECT name FROM pob_boss_skill ORDER BY length(name) DESC"
+            )
+        ]
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("Boss 技能表不可用，序列校验不走代码路由：%s", exc)
+        return None
+    folded = question.casefold()
+    located: list[tuple[int, int, str]] = []
+    for name in names:
+        start = folded.find(name.casefold())
+        if start >= 0:
+            located.append((start, start + len(name), name))
+    located.sort(key=lambda item: (item[0], -(item[1] - item[0])))
+    selected: list[tuple[int, int, str]] = []
+    for candidate in located:
+        if any(candidate[0] < end and candidate[1] > start for start, end, _ in selected):
+            continue
+        selected.append(candidate)
+    selected.sort()
+    if len(selected) < 2:
+        return None
+
+    levels = {
+        float(match.group(1))
+        for match in re.finditer(r"(\d{1,3})\s*级", question)
+    }
+    pools = _slot_values(
+        question, ("防御池", "有效生命", "生命加护盾", "生命+护盾", "池子", "血量", "血")
+    )
+    if len(levels) != 1 or len(pools) != 1:
+        return None
+
+    sequence: list[dict[str, Any]] = []
+    for index, (_start, end, name) in enumerate(selected):
+        next_start = selected[index + 1][0] if index + 1 < len(selected) else len(question)
+        between = question[end:next_start]
+        counts = {
+            int(match.group(1))
+            for match in re.finditer(r"(?<!\d)(\d{1,3})\s*(?:次|发|下)(?:命中)?", between)
+        }
+        if len(counts) > 1:
+            return None
+        count = counts.pop() if counts else 1
+        if not 1 <= count <= 100:
+            return None
+        sequence.append({"skill": name, "count": count})
+    if sum(int(item["count"]) for item in sequence) > 100:
+        return None
+
+    args: dict[str, Any] = {
+        "sequence": sequence,
+        "level": int(next(iter(levels))),
+        "pool": next(iter(pools)),
+    }
+    if "uber" in folded:
+        args["uber"] = True
+    for slot, keywords in (
+        ("fire_resist_pct", ("火焰抗性", "火抗")),
+        ("cold_resist_pct", ("冰霜抗性", "冰抗")),
+        ("lightning_resist_pct", ("闪电抗性", "电抗")),
+        ("chaos_resist_pct", ("混沌抗性", "混抗")),
+        ("armour", ("护甲",)),
+        ("flat_physical_reduction_pct", ("物理减伤", "物理伤害减免")),
+        ("taken_mult", ("承受倍率", "受到伤害倍率")),
+        ("overwhelm_pct", ("压制物理减伤", "压制")),
+        ("roll_range", ("掷骰", "伤害掷骰")),
+    ):
+        values = _slot_values(question, keywords)
+        if len(values) > 1:
+            return None
+        if values:
+            args[slot] = values.pop()
+    return args
+
+
 def _threshold_args(question: str) -> dict[str, Any] | None:
     """`ailment_threshold_calc` 的参数：异常名、这一击的伤害、目标等级与是否头目。
 
@@ -2388,6 +2471,7 @@ def _resistance_args(question: str) -> dict[str, Any] | None:
 #: 「我有 10000 护甲能减多少伤害」**碰巧**也拒答了，但拒答理由是「工具没返回证据」
 #: 而不是工具想说的「你没给这一击的伤害」——契约过了、机制却是坏的。
 _CODE_INVOKED_TOOLS: dict[str, Any] = {
+    "boss_sequence_check": _boss_sequence_args,
     "boss_defence_threshold": _boss_defence_threshold_args,
     "boss_survival_check": _boss_survival_args,
     "awakener_orb_state": _awakener_orb_args,
@@ -2429,7 +2513,8 @@ _CODE_INVOKED_TOOLS: dict[str, Any] = {
 _TOOLS_WITHOUT_CITATIONS = frozenset({"kb_coverage"})
 _DETERMINISTIC_DIRECT_TOOLS = frozenset({
     "economy_price_lookup", "economy_price_trend", "economy_material_cost",
-    "economy_rare_comparables", "boss_defence_threshold", "boss_survival_check",
+    "economy_rare_comparables", "boss_sequence_check", "boss_defence_threshold",
+    "boss_survival_check",
     "awakener_orb_state",
     "craft_operation_state",
     "essence_operation_state",

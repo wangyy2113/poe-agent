@@ -54,6 +54,12 @@ _SURVIVAL_BOUNDARY = (
     "Ward、Mind over Matter、恢复、阶段机制或打法。结论不是整场 Boss 战的生存保证"
 )
 
+_SEQUENCE_BOUNDARY = (
+    "只累计用户显式排列的 PoB Boss 技能单类型命中；每一步均假设命中，期间无恢复。"
+    "该输入不是游戏真实连招数据，不含持续伤害、伤害转化、暴击、格挡、闪避、法术压制、"
+    "守护技能、Ward、Mind over Matter、阶段机制、药剂或打法"
+)
+
 _DAMAGE_TYPE_ZH = {
     "Physical": "物理",
     "Fire": "火焰",
@@ -1332,3 +1338,281 @@ def boss_defence_threshold(
         citations=[_citation(rows[0], answer), _maxhit_citation(answer)],
         meta=meta,
     )
+
+
+def _render_boss_sequence(
+    result: boss_survival.BossSequenceResult,
+    *,
+    level: int,
+    uber: bool,
+    roll_range: float | None,
+) -> str:
+    labels = {
+        "survives_full_range": "整个显式序列在全部已建模掷骰下都不会耗尽池子",
+        "roll_dependent": "序列是否耗尽池子取决于各次伤害掷骰",
+        "fails_full_range": "整个显式序列在全部已建模掷骰下都会耗尽池子",
+    }
+    roll_note = (
+        f"每击固定 {roll_range:g}% 掷骰点"
+        if roll_range is not None else "每击分别采用 0%..100% 掷骰区间"
+    )
+    lines = [
+        "### Boss 显式命中序列校验" + ("（Uber）" if uber else ""),
+        "",
+        f"**结论：{labels[result.outcome]}**",
+        f"- 口径：敌人等级 {level}；{roll_note}；防御池 {result.pool:g}",
+        f"- 总承伤区间：{result.total_taken_low:,.2f} — "
+        f"{result.total_taken_high:,.2f}",
+        f"- 序列结束后的池子余量：最好 {result.remaining_best_case:,.2f}；"
+        f"最坏 {result.remaining_worst_case:,.2f}",
+        f"- 所需防御池：至少覆盖一种掷骰 {result.minimum_pool_for_any_roll:,}；"
+        f"覆盖完整区间 {result.minimum_pool_for_full_range:,}",
+    ]
+    if result.earliest_possible_depletion_hit is None:
+        lines.append("- 耗尽位置：最坏掷骰下完成整个序列后仍未耗尽")
+    else:
+        lines.append(
+            f"- 最早可能耗尽：第 {result.earliest_possible_depletion_hit} 击"
+        )
+    if result.guaranteed_depletion_hit is None:
+        lines.append("- 必然耗尽位置：最低掷骰下完成整个序列后仍未耗尽")
+    else:
+        lines.append(f"- 最迟必然耗尽：第 {result.guaranteed_depletion_hit} 击")
+    lines += [
+        "",
+        "| # | 技能 | 类型 | 本击承伤区间 | 累计承伤区间 | 最坏余量 |",
+        "| ---: | --- | --- | ---: | ---: | ---: |",
+    ]
+    for step in result.steps:
+        lines.append(
+            f"| {step.hit_index} | {step.skill} | {_DAMAGE_TYPE_ZH[step.damage_type]} | "
+            f"{step.taken_low:,.2f}–{step.taken_high:,.2f} | "
+            f"{step.cumulative_taken_low:,.2f}–{step.cumulative_taken_high:,.2f} | "
+            f"{step.remaining_worst_case:,.2f} |"
+        )
+    lines += [
+        "",
+        "> 顺序与次数完全来自请求；系统没有声称这是 Boss 的真实连招。每击都视为命中，"
+        "期间无恢复，累计承伤等于池子时即耗尽。",
+        f"> 边界：{_SEQUENCE_BOUNDARY}。",
+    ]
+    return "\n".join(lines)
+
+
+@REGISTRY.register(
+    name="boss_sequence_check",
+    description=(
+        "校验用户显式给出的多个 PoB Boss 技能命中序列，按顺序和次数逐击累计承伤，"
+        "返回每一步的承伤/剩余池子、最早可能与最迟必然耗尽位置，以及全序列三态结论。"
+        "序列只是用户指定的假设，不代表游戏中的真实连招；不计算命中概率、格挡、闪避、"
+        "恢复、阶段、药剂或打法。"
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "sequence": {
+                "type": "array", "minItems": 1, "maxItems": 100,
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "skill": {"type": "string", "minLength": 2},
+                        "count": {"type": "integer", "minimum": 1, "maximum": 100},
+                    },
+                    "required": ["skill"],
+                    "additionalProperties": False,
+                },
+                "description": "按发生顺序排列的技能；count 可压缩连续重复命中。",
+            },
+            "level": {"type": "integer", "minimum": 1, "maximum": 100},
+            "pool": {"type": "number", "exclusiveMinimum": 0},
+            "uber": {"type": "boolean", "default": False},
+            "roll_range": {"type": "number", "minimum": 0, "maximum": 100},
+            "fire_resist_pct": {"type": "number", "minimum": -200, "maximum": 90},
+            "cold_resist_pct": {"type": "number", "minimum": -200, "maximum": 90},
+            "lightning_resist_pct": {"type": "number", "minimum": -200, "maximum": 90},
+            "chaos_resist_pct": {"type": "number", "minimum": -200, "maximum": 90},
+            "armour": {"type": "number", "minimum": 0, "default": 0},
+            "flat_physical_reduction_pct": {
+                "type": "number", "minimum": 0, "maximum": 90, "default": 0,
+            },
+            "taken_mult": {"type": "number", "exclusiveMinimum": 0, "default": 1},
+            "overwhelm_pct": {
+                "type": "number", "minimum": 0, "maximum": 100, "default": 0,
+            },
+        },
+        "required": ["sequence", "level", "pool"],
+        "additionalProperties": False,
+    },
+)
+def boss_sequence_check(
+    sequence: list[dict[str, Any]],
+    level: int,
+    pool: float,
+    uber: bool = False,
+    roll_range: float | None = None,
+    fire_resist_pct: float | None = None,
+    cold_resist_pct: float | None = None,
+    lightning_resist_pct: float | None = None,
+    chaos_resist_pct: float | None = None,
+    armour: float = 0.0,
+    flat_physical_reduction_pct: float = 0.0,
+    taken_mult: float = 1.0,
+    overwhelm_pct: float = 0.0,
+) -> ToolResult:
+    if pool <= 0:
+        return ToolResult(ok=False, error="pool 必须大于 0")
+    if not isinstance(sequence, list) or not sequence:
+        return ToolResult(ok=False, error="sequence 必须是非空数组")
+
+    expanded_count = 0
+    parsed: list[tuple[sqlite3.Row, str, float, float, float]] = []
+    resist_by_type = {
+        "Fire": fire_resist_pct,
+        "Cold": cold_resist_pct,
+        "Lightning": lightning_resist_pct,
+        "Chaos": chaos_resist_pct,
+        "Physical": 0.0,
+    }
+    for step_index, item in enumerate(sequence, start=1):
+        if not isinstance(item, dict):
+            return ToolResult(ok=False, error=f"sequence[{step_index - 1}] 必须是对象")
+        unknown_keys = set(item) - {"skill", "count"}
+        if unknown_keys:
+            return ToolResult(
+                ok=False,
+                error=f"sequence[{step_index - 1}] 包含未知字段：{', '.join(sorted(unknown_keys))}",
+            )
+        name = str(item.get("skill") or "").strip()
+        count = item.get("count", 1)
+        if len(name) < 2:
+            return ToolResult(ok=False, error=f"sequence[{step_index - 1}].skill 至少需要两个字符")
+        if isinstance(count, bool) or not isinstance(count, int) or not 1 <= count <= 100:
+            return ToolResult(ok=False, error=f"sequence[{step_index - 1}].count 必须是 1..100 的整数")
+        expanded_count += count
+        if expanded_count > 100:
+            return ToolResult(ok=False, error="展开后的命中序列最多包含 100 次命中")
+        rows = _rows(dbmod.get_conn(), name)
+        if not rows:
+            reason = f"第 {step_index} 段没有匹配的 PoB Boss 技能预设「{name}」"
+            return ToolResult(ok=True, data={
+                "found": False, "assessable": False, "verdict": "unknown",
+                "level": level, "uber": uber, "pool": pool,
+                "requested_sequence": sequence, "failed_sequence_index": step_index,
+                "reason": reason, "boundary": _SEQUENCE_BOUNDARY,
+                "answer": f"### Boss 显式命中序列校验\n\n**结论：无法安全计算**\n- 原因：{reason}\n\n> 边界：{_SEQUENCE_BOUNDARY}。",
+            })
+        if len(rows) > 1:
+            candidates = [str(row["name"]) for row in rows]
+            reason = f"第 {step_index} 段「{name}」匹配到多条，请指明技能"
+            return ToolResult(ok=True, data={
+                "found": False, "assessable": False, "verdict": "unknown",
+                "level": level, "uber": uber, "pool": pool,
+                "requested_sequence": sequence, "failed_sequence_index": step_index,
+                "candidates": candidates, "reason": reason,
+                "boundary": _SEQUENCE_BOUNDARY,
+                "answer": f"### Boss 显式命中序列校验\n\n**结论：无法安全计算**\n- 原因：{reason}\n\n> 边界：{_SEQUENCE_BOUNDARY}。",
+            })
+        row = rows[0]
+        mults = json.loads(row["damage_mults"])
+        if str(row["damage_type"]) == "DamageOverTime":
+            reason = f"第 {step_index} 段 {row['name']} 是持续伤害，不是单次命中"
+        elif len(mults) != 1:
+            reason = f"第 {step_index} 段 {row['name']} 含多个伤害类型，当前不做伤害转化"
+        elif float(row["crit_chance"] or 0) > 0:
+            reason = f"第 {step_index} 段 {row['name']} 有非零暴击率"
+        else:
+            reason = ""
+        if reason:
+            answer = (
+                "### Boss 显式命中序列校验\n\n**结论：无法安全计算**\n"
+                f"- 原因：{reason}\n\n> 边界：{_SEQUENCE_BOUNDARY}。"
+            )
+            return ToolResult(ok=True, data={
+                "found": True, "assessable": False, "verdict": "unknown",
+                "level": level, "uber": uber, "pool": pool,
+                "requested_sequence": sequence, "failed_sequence_index": step_index,
+                "reason": reason, "boundary": _SEQUENCE_BOUNDARY, "answer": answer,
+            }, citations=[_citation(row, answer)])
+        dtype, pair = next(iter(mults.items()))
+        if dtype not in resist_by_type:
+            reason = f"第 {step_index} 段使用了当前不支持的伤害类型 {dtype}"
+        elif resist_by_type[dtype] is None:
+            reason = f"第 {step_index} 段缺少{_DAMAGE_TYPE_ZH.get(dtype, dtype)}抗性"
+        else:
+            reason = ""
+        if reason:
+            answer = (
+                "### Boss 显式命中序列校验\n\n**结论：无法安全计算**\n"
+                f"- 原因：{reason}\n\n> 边界：{_SEQUENCE_BOUNDARY}。"
+            )
+            return ToolResult(ok=True, data={
+                "found": True, "assessable": False, "verdict": "unknown",
+                "level": level, "uber": uber, "pool": pool,
+                "requested_sequence": sequence, "failed_sequence_index": step_index,
+                "missing_inputs": [f"{_DAMAGE_TYPE_ZH.get(dtype, dtype)}抗性"],
+                "reason": reason, "boundary": _SEQUENCE_BOUNDARY, "answer": answer,
+            }, citations=[_citation(row, answer)])
+        try:
+            uber_mult = row["uber_damage_mult"] if uber else None
+            if roll_range is None:
+                low, high = boss_damage.hit_range(
+                    level=int(level), base_mult=float(pair[0]), roll_mult=float(pair[1]),
+                    damage_type=dtype, uber_mult=uber_mult,
+                )
+            else:
+                hit = boss_damage.hit_damage(
+                    level=int(level), base_mult=float(pair[0]), roll_mult=float(pair[1]),
+                    damage_type=dtype, roll_range=float(roll_range), uber_mult=uber_mult,
+                )
+                low = high = hit
+        except (boss_damage.BossDamageError, constants.MissingConstant,
+                constants.ConstantTypeError) as exc:
+            return ToolResult(ok=False, error=str(exc))
+        penetrations = json.loads(row["uber_penetrations"] if uber else row["penetrations"])
+        penetration = float(penetrations.get(f"{dtype}Pen") or 0)
+        parsed.extend(
+            (row, dtype, low.damage, high.damage, penetration) for _ in range(count)
+        )
+
+    hits = [
+        boss_survival.BossSequenceHit(
+            skill=str(row["name"]), damage_type=dtype, raw_low=raw_low,
+            raw_high=raw_high, resist_pct=float(resist_by_type[dtype] or 0),
+            penetration_pct=penetration, armour=float(armour),
+            flat_physical_reduction_pct=float(flat_physical_reduction_pct),
+            taken_mult=float(taken_mult), overwhelm_pct=float(overwhelm_pct),
+        )
+        for row, dtype, raw_low, raw_high, penetration in parsed
+    ]
+    try:
+        assessed = boss_survival.assess_hit_sequence(hits=hits, pool=float(pool))
+    except (boss_survival.BossSurvivalError, constants.MissingConstant,
+            constants.ConstantTypeError) as exc:
+        return ToolResult(ok=False, error=str(exc))
+    answer = _render_boss_sequence(
+        assessed, level=int(level), uber=bool(uber), roll_range=roll_range,
+    )
+    unique_rows: dict[str, sqlite3.Row] = {}
+    for row, *_rest in parsed:
+        unique_rows[str(row["name"])] = row
+    citations = [_citation(row, answer) for row in unique_rows.values()]
+    citations.append(_maxhit_citation(answer))
+    return ToolResult(ok=True, data={
+        "found": True,
+        "assessable": True,
+        "verdict": assessed.outcome,
+        "level": int(level),
+        "uber": bool(uber),
+        "roll_range": roll_range,
+        "requested_sequence": sequence,
+        **assessed.as_dict(),
+        "missing_inputs": [],
+        "candidates": [],
+        "boundary": _SEQUENCE_BOUNDARY,
+        "answer": answer,
+    }, citations=citations, meta={
+        "channel": "derived",
+        "tables": ["pob_boss_skill", "game_constant"],
+        "verdict": assessed.outcome,
+        "mode": "explicit_hit_sequence",
+    })
