@@ -56,6 +56,11 @@ class BossSurvivalResponse(BaseModel):
     total_taken_high: float | None = None
     remaining_low: float | None = None
     remaining_high: float | None = None
+    earliest_depletion_hit: int | None = None
+    latest_depletion_hit: int | None = None
+    guaranteed_survivable_hits: int | None = None
+    maximum_survivable_hits: int | None = None
+    capacity_reason: str = ""
     max_raw_hit: float | None = None
     margin_low: float | None = None
     margin_high: float | None = None

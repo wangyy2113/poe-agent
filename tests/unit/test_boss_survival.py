@@ -155,6 +155,22 @@ class BossSurvivalFormulaTest(unittest.TestCase):
         self.assertEqual(1, single.hit_count)
         self.assertEqual(single.taken_high, single.total_taken_high)
 
+    def test_反解可承受击数区间且等于池子的那击耗尽(self) -> None:
+        result = boss_survival.assess_repeated_hits(
+            damage_type="Fire", raw_low=2000, raw_high=3000, pool=6000,
+            resist_pct=0,
+        )
+        self.assertEqual(2, result.earliest_depletion_hit)
+        self.assertEqual(3, result.latest_depletion_hit)
+        self.assertEqual(1, result.guaranteed_survivable_hits)
+        self.assertEqual(2, result.maximum_survivable_hits)
+        zero = boss_survival.assess_repeated_hits(
+            damage_type="Chaos", raw_low=0, raw_high=0, pool=6000,
+            resist_pct=0,
+        )
+        self.assertIsNone(zero.earliest_depletion_hit)
+        self.assertIsNone(zero.latest_depletion_hit)
+
     def test_非物理伤害不误用护甲(self) -> None:
         plain = boss_survival.assess_single_hit(
             damage_type="Lightning", raw_low=10000, raw_high=10000, pool=6000,
@@ -192,6 +208,9 @@ class BossSurvivalFormulaTest(unittest.TestCase):
             result.data["total_taken_high"],
         )
         self.assertIn("每次都命中、期间无恢复", result.data["answer"])
+        self.assertEqual(2, result.data["earliest_depletion_hit"])
+        self.assertEqual(3, result.data["latest_depletion_hit"])
+        self.assertIn("最坏掷骰下保证承受 1 击", result.data["answer"])
         for count in (0, 101, True):
             with self.subTest(hit_count=count):
                 invalid = boss_survival_check(
@@ -231,6 +250,8 @@ class BossSurvivalFormulaTest(unittest.TestCase):
         self.assertEqual(25, response.penetration_pct)
         self.assertEqual(2, response.hit_count)
         self.assertIsNotNone(response.total_taken_high)
+        self.assertEqual(2, response.earliest_depletion_hit)
+        self.assertEqual(3, response.latest_depletion_hit)
         from main import create_app
 
         self.assertIn("/poe_agent/boss/survival", create_app().openapi()["paths"])
@@ -252,6 +273,11 @@ class BossSurvivalFormulaTest(unittest.TestCase):
                 self.assertEqual(3, args["hit_count"])
         self.assertIsNone(loop._boss_survival_args(base + "连续3次、4发能扛吗"))
         self.assertIsNone(loop._boss_survival_args(base + "连续101次能扛吗"))
+        capacity = loop._boss_survival_args(base + "能扛几下")
+        self.assertNotIn("hit_count", capacity)
+        self.assertEqual(
+            "boss_survival_check", loop._preferred_tool_route(base + "能扛几下")
+        )
 
 
 class BuildBossSurvivalTest(unittest.TestCase):
@@ -313,6 +339,8 @@ class BuildBossSurvivalTest(unittest.TestCase):
         self.assertEqual("pob_max_hit_snapshot", result.data["calculation_mode"])
         self.assertIsNone(result.data["pool"])
         self.assertIsNone(result.data["taken_low"])
+        self.assertIsNone(result.data["earliest_depletion_hit"])
+        self.assertIn("单击阈值", result.data["capacity_reason"])
         self.assertEqual(12000, result.data["max_raw_hit"])
         self.assertEqual({"ColdMaximumHitTaken": 12000.0}, result.data["source_fields"])
         self.assertEqual({
@@ -351,6 +379,8 @@ class BuildBossSurvivalTest(unittest.TestCase):
         self.assertEqual("basic_defence_snapshot", result.data["calculation_mode"])
         self.assertEqual("roll_dependent", result.data["verdict"])
         self.assertEqual(2, result.data["hit_count"])
+        self.assertEqual(2, result.data["earliest_depletion_hit"])
+        self.assertEqual(3, result.data["latest_depletion_hit"])
         self.assertIn("MaximumHitTaken 只是单击阈值", result.data["fallback_reason"])
         self.assertNotEqual(50000, result.data["max_raw_hit"])
 

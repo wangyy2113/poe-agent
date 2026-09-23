@@ -890,6 +890,10 @@ V1 完成的判定标准（逐条实测，不以「无报错」代替验证）�
     期间无恢复累加每击承伤，返回每击、累计伤害与剩余池子。PoB
     `*MaximumHitTaken` 只作为单击阈值；多击强制降级到基础防御快照，
     缺字段则 unknown。真实 Boss 连招、不同技能组合、命中/格挡/闪避概率与阶段仍未建模
+  - [x] 可承受击数反解（2026-09-23）：基于每击低/高掷骰承伤和防御池，返回
+    `guaranteed_survivable_hits` / `maximum_survivable_hits` 与对应的首个耗尽击；
+    等于池子的那击仍算耗尽。自然问法“能扛几下 / 能吃几发”可直达已有工具。
+    PoB Max Hit 快照无法支撑该反解，返回 unknown 而不把单击阈值相加
 - [x] 官方角色 API 导入 v1（2026-09-08）：接入 OAuth `account:characters` 的当前
   `GET /character[/<realm>]/<name>` 契约；支持列出账号角色，并将 PoE1 PC 角色的已装备物品、
   插槽连接组、珠宝、天赋、大师选择、盗贼、万神殿、升华/Bloodline 与版本送入现有 Build

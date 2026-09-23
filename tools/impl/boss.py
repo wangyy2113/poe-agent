@@ -366,6 +366,7 @@ def _render_build_max_hit(
         + (f"；{max_hit_field_note}" if max_hit_field_note else ""),
         f"- 低 / 高掷骰的原始伤害余量：{max_hit - raw_low:,.0f} / "
         f"{max_hit - raw_high:,.0f}",
+        "- 可承受次数：无法从单击 PoB Max Hit 快照安全反解",
         f"- 匹配的 Build 配置：{config_text}",
         "",
         "> 等于 Max Hit 按耗尽处理；这里直接消费 PoB 的完整 Max Hit 快照，不重复拆算防御链。",
@@ -526,6 +527,14 @@ def boss_survival_from_build(
                 "total_taken_high": None,
                 "remaining_low": None,
                 "remaining_high": None,
+                "earliest_depletion_hit": None,
+                "latest_depletion_hit": None,
+                "guaranteed_survivable_hits": None,
+                "maximum_survivable_hits": None,
+                "capacity_reason": (
+                    "PoB *MaximumHitTaken 只是当前配置的单击阈值，"
+                    "无法证明每击后防御状态不变"
+                ),
                 "max_raw_hit": max_hit,
                 "margin_low": round(max_hit - low.damage, 2),
                 "margin_high": round(max_hit - high.damage, 2),
@@ -707,6 +716,21 @@ def _render_survival(
             f"{result.remaining_low:,.2f} / {result.remaining_high:,.2f}",
         ]
     lines.append(f"- 同一防御口径下的原始 Max Hit：{result.max_raw_hit:,.0f}")
+    if result.earliest_depletion_hit is None:
+        lines.append("- 可承受次数：已建模承伤为 0，没有有限的耗尽击数")
+    elif result.latest_depletion_hit is None:
+        lines.append(
+            f"- 可承受次数：最坏掷骰下保证承受 "
+            f"{result.guaranteed_survivable_hits} 击，第 {result.earliest_depletion_hit} 击耗尽；"
+            "最低掷骰承伤为 0，无有限上界"
+        )
+    else:
+        lines.append(
+            f"- 可承受次数：最坏掷骰下保证承受 "
+            f"{result.guaranteed_survivable_hits} 击（第 {result.earliest_depletion_hit} 击耗尽）；"
+            f"最好掷骰下最多承受 {result.maximum_survivable_hits} 击"
+            f"（第 {result.latest_depletion_hit} 击耗尽）"
+        )
     if row["tooltip"]:
         lines.append(f"- PoB 技能说明原文：{row['tooltip']}")
     assumption = (
@@ -821,6 +845,7 @@ def boss_skill_damage(
     description=(
         "把 PoB 的 Boss 技能单次原始伤害与角色明确提供的防御池、抗性、护甲和承受倍率"
         "串起来，判断整个伤害掷骰区间都不耗尽池子、取决于掷骰，还是整个区间都会耗尽。"
+        "同时反解最坏/最好掷骰下可承受几击，以及第几击会耗尽池子。"
         "元素穿透取自 Boss 技能预设。可按每次都命中且期间无恢复，累加同一命中 1..100 次；"
         "持续伤害、真实 Boss 连招、不同技能组合、"
         "伤害转化、暴击、格挡/闪避/压制、守护技能、Ward、MoM、恢复与打法均不在结论内。"
