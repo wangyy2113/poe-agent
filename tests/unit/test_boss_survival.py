@@ -9,8 +9,11 @@ from unittest.mock import patch
 
 from api.boss import (
     BossDefenceThresholdRequest,
+    BossSequenceEntry,
+    BossSequenceRequest,
     BossSurvivalRequest,
     defence_threshold,
+    sequence,
     survival,
 )
 from api.build import BuildRequest
@@ -21,6 +24,7 @@ from orchestrator import loop
 from parsers.pob_build import PobBuild
 from tools.impl.boss import (
     boss_defence_threshold,
+    boss_sequence_check,
     boss_survival_check,
     boss_survival_from_build,
 )
@@ -233,6 +237,46 @@ class BossSurvivalFormulaTest(unittest.TestCase):
         )
         self.assertEqual(plain.taken_high, armoured.taken_high)
 
+    def test_混合伤害序列逐步累计并区分可能与必然耗尽(self) -> None:
+        result = boss_survival.assess_hit_sequence(
+            pool=2500,
+            hits=[
+                boss_survival.BossSequenceHit(
+                    skill="Fire Hit", damage_type="Fire", raw_low=1000,
+                    raw_high=2000, resist_pct=0,
+                ),
+                boss_survival.BossSequenceHit(
+                    skill="Physical Hit", damage_type="Physical", raw_low=1000,
+                    raw_high=1000, resist_pct=0,
+                ),
+            ],
+        )
+        self.assertEqual("roll_dependent", result.outcome)
+        self.assertEqual(2, result.earliest_possible_depletion_hit)
+        self.assertIsNone(result.guaranteed_depletion_hit)
+        self.assertEqual(2001, result.minimum_pool_for_any_roll)
+        self.assertEqual(3001, result.minimum_pool_for_full_range)
+        self.assertEqual("Physical Hit", result.steps[1].skill)
+        self.assertEqual(-500, result.steps[1].remaining_worst_case)
+
+    def test_混合序列累计恰好等于池子时判耗尽(self) -> None:
+        result = boss_survival.assess_hit_sequence(
+            pool=2000,
+            hits=[
+                boss_survival.BossSequenceHit(
+                    skill="A", damage_type="Fire", raw_low=1000,
+                    raw_high=2000, resist_pct=0,
+                ),
+                boss_survival.BossSequenceHit(
+                    skill="B", damage_type="Physical", raw_low=1000,
+                    raw_high=1000, resist_pct=0,
+                ),
+            ],
+        )
+        self.assertEqual("fails_full_range", result.outcome)
+        self.assertEqual(1, result.earliest_possible_depletion_hit)
+        self.assertEqual(2, result.guaranteed_depletion_hit)
+
     def test_Shaper球把技能伤害与MaxHit合成一个有界答案(self) -> None:
         result = boss_survival_check(
             "Shaper Ball", level=84, pool=6000, cold_resist_pct=75,
@@ -358,6 +402,58 @@ class BossSurvivalFormulaTest(unittest.TestCase):
         schema = create_app().openapi()
         self.assertIn("/poe_agent/boss/threshold", schema["paths"])
 
+    def test_显式混合技能序列工具返回逐击轨迹(self) -> None:
+        result = boss_sequence_check(
+            sequence=[
+                {"skill": "Shaper Ball", "count": 2},
+                {"skill": "Test Slam", "count": 1},
+            ],
+            level=84, pool=25000, cold_resist_pct=75, armour=10000,
+        )
+        self.assertTrue(result.ok)
+        self.assertTrue(result.data["assessable"])
+        self.assertEqual(3, result.data["hit_count"])
+        self.assertEqual(
+            ["Shaper Ball", "Shaper Ball", "Test Slam"],
+            [step["skill"] for step in result.data["steps"]],
+        )
+        self.assertEqual(3, len(result.citations))
+        self.assertIn("系统没有声称这是 Boss 的真实连招", result.data["answer"])
+        self.assertFalse(REGISTRY.spec("boss_sequence_check").parameters["additionalProperties"])
+        too_long = boss_sequence_check(
+            sequence=[
+                {"skill": "Shaper Ball", "count": 100},
+                {"skill": "Test Slam", "count": 1},
+            ],
+            level=84, pool=25000, cold_resist_pct=75,
+        )
+        self.assertFalse(too_long.ok)
+        self.assertIn("最多包含 100 次", too_long.error)
+
+    def test_显式序列任一步缺抗性则整体unknown(self) -> None:
+        result = boss_sequence_check(
+            sequence=[{"skill": "Test Slam"}, {"skill": "Shaper Ball"}],
+            level=84, pool=25000, armour=10000,
+        )
+        self.assertTrue(result.ok)
+        self.assertFalse(result.data["assessable"])
+        self.assertEqual(2, result.data["failed_sequence_index"])
+        self.assertEqual(["冰霜抗性"], result.data["missing_inputs"])
+
+    def test_显式序列API公开逐击响应(self) -> None:
+        response = sequence(BossSequenceRequest(
+            sequence=[
+                BossSequenceEntry(skill="Shaper Ball", count=1),
+                BossSequenceEntry(skill="Test Slam", count=1),
+            ],
+            level=84, pool=25000, cold_resist_pct=75, armour=10000,
+        ), _caller="test")
+        self.assertEqual(2, response.hit_count)
+        self.assertEqual("Shaper Ball", response.steps[0].skill)
+        from main import create_app
+
+        self.assertIn("/poe_agent/boss/sequence", create_app().openapi()["paths"])
+
     def test_聊天路由只在参数能唯一冻结时直接执行(self) -> None:
         question = "84级 Shaper Ball，6000血、75冰抗，能扛得住吗"
         self.assertEqual("boss_survival_check", loop._preferred_tool_route(question))
@@ -400,6 +496,25 @@ class BossSurvivalFormulaTest(unittest.TestCase):
         self.assertNotEqual(
             "boss_defence_threshold", loop._preferred_tool_route("需要多少护甲")
         )
+
+    def test_显式混合技能序列可确定性直达(self) -> None:
+        question = (
+            "84级 Shaper Ball 2发，然后 Test Slam 1下，"
+            "25000血、75冰抗、10000护甲，这套连招扛得住吗"
+        )
+        self.assertEqual("boss_sequence_check", loop._preferred_tool_route(question))
+        self.assertIn("boss_sequence_check", loop._CODE_INVOKED_TOOLS)
+        self.assertIn("boss_sequence_check", loop._DETERMINISTIC_DIRECT_TOOLS)
+        self.assertEqual({
+            "sequence": [
+                {"skill": "Shaper Ball", "count": 2},
+                {"skill": "Test Slam", "count": 1},
+            ],
+            "level": 84,
+            "pool": 25000,
+            "cold_resist_pct": 75,
+            "armour": 10000,
+        }, loop._boss_sequence_args(question))
 
 
 class BuildBossSurvivalTest(unittest.TestCase):

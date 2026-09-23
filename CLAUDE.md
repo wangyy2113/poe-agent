@@ -146,7 +146,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 1847 项，秒级
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 1853 项，秒级
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选
@@ -163,7 +163,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 .venv/bin/python scripts/eval_run.py --record        # 重录真实响应（**要凭证、烧 token**）
 ```
 
-黄金问答集是 `tests/golden/questions.yaml`（164 条，六类），基线与全部结论在
+黄金问答集是 `tests/golden/questions.yaml`（165 条，六类），基线与全部结论在
 `tests/golden/BASELINE.md`——**动闸门前先读它**，里面记了多个已修缺陷与三条已知未修边界，
 以及两次「测量本身写错」的教训。
 
@@ -269,7 +269,7 @@ Craft of Exile 矩阵证据支撑；两条 Citation 不得互相夹带正文。�
 | `orchestrator/` | `loop.py` 主循环与轨迹（批量与流式**共用** `_prepare_turn` / `_handle_tool_call` / `_terminal_gap`，只在「怎么把文本交给用户」上不同——不要在任一侧重新写判据，`tests/unit/test_turn_parity.py` 会挡）、`binding.py` 出口闸门（1400+ 行，改动前先读它的模块 docstring）、`citation.py` 引用装配 |
 | `agents/` | `knowledge.py`：系统提示词 + `ALLOWED_TOOLS` + 缺据声明模板。提示词是第一道约束不是唯一约束 |
 | `tools/` | `registry.py` 注册与 schema 导出，`impl/` 各工具；返回值统一 `ToolResult`，`citations` 是结构化引用而非拼进正文的字符串（要参与出口校验） |
-| `core/mcp_protocol.py` / `mcp_server.py` | MCP `2025-06-18` stdio 协议层与入口；默认复用 Knowledge Agent 的 50 个只读工具，`--tools` 可收窄暴露面。stdout 只能写逐行 JSON-RPC，日志必须走 stderr；EOF 必须关闭 SQLite |
+| `core/mcp_protocol.py` / `mcp_server.py` | MCP `2025-06-18` stdio 协议层与入口；默认复用 Knowledge Agent 的 51 个只读工具，`--tools` 可收窄暴露面。stdout 只能写逐行 JSON-RPC，日志必须走 stderr；EOF 必须关闭 SQLite |
 | `kb/sync.py` / `scripts/sync_knowledge.py` | 过期分类计划、现有采集器编排、事实行快照与版本 diff。默认 CLI 只预览，`--apply` 才执行；记录删除提升为 `attention`。唯一装备不得加入自动集合，直到主列表 + 1,342 页详情补全可原子执行 |
 | `retrieval/` | FTS5、别名、RRF 融合、jieba 分词、领域词表 |
 | `kb/` | `pipeline.py` 采集管线、`sources/` 各来源抽取器、`coverage.py` 知识库自描述层、`stat_channels.py` 属性来源渠道注册表、`render*.py` 卡片切片 |
@@ -298,6 +298,7 @@ Craft of Exile 矩阵证据支撑；两条 Citation 不得互相夹带正文。�
 `mod_tiers`（T 级梯度）→ `mod_class_summary`（某底材上一共有哪些词缀：总量 / 分布 / 梯度清单）→
 `skill_gem_levels`（宝石逐级字面值）→
 `spectre_stats`（幽魂倍率 / 抗性 / 排名）→ `boss_skill_damage`（Boss 技能某等级打多少 / 穿透 / Uber 差异）→
+`boss_sequence_check`（用户显式指定的多技能命中序列与逐击耗尽位置）→
 `boss_defence_threshold`（Boss 同一命中所需防御池、抗性 / 护甲门槛）→
 `boss_survival_check`（Boss 同一命中重复 1–100 次 × 明确防御池的三态校验）→
 `passive_path`（点到某天赋要几点 + 逐节点路径）→
@@ -740,7 +741,11 @@ POEDB 页面仍是旧版」：`号召` PoB 侧是 `ConvocationNew`（各级需�
 `target_pool` 时只反解覆盖低掷骰/完整掷骰区间的最小整数防御池；提供目标池后再计算池子
 缺口，以及其余输入不变时所需的穿透前元素/混沌抗性或物理护甲。抗性只在 -200%..90%
 内枚举，护甲反解受物理减伤上限约束；无法让累计承伤严格小于池子时返回不可达。
-DoT 直接 unknown；多伤害类型、真实 Boss 连招、不同技能组合、转化、非零暴击、格挡/闪避/法压、
+`boss_sequence_check` / `POST /boss/sequence` 接受调用方显式排列的多技能序列，并将每段
+`count` 展开为最多 100 次逐击轨迹；每种伤害分别使用对应抗性/穿透或护甲，返回累计承伤、
+逐击余量、最早可能和最迟必然耗尽位置。系统不从 Boss 名称推断连招；任一步缺必要防御、
+属于 DoT、多伤害类型或非零暴击时，整条序列保持 unknown，不输出部分生存结论。
+DoT 直接 unknown；多伤害类型、自动推断的真实 Boss 连招、转化、非零暴击、格挡/闪避/法压、
 守护技能、Ward、MoM、恢复、阶段和打法均不进入结论。这不是整场 Boss 战的生存保证。
 
 `craft_affix_capacity` **7** 条前后缀名额规则（POEDB `/cn/Modifiers` × PoB
