@@ -821,12 +821,16 @@ _YIELDS_TO_ENUMERATION = frozenset(
     {
         "resistance_calc", "mitigation_calc", "recovery_calc", "reservation_calc",
         "ailment_dot_calc", "ailment_threshold_calc", "max_hit_calc", "crit_calc",
-        "accuracy_calc", "attack_speed_calc",
+        "accuracy_calc", "attack_speed_calc", "hit_dps_calc",
     }
 )
 
 
 _PREFERRED_TOOL_INTENTS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("hit_dps_calc", (
+        "命中DPS", "命中 DPS", "DPS怎么算", "DPS 怎么算", "dps怎么算", "dps 怎么算",
+        "每秒伤害怎么算", "每秒能打多少伤害",
+    )),
     # 利润/Flip 必须先于普通价格匹配，由双边挂单、深度、时效与显式费用共同判定。
     ("economy_flip_analysis", (
         "价差", "利润", "利润率", "套利", "倒卖", "Flip", "flip",
@@ -2216,6 +2220,68 @@ def _attack_speed_args(question: str) -> dict[str, Any] | None:
     return args or None
 
 
+_DPS_RANGE_RE = re.compile(
+    r"(\d+(?:\.\d+)?)\s*(?:到|至|[-~～—])\s*(\d+(?:\.\d+)?)\s*"
+    r"(物理|闪电|冰霜|火焰|混沌)(?:基础)?伤害"
+)
+_DPS_TYPE_KEYS = {"物理": "physical", "闪电": "lightning", "冰霜": "cold", "火焰": "fire", "混沌": "chaos"}
+
+
+def _hit_dps_args(question: str) -> dict[str, Any]:
+    """保守抽取最常见的一类单伤害 DPS 问法；复杂链交给工具 JSON/API。"""
+    args: dict[str, Any] = {}
+    ranges = _DPS_RANGE_RE.findall(question)
+    if ranges:
+        base: dict[str, list[float]] = {}
+        for low, high, kind in ranges:
+            key = _DPS_TYPE_KEYS[kind]
+            if key in base:
+                return {}
+            base[key] = [float(low), float(high)]
+        args["base_damage"] = base
+    rate = re.search(r"每秒\s*(?:攻击|施法|击中)?\s*(\d+(?:\.\d+)?)\s*次", question)
+    if rate:
+        args["action_rate"] = float(rate.group(1))
+    patterns = (
+        ("increased_damage_pct", r"(?:伤害(?:提高|增加)|(?:提高|增加)(?:的)?伤害)\s*(\d+(?:\.\d+)?)%"),
+        ("hit_chance_pct", r"命中率\s*(\d+(?:\.\d+)?)%"),
+        ("crit_chance_pct", r"暴击率\s*(\d+(?:\.\d+)?)%"),
+        ("crit_multiplier_pct", r"(?:暴击伤害加成|暴击加成)\s*(\d+(?:\.\d+)?)%"),
+    )
+    for key, pattern in patterns:
+        match = re.search(pattern, question)
+        if match:
+            args[key] = float(match.group(1))
+    more = re.findall(r"(\d+(?:\.\d+)?)%\s*更多伤害", question)
+    if more:
+        args["more_damage_multipliers"] = [1 + float(value) / 100 for value in more]
+    resistance: dict[str, float] = {}
+    penetration: dict[str, float] = {}
+    resist_names = {"物理": "physical", "闪电": "lightning", "电": "lightning", "冰霜": "cold", "冰": "cold", "火焰": "fire", "火": "fire", "混沌": "chaos", "混": "chaos"}
+    for zh, key in resist_names.items():
+        resist_match = re.search(rf"敌人{zh}(?:抗性|抗)\s*(-?\d+(?:\.\d+)?)%", question)
+        pen_match = re.search(rf"{zh}(?:抗性)?穿透\s*(\d+(?:\.\d+)?)%", question)
+        if resist_match:
+            resistance[key] = float(resist_match.group(1))
+        if pen_match:
+            penetration[key] = float(pen_match.group(1))
+    if resistance:
+        args["enemy_resistance"] = resistance
+    if penetration:
+        args["penetration"] = penetration
+    conversions = []
+    for percent, source, target in re.findall(
+        r"(\d+(?:\.\d+)?)%\s*(物理|闪电|冰霜|火焰)伤害转化为(闪电|冰霜|火焰|混沌)", question
+    ):
+        conversions.append({
+            "source": _DPS_TYPE_KEYS[source], "target": _DPS_TYPE_KEYS[target],
+            "percent": float(percent), "kind": "global",
+        })
+    if conversions:
+        args["conversions"] = conversions
+    return args
+
+
 def _maxhit_args(question: str) -> dict[str, Any] | None:
     """`max_hit_calc` 的参数。没有数字 → 讲规则（无参数）。
 
@@ -2566,6 +2632,7 @@ _CODE_INVOKED_TOOLS: dict[str, Any] = {
     "crit_calc": _crit_args,
     "accuracy_calc": _accuracy_args,
     "attack_speed_calc": _attack_speed_args,
+    "hit_dps_calc": _hit_dps_args,
 }
 
 #: 这些工具按设计**不产出引用**（覆盖声明是元信息不是游戏事实）。
@@ -2586,6 +2653,7 @@ _DETERMINISTIC_DIRECT_TOOLS = frozenset({
     "harvest_modifier_state",
     "harvest_quality_enchant_state",
     "harvest_exchange_state",
+    "hit_dps_calc",
 })
 
 
