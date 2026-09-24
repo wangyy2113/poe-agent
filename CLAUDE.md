@@ -146,7 +146,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 1865 项，秒级
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 1866 项，秒级
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选
@@ -163,7 +163,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 .venv/bin/python scripts/eval_run.py --record        # 重录真实响应（**要凭证、烧 token**）
 ```
 
-黄金问答集是 `tests/golden/questions.yaml`（166 条，六类），基线与全部结论在
+黄金问答集是 `tests/golden/questions.yaml`（167 条，六类），基线与全部结论在
 `tests/golden/BASELINE.md`——**动闸门前先读它**，里面记了多个已修缺陷与三条已知未修边界，
 以及两次「测量本身写错」的教训。
 
@@ -246,9 +246,10 @@ POE1/POE2 边界顺带落在同一张表上：poe.ninja 两款游戏都服务，
 可选 `boss_sequence` 则只走生命/护盾、实际涉及的各类抗性与物理护甲基础链，返回逐击轨迹、
 伤害类型汇总、最大单击与最危险一击。它永不消费 `*MaximumHitTaken`，因为特定配置的单击
 阈值无法拆回混合序列；任一字段或混沌绕盾机制不明时整条序列 unknown。
-可选 `boss_risk_audit` 进一步横向检查当前收录的全部 Boss 单击，按最坏承伤排列已知项，
-同时返回完整/部分/无覆盖状态、三态计数和逐项 unknown 原因。它不把未知项当低风险，
-不使用特定配置的 Max Hit，也不把单击排行写成 Boss 难度或击杀风险排行。
+可选 `boss_risk_audit` 进一步横向检查当前收录的全部 Boss 技能，支持 1–100 次同技能连续
+命中，按最坏累计承伤排列已知项；同时返回逐技能和全体已评估项的池子门槛、当前缺口、
+抗性/护甲单轴目标，以及完整/部分/无覆盖状态和逐项 unknown 原因。它不把未知项当低风险，
+不使用特定配置的 Max Hit，也不把命中排行写成 Boss 难度或击杀风险排行。
 
 **基础通货 × Metamod（第九十五轮）**：`craft_operation_state` 可选接收一个来源矩阵
 逐字 guard。基础通货效果/状态转移仍只由 POEDB 证据支撑，Metamod 的原始值与注释只由
@@ -753,9 +754,11 @@ POEDB 页面仍是旧版」：`号召` PoB 侧是 `ConvocationNew`（各级需�
 `POST /build` 的 `boss_sequence` 可从 PlayerStat 提供这些基础防御输入，并逐项披露来源字段；
 显式混合序列不使用 PoB 单击 Max Hit。系统不从 Boss 名称推断连招；任一步缺必要防御、
 属于 DoT、多伤害类型或非零暴击时，整条序列保持 unknown，不输出部分生存结论。
-`boss_risk_audit` / `POST /boss/audit` 则对当前收录技能做单击横向审计：已知项按最坏承伤
-排序，缺某类抗性/护甲、DoT、多类型或暴击项逐条保留 unknown，并显式给出覆盖数。
-顶层只有全量可评估时才给完整 verdict；部分覆盖时 verdict 必须保持 unknown。
+`boss_risk_audit` / `POST /boss/audit` 则对当前收录技能做 1–100 次同技能连续命中审计：
+已知项按最坏累计承伤排序，复用同一闭式给出最低池子、当前缺口和对应抗性/护甲目标；
+顶层汇总覆盖全部已评估项的统一池子门槛与单轴不可达计数。缺某类抗性/护甲、DoT、
+多类型或暴击项逐条保留 unknown，并显式给出覆盖数。顶层只有全量可评估时才给完整
+verdict；部分覆盖时 verdict 必须保持 unknown。
 DoT 直接 unknown；多伤害类型、自动推断的真实 Boss 连招、转化、非零暴击、格挡/闪避/法压、
 守护技能、Ward、MoM、恢复、阶段和打法均不进入结论。这不是整场 Boss 战的生存保证。
 

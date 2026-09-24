@@ -29,7 +29,7 @@ POE1 的机制耦合极深，一个错误的小前提会让整条结论反向。
 | 通货 | 113 条（中英文名、堆叠上限、效果原文）；工艺台费用引用的 18 个通货全部能对上；**获取途径与兑换比例未采集**；市场价格以 poe.watch 为主、GGG Trade API 在线挂单为备用 |
 | 圣甲虫 | 118 个（效果、堆叠上限、地图装置放置上限）；**掉落来源未采集**；市场价格以 poe.watch 为主、GGG Trade API 在线挂单为备用 |
 | 实时经济价格、趋势与材料清单成本 | `POST /economy/price` 查询当前快照；`POST /economy/trend` 查询历史；`POST /economy/material-cost` 汇总明确清单；`POST /economy/rare-comparables` 把稀有装备中经 PoB tradeHashes 与 GGG stat 字典双重确认的显式词缀用于同底材、同物等/腐化状态在线挂单比较。SQLite 价格缓存 TTL 30 分钟、历史保留 90 天；主源无缓存时标准条目与唯一装备可显式降级官方 Trade API。**不足两个趋势点不判趋势；官方挂单过滤后不足 5 条不报代表价；稀有装比较不按 roll/隐式/附魔/品质/插槽/链接归一化，不冒充精确成交价；不生成制作路径、成功率、利润与 Flip 建议** |
-| Boss 技能伤害、生存校验与防御门槛 | 10 条 Boss 技能的伤害建模 + 22 个 Boss 的护甲/闪避倍率；`boss_survival_check` 校验同一命中连续 1–100 次，`boss_defence_threshold` 反解最低防御池、抗性/护甲门槛，`boss_sequence_check` 按用户明确顺序逐击累计；`boss_risk_audit` / `POST /boss/audit` 横向排列当前收录的单击风险并保留未知项。`POST /build` 可直接消费 PoB 基础防御快照。**序列不是游戏真实连招，审计不是 Boss 难度排行，不给打法**；DoT、自动推断连招、命中概率、恢复、阶段与应对未覆盖；数字是 PoB 建模值，GGG 未公布 |
+| Boss 技能伤害、生存校验与防御门槛 | 10 条 Boss 技能的伤害建模 + 22 个 Boss 的护甲/闪避倍率；`boss_survival_check` 校验同一命中连续 1–100 次，`boss_defence_threshold` 反解最低防御池、抗性/护甲门槛，`boss_sequence_check` 按用户明确顺序逐击累计；`boss_risk_audit` / `POST /boss/audit` 批量排列当前收录技能在 1–100 次同技能命中下的风险，并给出逐技能与全体已评估项的防御缺口。`POST /build` 可直接消费 PoB 基础防御快照。**序列不是游戏真实连招，审计不是 Boss 难度排行，不给打法**；DoT、自动推断连招、命中概率、恢复、阶段与应对未覆盖；数字是 PoB 建模值，GGG 未公布 |
 | 制作规则（名额与影响力） | 7 条前后缀名额规则（魔法 1+1、稀有 3+3、传奇不受限制、药剂随魔法，另有 PoB 独有的珠宝/Graft 2+2 与「已腐化深渊珠宝回到 3+3」）；`base_influence_profile` 可查 1,022 条具体底材的六类传统影响 `influenceTags`，`check_mod_combination` 在给定具体底材、单一影响与可选物等时，会用 PoB 底材标签和 POEDB 词缀 `spawn_tags` 验证影响词缀适用性。`possible` 只表示词缀能共存，不表示能制作；古灵基底由独立状态机处理。**影响底材获得方式、多影响词缀池组合与完整元词缀状态机仍未采集** |
 | 觉醒者之石状态机 | `awakener_orb_state` / `POST /craft/awakener`：接受供体与目标的两段装备复制文本，或显式物品类别与传统影响；逐字绑定 POEDB 效果，检查同类物品、双方唯一且不同的传统影响，输出供体销毁、目标重铸为稀有并兼有两种影响的条件后状态。**不声称各保留一条影响词缀，不生成重铸后的具体词缀、数量、数值、概率、成本或路线** |
 | 收获（古灵庄园） | 74 条定向工艺 + 98 条命能费用，且 **74/74 条均有结构化语义**：20 条装备重铸、23 条元素转换与新增/移除、14 条品质附魔、14 条材料随机转换、3 条地图/技能石/命运卡牺牲；另有 **51 个种子怪物**按颜色对应四种命能中的三种。随机类型与概率、堆叠输出数量、费用缩放基准和市场成本未采集时保持未知 |
@@ -517,19 +517,23 @@ curl -s -X POST http://127.0.0.1:8787/poe_agent/boss/sequence \
 序列必须由调用方明确给出，展开后最多 100 击；任一步缺对应抗性、属于持续伤害、多伤害
 类型或非零暴击时，整条序列返回 `unknown`。系统不会从 Boss 名称或经验猜测真实连招。
 
-**Boss 单击风险审计** —— `POST /boss/audit`。它横向检查本地当前收录的全部 Boss 技能
-预设，按最坏单击承伤排序；同时返回总预设数、可评估数、未知数、三态计数、最危险已知
-单击与每条未知原因。缺少某一类抗性或护甲时，其它已知项仍可排名，但顶层状态为 `partial`、
-`verdict=unknown`，未知项绝不会被排到末尾冒充低风险。
+**Boss 命中风险与防御缺口审计** —— `POST /boss/audit`。它横向检查本地当前收录的全部
+Boss 技能预设，按指定 `hit_count`（1–100，默认 1）的最坏累计承伤排序；同时返回总预设数、
+可评估数、未知数、三态计数、最危险已知项与每条未知原因。每个可评估项还会返回覆盖完整
+掷骰区间所需的最小整数防御池、当前池子缺口，以及在其它输入不变时只补对应抗性或护甲的
+目标与可达状态。顶层汇总所有已评估项的统一池子门槛、瓶颈技能、缺口技能数，以及单轴
+补强可达/不可达计数。缺少某一类抗性或护甲时，其它已知项仍可规划，但顶层状态为
+`partial`、`verdict=unknown`，未知项绝不会被排到末尾冒充低风险。
 
 ```bash
 curl -s -X POST http://127.0.0.1:8787/poe_agent/boss/audit \
   -H 'Content-Type: application/json' \
-  -d '{"level":84,"pool":10000,"fire_resist_pct":75,"cold_resist_pct":75,"lightning_resist_pct":75,"chaos_resist_pct":0,"armour":10000}'
+  -d '{"level":84,"pool":10000,"hit_count":2,"fire_resist_pct":75,"cold_resist_pct":75,"lightning_resist_pct":75,"chaos_resist_pct":0,"armour":10000}'
 ```
 
-这只是已收录 PoB 技能的单击承伤排序，不是完整技能清单，也不按出现频率、多段次数、阶段、
-连招、恢复或打法加权，因此不能解释成 Boss 难度或击杀风险排行榜。
+连续次数只表示“同一技能每次都命中且期间无恢复”的用户假设，不会从游戏机制自动推断多段
+次数。这只是已收录 PoB 技能的累计承伤与防御缺口审计，不是完整技能清单，也不按出现频率、
+命中概率、阶段、真实连招、恢复或打法加权，因此不能解释成 Boss 难度或击杀风险排行榜。
 
 **基础通货状态转移** —— `POST /craft/operation`。支持 10 种已审计基础通货，输入可为
 稀有度与前后缀计数，也可直接给完整装备复制文本；两种状态输入不能混用。
@@ -756,13 +760,14 @@ curl -s -X POST http://127.0.0.1:8787/poe_agent/build \
     }
   }'
 
-# 横向审计这份 Build 面对当前收录的 Boss 单击风险
+# 横向审计这份 Build 面对当前收录 Boss 技能连续两次命中的防御缺口
 curl -s -X POST http://127.0.0.1:8787/poe_agent/build \
   -H 'Content-Type: application/json' \
   -d '{
     "code": "https://pobb.in/你的分享ID",
     "boss_risk_audit": {
       "level": 84,
+      "hit_count": 2,
       "pool_mode": "life_and_energy_shield"
     }
   }'
@@ -817,9 +822,10 @@ PoB 在三种元素 Max Hit 相等时只导出 `LightningMaximumHitTaken`，该�
 阈值无法拆回各类逐击承伤；该原因会写入 `fallback_reason`。任一所需字段缺失，或混沌伤害
 与能量护盾的绕过机制无法从快照确定时，整条序列返回 `unknown`，不输出局部生存结论。
 
-可选的 `boss_risk_audit` 使用相同的基础字段，但对本地全部 Boss 技能预设逐条做**单击**
-比较。它会返回已知项风险排序、`assessment_status=complete|partial|none`、覆盖计数、三态计数、
-最危险已知单击和每条 unknown 原因。跨技能审计不会复用某一特定 PoB 配置的
+可选的 `boss_risk_audit` 使用相同的基础字段，对本地全部 Boss 技能预设按 `hit_count`
+逐条累计。它会返回已知项风险排序、`assessment_status=complete|partial|none`、覆盖计数、
+三态计数、最危险已知项、逐技能池子/抗性/护甲缺口与统一池子门槛。跨技能审计不会复用
+某一特定 PoB 配置的
 `*MaximumHitTaken`。如果 Build 有能量护盾，混沌项会因绕过机制不明保持 unknown，
 其它伤害类型仍可形成明确的部分排名；未知项不会被当成安全或低风险。
 
@@ -983,7 +989,7 @@ PoB 排 P2 而不是 P1：它在数值上更接近一手，但不含中文名与
 ### 评测：四项指标与黄金问答集
 
 `config.yaml` 里的阈值与 `orchestrator/binding.py` 的闸门规则都需要判据，否则改动之后
-无法判断是变好还是变坏。判据来自 `tests/golden/questions.yaml`（166 条，六类样本：
+无法判断是变好还是变坏。判据来自 `tests/golden/questions.yaml`（167 条，六类样本：
 专名 / 描述性 / 数值 / 跨来源 / **确定不覆盖** / 工具路由），基线与结论记在
 `tests/golden/BASELINE.md`。
 
@@ -1014,7 +1020,7 @@ PoB 排 P2 而不是 P1：它在数值上更接近一手，但不含中文名与
 .venv/bin/python -m unittest discover -s tests -t .
 ```
 
-目前 1865 项，其中与「无据不答」直接相关的：
+目前 1866 项，其中与「无据不答」直接相关的：
 
 | 组 | 项数 | 重点 |
 | --- | --- | --- |

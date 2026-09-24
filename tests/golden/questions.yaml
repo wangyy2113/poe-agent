@@ -1615,6 +1615,15 @@ cases:
       等级与防御池可唯一冻结时横向审计当前收录的单击；缺少火抗或电抗只让对应技能保留
       unknown，不能把未知项排到末尾当作低风险，也不能把单击承伤排行称为 Boss 难度排行
 
+  - id: route_boss_defence_gap_audit
+    query: 84级，5000血、75冰抗、0混抗、10000护甲，所有 Boss 技能连续2次要补多少防御
+    kind: tool_route
+    expect_tool: boss_risk_audit
+    note: >-
+      横向审计支持用户明确指定 1–100 次同技能连续命中；按累计最坏承伤排序并复用同一闭式
+      返回逐技能池子缺口、抗性或护甲单轴目标，以及覆盖全部已评估技能的统一池子门槛。
+      未提供的伤害类型防御仍逐项 unknown，不从“连续2次”推断真实技能多段数或 Boss 连招
+
   - id: gap_boss_fight_mechanics
     query: 谢勒怎么打，有什么机制要躲
     kind: gap

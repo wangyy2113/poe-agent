@@ -512,22 +512,53 @@ class BossSurvivalFormulaTest(unittest.TestCase):
         self.assertEqual("Shaper Ball", result.data["most_dangerous_skill"])
         self.assertIn("未知项不会被当成低风险", result.data["answer"])
 
+    def test_Boss风险审计批量规划连续命中的防御缺口(self) -> None:
+        result = boss_risk_audit(
+            level=84, pool=5000, hit_count=2, cold_resist_pct=75,
+            chaos_resist_pct=0, armour=10000,
+        )
+        self.assertTrue(result.ok)
+        self.assertEqual(2, result.data["hit_count"])
+        self.assertEqual(19723, result.data["minimum_pool_for_all_assessed_skills"])
+        self.assertEqual(14723, result.data["pool_shortfall_for_all_assessed_skills"])
+        self.assertEqual("Test Chaos Hit", result.data["pool_bottleneck_skill"])
+        self.assertEqual(3, result.data["defence_gap_skill_count"])
+        self.assertEqual(2, result.data["single_axis_reachable_gap_count"])
+        self.assertEqual(1, result.data["single_axis_unreachable_gap_count"])
+        chaos = result.data["skills"][0]
+        self.assertEqual(19722, chaos["total_taken_high"])
+        self.assertEqual(75, chaos["required_resist_for_full_range_pct"])
+        self.assertEqual(75, chaos["resist_shortfall_pct"])
+        cold = next(
+            item for item in result.data["skills"] if item["skill"] == "Shaper Ball"
+        )
+        self.assertEqual("unreachable_at_90", cold["required_resist_status"])
+        self.assertIn("统一池子门槛：19,723", result.data["answer"])
+        self.assertIn("累计承伤", result.data["answer"])
+        for hit_count in (0, 101, True):
+            with self.subTest(hit_count=hit_count):
+                invalid = boss_risk_audit(level=84, pool=5000, hit_count=hit_count)
+                self.assertFalse(invalid.ok)
+
     def test_Boss风险审计API公开结构化排名(self) -> None:
         response = risk_audit(BossRiskAuditRequest(
-            level=84, pool=10000, cold_resist_pct=75,
+            level=84, pool=10000, hit_count=2, cold_resist_pct=75,
             chaos_resist_pct=0, armour=10000,
         ), _caller="test")
         self.assertEqual("partial", response.assessment_status)
         self.assertEqual("Test Chaos Hit", response.most_dangerous_skill)
+        self.assertEqual(2, response.hit_count)
+        self.assertEqual(19723, response.minimum_pool_for_all_assessed_skills)
+        self.assertEqual(19722, response.most_dangerous_total_taken_high)
         from main import create_app
 
         self.assertIn("/poe_agent/boss/audit", create_app().openapi()["paths"])
 
     def test_Boss风险审计自然问法确定性直达(self) -> None:
-        question = "84级，10000血、75冰抗、0混抗、10000护甲，所有 Boss 技能哪个最危险"
+        question = "84级，10000血、75冰抗、0混抗、10000护甲，所有 Boss 技能连续2次哪个最危险"
         self.assertEqual("boss_risk_audit", loop._preferred_tool_route(question))
         self.assertEqual({
-            "level": 84, "pool": 10000, "cold_resist_pct": 75,
+            "level": 84, "pool": 10000, "hit_count": 2, "cold_resist_pct": 75,
             "chaos_resist_pct": 0, "armour": 10000,
         }, loop._boss_risk_audit_args(question))
         self.assertIn("boss_risk_audit", loop._CODE_INVOKED_TOOLS)
@@ -645,8 +676,9 @@ class BuildBossSurvivalTest(unittest.TestCase):
         self.assertIn("boss_sequence", props)
 
     def test_Build请求可携带Boss风险审计(self) -> None:
-        req = BuildRequest(code="abc", boss_risk_audit={"level": 84})
+        req = BuildRequest(code="abc", boss_risk_audit={"level": 84, "hit_count": 3})
         self.assertEqual("life_and_energy_shield", req.boss_risk_audit.pool_mode)
+        self.assertEqual(3, req.boss_risk_audit.hit_count)
         from main import create_app
 
         props = create_app().openapi()["components"]["schemas"]["BuildRequest"]["properties"]
@@ -745,10 +777,12 @@ class BuildBossSurvivalTest(unittest.TestCase):
                 "FireResist": 75, "LightningResist": 75,
                 "PhysicalMaximumHitTaken": 999999,
             }),
-            level=84,
+            level=84, hit_count=2,
         )
         self.assertTrue(result.ok)
         self.assertEqual("partial", result.data["assessment_status"])
+        self.assertEqual(2, result.data["hit_count"])
+        self.assertEqual(19723, result.data["minimum_pool_for_all_assessed_skills"])
         self.assertEqual("basic_defence_risk_audit", result.data["calculation_mode"])
         self.assertEqual({
             "Life": 10000.0, "EnergyShield": 0.0, "ColdResist": 75.0,
