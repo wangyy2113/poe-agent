@@ -168,6 +168,7 @@ def _openai_stream(
     question: str,
     conversation_id: str,
     created: int,
+    caller: str,
 ) -> Iterator[str]:
     completion_id = f"chatcmpl-{uuid.uuid4().hex}"
     trace_id = ""
@@ -175,7 +176,9 @@ def _openai_stream(
     citations: list[dict[str, Any]] = []
     done: dict[str, Any] = {}
     try:
-        for event in stream_turn(question, conversation_id=conversation_id):
+        for event in stream_turn(
+            question, conversation_id=conversation_id, owner_id=caller
+        ):
             kind = event.get("type")
             if kind == "meta":
                 trace_id = str(event.get("trace_id") or "")
@@ -273,7 +276,7 @@ def openai_chat_completions(
     if req.stream:
         _save_message(conversation_id, "user", question)
         return StreamingResponse(
-            _openai_stream(req, question, conversation_id, created),
+            _openai_stream(req, question, conversation_id, created, caller),
             media_type="text/event-stream",
             headers={
                 "Cache-Control": "no-cache",
@@ -282,7 +285,7 @@ def openai_chat_completions(
             },
         )
 
-    result = run_turn(question, conversation_id=conversation_id)
+    result = run_turn(question, conversation_id=conversation_id, owner_id=caller)
     text = result.full_text()
     _save_message(conversation_id, "user", question)
     _save_message(conversation_id, "assistant", text)
@@ -332,7 +335,9 @@ def chat(req: ChatRequest, caller: str = Depends(require_user)) -> ChatResponse:
     conversation_id = req.conversation_id or uuid.uuid4().hex
     _ensure_conversation(conversation_id, req.message)
 
-    result = run_turn(req.message, conversation_id=conversation_id)
+    result = run_turn(
+        req.message, conversation_id=conversation_id, owner_id=caller
+    )
 
     _save_message(conversation_id, "user", req.message)
     _save_message(conversation_id, "assistant", result.full_text())
@@ -391,7 +396,9 @@ def chat_stream(req: ChatRequest, caller: str = Depends(require_user)) -> Stream
         parts: list[str] = []
         citations: list[dict[str, Any]] = []
         try:
-            for event in stream_turn(req.message, conversation_id=conversation_id):
+            for event in stream_turn(
+                req.message, conversation_id=conversation_id, owner_id=caller
+            ):
                 if event["type"] in ("sentence", "blocked", "gap"):
                     parts.append(event.get("text", ""))
                 elif event["type"] == "citations":

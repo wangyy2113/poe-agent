@@ -158,7 +158,7 @@ def _require_admin_ip(request: Request) -> None:
 
 
 def require_user(authorization: str = Header(default="")) -> str:
-    """普通接口鉴权。返回调用方标识（脱敏后），用于按 Key 限流与轨迹归属。"""
+    """普通接口鉴权。返回不可逆稳定标识，用于限流、轨迹与用户数据隔离。"""
     keys = user_keys()
     if not keys:
         _enforce_user_rate_limit("anonymous")
@@ -166,10 +166,10 @@ def require_user(authorization: str = Header(default="")) -> str:
     supplied = _bearer(authorization)
     if supplied not in keys:
         raise HTTPException(status_code=401, detail="API Key 无效")
-    # 桶键只留不可逆摘要，避免完整 API Key 常驻在限流器或调试快照里。
+    # 只返回不可逆摘要：既能稳定隔离长期数据，也避免完整或局部 API Key 落库/进日志。
     identity = hashlib.sha256(supplied.encode("utf-8")).hexdigest()
     _enforce_user_rate_limit(identity)
-    return f"{supplied[:7]}…{supplied[-4:]}" if len(supplied) > 14 else "key"
+    return f"key:{identity[:24]}"
 
 
 def require_admin(request: Request, authorization: str = Header(default="")) -> None:

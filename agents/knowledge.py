@@ -310,6 +310,8 @@ EVIDENCE_TEMPLATE = """\
 
 {evidence}
 
+{memory}
+
 ---
 用户的问题：{question}
 """
