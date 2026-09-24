@@ -910,6 +910,11 @@ V1 完成的判定标准（逐条实测，不以「无报错」代替验证）�
     涉及的各类抗性及物理护甲；逐字段回传 `source_fields`。混合/多击序列始终不使用 PoB
     单击 `*MaximumHitTaken`，缺任一字段或混沌绕盾机制不明时整条 unknown。序列结果新增
     按伤害类型的原始/承伤合计、最大单击承伤与最危险一击，不声称用户输入是真实 Boss 连招
+  - [x] Boss 单击风险横向审计（2026-09-24）：新增 `boss_risk_audit`、
+    `POST /boss/audit` 与 `POST /build.boss_risk_audit`，对本地全部技能预设逐条计算或说明
+    unknown，按最坏单击承伤排列已知项，返回完整/部分/无覆盖状态、三态计数、缺失输入与
+    最危险已知技能。缺某类防御不阻断其它类型，但顶层 verdict 保持 unknown；Build 入口
+    逐字段披露来源，不使用特定配置 Max Hit。单击排行不冒充完整技能清单、Boss 难度或击杀风险
 - [x] 官方角色 API 导入 v1（2026-09-08）：接入 OAuth `account:characters` 的当前
   `GET /character[/<realm>]/<name>` 契约；支持列出账号角色，并将 PoE1 PC 角色的已装备物品、
   插槽连接组、珠宝、天赋、大师选择、盗贼、万神殿、升华/Bloodline 与版本送入现有 Build

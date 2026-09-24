@@ -1885,6 +1885,8 @@ def _preferred_tool_route(question: str) -> str:
     harvest_args = _harvest_reforge_args(question)
     if harvest_args is not None:
         return "harvest_reforge_state"
+    if _boss_risk_audit_args(question) is not None:
+        return "boss_risk_audit"
     if any(marker in question for marker in ("然后", "再接", "接着", "连招", "组合", "再吃")):
         if _boss_sequence_args(question) is not None:
             return "boss_sequence_check"
@@ -2303,6 +2305,47 @@ def _boss_defence_threshold_args(question: str) -> dict[str, Any] | None:
     return _boss_hit_args(question, require_pool=False, pool_key="target_pool")
 
 
+def _boss_risk_audit_args(question: str) -> dict[str, Any] | None:
+    """横向审计只要求等级与池子唯一；缺少某类防御会在工具内形成部分覆盖。"""
+    folded = question.casefold()
+    if not any(signal.casefold() in folded for signal in (
+        "哪个Boss技能最危险", "哪个 Boss 技能最危险", "哪些Boss技能最危险",
+        "哪些 Boss 技能最危险", "Boss技能风险", "Boss 技能风险",
+        "Boss技能审计", "Boss 技能审计", "所有Boss技能", "所有 Boss 技能",
+        "全部Boss技能", "全部 Boss 技能",
+    )):
+        return None
+    levels = {
+        int(match.group(1))
+        for match in re.finditer(r"(\d{1,3})\s*级", question)
+    }
+    pools = _slot_values(
+        question, ("防御池", "有效生命", "生命加护盾", "生命+护盾", "池子", "血量", "血")
+    )
+    if len(levels) != 1 or len(pools) != 1:
+        return None
+    args: dict[str, Any] = {"level": levels.pop(), "pool": pools.pop()}
+    if "uber" in folded:
+        args["uber"] = True
+    for slot, keywords in (
+        ("fire_resist_pct", ("火焰抗性", "火抗")),
+        ("cold_resist_pct", ("冰霜抗性", "冰抗")),
+        ("lightning_resist_pct", ("闪电抗性", "电抗")),
+        ("chaos_resist_pct", ("混沌抗性", "混抗")),
+        ("armour", ("护甲",)),
+        ("flat_physical_reduction_pct", ("物理减伤", "物理伤害减免")),
+        ("taken_mult", ("承受倍率", "受到伤害倍率")),
+        ("overwhelm_pct", ("压制物理减伤", "压制")),
+        ("roll_range", ("掷骰", "伤害掷骰")),
+    ):
+        values = _slot_values(question, keywords)
+        if len(values) > 1:
+            return None
+        if values:
+            args[slot] = values.pop()
+    return args
+
+
 def _boss_sequence_args(question: str) -> dict[str, Any] | None:
     """解析明确写出的多技能顺序；不从 Boss 名或战斗机制猜真实连招。"""
     try:
@@ -2471,6 +2514,7 @@ def _resistance_args(question: str) -> dict[str, Any] | None:
 #: 「我有 10000 护甲能减多少伤害」**碰巧**也拒答了，但拒答理由是「工具没返回证据」
 #: 而不是工具想说的「你没给这一击的伤害」——契约过了、机制却是坏的。
 _CODE_INVOKED_TOOLS: dict[str, Any] = {
+    "boss_risk_audit": _boss_risk_audit_args,
     "boss_sequence_check": _boss_sequence_args,
     "boss_defence_threshold": _boss_defence_threshold_args,
     "boss_survival_check": _boss_survival_args,
@@ -2513,7 +2557,7 @@ _CODE_INVOKED_TOOLS: dict[str, Any] = {
 _TOOLS_WITHOUT_CITATIONS = frozenset({"kb_coverage"})
 _DETERMINISTIC_DIRECT_TOOLS = frozenset({
     "economy_price_lookup", "economy_price_trend", "economy_material_cost",
-    "economy_rare_comparables", "boss_sequence_check", "boss_defence_threshold",
+    "economy_rare_comparables", "boss_risk_audit", "boss_sequence_check", "boss_defence_threshold",
     "boss_survival_check",
     "awakener_orb_state",
     "craft_operation_state",

@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from api.deps import require_user
 from tools.impl.boss import (
     boss_defence_threshold,
+    boss_risk_audit,
     boss_sequence_check,
     boss_survival_check,
 )
@@ -190,6 +191,69 @@ class BossSequenceResponse(BaseModel):
     answer: str
 
 
+class BossRiskAuditRequest(BaseModel):
+    level: int = Field(ge=1, le=100)
+    pool: float = Field(gt=0, le=1_000_000_000, allow_inf_nan=False)
+    uber: bool = False
+    roll_range: float | None = Field(default=None, ge=0, le=100, allow_inf_nan=False)
+    fire_resist_pct: float | None = Field(default=None, ge=-200, le=90, allow_inf_nan=False)
+    cold_resist_pct: float | None = Field(default=None, ge=-200, le=90, allow_inf_nan=False)
+    lightning_resist_pct: float | None = Field(default=None, ge=-200, le=90, allow_inf_nan=False)
+    chaos_resist_pct: float | None = Field(default=None, ge=-200, le=90, allow_inf_nan=False)
+    armour: float | None = Field(default=None, ge=0, le=10_000_000_000, allow_inf_nan=False)
+    flat_physical_reduction_pct: float = Field(
+        default=0, ge=0, le=90, allow_inf_nan=False
+    )
+    taken_mult: float = Field(default=1, gt=0, allow_inf_nan=False)
+    overwhelm_pct: float = Field(default=0, ge=0, le=100, allow_inf_nan=False)
+
+
+class BossRiskAuditSkillResponse(BaseModel):
+    skill: str
+    damage_type: str | None = None
+    assessable: bool
+    verdict: str | None = None
+    outcome: str | None = None
+    risk_rank: int | None = None
+    raw_low: float | None = None
+    raw_high: float | None = None
+    taken_low: float | None = None
+    taken_high: float | None = None
+    margin_low: float | None = None
+    margin_high: float | None = None
+    worst_case_pool_ratio_pct: float | None = None
+    penetration_pct: float | None = None
+    effective_resist_pct: float | None = None
+    reason: str = ""
+    missing_inputs: list[str] = Field(default_factory=list)
+
+
+class BossRiskAuditResponse(BaseModel):
+    found: bool
+    assessable: bool
+    verdict: str | None = None
+    known_worst_outcome: str | None = None
+    assessment_status: str
+    level: int
+    uber: bool
+    roll_range: float | None = None
+    pool: float | None
+    total_skill_count: int
+    assessed_skill_count: int
+    unknown_skill_count: int
+    verdict_counts: dict[str, int] = Field(default_factory=dict)
+    most_dangerous_skill: str | None = None
+    most_dangerous_damage_type: str | None = None
+    most_dangerous_taken_low: float | None = None
+    most_dangerous_taken_high: float | None = None
+    most_dangerous_pool_ratio_pct: float | None = None
+    skills: list[BossRiskAuditSkillResponse] = Field(default_factory=list)
+    missing_inputs: list[str] = Field(default_factory=list)
+    reason: str = ""
+    boundary: str
+    answer: str
+
+
 @router.post("/boss/survival", response_model=BossSurvivalResponse)
 def survival(
     req: BossSurvivalRequest, _caller: str = Depends(require_user)
@@ -225,3 +289,15 @@ def sequence(
             "error": "invalid_boss_sequence_query", "reason": result.error,
         })
     return BossSequenceResponse(**(result.data or {}))
+
+
+@router.post("/boss/audit", response_model=BossRiskAuditResponse)
+def risk_audit(
+    req: BossRiskAuditRequest, _caller: str = Depends(require_user)
+) -> BossRiskAuditResponse:
+    result = boss_risk_audit(**req.model_dump())
+    if not result.ok:
+        raise HTTPException(status_code=422, detail={
+            "error": "invalid_boss_risk_audit_query", "reason": result.error,
+        })
+    return BossRiskAuditResponse(**(result.data or {}))

@@ -60,6 +60,13 @@ _SEQUENCE_BOUNDARY = (
     "守护技能、Ward、Mind over Matter、阶段机制、药剂或打法"
 )
 
+_RISK_AUDIT_BOUNDARY = (
+    "只横向比较本地已收录的 PoB Boss 技能预设在一次命中时的已建模承伤；"
+    "不是全部 Boss/技能清单，也不是 Boss 难度、击杀风险或真实战斗排行。"
+    "不按技能出现频率、多段次数、命中概率、连招、持续伤害、暴击、伤害转化、"
+    "格挡、闪避、法术压制、守护技能、Ward、Mind over Matter、恢复、阶段、药剂或打法加权"
+)
+
 _DAMAGE_TYPE_ZH = {
     "Physical": "物理",
     "Fire": "火焰",
@@ -1791,3 +1798,401 @@ def boss_sequence_from_build(
         "input_source": "pob_player_stat", "mode": "build_explicit_hit_sequence",
     })
     return ToolResult(ok=True, data=data, citations=checked.citations, meta=meta)
+
+
+def _render_boss_risk_audit(data: dict[str, Any]) -> str:
+    status_labels = {
+        "complete": "已完整评估当前收录的可比较技能",
+        "partial": "仅完成部分技能评估",
+        "none": "没有技能可安全评估",
+    }
+    lines = [
+        "### Boss 单击风险审计" + ("（Uber）" if data["uber"] else ""),
+        "",
+        f"**状态：{status_labels[data['assessment_status']]}**",
+        f"- 口径：敌人等级 {data['level']}；防御池 {data['pool']:g}；"
+        + (
+            f"固定 {data['roll_range']:g}% 掷骰点"
+            if data["roll_range"] is not None else "0%..100% 掷骰区间"
+        ),
+        f"- 覆盖：共 {data['total_skill_count']} 条预设；可评估 "
+        f"{data['assessed_skill_count']}；未知 {data['unknown_skill_count']}",
+    ]
+    if data.get("most_dangerous_skill"):
+        lines.append(
+            f"- 已知项最危险单击：{data['most_dangerous_skill']}（"
+            f"{_DAMAGE_TYPE_ZH[data['most_dangerous_damage_type']]}），承伤 "
+            f"{data['most_dangerous_taken_low']:,.2f} — "
+            f"{data['most_dangerous_taken_high']:,.2f}，最坏占池子 "
+            f"{data['most_dangerous_pool_ratio_pct']:g}%"
+        )
+    lines += [
+        "",
+        "| 排名 | 技能 | 类型 | 承伤区间 | 最坏占池子 | 单击结论 |",
+        "| ---: | --- | --- | ---: | ---: | --- |",
+    ]
+    labels = {
+        "survives_full_range": "全区间不耗尽",
+        "roll_dependent": "取决于掷骰",
+        "fails_full_range": "全区间耗尽",
+    }
+    for item in data["skills"]:
+        if not item["assessable"]:
+            continue
+        lines.append(
+            f"| {item['risk_rank']} | {item['skill']} | "
+            f"{_DAMAGE_TYPE_ZH[item['damage_type']]} | "
+            f"{item['taken_low']:,.2f}–{item['taken_high']:,.2f} | "
+            f"{item['worst_case_pool_ratio_pct']:g}% | {labels[item['outcome']]} |"
+        )
+    unknown = [item for item in data["skills"] if not item["assessable"]]
+    if unknown:
+        lines += ["", "未评估项："]
+        lines.extend(f"- {item['skill']}：{item['reason']}" for item in unknown)
+    lines += [
+        "",
+        "> 排名只按单次命中的最坏承伤排序；未知项不会被当成低风险。",
+        f"> 边界：{_RISK_AUDIT_BOUNDARY}。",
+    ]
+    return "\n".join(lines)
+
+
+@REGISTRY.register(
+    name="boss_risk_audit",
+    description=(
+        "横向审计当前本地收录的 PoB Boss 技能单次命中：按最坏承伤排序，返回每条技能的"
+        "伤害/承伤区间、池子占比、三态结论、覆盖数和未知原因。可在缺少部分抗性时给出"
+        "明确的部分覆盖，但未知项绝不当作安全。它不是完整 Boss 清单或真实战斗难度排名，"
+        "不计算持续伤害、连招、频率、阶段、恢复、药剂或打法。"
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "level": {"type": "integer", "minimum": 1, "maximum": 100},
+            "pool": {"type": "number", "exclusiveMinimum": 0},
+            "uber": {"type": "boolean", "default": False},
+            "roll_range": {"type": "number", "minimum": 0, "maximum": 100},
+            "fire_resist_pct": {"type": "number", "minimum": -200, "maximum": 90},
+            "cold_resist_pct": {"type": "number", "minimum": -200, "maximum": 90},
+            "lightning_resist_pct": {"type": "number", "minimum": -200, "maximum": 90},
+            "chaos_resist_pct": {"type": "number", "minimum": -200, "maximum": 90},
+            "armour": {"type": "number", "minimum": 0},
+            "flat_physical_reduction_pct": {
+                "type": "number", "minimum": 0, "maximum": 90, "default": 0,
+            },
+            "taken_mult": {"type": "number", "exclusiveMinimum": 0, "default": 1},
+            "overwhelm_pct": {
+                "type": "number", "minimum": 0, "maximum": 100, "default": 0,
+            },
+        },
+        "required": ["level", "pool"],
+        "additionalProperties": False,
+    },
+)
+def boss_risk_audit(
+    level: int,
+    pool: float,
+    uber: bool = False,
+    roll_range: float | None = None,
+    fire_resist_pct: float | None = None,
+    cold_resist_pct: float | None = None,
+    lightning_resist_pct: float | None = None,
+    chaos_resist_pct: float | None = None,
+    armour: float | None = None,
+    flat_physical_reduction_pct: float = 0.0,
+    taken_mult: float = 1.0,
+    overwhelm_pct: float = 0.0,
+) -> ToolResult:
+    """对本地 Boss 技能预设做单击横向审计；未知项保留在结果中。"""
+    if pool <= 0:
+        return ToolResult(ok=False, error="pool 必须大于 0")
+    if isinstance(level, bool) or not isinstance(level, int) or not 1 <= level <= 100:
+        return ToolResult(ok=False, error="level 必须是 1..100 的整数")
+    if roll_range is not None and not 0 <= roll_range <= 100:
+        return ToolResult(ok=False, error="roll_range 必须在 0..100 之间")
+
+    rows = dbmod.get_conn().execute(
+        "SELECT * FROM pob_boss_skill ORDER BY name"
+    ).fetchall()
+    if not rows:
+        return ToolResult(ok=True, data={
+            "found": False, "assessable": False, "verdict": "unknown",
+            "assessment_status": "none", "level": level, "uber": uber,
+            "roll_range": roll_range, "pool": pool, "total_skill_count": 0,
+            "assessed_skill_count": 0, "unknown_skill_count": 0,
+            "skills": [], "missing_inputs": [],
+            "reason": "本地没有已收录的 PoB Boss 技能预设",
+            "boundary": _RISK_AUDIT_BOUNDARY,
+            "answer": "### Boss 单击风险审计\n\n**结论：本地没有可审计的技能预设**",
+        })
+
+    resist_by_type = {
+        "Fire": fire_resist_pct, "Cold": cold_resist_pct,
+        "Lightning": lightning_resist_pct, "Chaos": chaos_resist_pct,
+        "Physical": 0.0,
+    }
+    known: list[dict[str, Any]] = []
+    unknown: list[dict[str, Any]] = []
+    missing_inputs: set[str] = set()
+    cited_rows: list[sqlite3.Row] = []
+    for row in rows:
+        cited_rows.append(row)
+        name = str(row["name"])
+        mults = json.loads(row["damage_mults"])
+        dtype = str(next(iter(mults))) if mults else None
+        reason = ""
+        missing: list[str] = []
+        if str(row["damage_type"]) == "DamageOverTime":
+            reason = "持续伤害不能用单次命中池子比较"
+        elif len(mults) != 1:
+            reason = "包含多个伤害类型，当前不做伤害转化"
+        elif float(row["crit_chance"] or 0) > 0:
+            reason = "存在非零暴击率，缺少暴击命中区间"
+        elif dtype == "Physical" and armour is None:
+            reason = "缺少护甲"
+            missing = ["armour"]
+            missing_inputs.add("armour")
+        elif dtype not in resist_by_type:
+            reason = f"使用了当前不支持的伤害类型 {dtype}"
+        elif resist_by_type[dtype] is None:
+            key = {
+                "Fire": "fire_resist_pct", "Cold": "cold_resist_pct",
+                "Lightning": "lightning_resist_pct", "Chaos": "chaos_resist_pct",
+            }[dtype]
+            reason = f"缺少{_DAMAGE_TYPE_ZH[dtype]}抗性"
+            missing = [key]
+            missing_inputs.add(key)
+        if reason:
+            unknown.append({
+                "skill": name, "damage_type": dtype, "assessable": False,
+                "verdict": "unknown", "outcome": None, "reason": reason,
+                "missing_inputs": missing,
+            })
+            continue
+
+        pair = next(iter(mults.values()))
+        try:
+            uber_mult = row["uber_damage_mult"] if uber else None
+            if roll_range is None:
+                low, high = boss_damage.hit_range(
+                    level=level, base_mult=float(pair[0]), roll_mult=float(pair[1]),
+                    damage_type=str(dtype), uber_mult=uber_mult,
+                )
+            else:
+                hit = boss_damage.hit_damage(
+                    level=level, base_mult=float(pair[0]), roll_mult=float(pair[1]),
+                    damage_type=str(dtype), roll_range=float(roll_range),
+                    uber_mult=uber_mult,
+                )
+                low = high = hit
+            penetrations = json.loads(
+                row["uber_penetrations"] if uber else row["penetrations"]
+            )
+            penetration = float(penetrations.get(f"{dtype}Pen") or 0)
+            assessed = boss_survival.assess_single_hit(
+                damage_type=str(dtype), raw_low=low.damage, raw_high=high.damage,
+                pool=float(pool), resist_pct=float(resist_by_type[str(dtype)] or 0),
+                penetration_pct=penetration, armour=float(armour or 0),
+                flat_physical_reduction_pct=float(flat_physical_reduction_pct),
+                taken_mult=float(taken_mult), overwhelm_pct=float(overwhelm_pct),
+            )
+        except (
+            boss_damage.BossDamageError, boss_survival.BossSurvivalError,
+            constants.MissingConstant, constants.ConstantTypeError,
+        ) as exc:
+            return ToolResult(ok=False, error=str(exc))
+        known.append({
+            "skill": name, "damage_type": dtype, "assessable": True,
+            "verdict": assessed.outcome, "outcome": assessed.outcome,
+            "raw_low": assessed.raw_low, "raw_high": assessed.raw_high,
+            "taken_low": assessed.taken_low, "taken_high": assessed.taken_high,
+            "margin_low": assessed.margin_low, "margin_high": assessed.margin_high,
+            "worst_case_pool_ratio_pct": round(assessed.taken_high / pool * 100, 2),
+            "penetration_pct": assessed.penetration_pct,
+            "effective_resist_pct": assessed.effective_resist_pct,
+            "reason": "", "missing_inputs": [],
+        })
+
+    known.sort(key=lambda item: (-item["taken_high"], -item["taken_low"], item["skill"]))
+    for rank, item in enumerate(known, start=1):
+        item["risk_rank"] = rank
+    skills = known + unknown
+    status = "complete" if not unknown else "partial" if known else "none"
+    verdict_counts = {
+        outcome: sum(item["outcome"] == outcome for item in known)
+        for outcome in ("survives_full_range", "roll_dependent", "fails_full_range")
+    }
+    known_worst = (
+        "fails_full_range" if verdict_counts["fails_full_range"]
+        else "roll_dependent" if verdict_counts["roll_dependent"]
+        else "survives_full_range" if known else None
+    )
+    most = known[0] if known else None
+    data: dict[str, Any] = {
+        "found": True,
+        "assessable": bool(known),
+        "verdict": known_worst if status == "complete" else "unknown",
+        "known_worst_outcome": known_worst,
+        "assessment_status": status,
+        "level": level,
+        "uber": bool(uber),
+        "roll_range": roll_range,
+        "pool": float(pool),
+        "total_skill_count": len(rows),
+        "assessed_skill_count": len(known),
+        "unknown_skill_count": len(unknown),
+        "verdict_counts": verdict_counts,
+        "most_dangerous_skill": most["skill"] if most else None,
+        "most_dangerous_damage_type": most["damage_type"] if most else None,
+        "most_dangerous_taken_low": most["taken_low"] if most else None,
+        "most_dangerous_taken_high": most["taken_high"] if most else None,
+        "most_dangerous_pool_ratio_pct": (
+            most["worst_case_pool_ratio_pct"] if most else None
+        ),
+        "skills": skills,
+        "missing_inputs": sorted(missing_inputs),
+        "reason": (
+            "部分技能因缺少输入或超出单击模型边界而未评估" if unknown else ""
+        ),
+        "boundary": _RISK_AUDIT_BOUNDARY,
+    }
+    answer = _render_boss_risk_audit(data)
+    data["answer"] = answer
+    citations = [_citation(row, answer) for row in cited_rows]
+    if known:
+        citations.append(_maxhit_citation(answer))
+    return ToolResult(ok=True, data=data, citations=citations, meta={
+        "channel": "derived", "tables": ["pob_boss_skill", "game_constant"],
+        "verdict": data["verdict"], "mode": "boss_single_hit_risk_audit",
+        "assessment_status": status,
+    })
+
+
+def boss_risk_audit_from_build(
+    build: "PobBuild",
+    *,
+    level: int,
+    uber: bool = False,
+    roll_range: float | None = None,
+    pool_mode: BuildPoolMode = "life_and_energy_shield",
+) -> ToolResult:
+    """用 Build 的基础 PlayerStat 对全部已收录 Boss 单击做可审计横向比较。"""
+    if pool_mode not in {"life", "life_and_energy_shield"}:
+        return ToolResult(ok=False, error="pool_mode 只支持 life 或 life_and_energy_shield")
+    source_fields: dict[str, float] = {}
+    missing_pool: list[str] = []
+    life_key = "LifeUnreserved" if "LifeUnreserved" in build.player_stats else "Life"
+    life = build.player_stats.get(life_key)
+    if life is None:
+        missing_pool.append("Life（或 LifeUnreserved）")
+    elif not math.isfinite(life) or life <= 0:
+        missing_pool.append(f"有效的 {life_key}")
+    else:
+        source_fields[life_key] = float(life)
+    energy_shield = 0.0
+    if pool_mode == "life_and_energy_shield":
+        value = build.player_stats.get("EnergyShield")
+        if value is None:
+            missing_pool.append("EnergyShield")
+        elif not math.isfinite(value) or value < 0:
+            missing_pool.append("有效的 EnergyShield")
+        else:
+            energy_shield = float(value)
+            source_fields["EnergyShield"] = energy_shield
+    if missing_pool or life is None or not math.isfinite(life):
+        reason = "Build 快照缺少风险审计所需的防御池字段"
+        total_skill_count = int(dbmod.get_conn().execute(
+            "SELECT COUNT(*) FROM pob_boss_skill"
+        ).fetchone()[0])
+        answer = "\n".join([
+            "### Build 的 Boss 单击风险审计", "", "**结论：无法安全计算**",
+            f"- 原因：{reason}", f"- 缺少：{'、'.join(missing_pool)}", "",
+            f"> 边界：{_RISK_AUDIT_BOUNDARY}；{_BUILD_SNAPSHOT_BOUNDARY}。",
+        ])
+        return ToolResult(ok=True, data={
+            "found": total_skill_count > 0, "assessable": False, "verdict": "unknown",
+            "known_worst_outcome": None, "assessment_status": "none",
+            "level": level, "uber": bool(uber), "roll_range": roll_range,
+            "pool": None, "pool_mode": pool_mode,
+            "total_skill_count": total_skill_count,
+            "assessed_skill_count": 0, "unknown_skill_count": total_skill_count,
+            "verdict_counts": {}, "skills": [], "missing_inputs": missing_pool,
+            "reason": reason, "input_source": "pob_player_stat",
+            "source_fields": source_fields, "calculation_mode": "unknown",
+            "fallback_reason": (
+                "跨技能审计不使用特定配置的 PoB *MaximumHitTaken 单击阈值"
+            ),
+            "boundary": f"{_RISK_AUDIT_BOUNDARY}；{_BUILD_SNAPSHOT_BOUNDARY}",
+            "answer": answer,
+        }, meta={
+            "channel": "derived", "input_source": "pob_player_stat",
+            "verdict": "unknown", "mode": "build_boss_risk_audit",
+        })
+
+    kwargs: dict[str, Any] = {}
+    for dtype, key, arg in (
+        ("Fire", "FireResist", "fire_resist_pct"),
+        ("Cold", "ColdResist", "cold_resist_pct"),
+        ("Lightning", "LightningResist", "lightning_resist_pct"),
+        ("Chaos", "ChaosResist", "chaos_resist_pct"),
+    ):
+        value = build.player_stats.get(key)
+        if dtype == "Chaos" and energy_shield > 0:
+            continue
+        if value is not None and math.isfinite(value) and -200 <= value <= 90:
+            kwargs[arg] = float(value)
+            source_fields[key] = float(value)
+    armour = build.player_stats.get("Armour")
+    if armour is not None and math.isfinite(armour) and armour >= 0:
+        kwargs["armour"] = float(armour)
+        source_fields["Armour"] = float(armour)
+
+    checked = boss_risk_audit(
+        level=level, pool=float(life) + energy_shield, uber=uber,
+        roll_range=roll_range, **kwargs,
+    )
+    if not checked.ok:
+        return checked
+    data = dict(checked.data or {})
+    audited_types = {
+        item.get("damage_type") for item in data["skills"] if item.get("damage_type")
+    }
+    for dtype, key in (
+        ("Fire", "FireResist"), ("Cold", "ColdResist"),
+        ("Lightning", "LightningResist"), ("Chaos", "ChaosResist"),
+        ("Physical", "Armour"),
+    ):
+        if dtype not in audited_types:
+            source_fields.pop(key, None)
+    if energy_shield > 0:
+        for item in data["skills"]:
+            if item.get("damage_type") == "Chaos":
+                item.update({
+                    "assessable": False, "verdict": "unknown", "outcome": None,
+                    "reason": "混沌伤害是否绕过能量护盾的 Build 机制不明确",
+                    "missing_inputs": ["混沌伤害是否绕过能量护盾的 Build 机制"],
+                })
+        data["missing_inputs"] = sorted(set(data["missing_inputs"]) | {
+            "混沌伤害是否绕过能量护盾的 Build 机制"
+        })
+        data["answer"] = _render_boss_risk_audit(data)
+
+    data.update({
+        "pool_mode": pool_mode,
+        "input_source": "pob_player_stat",
+        "source_fields": source_fields,
+        "calculation_mode": "basic_defence_risk_audit",
+        "fallback_reason": (
+            "跨技能审计不使用特定配置的 PoB *MaximumHitTaken 单击阈值"
+        ),
+        "boundary": f"{data['boundary']}；{_BUILD_SNAPSHOT_BOUNDARY}",
+        "answer": (
+            f"{data['answer']}\n> Build 快照输入：{', '.join(source_fields)}；"
+            f"{_BUILD_SNAPSHOT_BOUNDARY}\n> 未采用 PoB Max Hit：跨技能审计不能复用单击阈值。"
+        ),
+    })
+    meta = dict(checked.meta)
+    meta.update({"input_source": "pob_player_stat", "mode": "build_boss_risk_audit"})
+    citations = [dict(item, text=str(data["answer"])[:MAX_EVIDENCE_CHARS])
+                 for item in checked.citations]
+    return ToolResult(ok=True, data=data, citations=citations, meta=meta)
