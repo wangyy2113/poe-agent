@@ -22,7 +22,7 @@ const $ = (id) => document.getElementById(id);
 const el = {
   main: $('main'), thread: $('thread'), empty: $('empty'),
   input: $('input'), send: $('send'), pasteCard: $('paste-card'),
-  newChat: $('new-chat'), renameChat: $('rename-chat'),
+  newChat: $('new-chat'), renameChat: $('rename-chat'), deleteChat: $('delete-chat'),
   characterImport: $('import-character'), convs: $('conversations'),
   imageUpload: $('upload-image'), imageInput: $('image-input'),
 };
@@ -945,12 +945,41 @@ function renderConversationList() {
       ).join('')
     : (conversationId ? '<option value="">（无历史会话）</option>' : ''));
   el.renameChat.disabled = !conversationId;
+  el.deleteChat.disabled = !conversationId;
+}
+
+async function syncConversations() {
+  try {
+    const resp = await fetch(`${API}/conversations?limit=30`);
+    if (!resp.ok) return;
+    const data = await resp.json();
+    const server = (data.items || []).map((item) => ({
+      id: item.conversation_id,
+      title: item.title || '新对话',
+      customTitle: true,
+    }));
+    // 保留升级前仅存于浏览器的随机 ID；用户点开时服务端会安全地认领旧会话。
+    const serverIds = new Set(server.map((item) => item.id));
+    const legacy = savedConversations().filter((item) => !serverIds.has(item.id));
+    localStorage.setItem(STORE, JSON.stringify([...server, ...legacy].slice(0, 30)));
+    renderConversationList();
+  } catch {
+    // 服务端暂不可用时继续使用本地缓存，不影响聊天。
+  }
 }
 
 async function loadConversation(id) {
   if (!id || busy) return;
   const resp = await fetch(`${API}/conversations/${id}`);
-  if (!resp.ok) return;
+  if (!resp.ok) {
+    if (resp.status === 404) {
+      localStorage.setItem(STORE, JSON.stringify(
+        savedConversations().filter((item) => item.id !== id)
+      ));
+      renderConversationList();
+    }
+    return;
+  }
   const data = await resp.json();
   conversationId = id;
   el.thread.innerHTML = '';
@@ -1017,6 +1046,34 @@ async function renameConversation() {
   }
 }
 
+async function deleteConversation() {
+  if (!conversationId || busy) return;
+  if (!window.confirm('删除当前会话及其消息？此操作不可撤销。')) return;
+  busy = true;
+  try {
+    const resp = await fetch(`${API}/conversations/${conversationId}`, {
+      method: 'DELETE',
+    });
+    const data = await resp.json().catch(() => null);
+    if (!resp.ok) {
+      window.alert((data && data.detail) || `删除失败（HTTP ${resp.status}）`);
+      return;
+    }
+    const deletedId = conversationId;
+    conversationId = null;
+    localStorage.setItem(STORE, JSON.stringify(
+      savedConversations().filter((item) => item.id !== deletedId)
+    ));
+    el.thread.innerHTML = '';
+    el.empty.style.display = '';
+    renderConversationList();
+  } catch (err) {
+    window.alert(`删除失败：${String(err.message || err)}`);
+  } finally {
+    busy = false;
+  }
+}
+
 /* ── 输入框 ───────────────────────────────────────────── */
 
 function autoGrow() {
@@ -1056,6 +1113,7 @@ el.newChat.addEventListener('click', () => {
 });
 
 el.renameChat.addEventListener('click', renameConversation);
+el.deleteChat.addEventListener('click', deleteConversation);
 el.convs.addEventListener('change', (e) => loadConversation(e.target.value));
 
 document.querySelectorAll('.samples button').forEach((b) => {
@@ -1063,4 +1121,5 @@ document.querySelectorAll('.samples button').forEach((b) => {
 });
 
 renderConversationList();
+syncConversations();
 el.input.focus();
