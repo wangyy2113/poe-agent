@@ -20,6 +20,7 @@
     <button id="upload-image" class="ghost" title="上传装备或 Build 截图">上传截图</button>
     <input id="image-input" type="file" accept="image/png,image/jpeg,image/webp" hidden>
     <button id="import-character" class="ghost" title="从 GGG 官方角色 API 导入">导入角色</button>
+    <button id="manage-memories" class="ghost" title="管理显式保存的偏好、目标与约束">长期记忆</button>
     <button id="auth-key" class="ghost" title="配置当前标签页使用的 API Key">API 密钥</button>
     <button id="new-chat" class="ghost">新对话</button>
   </nav>
@@ -66,6 +67,50 @@
       <button id="auth-save" type="submit" class="auth-primary">验证并保存</button>
     </div>
   </form>
+</dialog>
+
+<dialog id="memory-dialog" class="memory-dialog" aria-labelledby="memory-title">
+  <div class="memory-panel">
+    <div class="memory-heading">
+      <div>
+        <h2 id="memory-title">长期记忆</h2>
+        <p>只管理你主动保存的内容；它用于个性化，不会作为游戏事实证据。</p>
+      </div>
+      <button id="memory-close" type="button" class="ghost" aria-label="关闭长期记忆">关闭</button>
+    </div>
+
+    <div id="memory-status" class="memory-status" role="status" aria-live="polite"></div>
+    <div id="memory-list" class="memory-list" aria-label="已保存的长期记忆"></div>
+
+    <form id="memory-form" class="memory-form">
+      <h3 id="memory-form-title">新增记忆</h3>
+      <div class="memory-fields">
+        <label>类别
+          <select id="memory-category">
+            <option value="preference">偏好</option>
+            <option value="goal">目标</option>
+            <option value="constraint">约束</option>
+            <option value="note">备注</option>
+          </select>
+        </label>
+        <label>标签（可选）
+          <input id="memory-label" maxlength="80" placeholder="例如：预算偏好">
+        </label>
+      </div>
+      <label>内容
+        <textarea id="memory-content" required maxlength="500"
+                  placeholder="例如：升级建议优先考虑低预算方案"></textarea>
+      </label>
+      <label class="memory-active">
+        <input id="memory-active" type="checkbox" checked> 在后续有据问答中启用
+      </label>
+      <div id="memory-error" class="auth-error" role="alert" hidden></div>
+      <div class="auth-actions">
+        <button id="memory-reset" type="button" class="ghost">清空表单</button>
+        <button id="memory-save" type="submit" class="auth-primary">保存记忆</button>
+      </div>
+    </form>
+  </div>
 </dialog>
 
 <script src="app.js"></script>

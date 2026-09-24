@@ -28,6 +28,13 @@ const el = {
   authKey: $('auth-key'), authDialog: $('auth-dialog'), authForm: $('auth-form'),
   authInput: $('auth-input'), authError: $('auth-error'),
   authClear: $('auth-clear'), authCancel: $('auth-cancel'), authSave: $('auth-save'),
+  manageMemories: $('manage-memories'), memoryDialog: $('memory-dialog'),
+  memoryClose: $('memory-close'), memoryStatus: $('memory-status'),
+  memoryList: $('memory-list'), memoryForm: $('memory-form'),
+  memoryFormTitle: $('memory-form-title'), memoryCategory: $('memory-category'),
+  memoryLabel: $('memory-label'), memoryContent: $('memory-content'),
+  memoryActive: $('memory-active'), memoryError: $('memory-error'),
+  memoryReset: $('memory-reset'), memorySave: $('memory-save'),
 };
 
 let conversationId = null;
@@ -72,6 +79,7 @@ async function apiFetch(path, options = {}) {
     if (hadKey) {
       sessionStorage.removeItem(AUTH_STORE);
       clearConversationUi();
+      clearMemoryUi();
     }
     updateAuthButton(true);
     showAuthDialog(hadKey ? 'API Key 无效或已失效，请重新输入。' : '此服务需要 API Key。');
@@ -111,7 +119,10 @@ async function saveApiKey(event) {
       return;
     }
     const previous = storedApiKey();
-    if (previous !== key) clearConversationUi();
+    if (previous !== key) {
+      clearConversationUi();
+      clearMemoryUi();
+    }
     sessionStorage.setItem(AUTH_STORE, key);
     authRequired = false;
     el.authInput.value = '';
@@ -131,7 +142,243 @@ function clearApiKey() {
   el.authInput.value = '';
   el.authDialog.close();
   clearConversationUi();
+  clearMemoryUi();
   updateAuthButton(authRequired);
+}
+
+/* ── 显式长期记忆 ────────────────────────────────────── */
+
+const MEMORY_CATEGORY_LABELS = Object.freeze({
+  preference: '偏好', goal: '目标', constraint: '约束', note: '备注',
+});
+let memoryItems = [];
+let editingMemoryId = null;
+let memoryBusy = false;
+let memoryEpoch = 0;
+
+function resetMemoryForm() {
+  editingMemoryId = null;
+  el.memoryFormTitle.textContent = '新增记忆';
+  el.memoryCategory.value = 'preference';
+  el.memoryLabel.value = '';
+  el.memoryContent.value = '';
+  el.memoryActive.checked = true;
+  el.memoryError.textContent = '';
+  el.memoryError.hidden = true;
+  el.memorySave.textContent = '保存记忆';
+}
+
+function clearMemoryUi() {
+  memoryEpoch += 1;
+  memoryItems = [];
+  editingMemoryId = null;
+  el.memoryList.replaceChildren();
+  el.memoryStatus.textContent = '';
+  resetMemoryForm();
+  setMemoryBusy(false);
+  if (el.memoryDialog.open) el.memoryDialog.close();
+}
+
+function setMemoryBusy(value) {
+  memoryBusy = value;
+  el.memoryForm.querySelectorAll('input, select, textarea, button').forEach((control) => {
+    control.disabled = value;
+  });
+  el.memoryList.querySelectorAll('button').forEach((button) => {
+    button.disabled = value;
+  });
+}
+
+function setMemoryError(message) {
+  el.memoryError.textContent = message;
+  el.memoryError.hidden = !message;
+}
+
+function memoryApiError(data, fallback) {
+  return data && typeof data.detail === 'string' ? data.detail : fallback;
+}
+
+function memoryActionButton(action, id, text) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'ghost';
+  button.dataset.memoryAction = action;
+  button.dataset.memoryId = id;
+  button.textContent = text;
+  return button;
+}
+
+function renderMemories() {
+  el.memoryList.replaceChildren();
+  if (!memoryItems.length) {
+    const empty = document.createElement('div');
+    empty.className = 'memory-empty';
+    empty.textContent = '还没有长期记忆。只会保存你在这里主动提交的内容。';
+    el.memoryList.appendChild(empty);
+    return;
+  }
+  for (const item of memoryItems) {
+    const card = document.createElement('article');
+    card.className = `memory-item${item.active ? '' : ' inactive'}`;
+
+    const head = document.createElement('div');
+    head.className = 'memory-item-head';
+    const category = document.createElement('span');
+    category.className = 'memory-category';
+    category.textContent = MEMORY_CATEGORY_LABELS[item.category] || item.category;
+    const label = document.createElement('span');
+    label.className = 'memory-item-label';
+    label.textContent = item.label || '未命名';
+    head.append(category, label);
+
+    const content = document.createElement('div');
+    content.className = 'memory-item-content';
+    content.textContent = item.content;
+
+    const actions = document.createElement('div');
+    actions.className = 'memory-item-actions';
+    actions.append(
+      memoryActionButton('edit', item.memory_id, '编辑'),
+      memoryActionButton('toggle', item.memory_id, item.active ? '停用' : '启用'),
+      memoryActionButton('delete', item.memory_id, '删除'),
+    );
+    card.append(head, content, actions);
+    el.memoryList.appendChild(card);
+  }
+}
+
+async function loadMemories(epoch = memoryEpoch) {
+  el.memoryStatus.textContent = '正在读取…';
+  setMemoryBusy(true);
+  try {
+    const response = await apiFetch('/memories?include_inactive=true&limit=100');
+    const data = await response.json().catch(() => null);
+    if (epoch !== memoryEpoch || !el.memoryDialog.open) return;
+    if (!response.ok) {
+      if (response.status !== 401) {
+        el.memoryStatus.textContent = memoryApiError(data, `读取失败（HTTP ${response.status}）`);
+      }
+      return;
+    }
+    memoryItems = Array.isArray(data.items) ? data.items : [];
+    renderMemories();
+    const activeCount = memoryItems.filter((item) => item.active).length;
+    el.memoryStatus.textContent = `共 ${data.total} 条，已启用 ${activeCount} 条`;
+  } catch (err) {
+    if (epoch === memoryEpoch && el.memoryDialog.open) {
+      el.memoryStatus.textContent = `读取失败：${String(err.message || err)}`;
+    }
+  } finally {
+    if (epoch === memoryEpoch) setMemoryBusy(false);
+  }
+}
+
+async function showMemoryDialog() {
+  const epoch = ++memoryEpoch;
+  resetMemoryForm();
+  if (!el.memoryDialog.open) el.memoryDialog.showModal();
+  await loadMemories(epoch);
+}
+
+async function saveMemory(event) {
+  event.preventDefault();
+  if (memoryBusy) return;
+  const content = el.memoryContent.value.trim();
+  if (!content) {
+    setMemoryError('记忆内容不能为空。');
+    return;
+  }
+  const payload = {
+    category: el.memoryCategory.value,
+    label: el.memoryLabel.value.trim(),
+    content,
+    active: el.memoryActive.checked,
+  };
+  const memoryId = editingMemoryId;
+  const epoch = memoryEpoch;
+  let saved = false;
+  setMemoryError('');
+  setMemoryBusy(true);
+  try {
+    const response = await apiFetch(
+      memoryId ? `/memories/${encodeURIComponent(memoryId)}` : '/memories',
+      {
+        method: memoryId ? 'PATCH' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      },
+    );
+    const data = await response.json().catch(() => null);
+    if (epoch !== memoryEpoch) return;
+    if (!response.ok) {
+      if (response.status !== 401) {
+        setMemoryError(memoryApiError(data, `保存失败（HTTP ${response.status}）`));
+      }
+      return;
+    }
+    saved = true;
+  } catch (err) {
+    if (epoch === memoryEpoch) setMemoryError(`保存失败：${String(err.message || err)}`);
+  } finally {
+    if (epoch === memoryEpoch) setMemoryBusy(false);
+  }
+  if (saved) {
+    resetMemoryForm();
+    await loadMemories(epoch);
+  }
+}
+
+function editMemory(memoryId) {
+  const item = memoryItems.find((candidate) => candidate.memory_id === memoryId);
+  if (!item) return;
+  editingMemoryId = memoryId;
+  el.memoryFormTitle.textContent = '编辑记忆';
+  el.memoryCategory.value = item.category;
+  el.memoryLabel.value = item.label;
+  el.memoryContent.value = item.content;
+  el.memoryActive.checked = item.active;
+  el.memorySave.textContent = '保存修改';
+  setMemoryError('');
+  el.memoryContent.focus();
+}
+
+async function mutateMemory(memoryId, action) {
+  if (memoryBusy) return;
+  const item = memoryItems.find((candidate) => candidate.memory_id === memoryId);
+  if (!item) return;
+  if (action === 'delete' && !window.confirm('永久删除这条长期记忆？')) return;
+  const deleting = action === 'delete';
+  const epoch = memoryEpoch;
+  let changed = false;
+  setMemoryBusy(true);
+  try {
+    const response = await apiFetch(`/memories/${encodeURIComponent(memoryId)}`, {
+      method: deleting ? 'DELETE' : 'PATCH',
+      headers: deleting ? {} : { 'Content-Type': 'application/json' },
+      body: deleting ? undefined : JSON.stringify({ active: !item.active }),
+    });
+    const data = await response.json().catch(() => null);
+    if (epoch !== memoryEpoch) return;
+    if (!response.ok) {
+      if (response.status !== 401) {
+        el.memoryStatus.textContent = memoryApiError(
+          data, `${deleting ? '删除' : '更新'}失败（HTTP ${response.status}）`,
+        );
+      }
+      return;
+    }
+    changed = true;
+  } catch (err) {
+    if (epoch === memoryEpoch) {
+      el.memoryStatus.textContent = `${deleting ? '删除' : '更新'}失败：${String(err.message || err)}`;
+    }
+  } finally {
+    if (epoch === memoryEpoch) setMemoryBusy(false);
+  }
+  if (changed) {
+    if (editingMemoryId === memoryId) resetMemoryForm();
+    await loadMemories(epoch);
+  }
 }
 
 /* ── Markdown ─────────────────────────────────────────── */
@@ -1245,6 +1492,27 @@ el.authDialog.addEventListener('close', () => {
   el.authInput.value = '';
   el.authError.textContent = '';
   el.authError.hidden = true;
+});
+el.manageMemories.addEventListener('click', showMemoryDialog);
+el.memoryClose.addEventListener('click', () => el.memoryDialog.close());
+el.memoryReset.addEventListener('click', resetMemoryForm);
+el.memoryForm.addEventListener('submit', saveMemory);
+el.memoryList.addEventListener('click', (event) => {
+  const button = event.target.closest('[data-memory-action]');
+  if (!button || memoryBusy) return;
+  const { memoryAction, memoryId } = button.dataset;
+  if (memoryAction === 'edit') editMemory(memoryId);
+  else if (memoryAction === 'toggle' || memoryAction === 'delete') {
+    mutateMemory(memoryId, memoryAction);
+  }
+});
+el.memoryDialog.addEventListener('close', () => {
+  memoryEpoch += 1;
+  memoryBusy = false;
+  memoryItems = [];
+  el.memoryList.replaceChildren();
+  el.memoryStatus.textContent = '';
+  resetMemoryForm();
 });
 
 document.querySelectorAll('.samples button').forEach((b) => {
