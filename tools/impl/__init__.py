@@ -18,6 +18,7 @@ from tools.impl import crit as _crit  # noqa: F401  注册副作用
 from tools.impl import cluster as _cluster  # noqa: F401  注册副作用
 from tools.impl import craft_pool as _craft_pool  # noqa: F401  注册副作用
 from tools.impl import defence as _defence  # noqa: F401  注册副作用
+from tools.impl import dps as _dps  # noqa: F401  注册副作用
 from tools.impl import essence as _essence  # noqa: F401  注册副作用
 from tools.impl import essence_operation as _essence_operation  # noqa: F401  注册副作用
 from tools.impl import eldritch_operation as _eldritch_operation  # noqa: F401  注册副作用
@@ -35,4 +36,4 @@ from tools.impl import veiled_operation as _veiled_operation  # noqa: F401  注�
 from tools.impl import recovery as _recovery  # noqa: F401  注册副作用
 from tools.impl import reservation as _reservation  # noqa: F401  注册副作用
 
-__all__ = ["_ailments", "_awakener_operation", "_bench", "_boss", "_craft", "_craft_operation", "_crit", "_craft_pool", "_defence", "_economy", "_eldritch_operation", "_essence", "_essence_operation", "_fossil_operation", "_gems", "_harvest", "_harvest_enchant_operation", "_harvest_exchange_operation", "_harvest_modifier_operation", "_harvest_operation", "_influence", "_kb_search", "_maxhit", "_cluster", "_metamods", "_monsters", "_mods", "_passives", "_recovery", "_reservation", "_thresholds", "_veiled_operation"]
+__all__ = ["_ailments", "_awakener_operation", "_bench", "_boss", "_craft", "_craft_operation", "_crit", "_craft_pool", "_defence", "_dps", "_economy", "_eldritch_operation", "_essence", "_essence_operation", "_fossil_operation", "_gems", "_harvest", "_harvest_enchant_operation", "_harvest_exchange_operation", "_harvest_modifier_operation", "_harvest_operation", "_influence", "_kb_search", "_maxhit", "_cluster", "_metamods", "_monsters", "_mods", "_passives", "_recovery", "_reservation", "_thresholds", "_veiled_operation"]

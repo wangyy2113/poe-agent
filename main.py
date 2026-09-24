@@ -29,6 +29,7 @@ from api.chat import router as chat_router
 from api.craft import router as craft_router
 from api.economy import router as economy_router
 from api.build import router as build_router
+from api.calculator import router as calculator_router
 from api.item import router as item_router
 from api.memory import router as memory_router
 from api.search import router as search_router
@@ -174,6 +175,7 @@ def create_app() -> FastAPI:
     api.include_router(item_router)
     api.include_router(memory_router)
     api.include_router(build_router)
+    api.include_router(calculator_router)
     api.include_router(screenshot_router)
     api.include_router(admin_router)
     app.include_router(api)
