@@ -8,7 +8,7 @@
 闸门防的是模型编造，这里没有模型。
 
 需求 8.4 的 16 项体检、8.5 的防御补充、8.6 的三类输出分析、8.7 的
-双档优化建议与 V3 的显式目标成长里程碑已经接入，
+双档优化建议、V3 的显式目标成长里程碑与多方案 PlayerStat 横向比较已经接入，
 但遵守「**只判不算**」边界：值只取输入本身携带的字段，本库只用有出处的
 常量与规则判读；缺失项标为「未知」，不会估计。因此返回里
 `analysis_done=true` 表示这些项目均已检查，**不表示本库重算了 Build**。输出分析中，
@@ -44,6 +44,7 @@ from core import db as dbmod
 from core.config import get_config, get_secrets
 from kb.fetcher import Fetcher, Poe2SourceRejected
 from parsers.build_advice import build_suggestions
+from parsers.build_compare import BuildScenarioComparison, compare_build_scenarios
 from parsers.build_growth import (
     GROWTH_METRICS,
     BuildGrowthPlan,
@@ -183,6 +184,41 @@ class BuildGrowthPlanRequest(BaseModel):
         metrics = [item.metric for item in self.objectives]
         if len(set(metrics)) != len(metrics):
             raise ValueError("同一个成长指标不能重复")
+        return self
+
+
+class BuildScenarioRequest(BaseModel):
+    label: str = Field(min_length=1, max_length=80)
+    code: str = Field(
+        min_length=1,
+        max_length=200000,
+        description="PoB 分享码或受支持的白名单托管链接。",
+    )
+
+    @model_validator(mode="after")
+    def normalize(self) -> "BuildScenarioRequest":
+        self.label = self.label.strip()
+        self.code = self.code.strip()
+        if not self.label or not self.code:
+            raise ValueError("方案 label 与 code 不能为空")
+        return self
+
+
+class BuildCompareRequest(BaseModel):
+    scenarios: list[BuildScenarioRequest] = Field(min_length=2, max_length=5)
+    reference_label: str = Field(default="", max_length=80)
+    metrics: list[GrowthMetric] | None = Field(default=None, min_length=1, max_length=20)
+
+    @model_validator(mode="after")
+    def validate_scenarios(self) -> "BuildCompareRequest":
+        labels = [item.label for item in self.scenarios]
+        if len(set(labels)) != len(labels):
+            raise ValueError("方案 label 不能重复")
+        self.reference_label = self.reference_label.strip()
+        if self.reference_label and self.reference_label not in labels:
+            raise ValueError("reference_label 必须对应一个已提交方案")
+        if self.metrics is not None and len(set(self.metrics)) != len(self.metrics):
+            raise ValueError("同一个比较指标不能重复")
         return self
 
 
@@ -434,6 +470,70 @@ class BuildGrowthPlanOut(BaseModel):
     note: str
 
 
+class BuildScenarioSnapshotOut(BaseModel):
+    label: str
+    level: int | None = None
+    class_name: str
+    ascend_class_name: str
+    active_skill: str
+    enemy_context: str
+    tree_version: str
+    player_stat_count: int
+
+
+class BuildScenarioContextOut(BaseModel):
+    label: str
+    status: Literal["reference", "ready", "mismatch", "unknown"]
+    reasons: list[str]
+    differing_config_keys: list[str]
+
+
+class BuildScenarioStructureDiffOut(BaseModel):
+    label: str
+    status: Literal["reference", "ready", "partial"]
+    changed_item_slots: list[str]
+    added_gems: list[str]
+    removed_gems: list[str]
+    passive_nodes_added: list[str]
+    passive_nodes_removed: list[str]
+    note: str
+
+
+class BuildScenarioMetricValueOut(BaseModel):
+    label: str
+    status: Literal["reference", "ready", "unknown"]
+    value: float | None = None
+    source_field: str
+    delta: float | None = None
+    delta_percent: float | None = None
+    direction: Literal["baseline", "up", "down", "equal", "unknown"]
+    reason: str
+
+
+class BuildMetricComparisonOut(BaseModel):
+    metric: GrowthMetric
+    label: str
+    unit: str
+    status: Literal["ready", "partial", "unknown"]
+    values: list[BuildScenarioMetricValueOut]
+
+
+class BuildCompareResponse(BaseModel):
+    status: Literal["ready", "partial", "unknown"]
+    reference_label: str
+    scenario_count: int
+    context_status: Literal["ready", "mismatch", "unknown"]
+    ready_metrics: int
+    partial_metrics: int
+    unknown_metrics: int
+    scenarios: list[BuildScenarioSnapshotOut]
+    context_checks: list[BuildScenarioContextOut]
+    structure_diffs: list[BuildScenarioStructureDiffOut]
+    metrics: list[BuildMetricComparisonOut]
+    overall_verdict: Literal["not_ranked"]
+    note: str
+
+
 class BuildResponse(BaseModel):
     input_type: str = "pob"
     level: int | None = None
@@ -642,6 +742,64 @@ def analyze_build(req: BuildRequest, caller: str = Depends(require_user)) -> Bui
         boss_risk_audit_query=req.boss_risk_audit,
         growth_plan_query=req.growth_plan,
     )
+
+
+@router.post("/build/compare", response_model=BuildCompareResponse)
+def compare_builds(
+    req: BuildCompareRequest,
+    caller: str = Depends(require_user),
+) -> BuildCompareResponse:
+    """Compare multiple full PoB snapshots without recalculating or ranking them."""
+    parsed_scenarios = []
+    for scenario in req.scenarios:
+        try:
+            if looks_like_passive_tree_link(scenario.code):
+                raise PobParseError(
+                    "官方天赋树链接不含 PlayerStat，不能用于方案数值比较"
+                )
+            code = _resolve_code(scenario.code)
+            build = bridge_gems(dbmod.get_conn(), parse_build(decode_share_code(code)))
+        except (PobLinkError, Poe2SourceRejected) as exc:
+            raise HTTPException(status_code=422, detail={
+                "error": "build_compare_link_rejected",
+                "scenario": scenario.label,
+                "reason": str(exc),
+            }) from exc
+        except OSError as exc:
+            raise HTTPException(status_code=502, detail={
+                "error": "build_compare_fetch_failed",
+                "scenario": scenario.label,
+                "reason": f"抓取分享链接失败：{exc}",
+            }) from exc
+        except PobParseError as exc:
+            raise HTTPException(status_code=422, detail={
+                "error": "build_compare_parse_failed",
+                "scenario": scenario.label,
+                "reason": str(exc),
+            }) from exc
+        parsed_scenarios.append((scenario.label, build))
+
+    try:
+        comparison: BuildScenarioComparison = compare_build_scenarios(
+            parsed_scenarios,
+            metrics=list(req.metrics) if req.metrics is not None else None,
+            reference_label=req.reference_label,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail={
+            "error": "invalid_build_compare_query",
+            "reason": str(exc),
+        }) from exc
+    logger.info(
+        "Build 方案比较 caller=%s 方案=%d 基线=%s 指标=%d/%d/%d",
+        caller,
+        comparison.scenario_count,
+        comparison.reference_label,
+        comparison.ready_metrics,
+        comparison.partial_metrics,
+        comparison.unknown_metrics,
+    )
+    return BuildCompareResponse.model_validate(comparison, from_attributes=True)
 
 
 @router.post("/build/screenshot", response_model=BuildResponse)

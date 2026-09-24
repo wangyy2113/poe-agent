@@ -71,7 +71,7 @@ POE1 的机制耦合极深，一个错误的小前提会让整条结论反向。
 | **装备解析** | 游戏内 Ctrl+C / Ctrl+Alt+C 文本 → 结构化装备；中英文都认 |
 | **词缀 T 级** | 按底材类别 + 数值区间定档；查不到就标「未匹配」并说明原因 |
 | **装备分析** | `POST /item`：基础信息、词缀档位、前后缀容量、可制作方向，全程不调 LLM |
-| **Build 体检与成长规划** | PoB 分享码、白名单托管链接、官方天赋树、GGG OAuth 角色 API 或截图 → 核心体检、防御来源、输出分析、双档建议与显式目标成长里程碑；截图先经视觉模型转录并由用户确认；只使用各输入实际携带的字段，缺失项保持「未知」 |
+| **Build 体检、成长规划与方案比较** | PoB 分享码、白名单托管链接、官方天赋树、GGG OAuth 角色 API 或截图 → 核心体检、防御来源、输出分析、双档建议与显式目标成长里程碑；`POST /build/compare` 可在严格相同的 Calcs 技能、配置、树版本和 PlayerStat 字段口径下比较 2–5 份 PoB。截图先经视觉模型转录并由用户确认；缺失或不可比项保持「未知」 |
 | LLM 客户端 | 直连 LiteLLM 网关，多 Key 故障转移、分级冷却、推理模型适配 |
 | 缺口台账 | `knowledge_gap` 按频次排序即采集优先级；**评测流量与永久越界（POE2）不计入**（否则前两名会是本该拒答的黄金用例），`/admin/stats` 同时列出被排除的条目数 |
 | 执行轨迹 | 每轮落库，含拦截原因与 Token 明细，`/admin/traces` 可追溯 |
@@ -838,6 +838,18 @@ curl -s -X POST http://127.0.0.1:8787/poe_agent/build \
       "pool_mode": "life_and_energy_shield"
     }
   }'
+
+# 以“当前”为基线比较两个 PoB 方案；可省略 metrics 以检查全部受支持指标
+curl -s -X POST http://127.0.0.1:8787/poe_agent/build/compare \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "reference_label": "当前",
+    "scenarios": [
+      {"label": "当前", "code": "第一份 PoB 分享码"},
+      {"label": "候选", "code": "第二份 PoB 分享码"}
+    ],
+    "metrics": ["life", "dps", "fire_max_hit"]
+  }'
 ```
 
 返回输入中可取得的职业、技能组、装备与天赋；PoB 输入还会返回其自带的 `PlayerStat`。
@@ -902,6 +914,14 @@ PoB 在三种元素 Max Hit 相等时只导出 `LightningMaximumHitTaken`，该�
 某一特定 PoB 配置的
 `*MaximumHitTaken`。如果 Build 有能量护盾，混沌项会因绕过机制不明保持 unknown，
 其它伤害类型仍可形成明确的部分排名；未知项不会被当成安全或低风险。
+
+**Build 多方案比较**只接受 2–5 份完整 PoB 分享码或白名单托管链接，不接受只含天赋节点、
+没有 PlayerStat 的官方树链接。每个候选都与显式基线逐项比较；只有 Calcs 当前技能、完整
+PoB 配置和当前激活树版本一致，并且双方实际采用同一个 PlayerStat 字段时，才输出绝对与
+百分比变化。一个候选不可比不会抹掉其它候选的有效差值，指标会分别标成 `ready`、
+`partial`、`unknown`。响应同时列出装备槽位、启用宝石（含可用的等级与品质）与天赋节点的
+结构变化，但只陈述变化，不把它们冒充数值变化的因果来源。不同指标单位和取舍不可直接相加，因此固定返回
+`overall_verdict=not_ranked`，不生成总体分数、“最佳方案”、装备推荐或市场价格结论。
 
 **截图识别** —— 聊天页点击“上传截图”，支持不超过 5 MB 的 PNG、JPEG 与 WebP。
 先在 `config.yaml` 的 `llm.vision_model` 填入网关中实际支持 OpenAI `image_url` 消息的
@@ -1094,7 +1114,7 @@ PoB 排 P2 而不是 P1：它在数值上更接近一手，但不含中文名与
 .venv/bin/python -m unittest discover -s tests -t .
 ```
 
-目前 1897 项，其中与「无据不答」直接相关的：
+目前 1908 项，其中与「无据不答」直接相关的：
 
 | 组 | 项数 | 重点 |
 | --- | --- | --- |
