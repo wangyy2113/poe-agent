@@ -109,9 +109,10 @@ class BuildBossSequenceRequest(BaseModel):
 
 
 class BuildBossRiskAuditRequest(BaseModel):
-    """用 Build 基础快照横向审计当前收录的 Boss 单击。"""
+    """用 Build 基础快照横向审计当前收录的 Boss 连续命中与防御缺口。"""
 
     level: int = Field(ge=1, le=100)
+    hit_count: int = Field(default=1, ge=1, le=100)
     uber: bool = False
     roll_range: float | None = Field(default=None, ge=0, le=100, allow_inf_nan=False)
     pool_mode: Literal["life", "life_and_energy_shield"] = Field(
@@ -151,8 +152,8 @@ class BuildRequest(BaseModel):
     boss_risk_audit: BuildBossRiskAuditRequest | None = Field(
         default=None,
         description=(
-            "可选的 Boss 单击风险横向审计。按最坏承伤排列本地已收录的技能；"
-            "缺字段或模型不覆盖的技能保留为 unknown。"
+            "可选的 Boss 命中风险与防御缺口审计。按最坏累计承伤排列本地已收录技能，"
+            "给出池子及抗性/护甲目标；缺字段或模型不覆盖的技能保留为 unknown。"
         ),
     )
 
@@ -617,6 +618,7 @@ def _build_response(
         checked_audit = boss_risk_audit_from_build(
             build,
             level=boss_risk_audit_query.level,
+            hit_count=boss_risk_audit_query.hit_count,
             uber=boss_risk_audit_query.uber,
             roll_range=boss_risk_audit_query.roll_range,
             pool_mode=boss_risk_audit_query.pool_mode,

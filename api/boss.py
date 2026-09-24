@@ -194,6 +194,7 @@ class BossSequenceResponse(BaseModel):
 class BossRiskAuditRequest(BaseModel):
     level: int = Field(ge=1, le=100)
     pool: float = Field(gt=0, le=1_000_000_000, allow_inf_nan=False)
+    hit_count: int = Field(default=1, ge=1, le=100)
     uber: bool = False
     roll_range: float | None = Field(default=None, ge=0, le=100, allow_inf_nan=False)
     fire_resist_pct: float | None = Field(default=None, ge=-200, le=90, allow_inf_nan=False)
@@ -219,9 +220,19 @@ class BossRiskAuditSkillResponse(BaseModel):
     raw_high: float | None = None
     taken_low: float | None = None
     taken_high: float | None = None
+    total_taken_low: float | None = None
+    total_taken_high: float | None = None
     margin_low: float | None = None
     margin_high: float | None = None
     worst_case_pool_ratio_pct: float | None = None
+    minimum_pool_for_full_range: int | None = None
+    pool_shortfall_for_full_range: float | None = None
+    required_resist_for_full_range_pct: int | None = None
+    resist_shortfall_pct: float | None = None
+    required_resist_status: str = "not_applicable"
+    required_armour_for_full_range: int | None = None
+    armour_shortfall: float | None = None
+    required_armour_status: str = "not_applicable"
     penetration_pct: float | None = None
     effective_resist_pct: float | None = None
     reason: str = ""
@@ -238,6 +249,7 @@ class BossRiskAuditResponse(BaseModel):
     uber: bool
     roll_range: float | None = None
     pool: float | None
+    hit_count: int = 1
     total_skill_count: int
     assessed_skill_count: int
     unknown_skill_count: int
@@ -246,7 +258,15 @@ class BossRiskAuditResponse(BaseModel):
     most_dangerous_damage_type: str | None = None
     most_dangerous_taken_low: float | None = None
     most_dangerous_taken_high: float | None = None
+    most_dangerous_total_taken_low: float | None = None
+    most_dangerous_total_taken_high: float | None = None
     most_dangerous_pool_ratio_pct: float | None = None
+    minimum_pool_for_all_assessed_skills: int | None = None
+    pool_shortfall_for_all_assessed_skills: float | None = None
+    pool_bottleneck_skill: str | None = None
+    defence_gap_skill_count: int = 0
+    single_axis_reachable_gap_count: int = 0
+    single_axis_unreachable_gap_count: int = 0
     skills: list[BossRiskAuditSkillResponse] = Field(default_factory=list)
     missing_inputs: list[str] = Field(default_factory=list)
     reason: str = ""

@@ -61,9 +61,10 @@ _SEQUENCE_BOUNDARY = (
 )
 
 _RISK_AUDIT_BOUNDARY = (
-    "只横向比较本地已收录的 PoB Boss 技能预设在一次命中时的已建模承伤；"
+    "只横向比较本地已收录的 PoB Boss 技能预设在一次或用户指定次数的同技能连续命中中"
+    "的已建模承伤；连续命中假设每次都命中且期间无恢复。"
     "不是全部 Boss/技能清单，也不是 Boss 难度、击杀风险或真实战斗排行。"
-    "不按技能出现频率、多段次数、命中概率、连招、持续伤害、暴击、伤害转化、"
+    "不自行推断技能出现频率、多段次数、命中概率、连招、持续伤害、暴击、伤害转化、"
     "格挡、闪避、法术压制、守护技能、Ward、Mind over Matter、恢复、阶段、药剂或打法加权"
 )
 
@@ -1807,10 +1808,11 @@ def _render_boss_risk_audit(data: dict[str, Any]) -> str:
         "none": "没有技能可安全评估",
     }
     lines = [
-        "### Boss 单击风险审计" + ("（Uber）" if data["uber"] else ""),
+        "### Boss 命中风险与防御缺口审计" + ("（Uber）" if data["uber"] else ""),
         "",
         f"**状态：{status_labels[data['assessment_status']]}**",
-        f"- 口径：敌人等级 {data['level']}；防御池 {data['pool']:g}；"
+        f"- 口径：敌人等级 {data['level']}；同一技能连续 {data['hit_count']} 次；"
+        f"防御池 {data['pool']:g}；"
         + (
             f"固定 {data['roll_range']:g}% 掷骰点"
             if data["roll_range"] is not None else "0%..100% 掷骰区间"
@@ -1820,16 +1822,27 @@ def _render_boss_risk_audit(data: dict[str, Any]) -> str:
     ]
     if data.get("most_dangerous_skill"):
         lines.append(
-            f"- 已知项最危险单击：{data['most_dangerous_skill']}（"
-            f"{_DAMAGE_TYPE_ZH[data['most_dangerous_damage_type']]}），承伤 "
-            f"{data['most_dangerous_taken_low']:,.2f} — "
-            f"{data['most_dangerous_taken_high']:,.2f}，最坏占池子 "
+            f"- 已知项最危险：{data['most_dangerous_skill']}（"
+            f"{_DAMAGE_TYPE_ZH[data['most_dangerous_damage_type']]}），累计承伤 "
+            f"{data['most_dangerous_total_taken_low']:,.2f} — "
+            f"{data['most_dangerous_total_taken_high']:,.2f}，最坏占池子 "
             f"{data['most_dangerous_pool_ratio_pct']:g}%"
+        )
+    if data.get("minimum_pool_for_all_assessed_skills") is not None:
+        lines.append(
+            f"- 已评估项的统一池子门槛：{data['minimum_pool_for_all_assessed_skills']:,}；"
+            f"当前缺口 {data['pool_shortfall_for_all_assessed_skills']:,.2f}；"
+            f"瓶颈技能 {data['pool_bottleneck_skill']}"
+        )
+        lines.append(
+            f"- 防御缺口：{data['defence_gap_skill_count']} 条；其中仅补对应抗性/护甲可达 "
+            f"{data['single_axis_reachable_gap_count']} 条，不可达 "
+            f"{data['single_axis_unreachable_gap_count']} 条"
         )
     lines += [
         "",
-        "| 排名 | 技能 | 类型 | 承伤区间 | 最坏占池子 | 单击结论 |",
-        "| ---: | --- | --- | ---: | ---: | --- |",
+        "| 排名 | 技能 | 类型 | 每击承伤 | 累计承伤 | 满区间池子 | 池子缺口 | 单轴补强 | 结论 |",
+        "| ---: | --- | --- | ---: | ---: | ---: | ---: | --- | --- |",
     ]
     labels = {
         "survives_full_range": "全区间不耗尽",
@@ -1839,11 +1852,31 @@ def _render_boss_risk_audit(data: dict[str, Any]) -> str:
     for item in data["skills"]:
         if not item["assessable"]:
             continue
+        if item["pool_shortfall_for_full_range"] <= 0:
+            single_axis = "当前已达标"
+        elif item["damage_type"] == "Physical":
+            if item["required_armour_status"] == "reachable":
+                single_axis = (
+                    f"护甲 +{item['armour_shortfall']:,.0f}（到 "
+                    f"{item['required_armour_for_full_range']:,}）"
+                )
+            else:
+                single_axis = "仅补护甲不可达"
+        elif item["required_resist_status"] == "reachable":
+            single_axis = (
+                f"抗性 +{item['resist_shortfall_pct']:g}%（到 "
+                f"{item['required_resist_for_full_range_pct']}%）"
+            )
+        else:
+            single_axis = "90% 抗性内不可达"
         lines.append(
             f"| {item['risk_rank']} | {item['skill']} | "
             f"{_DAMAGE_TYPE_ZH[item['damage_type']]} | "
             f"{item['taken_low']:,.2f}–{item['taken_high']:,.2f} | "
-            f"{item['worst_case_pool_ratio_pct']:g}% | {labels[item['outcome']]} |"
+            f"{item['total_taken_low']:,.2f}–{item['total_taken_high']:,.2f} | "
+            f"{item['minimum_pool_for_full_range']:,} | "
+            f"{item['pool_shortfall_for_full_range']:,.2f} | {single_axis} | "
+            f"{labels[item['outcome']]} |"
         )
     unknown = [item for item in data["skills"] if not item["assessable"]]
     if unknown:
@@ -1851,7 +1884,7 @@ def _render_boss_risk_audit(data: dict[str, Any]) -> str:
         lines.extend(f"- {item['skill']}：{item['reason']}" for item in unknown)
     lines += [
         "",
-        "> 排名只按单次命中的最坏承伤排序；未知项不会被当成低风险。",
+        "> 排名只按用户指定次数的同技能连续命中最坏累计承伤排序；未知项不会被当成低风险。",
         f"> 边界：{_RISK_AUDIT_BOUNDARY}。",
     ]
     return "\n".join(lines)
@@ -1860,8 +1893,9 @@ def _render_boss_risk_audit(data: dict[str, Any]) -> str:
 @REGISTRY.register(
     name="boss_risk_audit",
     description=(
-        "横向审计当前本地收录的 PoB Boss 技能单次命中：按最坏承伤排序，返回每条技能的"
-        "伤害/承伤区间、池子占比、三态结论、覆盖数和未知原因。可在缺少部分抗性时给出"
+        "横向审计当前本地收录的 PoB Boss 技能单次或同技能连续命中：按最坏累计承伤排序，"
+        "返回每条技能的伤害/承伤区间、防御门槛、池子缺口、单轴抗性/护甲目标、覆盖数和"
+        "未知原因。可在缺少部分抗性时给出"
         "明确的部分覆盖，但未知项绝不当作安全。它不是完整 Boss 清单或真实战斗难度排名，"
         "不计算持续伤害、连招、频率、阶段、恢复、药剂或打法。"
     ),
@@ -1870,6 +1904,7 @@ def _render_boss_risk_audit(data: dict[str, Any]) -> str:
         "properties": {
             "level": {"type": "integer", "minimum": 1, "maximum": 100},
             "pool": {"type": "number", "exclusiveMinimum": 0},
+            "hit_count": {"type": "integer", "minimum": 1, "maximum": 100, "default": 1},
             "uber": {"type": "boolean", "default": False},
             "roll_range": {"type": "number", "minimum": 0, "maximum": 100},
             "fire_resist_pct": {"type": "number", "minimum": -200, "maximum": 90},
@@ -1892,6 +1927,7 @@ def _render_boss_risk_audit(data: dict[str, Any]) -> str:
 def boss_risk_audit(
     level: int,
     pool: float,
+    hit_count: int = 1,
     uber: bool = False,
     roll_range: float | None = None,
     fire_resist_pct: float | None = None,
@@ -1903,9 +1939,11 @@ def boss_risk_audit(
     taken_mult: float = 1.0,
     overwhelm_pct: float = 0.0,
 ) -> ToolResult:
-    """对本地 Boss 技能预设做单击横向审计；未知项保留在结果中。"""
+    """对本地 Boss 技能预设做同技能连续命中审计；未知项保留在结果中。"""
     if pool <= 0:
         return ToolResult(ok=False, error="pool 必须大于 0")
+    if isinstance(hit_count, bool) or not isinstance(hit_count, int) or not 1 <= hit_count <= 100:
+        return ToolResult(ok=False, error="hit_count 必须是 1..100 的整数")
     if isinstance(level, bool) or not isinstance(level, int) or not 1 <= level <= 100:
         return ToolResult(ok=False, error="level 必须是 1..100 的整数")
     if roll_range is not None and not 0 <= roll_range <= 100:
@@ -1918,12 +1956,19 @@ def boss_risk_audit(
         return ToolResult(ok=True, data={
             "found": False, "assessable": False, "verdict": "unknown",
             "assessment_status": "none", "level": level, "uber": uber,
-            "roll_range": roll_range, "pool": pool, "total_skill_count": 0,
+            "roll_range": roll_range, "pool": pool, "hit_count": hit_count,
+            "total_skill_count": 0,
             "assessed_skill_count": 0, "unknown_skill_count": 0,
+            "minimum_pool_for_all_assessed_skills": None,
+            "pool_shortfall_for_all_assessed_skills": None,
+            "pool_bottleneck_skill": None,
+            "defence_gap_skill_count": 0,
+            "single_axis_reachable_gap_count": 0,
+            "single_axis_unreachable_gap_count": 0,
             "skills": [], "missing_inputs": [],
             "reason": "本地没有已收录的 PoB Boss 技能预设",
             "boundary": _RISK_AUDIT_BOUNDARY,
-            "answer": "### Boss 单击风险审计\n\n**结论：本地没有可审计的技能预设**",
+            "answer": "### Boss 命中风险与防御缺口审计\n\n**结论：本地没有可审计的技能预设**",
         })
 
     resist_by_type = {
@@ -1989,9 +2034,10 @@ def boss_risk_audit(
                 row["uber_penetrations"] if uber else row["penetrations"]
             )
             penetration = float(penetrations.get(f"{dtype}Pen") or 0)
-            assessed = boss_survival.assess_single_hit(
+            assessed = boss_survival.assess_repeated_hits(
                 damage_type=str(dtype), raw_low=low.damage, raw_high=high.damage,
-                pool=float(pool), resist_pct=float(resist_by_type[str(dtype)] or 0),
+                pool=float(pool), hit_count=hit_count,
+                resist_pct=float(resist_by_type[str(dtype)] or 0),
                 penetration_pct=penetration, armour=float(armour or 0),
                 flat_physical_reduction_pct=float(flat_physical_reduction_pct),
                 taken_mult=float(taken_mult), overwhelm_pct=float(overwhelm_pct),
@@ -2006,14 +2052,32 @@ def boss_risk_audit(
             "verdict": assessed.outcome, "outcome": assessed.outcome,
             "raw_low": assessed.raw_low, "raw_high": assessed.raw_high,
             "taken_low": assessed.taken_low, "taken_high": assessed.taken_high,
+            "total_taken_low": assessed.total_taken_low,
+            "total_taken_high": assessed.total_taken_high,
             "margin_low": assessed.margin_low, "margin_high": assessed.margin_high,
-            "worst_case_pool_ratio_pct": round(assessed.taken_high / pool * 100, 2),
+            "worst_case_pool_ratio_pct": round(
+                assessed.total_taken_high / pool * 100, 2
+            ),
+            "minimum_pool_for_full_range": assessed.minimum_pool_for_full_range,
+            "pool_shortfall_for_full_range": assessed.pool_shortfall_for_full_range,
+            "required_resist_for_full_range_pct": (
+                assessed.required_resist_for_full_range_pct
+            ),
+            "resist_shortfall_pct": assessed.resist_shortfall_pct,
+            "required_resist_status": assessed.required_resist_status,
+            "required_armour_for_full_range": (
+                assessed.required_armour_for_full_range
+            ),
+            "armour_shortfall": assessed.armour_shortfall,
+            "required_armour_status": assessed.required_armour_status,
             "penetration_pct": assessed.penetration_pct,
             "effective_resist_pct": assessed.effective_resist_pct,
             "reason": "", "missing_inputs": [],
         })
 
-    known.sort(key=lambda item: (-item["taken_high"], -item["taken_low"], item["skill"]))
+    known.sort(key=lambda item: (
+        -item["total_taken_high"], -item["total_taken_low"], item["skill"]
+    ))
     for rank, item in enumerate(known, start=1):
         item["risk_rank"] = rank
     skills = known + unknown
@@ -2028,6 +2092,24 @@ def boss_risk_audit(
         else "survives_full_range" if known else None
     )
     most = known[0] if known else None
+    pool_bottleneck = max(
+        known,
+        key=lambda item: (
+            item["minimum_pool_for_full_range"], item["total_taken_high"], item["skill"]
+        ),
+        default=None,
+    )
+    gap_skills = [
+        item for item in known if item["pool_shortfall_for_full_range"] > 0
+    ]
+    reachable_gap_count = sum(
+        (
+            item["required_armour_status"]
+            if item["damage_type"] == "Physical"
+            else item["required_resist_status"]
+        ) == "reachable"
+        for item in gap_skills
+    )
     data: dict[str, Any] = {
         "found": True,
         "assessable": bool(known),
@@ -2037,6 +2119,7 @@ def boss_risk_audit(
         "level": level,
         "uber": bool(uber),
         "roll_range": roll_range,
+        "hit_count": hit_count,
         "pool": float(pool),
         "total_skill_count": len(rows),
         "assessed_skill_count": len(known),
@@ -2046,13 +2129,25 @@ def boss_risk_audit(
         "most_dangerous_damage_type": most["damage_type"] if most else None,
         "most_dangerous_taken_low": most["taken_low"] if most else None,
         "most_dangerous_taken_high": most["taken_high"] if most else None,
+        "most_dangerous_total_taken_low": most["total_taken_low"] if most else None,
+        "most_dangerous_total_taken_high": most["total_taken_high"] if most else None,
         "most_dangerous_pool_ratio_pct": (
             most["worst_case_pool_ratio_pct"] if most else None
         ),
+        "minimum_pool_for_all_assessed_skills": (
+            pool_bottleneck["minimum_pool_for_full_range"] if pool_bottleneck else None
+        ),
+        "pool_shortfall_for_all_assessed_skills": (
+            pool_bottleneck["pool_shortfall_for_full_range"] if pool_bottleneck else None
+        ),
+        "pool_bottleneck_skill": pool_bottleneck["skill"] if pool_bottleneck else None,
+        "defence_gap_skill_count": len(gap_skills),
+        "single_axis_reachable_gap_count": reachable_gap_count,
+        "single_axis_unreachable_gap_count": len(gap_skills) - reachable_gap_count,
         "skills": skills,
         "missing_inputs": sorted(missing_inputs),
         "reason": (
-            "部分技能因缺少输入或超出单击模型边界而未评估" if unknown else ""
+            "部分技能因缺少输入或超出命中模型边界而未评估" if unknown else ""
         ),
         "boundary": _RISK_AUDIT_BOUNDARY,
     }
@@ -2072,11 +2167,14 @@ def boss_risk_audit_from_build(
     build: "PobBuild",
     *,
     level: int,
+    hit_count: int = 1,
     uber: bool = False,
     roll_range: float | None = None,
     pool_mode: BuildPoolMode = "life_and_energy_shield",
 ) -> ToolResult:
-    """用 Build 的基础 PlayerStat 对全部已收录 Boss 单击做可审计横向比较。"""
+    """用 Build 的基础 PlayerStat 对全部已收录 Boss 命中做风险与缺口审计。"""
+    if isinstance(hit_count, bool) or not isinstance(hit_count, int) or not 1 <= hit_count <= 100:
+        return ToolResult(ok=False, error="hit_count 必须是 1..100 的整数")
     if pool_mode not in {"life", "life_and_energy_shield"}:
         return ToolResult(ok=False, error="pool_mode 只支持 life 或 life_and_energy_shield")
     source_fields: dict[str, float] = {}
@@ -2105,7 +2203,7 @@ def boss_risk_audit_from_build(
             "SELECT COUNT(*) FROM pob_boss_skill"
         ).fetchone()[0])
         answer = "\n".join([
-            "### Build 的 Boss 单击风险审计", "", "**结论：无法安全计算**",
+            "### Build 的 Boss 命中风险与防御缺口审计", "", "**结论：无法安全计算**",
             f"- 原因：{reason}", f"- 缺少：{'、'.join(missing_pool)}", "",
             f"> 边界：{_RISK_AUDIT_BOUNDARY}；{_BUILD_SNAPSHOT_BOUNDARY}。",
         ])
@@ -2113,9 +2211,16 @@ def boss_risk_audit_from_build(
             "found": total_skill_count > 0, "assessable": False, "verdict": "unknown",
             "known_worst_outcome": None, "assessment_status": "none",
             "level": level, "uber": bool(uber), "roll_range": roll_range,
+            "hit_count": hit_count,
             "pool": None, "pool_mode": pool_mode,
             "total_skill_count": total_skill_count,
             "assessed_skill_count": 0, "unknown_skill_count": total_skill_count,
+            "minimum_pool_for_all_assessed_skills": None,
+            "pool_shortfall_for_all_assessed_skills": None,
+            "pool_bottleneck_skill": None,
+            "defence_gap_skill_count": 0,
+            "single_axis_reachable_gap_count": 0,
+            "single_axis_unreachable_gap_count": 0,
             "verdict_counts": {}, "skills": [], "missing_inputs": missing_pool,
             "reason": reason, "input_source": "pob_player_stat",
             "source_fields": source_fields, "calculation_mode": "unknown",
@@ -2148,7 +2253,7 @@ def boss_risk_audit_from_build(
         source_fields["Armour"] = float(armour)
 
     checked = boss_risk_audit(
-        level=level, pool=float(life) + energy_shield, uber=uber,
+        level=level, pool=float(life) + energy_shield, hit_count=hit_count, uber=uber,
         roll_range=roll_range, **kwargs,
     )
     if not checked.ok:
