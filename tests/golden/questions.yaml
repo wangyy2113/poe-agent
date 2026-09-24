@@ -842,6 +842,20 @@ cases:
       与 gap_dps_still_refused 成对：缺输入时拒绝猜，输入完整时也不能因为旧的
       “DPS 未覆盖”边界继续拒答。
 
+  - id: route_hit_dps_compare
+    query: 我给你两套完整的伤害参数，帮我做 DPS 方案对比
+    kind: tool_route
+    expect_tool: hit_dps_compare
+    note: >-
+      多方案必须在同一确定性公式下比较并相对首项给差值，不能让模型分别心算
+
+  - id: route_hit_dps_target_rate
+    query: 基础伤害和全部倍率都给你，目标 DPS 需要每秒攻击多少次
+    kind: tool_route
+    expect_tool: hit_dps_target_rate
+    note: >-
+      目标频率反解必须识别触发与非触发冷却上限，并用同一伤害链回代
+
   - id: num_spell_suppression_effect
     query: 法术压制触发时减多少伤害
     kind: numeric

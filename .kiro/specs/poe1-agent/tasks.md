@@ -812,6 +812,13 @@ V1 完成的判定标准（逐条实测，不以「无报错」代替验证）�
     技能转化优先及超 100% 缩放、每层 half-up 取整均钉住 PoB 原文；自然语言只抽取
     明确数字。`gap_dps_still_refused` 继续守住“只说这套配置”时不得猜参数；完整 Build
     自动汇总、幸运/双倍/三倍、重复/触发、穿刺、异常和持续伤害仍属后续边界。
+  - [x] 高级命中期望与 DPS 分析套件 v2（2026-09-24 第一百一十一轮）：补齐幸运/不幸
+    与特别幸运的区间期望、暴击单独 roll、双倍/三倍伤害重叠、抗性忽略/反转/不可穿透、
+    物理压倒与概率忽略、按伤害类型承伤、触发/非触发冷却及重复爆发。新增
+    `hit_dps_compare` / `POST /calc/hit-dps/compare` 做 2–10 方案同口径差值，新增
+    `hit_dps_target_rate` / `POST /calc/hit-dps/target-rate` 反解目标频率、识别冷却不可达并
+    用同链路回代。公式继续钉住 PoB 原文；仍不包含护甲动态减伤、无情一击/战吼、服务器
+    tick、终结、穿刺、异常、持续伤害或从完整 Build 自动汇总修正。
 - [x] 缺口台账修成可用的优先级信号（2026-08-20 第三十轮）：新增 `kind='out_of_scope'`
   与 `source` 列（评测流量不计入），`ingest_gap` 补进 `GAP_KINDS` 与
   `/admin/stats` 的优先级视图。实测修前台账 93% 是评测流量、头两条不可执行。
@@ -955,7 +962,7 @@ V1 完成的判定标准（逐条实测，不以「无报错」代替验证）�
 
 - [ ] 多 Agent 协同调度
 - [x] MCP 工具接入（2026-09-22）：新增 MCP `2025-06-18` stdio 服务端，复用
-  Knowledge Agent 的 54 个只读工具与同一 SQLite 连接；支持初始化生命周期、ping、
+  Knowledge Agent 的 56 个只读工具与同一 SQLite 连接；支持初始化生命周期、ping、
   `tools/list`、`tools/call`、三版协议协商及 `--tools` 白名单。工具结果同时返回文本、
   `structuredContent`、引用、元数据与耗时，保留 unknown / boundary；stdout 严格只写
   逐行 UTF-8 JSON-RPC，非法 JSON、UTF-8、请求 id、初始化参数与 2 MiB 上限均失败关闭。
