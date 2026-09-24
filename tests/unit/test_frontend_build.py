@@ -16,7 +16,7 @@ class FrontendBuildContractTest(unittest.TestCase):
     def test_pob_paste_calls_build_endpoint(self) -> None:
         app = (ROOT / "static/app.js").read_text(encoding="utf-8")
         self.assertIn("else analyzeBuild(text);", app)
-        self.assertIn("fetch(`${API}/build`", app)
+        self.assertIn("apiFetch('/build'", app)
         self.assertIn("解析并体检", app)
         self.assertIn("核心 16 项与防御补充体检", app)
         self.assertIn("输出分析：单体 / 清图 / Boss", app)
@@ -55,11 +55,11 @@ class FrontendBuildContractTest(unittest.TestCase):
         app = (ROOT / "static/app.js").read_text(encoding="utf-8")
         self.assertIn('id="upload-image"', page)
         self.assertIn('accept="image/png,image/jpeg,image/webp"', page)
-        self.assertIn("fetch(`${API}/screenshot/recognize`", app)
+        self.assertIn("apiFetch('/screenshot/recognize'", app)
         self.assertIn("视觉模型只做转录", app)
         self.assertIn("确认文字并分析装备", app)
         self.assertIn("确认字段并体检 Build", app)
-        self.assertIn("fetch(`${API}/build/screenshot`", app)
+        self.assertIn("apiFetch('/build/screenshot'", app)
         self.assertIn("confirmed: true", app)
         self.assertIn("data.input_type === 'screenshot'", app)
 
