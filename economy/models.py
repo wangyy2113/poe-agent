@@ -228,3 +228,79 @@ class MaterialCostEstimate:
         out = asdict(self)
         out["materials"] = [item.as_dict() for item in self.materials]
         return out
+
+
+@dataclass(frozen=True)
+class TradeFeeInput:
+    """调用方显式声明的交易摩擦；POE 不存在可安全假定的平台费率。"""
+
+    buy_fixed_chaos: float
+    buy_percent: float
+    sell_fixed_chaos: float
+    sell_percent: float
+
+    def as_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
+class MarketSideEvidence:
+    side: str
+    status: str
+    unit_chaos: float | None
+    min_unit_chaos: float | None
+    max_unit_chaos: float | None
+    sample_count: int
+    minimum_sample_count: int
+    raw_listing_count: int
+    cross_league_filtered_count: int
+    invalid_quote_filtered_count: int
+    insufficient_stock_filtered_count: int
+    stale_listing_filtered_count: int
+    outlier_filtered_count: int
+    earliest_listing_at: str | None
+    latest_listing_at: str | None
+    requested_quantity: float
+    sample_scope: str
+
+    def as_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
+class FlipAnalysis:
+    """双边在线挂单与显式费用共同支撑的可执行价差快照。"""
+
+    query: str
+    resolved_name: str
+    category: str
+    league: str
+    quantity: float
+    source: str
+    source_url: str
+    fetched_at: str
+    max_listing_age_hours: int
+    status: str
+    reason: str
+    calculable: bool
+    verdict: str
+    minimum_net_profit_chaos: float
+    minimum_margin_percent: float
+    fees: TradeFeeInput
+    buy_side: MarketSideEvidence
+    sell_side: MarketSideEvidence
+    gross_buy_cost_chaos: float | None
+    buy_fee_chaos: float | None
+    total_buy_cost_chaos: float | None
+    gross_sell_revenue_chaos: float | None
+    sell_fee_chaos: float | None
+    net_sell_revenue_chaos: float | None
+    net_profit_chaos: float | None
+    margin_percent: float | None
+
+    def as_dict(self) -> dict[str, Any]:
+        out = asdict(self)
+        out["fees"] = self.fees.as_dict()
+        out["buy_side"] = self.buy_side.as_dict()
+        out["sell_side"] = self.sell_side.as_dict()
+        return out

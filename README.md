@@ -28,7 +28,7 @@ POE1 的机制耦合极深，一个错误的小前提会让整条结论反向。
 | 技能石与辅助宝石 | 820 颗（558 主动 + 262 辅助）+ 30672 行每级字面值 + **每级效果文本与属性需求**（POEDB 详情页逐级表，812 颗逐级对过账）；PoB 出结构、POEDB 出中文名，按 `grantedEffectId` 桥接，清单页没收录的再按详情页标题兜底（未桥接只剩 1 颗）。**每级基础伤害已入库**（175 颗技能 7000 行，按 PoB 的 effectiveness 公式算出显示值，与 POEDB 技能页对账 20/20）；固定效果、获取途径及技能与辅助宝石的双向确认关系也已入库。**DPS 仍不算**（缺整条加成链） |
 | 通货 | 113 条（中英文名、堆叠上限、效果原文）；工艺台费用引用的 18 个通货全部能对上；**获取途径与兑换比例未采集**；市场价格以 poe.watch 为主、GGG Trade API 在线挂单为备用 |
 | 圣甲虫 | 118 个（效果、堆叠上限、地图装置放置上限）；**掉落来源未采集**；市场价格以 poe.watch 为主、GGG Trade API 在线挂单为备用 |
-| 实时经济价格、趋势与材料清单成本 | `POST /economy/price` 查询当前快照；`POST /economy/trend` 查询历史；`POST /economy/material-cost` 汇总明确清单；`POST /economy/rare-comparables` 把稀有装备中经 PoB tradeHashes 与 GGG stat 字典双重确认的显式词缀用于同底材、同物等/腐化状态在线挂单比较。SQLite 价格缓存 TTL 30 分钟、历史保留 90 天；主源无缓存时标准条目与唯一装备可显式降级官方 Trade API。**不足两个趋势点不判趋势；官方挂单过滤后不足 5 条不报代表价；稀有装比较不按 roll/隐式/附魔/品质/插槽/链接归一化，不冒充精确成交价；不生成制作路径、成功率、利润与 Flip 建议** |
+| 实时经济价格、趋势、成本与双边价差 | `POST /economy/price` 查询当前快照；`POST /economy/trend` 查询历史；`POST /economy/material-cost` 汇总明确清单；`POST /economy/rare-comparables` 查询稀有装可比挂单；`POST /economy/flip-analysis` 对标准 exchange 条目核验买卖两侧、整单深度、时效与显式费用后计算净利润。SQLite 价格缓存 TTL 30 分钟、历史保留 90 天；主源无缓存时标准条目与唯一装备可显式降级官方 Trade API。**不足两个趋势点不判趋势；单侧过滤后不足 5 条不报代表价；任一侧或费用不完整时利润与 Flip 判断保持 unknown；所有结果都不是成交或收益保证** |
 | Boss 技能伤害、生存校验与防御门槛 | 10 条 Boss 技能的伤害建模 + 22 个 Boss 的护甲/闪避倍率；`boss_survival_check` 校验同一命中连续 1–100 次，`boss_defence_threshold` 反解最低防御池、抗性/护甲门槛，`boss_sequence_check` 按用户明确顺序逐击累计；`boss_risk_audit` / `POST /boss/audit` 批量排列当前收录技能在 1–100 次同技能命中下的风险，并给出逐技能与全体已评估项的防御缺口。`POST /build` 可直接消费 PoB 基础防御快照。**序列不是游戏真实连招，审计不是 Boss 难度排行，不给打法**；DoT、自动推断连招、命中概率、恢复、阶段与应对未覆盖；数字是 PoB 建模值，GGG 未公布 |
 | 制作规则（名额与影响力） | 7 条前后缀名额规则（魔法 1+1、稀有 3+3、传奇不受限制、药剂随魔法，另有 PoB 独有的珠宝/Graft 2+2 与「已腐化深渊珠宝回到 3+3」）；`base_influence_profile` 可查 1,022 条具体底材的六类传统影响 `influenceTags`，`check_mod_combination` 在给定具体底材、单一影响与可选物等时，会用 PoB 底材标签和 POEDB 词缀 `spawn_tags` 验证影响词缀适用性。`possible` 只表示词缀能共存，不表示能制作；古灵基底由独立状态机处理。**影响底材获得方式、多影响词缀池组合与完整元词缀状态机仍未采集** |
 | 觉醒者之石状态机 | `awakener_orb_state` / `POST /craft/awakener`：接受供体与目标的两段装备复制文本，或显式物品类别与传统影响；逐字绑定 POEDB 效果，检查同类物品、双方唯一且不同的传统影响，输出供体销毁、目标重铸为稀有并兼有两种影响的条件后状态。**不声称各保留一条影响词缀，不生成重铸后的具体词缀、数量、数值、概率、成本或路线** |
@@ -62,7 +62,7 @@ POE1 的机制耦合极深，一个错误的小前提会让整条结论反向。
 | **流式问答** | `POST /chat/stream`：SSE，**按句**校验通过才下发，未校验内容不外发 |
 | **OpenAI 兼容** | `POST /v1/chat/completions`：支持文本消息、非流式与标准 SSE `[DONE]`；内部仍强制检索与出口校验 |
 | **用户长期记忆** | `POST/GET/PATCH/DELETE /memories`：只保存调用方显式提交的偏好、目标、约束与备注，按 API Key 的不可逆摘要隔离；活跃项仅作为有据 LLM 问答的个性化上下文，**不自动从聊天抽取、不成为知识库证据** |
-| **MCP stdio** | `mcp_server.py`：按 MCP `2025-06-18` 向 Codex、Claude Desktop 等客户端暴露 Knowledge Agent 的 52 个只读工具；支持 `--tools` 白名单，工具结果保留结构化数据、引用、unknown/boundary 与耗时 |
+| **MCP stdio** | `mcp_server.py`：按 MCP `2025-06-18` 向 Codex、Claude Desktop 等客户端暴露 Knowledge Agent 的 53 个只读工具；支持 `--tools` 白名单，工具结果保留结构化数据、引用、unknown/boundary 与耗时 |
 | **知识库自动同步与版本 diff** | `scripts/sync_knowledge.py`：按最后成功采集时间自动选择过期分类，复用现有结构断言与快照数量护栏；同步前后按稳定主键报告逐表新增/删除/修改与版本字段变化，历史可从 `/admin/sync/*` 查询。默认只预览，记录删除时整轮标记 `attention` |
 | **鉴权与限流** | 普通接口使用 `API_KEYS` 并按 Key 令牌桶限流；管理接口独立使用 `ADMIN_TOKEN`，可叠加 IP/CIDR 白名单 |
 | **出口闸门** | 逐句校验事实断言与计算派生是否绑定有效证据，未通过由代码拦截；47 项单测覆盖 |
@@ -506,6 +506,25 @@ curl -s -X POST http://127.0.0.1:8787/poe_agent/economy/material-cost \
 
 若任一材料未找到、同名结果不唯一或缺少代表价，`calculable=false` 且代表价总计为空，绝不会把
 已查到的部分冒充完整总成本。它只计算输入清单，不会反推某件装备需要哪些材料、成功率或工艺步骤。
+
+**双边价差与利润** —— `POST /economy/flip-analysis`。仅支持 GGG exchange 字典中的标准
+通货、圣甲虫、命运卡和碎片；唯一/稀有装备没有可验证的双边 exchange 深度，不进入计算。
+请求必须明确数量及买卖两侧固定/比例费用（无费用也显式填 `0`），可再指定最低净利润、
+最低利润率和 1–168 小时挂单时限。
+
+```bash
+curl -s -X POST http://127.0.0.1:8787/poe_agent/economy/flip-analysis \
+  -H 'Content-Type: application/json' \
+  -d '{"query":"神圣石","quantity":10,"fees":{"buy_fixed_chaos":0,"buy_percent":0,"sell_fixed_chaos":0,"sell_percent":0},"minimum_net_profit_chaos":20,"minimum_margin_percent":5}'
+```
+
+服务分别查询“花 Chaos 买入目标物品”的卖家要价和“卖出目标物品换 Chaos”的买家承接价，
+统一为 Chaos/个。每条保留挂单必须在线、属于目标联盟、在时限内，并且自身库存能覆盖整笔
+目标数量；两侧还要各自达到最低样本数。只有全部条件成立时才返回毛成本、毛收入、逐侧费用、
+净利润、利润率和 `flip_candidate / not_profitable`。任一侧样本、数量深度或时效不足时，
+`status=unknown`、`verdict=unknown`，所有利润字段为 `null`，不会拿单边价格拼出套利建议。
+`flip_candidate` 只表示当前在线挂单中位数达到调用方阈值，未计入未填写的时间成本、议价、
+滑点、重复账号或查询后的行情变化，不是成交或收益保证。
 
 **Boss 同一命中重复校验** —— `POST /boss/survival`。技能名与等级决定 PoB 建模的
 原始伤害区间，用户明确提供的防御池和对应抗性进入 Max Hit 链路；技能自带的普通/Uber
@@ -1075,7 +1094,7 @@ PoB 排 P2 而不是 P1：它在数值上更接近一手，但不含中文名与
 .venv/bin/python -m unittest discover -s tests -t .
 ```
 
-目前 1889 项，其中与「无据不答」直接相关的：
+目前 1897 项，其中与「无据不答」直接相关的：
 
 | 组 | 项数 | 重点 |
 | --- | --- | --- |
@@ -1083,7 +1102,7 @@ PoB 排 P2 而不是 P1：它在数值上更接近一手，但不含中文名与
 | 装备文本解析 | 45 | 真实 Ctrl+C 文本 fixture；「普通复制不许带 T 级」「认不出必须显式失败」 |
 | 词缀 T 级匹配 | 26 | 内存桩库，数值照抄真实库；「匹配不上必须标未匹配」 |
 | 装备分析报告 | 20 | 「不给稀有装备估值」「容量输入不完整不报余量」「最高档位不跨来源类别」 |
-| 实时经济价格与材料成本 | 44 | 精确名称、批量清单加总、计价单位、联盟、TTL、缓存优先降级、exchange 与唯一装备 search/fetch、多币种换算、跨联盟/无效/离群挂单过滤、最低样本门槛与低置信度披露 |
+| 实时经济价格、成本与双边价差 | 52 | 精确名称、批量清单加总、计价单位、联盟、TTL、缓存优先降级、exchange 与唯一装备 search/fetch、多币种换算、双边方向、整单深度、挂单时效、显式费用、跨联盟/无效/离群过滤、最低样本门槛与 unknown 降级 |
 | 游戏常量访问 | 14 | 缺失即抛异常，绝不给默认值 |
 | 流式闸门一致性 | 9 | 流式与批量校验的判定必须完全一致 |
 | 表格断言单位 | 10 | 表格整块算一个断言；绑定位置放宽但「要不要绑定」没放宽；表格未收齐不下发 |
@@ -1111,7 +1130,8 @@ orchestrator/           主循环、出口绑定闸门、引用装配
                           loop.py / binding.py / citation.py
 agents/                 领域 Agent：提示词 + 允许工具集 + 输出契约
 tools/                  工具注册与实现。顺序即推荐优先级：
-                          economy_price_lookup / economy_price_trend / economy_material_cost
+                          economy_flip_analysis / economy_price_lookup / economy_price_trend
+                          / economy_material_cost
                           / affix_pool_odds / check_mod_combination
                           / craft_operation_state / essence_operation_state / eldritch_operation_state
                           / veiled_operation_state / fossil_operation_state / harvest_reforge_state

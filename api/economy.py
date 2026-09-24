@@ -1,4 +1,4 @@
-"""实时经济价格 API。"""
+"""实时经济价格、成本与双边价差 API。"""
 
 from __future__ import annotations
 
@@ -9,11 +9,13 @@ from pydantic import BaseModel, Field
 
 from api.deps import require_user
 from economy.models import MaterialRequest as DomainMaterialRequest
+from economy.models import TradeFeeInput
 from economy.rare_items import InvalidRareComparable
 from economy.service import EconomyUnavailable, InvalidEconomyQuery
 from economy.trade_api import TradeApiError
 from tools.impl.economy import (
     rare_service_from_config,
+    render_flip_analysis,
     render_material_cost,
     render_price,
     render_rare_comparables,
@@ -137,6 +139,54 @@ class RareComparableResponse(BaseModel):
     answer: str
 
 
+class TradeFeeRequest(BaseModel):
+    buy_fixed_chaos: float = Field(ge=0, le=1_000_000_000, allow_inf_nan=False)
+    buy_percent: float = Field(ge=0, lt=100, allow_inf_nan=False)
+    sell_fixed_chaos: float = Field(ge=0, le=1_000_000_000, allow_inf_nan=False)
+    sell_percent: float = Field(ge=0, lt=100, allow_inf_nan=False)
+
+
+class FlipAnalysisRequest(BaseModel):
+    query: str = Field(min_length=1, max_length=200)
+    quantity: float = Field(gt=0, le=1_000_000_000, allow_inf_nan=False)
+    fees: TradeFeeRequest
+    category: Literal["auto", "currency", "scarab", "card", "fragment"] = "auto"
+    league: str | None = Field(default=None, max_length=100)
+    max_listing_age_hours: int = Field(default=24, ge=1, le=168)
+    minimum_net_profit_chaos: float = Field(default=0, ge=0, allow_inf_nan=False)
+    minimum_margin_percent: float = Field(default=0, ge=0, allow_inf_nan=False)
+
+
+class FlipAnalysisResponse(BaseModel):
+    query: str
+    resolved_name: str
+    category: str
+    league: str
+    quantity: float
+    source: str
+    source_url: str
+    fetched_at: str
+    max_listing_age_hours: int
+    status: str
+    reason: str
+    calculable: bool
+    verdict: str
+    minimum_net_profit_chaos: float
+    minimum_margin_percent: float
+    fees: dict[str, Any]
+    buy_side: dict[str, Any]
+    sell_side: dict[str, Any]
+    gross_buy_cost_chaos: float | None
+    buy_fee_chaos: float | None
+    total_buy_cost_chaos: float | None
+    gross_sell_revenue_chaos: float | None
+    sell_fee_chaos: float | None
+    net_sell_revenue_chaos: float | None
+    net_profit_chaos: float | None
+    margin_percent: float | None
+    answer: str
+
+
 @router.post("/economy/price", response_model=PriceResponse)
 def price(req: PriceRequest, _caller: str = Depends(require_user)) -> PriceResponse:
     try:
@@ -152,6 +202,34 @@ def price(req: PriceRequest, _caller: str = Depends(require_user)) -> PriceRespo
             "error": "economy_unavailable", "reason": str(exc),
         }) from exc
     return PriceResponse(**result.as_dict(), answer=render_price(result))
+
+
+@router.post("/economy/flip-analysis", response_model=FlipAnalysisResponse)
+def flip_analysis(
+    req: FlipAnalysisRequest, _caller: str = Depends(require_user)
+) -> FlipAnalysisResponse:
+    try:
+        result = service_from_config().flip_analysis(
+            req.query,
+            quantity=req.quantity,
+            fees=TradeFeeInput(**req.fees.model_dump()),
+            category=req.category,
+            league=req.league,
+            max_listing_age_hours=req.max_listing_age_hours,
+            minimum_net_profit_chaos=req.minimum_net_profit_chaos,
+            minimum_margin_percent=req.minimum_margin_percent,
+        )
+    except InvalidEconomyQuery as exc:
+        raise HTTPException(status_code=422, detail={
+            "error": "invalid_flip_analysis", "reason": str(exc),
+        }) from exc
+    except (EconomyUnavailable, TradeApiError) as exc:
+        raise HTTPException(status_code=503, detail={
+            "error": "economy_unavailable", "reason": str(exc),
+        }) from exc
+    return FlipAnalysisResponse(
+        **result.as_dict(), answer=render_flip_analysis(result)
+    )
 
 
 @router.post("/economy/rare-comparables", response_model=RareComparableResponse)

@@ -1,6 +1,7 @@
 """GGG 官方 Trade API 报价适配器。
 
-覆盖标准条目 exchange、唯一装备 search/fetch，以及稀有装备的同底材词缀可比挂单。
+覆盖标准条目 exchange（含利润分析的买卖双边）、唯一装备 search/fetch，以及稀有装备的
+同底材词缀可比挂单。
 返回值是当前在线挂单的稳健中位数，不是成交记录；调用方必须保留样本量、过滤计数、
 挂单时间范围和搜索边界。
 """
@@ -58,6 +59,10 @@ class TradeQuote:
     conversion_status: str = ""
     sample_scope: str = ""
     source_url: str = SOURCE_URL
+    side: str = "buy"
+    requested_quantity: float = 1.0
+    insufficient_stock_filtered_count: int = 0
+    stale_listing_filtered_count: int = 0
 
     @property
     def sufficient(self) -> bool:
@@ -193,17 +198,50 @@ class TradeApiClient:
             return names
 
     def quote(self, league: str, item_name: str, category: str) -> TradeQuote:
+        """Return the online sell-side quote used by the legacy price fallback."""
+        return self.quote_side(
+            league,
+            item_name,
+            category,
+            side="buy",
+            quantity=1.0,
+        )
+
+    def quote_side(
+        self,
+        league: str,
+        item_name: str,
+        category: str,
+        *,
+        side: str,
+        quantity: float,
+        max_listing_age: timedelta | None = None,
+    ) -> TradeQuote:
+        """Query one executable side of the exchange book in chaos per item.
+
+        ``buy`` means the caller spends chaos to acquire the item (the ask side).
+        ``sell`` reverses ``have``/``want`` and measures chaos buyers offer for the
+        item (the bid side).  A retained listing must individually cover the full
+        requested item quantity; separate listings are never silently aggregated.
+        """
+        if side not in {"buy", "sell"}:
+            raise TradeApiError("exchange side 必须是 buy 或 sell")
+        requested_quantity = _number(quantity)
+        if requested_quantity is None:
+            raise TradeApiError("exchange quantity 必须是正有限数")
         item_id, canonical_name, resolved_category = self._resolve_item(
             item_name, category
         )
+        have = "chaos" if side == "buy" else item_id
+        want = item_id if side == "buy" else "chaos"
         payload = self._request(
             "POST",
             f"/api/trade/exchange/{quote(league, safe='')}",
             {
                 "exchange": {
                     "status": {"option": "online"},
-                    "have": ["chaos"],
-                    "want": [item_id],
+                    "have": [have],
+                    "want": [want],
                 }
             },
         )
@@ -214,7 +252,10 @@ class TradeApiClient:
         raw_count = len(results)
         cross_league = 0
         invalid = 0
+        insufficient_stock = 0
+        stale_listing = 0
         candidates: list[tuple[float, datetime]] = []
+        cutoff = self._now() - max_listing_age if max_listing_age is not None else None
         for row in results.values():
             if not isinstance(row, dict):
                 invalid += 1
@@ -236,8 +277,12 @@ class TradeApiClient:
             if indexed is None or not isinstance(offers, list):
                 invalid += 1
                 continue
+            if cutoff is not None and indexed < cutoff:
+                stale_listing += 1
+                continue
 
             accepted = False
+            stock_rejected = False
             for offer in offers:
                 if not isinstance(offer, dict):
                     continue
@@ -245,25 +290,37 @@ class TradeApiClient:
                 item = offer.get("item")
                 if not isinstance(exchange, dict) or not isinstance(item, dict):
                     continue
-                if exchange.get("currency") != "chaos" or item.get("currency") != item_id:
+                if exchange.get("currency") != have or item.get("currency") != want:
                     continue
-                have_amount = _number(exchange.get("amount"))
-                want_amount = _number(item.get("amount"))
+                exchange_amount = _number(exchange.get("amount"))
+                item_amount = _number(item.get("amount"))
                 stock = _number(item.get("stock"))
-                if have_amount is None or want_amount is None:
+                if exchange_amount is None or item_amount is None:
                     continue
                 if item.get("stock") is not None and stock is None:
                     continue
-                if stock is not None and stock < want_amount:
+                if stock is not None and stock < item_amount:
+                    stock_rejected = True
                     continue
-                rate = have_amount / want_amount
+                if side == "buy":
+                    rate = exchange_amount / item_amount
+                    capacity = stock
+                else:
+                    rate = item_amount / exchange_amount
+                    capacity = stock / rate if stock is not None else None
                 if not math.isfinite(rate) or rate <= 0:
+                    continue
+                if capacity is None or capacity < requested_quantity:
+                    stock_rejected = True
                     continue
                 candidates.append((rate, indexed))
                 accepted = True
                 break
             if not accepted:
-                invalid += 1
+                if stock_rejected:
+                    insufficient_stock += 1
+                else:
+                    invalid += 1
 
         kept = _keep_candidates(candidates)
 
@@ -286,6 +343,14 @@ class TradeApiClient:
             outlier_filtered_count=len(candidates) - sample_count,
             earliest_listing_at=_iso(min(times)) if times else None,
             latest_listing_at=_iso(max(times)) if times else None,
+            side=side,
+            requested_quantity=requested_quantity,
+            insufficient_stock_filtered_count=insufficient_stock,
+            stale_listing_filtered_count=stale_listing,
+            sample_scope=(
+                f"{side} 方向在线 exchange 挂单；每条保留挂单可独立覆盖 "
+                f"{requested_quantity:g} 个目标物品"
+            ),
         )
 
     def unique_quote(
