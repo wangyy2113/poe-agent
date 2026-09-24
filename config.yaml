@@ -190,7 +190,7 @@ economy:
   # 与采集器一致，对公共 API 保持克制；0 表示不做客户端节流。
   requests_per_second: 0.5
   trade_fallback:
-    # 仅在 poe.watch 无任何可用缓存且请求失败时启用；不会覆盖已有缓存降级。
+    # 为价格备用源与双边利润分析提供 GGG Trade API；价格查询不会覆盖已有缓存降级。
     enabled: true
     timeout_seconds: 15
     requests_per_second: 0.5

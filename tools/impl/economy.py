@@ -1,4 +1,4 @@
-"""实时经济价格查询工具。
+"""实时经济价格、成本与双边价差工具。
 
 结果由代码直接渲染，避免模型把均值改写成保证成交价，或丢掉联盟、时间与置信度。
 """
@@ -11,7 +11,14 @@ from functools import lru_cache
 
 from core import db as dbmod
 from core.config import get_config
-from economy.models import MaterialCostEstimate, MaterialRequest, PriceSearch, PriceTrendSearch
+from economy.models import (
+    FlipAnalysis,
+    MaterialCostEstimate,
+    MaterialRequest,
+    PriceSearch,
+    PriceTrendSearch,
+    TradeFeeInput,
+)
 from economy.poe_watch import PoeWatchClient
 from economy.rare_items import (
     InvalidRareComparable,
@@ -426,6 +433,178 @@ def render_material_cost(result: MaterialCostEstimate) -> str:
     if result.warning:
         lines.append(f"> 注意：{result.warning}。")
     return "\n".join(lines)
+
+
+def render_flip_analysis(result: FlipAnalysis) -> str:
+    """确定性双边利润文案；unknown 时不泄漏任何半成品利润数字。"""
+    lines = [
+        f"### {result.resolved_name} · {result.league} 双边价差",
+        "",
+        f"> 数据源：[{result.source}]({result.source_url})；查询时间：{result.fetched_at}；"
+        f"目标数量：{_price(result.quantity)}；只保留最近 "
+        f"{result.max_listing_age_hours} 小时且单条可覆盖全部数量的在线挂单。",
+        "",
+    ]
+    for label, side in (
+        ("买入侧（卖家要价）", result.buy_side),
+        ("卖出侧（买家承接价）", result.sell_side),
+    ):
+        unit = (
+            f"中位数 {_price(side.unit_chaos)} 混沌石/个；"
+            f"范围 {_price(side.min_unit_chaos)}–{_price(side.max_unit_chaos)}"
+            if side.status == "ready"
+            else "代表价 unknown"
+        )
+        lines += [
+            f"- {label}：{unit}",
+            f"  - 样本：保留 {side.sample_count}/{side.raw_listing_count} 条；"
+            f"最低要求 {side.minimum_sample_count} 条",
+            f"  - 过滤：跨联盟 {side.cross_league_filtered_count}、无效报价 "
+            f"{side.invalid_quote_filtered_count}、数量不足 "
+            f"{side.insufficient_stock_filtered_count}、超时 "
+            f"{side.stale_listing_filtered_count}、统计离群 {side.outlier_filtered_count}",
+            f"  - 挂单时间：{side.earliest_listing_at or '未提供'} → "
+            f"{side.latest_listing_at or '未提供'}",
+        ]
+    lines += [
+        "",
+        f"- 显式费用：买入固定 {_price(result.fees.buy_fixed_chaos)} C + "
+        f"{_price(result.fees.buy_percent)}%；卖出固定 "
+        f"{_price(result.fees.sell_fixed_chaos)} C + {_price(result.fees.sell_percent)}%",
+        f"- 判定阈值：净利润至少 {_price(result.minimum_net_profit_chaos)} C，"
+        f"利润率至少 {_price(result.minimum_margin_percent)}%",
+    ]
+    if not result.calculable:
+        lines += [
+            f"- **状态：unknown**（{result.reason}）",
+            "- 净利润、利润率与 Flip 判断均不计算。",
+        ]
+    else:
+        verdict = (
+            "满足阈值，可列为 Flip 候选"
+            if result.verdict == "flip_candidate"
+            else "不满足 Flip 阈值"
+        )
+        lines += [
+            f"- 买入：毛成本 {_price(result.gross_buy_cost_chaos)} C + 费用 "
+            f"{_price(result.buy_fee_chaos)} C = **{_price(result.total_buy_cost_chaos)} C**",
+            f"- 卖出：毛收入 {_price(result.gross_sell_revenue_chaos)} C - 费用 "
+            f"{_price(result.sell_fee_chaos)} C = **{_price(result.net_sell_revenue_chaos)} C**",
+            f"- 净利润：**{_price(result.net_profit_chaos)} C**；利润率："
+            f"**{_price(result.margin_percent)}%**",
+            f"- 判定：**{verdict}**。",
+        ]
+    lines += [
+        "",
+        "> 这是两个方向在线挂单中位数的瞬时可执行性筛查，不是成交记录或收益保证；"
+        "没有计入未显式填写的时间成本、议价、价格滑点、重复账号或行情变化。",
+    ]
+    return "\n".join(lines)
+
+
+@REGISTRY.register(
+    name="economy_flip_analysis",
+    description=(
+        "对用户明确指定的 POE1 exchange 标准条目和数量做双边价差分析。分别查询买入"
+        "卖家要价与卖出买家承接价，只保留时限内且单条可覆盖全部数量的在线挂单，并要求"
+        "两侧都达到最低样本数。调用方必须显式填写买卖固定/比例费用；证据完整时才计算"
+        "净利润、利润率与 Flip 候选判断，任一侧样本、深度、时效或费用缺失则返回 unknown。"
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "query": {"type": "string", "minLength": 1, "maxLength": 200},
+            "quantity": {
+                "type": "number", "exclusiveMinimum": 0, "maximum": 1000000000,
+            },
+            "fees": {
+                "type": "object",
+                "properties": {
+                    "buy_fixed_chaos": {"type": "number", "minimum": 0},
+                    "buy_percent": {"type": "number", "minimum": 0, "exclusiveMaximum": 100},
+                    "sell_fixed_chaos": {"type": "number", "minimum": 0},
+                    "sell_percent": {"type": "number", "minimum": 0, "exclusiveMaximum": 100},
+                },
+                "required": [
+                    "buy_fixed_chaos", "buy_percent", "sell_fixed_chaos", "sell_percent",
+                ],
+                "additionalProperties": False,
+            },
+            "category": {
+                "type": "string",
+                "enum": ["auto", "currency", "scarab", "card", "fragment"],
+                "default": "auto",
+            },
+            "league": {"type": "string", "maxLength": 100},
+            "max_listing_age_hours": {
+                "type": "integer", "minimum": 1, "maximum": 168, "default": 24,
+            },
+            "minimum_net_profit_chaos": {"type": "number", "minimum": 0, "default": 0},
+            "minimum_margin_percent": {"type": "number", "minimum": 0, "default": 0},
+        },
+        "required": ["query", "quantity", "fees"],
+        "additionalProperties": False,
+    },
+)
+def economy_flip_analysis(
+    query: str,
+    quantity: float,
+    fees: dict[str, object],
+    category: str = "auto",
+    league: str | None = None,
+    max_listing_age_hours: int = 24,
+    minimum_net_profit_chaos: float = 0,
+    minimum_margin_percent: float = 0,
+) -> ToolResult:
+    try:
+        required_fees = (
+            "buy_fixed_chaos", "buy_percent", "sell_fixed_chaos", "sell_percent",
+        )
+        if not isinstance(fees, dict) or any(name not in fees for name in required_fees):
+            raise InvalidEconomyQuery("fees 必须显式包含买卖两侧的固定费用和比例费用")
+        fee_input = TradeFeeInput(**{
+            name: fees[name] for name in required_fees
+        })  # type: ignore[arg-type]
+        result = service_from_config().flip_analysis(
+            query,
+            quantity=quantity,
+            fees=fee_input,
+            category=category,
+            league=league,
+            max_listing_age_hours=max_listing_age_hours,
+            minimum_net_profit_chaos=minimum_net_profit_chaos,
+            minimum_margin_percent=minimum_margin_percent,
+        )
+    except (EconomyUnavailable, InvalidEconomyQuery, TradeApiError, TypeError) as exc:
+        return ToolResult(ok=False, error=str(exc), meta={"source": "GGG Trade API"})
+
+    rendered = render_flip_analysis(result)
+    identity = (
+        f"{result.league}:{result.resolved_name}:{result.quantity}:"
+        f"{result.buy_side.latest_listing_at}:{result.sell_side.latest_listing_at}"
+    )
+    digest = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:16]
+    return ToolResult(
+        ok=True,
+        data={**result.as_dict(), "answer": rendered},
+        citations=[{
+            "chunk_id": f"economy-flip:{digest}",
+            "entity_id": None,
+            "title": f"{result.resolved_name} · {result.league} 双边价差",
+            "url": result.source_url,
+            "source": result.source,
+            "source_priority": 1,
+            "can_support_facts": True,
+            "text": rendered,
+            "channel": "live_economy",
+        }],
+        meta={
+            "channel": "live_economy",
+            "source": result.source,
+            "calculable": result.calculable,
+            "verdict": result.verdict,
+        },
+    )
 
 
 @REGISTRY.register(

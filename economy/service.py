@@ -14,14 +14,17 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
 
 from economy.models import (
+    FlipAnalysis,
     MaterialCostEstimate,
     MaterialCostLine,
     MaterialRequest,
+    MarketSideEvidence,
     PriceObservation,
     PricePoint,
     PriceSearch,
     PriceTrend,
     PriceTrendSearch,
+    TradeFeeInput,
 )
 from economy.poe_watch import PoeWatchClient, PoeWatchError
 from economy.trade_api import (
@@ -459,6 +462,208 @@ class EconomyService:
             window_hours=window_hours,
             minimum_observations=minimum_observations,
             trends=trends,
+        )
+
+    def flip_analysis(
+        self,
+        query: str,
+        *,
+        quantity: float,
+        fees: TradeFeeInput,
+        category: str = "auto",
+        league: str | None = None,
+        max_listing_age_hours: int = 24,
+        minimum_net_profit_chaos: float = 0,
+        minimum_margin_percent: float = 0,
+    ) -> FlipAnalysis:
+        """计算显式双边价差；任一关键证据缺失时利润保持 unknown。"""
+        raw_query = (query or "").strip()
+        requested_category = (category or "auto").strip()
+        if not raw_query:
+            raise InvalidEconomyQuery("query 不能为空")
+        supported = {"auto", "currency", "scarab", "card", "fragment"}
+        if requested_category not in supported:
+            raise InvalidEconomyQuery(
+                "利润分析只支持 GGG exchange 标准条目：auto、currency、scarab、card、fragment"
+            )
+        if (
+            isinstance(quantity, bool)
+            or not isinstance(quantity, (int, float))
+            or not math.isfinite(float(quantity))
+            or not 0 < float(quantity) <= 1_000_000_000
+        ):
+            raise InvalidEconomyQuery("quantity 必须是 0 到 1,000,000,000 之间的有限数")
+        if (
+            isinstance(max_listing_age_hours, bool)
+            or not isinstance(max_listing_age_hours, int)
+            or not 1 <= max_listing_age_hours <= 168
+        ):
+            raise InvalidEconomyQuery("max_listing_age_hours 必须是 1–168 的整数")
+
+        fee_values = {
+            "buy_fixed_chaos": fees.buy_fixed_chaos,
+            "buy_percent": fees.buy_percent,
+            "sell_fixed_chaos": fees.sell_fixed_chaos,
+            "sell_percent": fees.sell_percent,
+            "minimum_net_profit_chaos": minimum_net_profit_chaos,
+            "minimum_margin_percent": minimum_margin_percent,
+        }
+        for name, value in fee_values.items():
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, (int, float))
+                or not math.isfinite(float(value))
+                or float(value) < 0
+            ):
+                raise InvalidEconomyQuery(f"{name} 必须是非负有限数")
+        if fees.buy_percent >= 100 or fees.sell_percent >= 100:
+            raise InvalidEconomyQuery("buy_percent 与 sell_percent 必须小于 100")
+        if self.trade_client is None:
+            raise EconomyUnavailable("双边利润分析需要启用 GGG Trade API")
+
+        resolved_name, inferred_category, _ = self._resolve_name(raw_query)
+        logical_category = (
+            inferred_category
+            if requested_category == "auto" and inferred_category
+            else requested_category
+        )
+        if logical_category == "unique":
+            raise InvalidEconomyQuery("唯一装备没有 exchange 双边深度，不能进入利润分析")
+        if normalize(resolved_name) == normalize("Chaos Orb"):
+            raise InvalidEconomyQuery("Chaos Orb 是本分析的计价单位，不能与自身构成价差")
+        official_leagues = [{"name": name} for name in self.trade_client.leagues()]
+        selected_league = self._select_league(
+            league, official_leagues, source=TRADE_SOURCE
+        )
+        max_age = timedelta(hours=max_listing_age_hours)
+        buy_quote = self.trade_client.quote_side(
+            selected_league,
+            resolved_name,
+            logical_category,
+            side="buy",
+            quantity=float(quantity),
+            max_listing_age=max_age,
+        )
+        sell_quote = self.trade_client.quote_side(
+            selected_league,
+            resolved_name,
+            logical_category,
+            side="sell",
+            quantity=float(quantity),
+            max_listing_age=max_age,
+        )
+        buy_side = self._market_side_evidence(buy_quote)
+        sell_side = self._market_side_evidence(sell_quote)
+
+        reasons: list[str] = []
+        if not buy_quote.sufficient:
+            reasons.append(
+                f"买入侧只有 {buy_quote.sample_count} 条可覆盖目标数量的新鲜挂单，"
+                f"低于最低样本数 {buy_quote.minimum_sample_count}"
+            )
+        if not sell_quote.sufficient:
+            reasons.append(
+                f"卖出侧只有 {sell_quote.sample_count} 条可覆盖目标数量的新鲜挂单，"
+                f"低于最低样本数 {sell_quote.minimum_sample_count}"
+            )
+
+        values: dict[str, float | None] = {
+            "gross_buy_cost_chaos": None,
+            "buy_fee_chaos": None,
+            "total_buy_cost_chaos": None,
+            "gross_sell_revenue_chaos": None,
+            "sell_fee_chaos": None,
+            "net_sell_revenue_chaos": None,
+            "net_profit_chaos": None,
+            "margin_percent": None,
+        }
+        calculable = not reasons
+        verdict = "unknown"
+        reason = "；".join(reasons)
+        if calculable:
+            qty = Decimal(str(quantity))
+            buy_unit = Decimal(str(buy_quote.median_chaos))
+            sell_unit = Decimal(str(sell_quote.median_chaos))
+            gross_buy = buy_unit * qty
+            buy_fee = Decimal(str(fees.buy_fixed_chaos)) + (
+                gross_buy * Decimal(str(fees.buy_percent)) / Decimal("100")
+            )
+            total_buy = gross_buy + buy_fee
+            gross_sell = sell_unit * qty
+            sell_fee = Decimal(str(fees.sell_fixed_chaos)) + (
+                gross_sell * Decimal(str(fees.sell_percent)) / Decimal("100")
+            )
+            net_sell = gross_sell - sell_fee
+            profit = net_sell - total_buy
+            margin = profit / total_buy * Decimal("100")
+            values = {
+                "gross_buy_cost_chaos": float(gross_buy),
+                "buy_fee_chaos": float(buy_fee),
+                "total_buy_cost_chaos": float(total_buy),
+                "gross_sell_revenue_chaos": float(gross_sell),
+                "sell_fee_chaos": float(sell_fee),
+                "net_sell_revenue_chaos": float(net_sell),
+                "net_profit_chaos": float(profit),
+                "margin_percent": float(margin),
+            }
+            meets_profit = profit >= Decimal(str(minimum_net_profit_chaos))
+            meets_margin = margin >= Decimal(str(minimum_margin_percent))
+            verdict = (
+                "flip_candidate"
+                if profit > 0 and meets_profit and meets_margin
+                else "not_profitable"
+            )
+            reason = (
+                "双边样本、目标数量深度、时效和显式费用均完整；"
+                + (
+                    "净利润与利润率达到调用方阈值"
+                    if verdict == "flip_candidate"
+                    else "净利润为非正，或未同时达到调用方利润与利润率阈值"
+                )
+            )
+
+        return FlipAnalysis(
+            query=raw_query,
+            resolved_name=buy_quote.name,
+            category=buy_quote.category,
+            league=selected_league,
+            quantity=float(quantity),
+            source=TRADE_SOURCE,
+            source_url=TRADE_SOURCE_URL,
+            fetched_at=_iso(self.now()),
+            max_listing_age_hours=max_listing_age_hours,
+            status="ready" if calculable else "unknown",
+            reason=reason,
+            calculable=calculable,
+            verdict=verdict,
+            minimum_net_profit_chaos=float(minimum_net_profit_chaos),
+            minimum_margin_percent=float(minimum_margin_percent),
+            fees=fees,
+            buy_side=buy_side,
+            sell_side=sell_side,
+            **values,
+        )
+
+    @staticmethod
+    def _market_side_evidence(quote: TradeQuote) -> MarketSideEvidence:
+        return MarketSideEvidence(
+            side=quote.side,
+            status="ready" if quote.sufficient else "insufficient_liquidity",
+            unit_chaos=quote.median_chaos,
+            min_unit_chaos=quote.min_chaos,
+            max_unit_chaos=quote.max_chaos,
+            sample_count=quote.sample_count,
+            minimum_sample_count=quote.minimum_sample_count,
+            raw_listing_count=quote.raw_listing_count,
+            cross_league_filtered_count=quote.cross_league_filtered_count,
+            invalid_quote_filtered_count=quote.invalid_quote_filtered_count,
+            insufficient_stock_filtered_count=quote.insufficient_stock_filtered_count,
+            stale_listing_filtered_count=quote.stale_listing_filtered_count,
+            outlier_filtered_count=quote.outlier_filtered_count,
+            earliest_listing_at=quote.earliest_listing_at,
+            latest_listing_at=quote.latest_listing_at,
+            requested_quantity=quote.requested_quantity,
+            sample_scope=quote.sample_scope,
         )
 
     def material_cost(

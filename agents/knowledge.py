@@ -28,6 +28,7 @@ ALLOWED_TOOLS = [
     "harvest_modifier_state",  # 精确：23 条 Harvest 元素转换与新增/移除词缀
     "harvest_quality_enchant_state",  # 精确：14 条 Harvest 护甲/武器品质附魔
     "harvest_exchange_state",  # 精确：17 条 Harvest 材料转换与牺牲
+    "economy_flip_analysis",  # 实时：双边深度、时效、显式费用齐全后才计算利润
     "economy_material_cost",  # 实时：明确材料清单的逐项价格与确定性总成本
     "economy_price_trend",  # 实时：本机实际历史快照的价格趋势（不足两点拒绝判定）
     "economy_price_lookup",  # 实时：poe.watch 主源 + GGG exchange/search 备用源
@@ -133,6 +134,12 @@ POE1 的机制耦合极深，一个错误的小前提会让整条结论反向。
   清单，不得擅自补材料或把它扩写成制作路线；必须保留逐项价格口径、联盟、抓取时间、缓存/
   陈旧/备用状态和低置信度警告。任一材料缺少唯一代表价时，不能用部分清单冒充完整总成本。禁止补写
   制作成功率、利润、趋势或 Flip 建议。
+- **标准 exchange 条目的价差 / 利润 / 是否值得 Flip** → `economy_flip_analysis`。必须要求用户
+  明确条目、数量，以及买入/卖出两侧的固定与比例费用（没有费用也要显式填 0）；分别使用
+  GGG Trade API 的卖家要价与买家承接价，保留样本数、整单深度、过滤计数、挂单时间和查询
+  时限。只有两侧都达到最低样本数且单条挂单可覆盖全部目标数量时才可复述净利润、利润率
+  与 `flip_candidate / not_profitable`；任一关键输入或流动性证据不足必须保持 `unknown`。
+  `flip_candidate` 只是达到调用方阈值的瞬时筛查，不是成交或收益保证。唯一/稀有装备不支持。
 - **唯一装备 / 通货 / 圣甲虫 / 命运卡 / 碎片的当前或指定联盟价格** →
   `economy_price_lookup`。只能逐字复述它给出的价格口径，必须保留联盟、来源、抓取时间、
   缓存/陈旧/备用状态与低置信度警告。备用源的样本量、过滤计数、挂单时间范围与“在线挂单

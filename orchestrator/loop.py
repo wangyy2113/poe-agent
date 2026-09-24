@@ -827,6 +827,11 @@ _YIELDS_TO_ENUMERATION = frozenset(
 
 
 _PREFERRED_TOOL_INTENTS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    # 利润/Flip 必须先于普通价格匹配，由双边挂单、深度、时效与显式费用共同判定。
+    ("economy_flip_analysis", (
+        "价差", "利润", "利润率", "套利", "倒卖", "Flip", "flip",
+        "值不值得搬砖", "能不能搬砖",
+    )),
     # 历史趋势必须在当前价格之前匹配，否则「价格趋势」会被快照工具先截走。
     ("economy_price_trend", (
         "价格趋势", "行情趋势", "价格走势", "行情走势", "涨跌", "涨了多少",
@@ -2567,7 +2572,7 @@ _CODE_INVOKED_TOOLS: dict[str, Any] = {
 #: 「一条证据都没拿到就走缺据」的兜底要放过它们，否则它们永远进不了生成。
 _TOOLS_WITHOUT_CITATIONS = frozenset({"kb_coverage"})
 _DETERMINISTIC_DIRECT_TOOLS = frozenset({
-    "economy_price_lookup", "economy_price_trend", "economy_material_cost",
+    "economy_flip_analysis", "economy_price_lookup", "economy_price_trend", "economy_material_cost",
     "economy_rare_comparables", "boss_risk_audit", "boss_sequence_check", "boss_defence_threshold",
     "boss_survival_check",
     "awakener_orb_state",

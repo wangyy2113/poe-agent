@@ -113,6 +113,73 @@ STATS = {
 
 
 class TradeApiClientTest(unittest.TestCase):
+    def test_sell_side_reverses_exchange_and_requires_fresh_full_quantity_depth(self) -> None:
+        now = datetime(2026, 9, 24, 12, tzinfo=timezone.utc)
+        calls: list[tuple[str, str, dict | None]] = []
+
+        def bid_listing(
+            rate: float, *, stock: float = 1_000, indexed: str = "2026-09-24T11:00:00Z"
+        ) -> dict:
+            return {"listing": {
+                "indexed": indexed,
+                "account": {"online": {"league": "Allflame"}},
+                "offers": [{
+                    "exchange": {"currency": "divine", "amount": 1},
+                    "item": {"currency": "chaos", "amount": rate, "stock": stock},
+                }],
+            }}
+
+        def request(method: str, path: str, payload: dict | None):
+            calls.append((method, path, payload))
+            if path == "/api/trade/data/static":
+                return STATIC
+            return {"result": {
+                "a": bid_listing(350),
+                "b": bid_listing(355),
+                "c": bid_listing(360),
+                "d": bid_listing(365),
+                "e": bid_listing(370),
+                "too-small": bid_listing(360, stock=100),
+                "too-old": bid_listing(360, indexed="2026-09-20T11:00:00Z"),
+            }}
+
+        quote = TradeApiClient(
+            request_json=request,
+            requests_per_second=0,
+            minimum_samples=5,
+            now=lambda: now,
+        ).quote_side(
+            "Allflame",
+            "Divine Orb",
+            "currency",
+            side="sell",
+            quantity=2,
+            max_listing_age=timedelta(hours=24),
+        )
+
+        self.assertEqual(360, quote.median_chaos)
+        self.assertEqual("sell", quote.side)
+        self.assertEqual(2, quote.requested_quantity)
+        self.assertEqual(1, quote.insufficient_stock_filtered_count)
+        self.assertEqual(1, quote.stale_listing_filtered_count)
+        exchange = calls[-1][2]["exchange"]
+        self.assertEqual(["divine"], exchange["have"])
+        self.assertEqual(["chaos"], exchange["want"])
+
+    def test_quote_side_rejects_unknown_direction_and_nonpositive_quantity(self) -> None:
+        client = TradeApiClient(
+            request_json=lambda _m, _p, _b: STATIC,
+            requests_per_second=0,
+        )
+        with self.assertRaisesRegex(TradeApiError, "side"):
+            client.quote_side(
+                "Allflame", "Divine Orb", "currency", side="hold", quantity=1
+            )
+        with self.assertRaisesRegex(TradeApiError, "quantity"):
+            client.quote_side(
+                "Allflame", "Divine Orb", "currency", side="buy", quantity=0
+            )
+
     def test_filters_cross_league_invalid_and_outlier_before_median(self) -> None:
         calls: list[tuple[str, str, dict | None]] = []
 
