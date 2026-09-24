@@ -146,7 +146,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 1972 项，秒级
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 1985 项，秒级
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选
@@ -163,7 +163,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 .venv/bin/python scripts/eval_run.py --record        # 重录真实响应（**要凭证、烧 token**）
 ```
 
-黄金问答集是 `tests/golden/questions.yaml`（170 条，六类），基线与全部结论在
+黄金问答集是 `tests/golden/questions.yaml`（171 条，六类），基线与全部结论在
 `tests/golden/BASELINE.md`——**动闸门前先读它**，里面记了多个已修缺陷与三条已知未修边界，
 以及两次「测量本身写错」的教训。
 
@@ -1146,12 +1146,14 @@ Lua 后者覆盖前者，解析器同样取后者——**行号锚点也因此�
 - **敌方格挡是另一层**，不是「没打中」。两层分开写，合并成一个数会让用户以为
   堆命中能解决格挡。
 
-攻速的两个坑都由上游写法决定：**技能倍率乘在武器攻速上**（PoB 存的是增量，
+攻速的三个坑都由上游写法决定：**技能倍率乘在武器攻速上**（PoB 存的是增量，
 `attackSpeedMultiplier = -50` 表示基础攻速的 50%），以及 **`round(…, 2)` 在分母上**
 （`output.Speed = 1 /(baseTime / round((1 + inc/100)× more, 2))`，`CalcOffence.lua:2337`）。
-1.55 攻速的爪 + 60% 攻速 = **2.48 次/秒**。另外一条值得记的**否定事实**：
-社区常说「攻速有服务器 tick 上限」，而 PoB 的 `output.Speed` **不夹上限**——
-`ServerTickRate` 只出现在创伤叠层的可维持计算里（`:2250`，单测钉住了这一行）。
+1.55 攻速的爪 + 60% 攻速 = **2.48 次/秒**。第三个坑是服务器 tick：PoB 在
+`CalcOffence.lua:2366-2367` 对非引导技能执行
+`min(output.Speed, ServerTickRate × Repeats)`；默认 tick 0.033 秒时，单次技能约为
+30.30 次/秒，重复会同比放宽上限，引导技能不走这一夹值。此前文档称 `output.Speed`
+不夹上限，是只看了创伤计算而漏读最终频率段，现已由源码锚点和高攻速回归用例纠正。
 
 **「命中率」这个意图词第三十三轮从 `mitigation_calc` 让给了 `accuracy_calc`**：
 那个词在这个游戏里默认指攻击侧（我打得中吗），防守侧的说法是「闪避率」「躲不躲得开」。

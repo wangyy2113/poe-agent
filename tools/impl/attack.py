@@ -31,8 +31,8 @@ _ACCURACY_BOUNDARY = (
 )
 _SPEED_BOUNDARY = (
     "只算「武器基础攻速 × 技能倍率 × 攻速加成」这一支：不含双持、行动速度"
-    "（冰缓/致盲）、技能覆盖攻击时间与定值加时，也不给 DPS。"
-    "PoB 对每秒次数**不设上限**（服务器 tick 只出现在创伤叠层那一段）。"
+    "（冰缓/致盲）、技能覆盖攻击时间与定值加时，也不给 DPS。非引导技能按"
+    "服务器 tick × 重复次数夹住最终频率；引导技能不走这一上限。"
 )
 
 
@@ -273,6 +273,9 @@ def _skill_multiplier(skill: str, gem_level: int | None) -> tuple[float | None, 
             "gem_level": {"type": "integer", "description": "技能等级，默认自然最高级"},
             "increased_pct": {"type": "number", "description": "攻击速度加快的加总（%）"},
             "more_mult": {"type": "number", "description": "「更多攻击速度」乘算，1.0 为无"},
+            "server_tick_seconds": {"type": "number", "description": "服务器 tick 秒数，默认 0.033"},
+            "repeats": {"type": "integer", "minimum": 1, "description": "每次动作的重复次数"},
+            "channelled": {"type": "boolean", "description": "是否为引导技能"},
         },
     },
 )
@@ -283,6 +286,9 @@ def attack_speed_calc(
     gem_level: int | None = None,
     increased_pct: float | None = None,
     more_mult: float | None = None,
+    server_tick_seconds: float = 0.033,
+    repeats: int = 1,
+    channelled: bool = False,
 ) -> ToolResult:
     sources: list[str] = []
     rate = base_rate
@@ -310,6 +316,7 @@ def attack_speed_calc(
             "其中基础间隔 = 1 ÷(武器基础攻速 ×(1 + 技能攻速倍率 / 100))。\n\n"
             "- **技能攻速倍率乘在武器攻速上**，而 PoB 存的是增量（存 -30 表示 70%）。\n"
             "- **`round(…, 2)` 在分母上**：先把攻速修正四舍五入到两位小数，再去除间隔。\n"
+            "- 非引导技能最终频率夹在 `服务器 tick 频率 × 重复次数`；默认 tick 为 0.033 秒。\n"
             f"- {_SPEED_BOUNDARY}\n"
         )
         return ToolResult(
@@ -338,6 +345,9 @@ def attack_speed_calc(
             skill_multiplier=multiplier,
             increased_pct=increased_pct or 0.0,
             more_mult=more_mult if more_mult is not None else 1.0,
+            server_tick_seconds=server_tick_seconds,
+            repeats=repeats,
+            channelled=channelled,
         )
     except ValueError as exc:
         return ToolResult(ok=False, error=str(exc))
@@ -348,6 +358,10 @@ def attack_speed_calc(
     lines.append(
         f"**每秒 {result.rate:g} 次攻击，间隔 {result.interval:g} 秒。**"
     )
+    if result.server_limited:
+        lines.append(
+            f"- 理论 {result.uncapped_rate:g} 次/秒已被服务器 tick 上限夹到 {result.rate:g}。"
+        )
     for note in sources:
         lines.append(f"- {note}")
     lines.append("")
@@ -361,6 +375,11 @@ def attack_speed_calc(
             "skill_multiplier": result.skill_multiplier,
             "increased_pct": result.increased_pct,
             "more_mult": result.more_mult,
+            "uncapped_rate": result.uncapped_rate,
+            "server_tick_seconds": result.server_tick_seconds,
+            "repeats": result.repeats,
+            "channelled": result.channelled,
+            "server_limited": result.server_limited,
             "rate": result.rate,
             "interval": result.interval,
             "sources": sources,

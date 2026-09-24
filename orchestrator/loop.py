@@ -2302,12 +2302,30 @@ def _hit_dps_args(question: str) -> dict[str, Any]:
         ("cooldown_seconds", r"冷却(?:时间)?\s*(\d+(?:\.\d+)?)\s*秒"),
         ("burst_hit_count", r"一轮(?:总共)?\s*(\d+(?:\.\d+)?)\s*次击中"),
         ("repeat_damage_multiplier", r"重复伤害倍率\s*(\d+(?:\.\d+)?)%"),
+        ("ruthless_blow_every_hits", r"每\s*(\d+)\s*次(?:攻击|击中).*?无情一击"),
+        ("ruthless_blow_hit_multiplier", r"无情一击造成\s*(\d+(?:\.\d+)?)%\s*伤害"),
+        ("fist_of_war_more_damage_pct", r"战争之拳\s*(\d+(?:\.\d+)?)%\s*更多伤害"),
+        ("fist_of_war_cooldown_seconds", r"战争之拳(?:效果)?冷却\s*(\d+(?:\.\d+)?)\s*秒"),
+        ("exerted_attack_more_damage_pct", r"(?:增助攻击|战吼增助)\s*(\d+(?:\.\d+)?)%\s*更多伤害"),
+        ("exerted_attack_uptime_pct", r"(?:增助攻击|战吼增助)(?:的)?覆盖率\s*(\d+(?:\.\d+)?)%"),
+        ("impale_chance_pct", r"穿刺几率\s*(\d+(?:\.\d+)?)%"),
+        ("impale_stacks", r"(?:敌人身上)?\s*(\d+(?:\.\d+)?)\s*层穿刺"),
+        ("impale_effect_increased_pct", r"穿刺效果(?:提高|增加)\s*(\d+(?:\.\d+)?)%"),
+        ("cull_percent", r"(?:终结|扑杀)\s*(\d+(?:\.\d+)?)%"),
+        ("server_tick_seconds", r"服务器\s*tick\s*(\d+(?:\.\d+)?)\s*秒"),
     )
     for key, pattern in advanced_patterns:
-        match = re.search(pattern, question)
+        source = question
+        if key == "cooldown_seconds":
+            source = re.sub(
+                r"战争之拳(?:效果)?冷却\s*\d+(?:\.\d+)?\s*秒", "", source
+            )
+        match = re.search(pattern, source)
         if match:
             value = float(match.group(1))
-            args[key] = value / 100 if key == "repeat_damage_multiplier" else value
+            args[key] = value / 100 if key in {
+                "repeat_damage_multiplier", "ruthless_blow_hit_multiplier"
+            } else value
     if "触发" in question and "cooldown_seconds" in args:
         args["triggered"] = True
     return args

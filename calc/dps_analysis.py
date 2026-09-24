@@ -10,7 +10,14 @@ import math
 from dataclasses import asdict, dataclass
 from typing import Any, Mapping, Sequence
 
-from calc.dps import Conversion, HitDpsResult, hit_dps
+from calc.dps import Conversion, HitDpsResult, effective_cooldown, hit_dps
+
+
+TARGET_METRICS = {
+    "hit_dps": "dps",
+    "combined_dps": "combined_dps",
+    "effective_dps_with_cull": "effective_dps_with_cull",
+}
 
 
 @dataclass(frozen=True)
@@ -19,6 +26,8 @@ class ScenarioDelta:
     dps: float
     dps_delta: float
     dps_delta_pct: float | None
+    combined_dps: float
+    effective_dps_with_cull: float
     average_hit: float
     average_hit_delta: float
     burst_damage: float
@@ -34,6 +43,8 @@ class DpsComparison:
     baseline: str
     scenarios: tuple[ScenarioDelta, ...]
     best_dps_scenario: str
+    best_combined_dps_scenario: str
+    best_effective_dps_scenario: str
     best_burst_scenario: str
 
     def as_dict(self) -> dict[str, Any]:
@@ -43,11 +54,15 @@ class DpsComparison:
 @dataclass(frozen=True)
 class TargetRateResult:
     reachable: bool
+    metric: str
     target_dps: float
     dps_per_effective_action: float
     required_effective_action_rate: float | None
     required_raw_action_rate: float | None
     cooldown_cap: float | None
+    action_rate_cap: float | None
+    cap_sources: tuple[str, ...]
+    maximum_achievable_dps: float | None
     achieved_dps: float | None
     reason: str
 
@@ -87,6 +102,8 @@ def compare_hit_dps(
             dps=result.dps,
             dps_delta=delta,
             dps_delta_pct=delta_pct,
+            combined_dps=result.combined_dps,
+            effective_dps_with_cull=result.effective_dps_with_cull,
             average_hit=result.average_hit,
             average_hit_delta=result.average_hit - baseline.average_hit,
             burst_damage=result.average_burst_damage,
@@ -97,17 +114,30 @@ def compare_hit_dps(
         baseline=baseline_name,
         scenarios=tuple(rows),
         best_dps_scenario=max(rows, key=lambda row: row.dps).name,
+        best_combined_dps_scenario=max(rows, key=lambda row: row.combined_dps).name,
+        best_effective_dps_scenario=max(
+            rows, key=lambda row: row.effective_dps_with_cull
+        ).name,
         best_burst_scenario=max(rows, key=lambda row: row.burst_damage).name,
     )
 
 
-def target_action_rate(target_dps: float, inputs: Mapping[str, Any]) -> TargetRateResult:
-    """反解达到目标 DPS 所需的原始频率，并正确处理触发/非触发冷却。"""
+def target_action_rate(
+    target_dps: float,
+    inputs: Mapping[str, Any],
+    *,
+    metric: str = "hit_dps",
+) -> TargetRateResult:
+    """数值反解目标频率，支持冷却平台及随频率变化的战斗机制。"""
     if isinstance(target_dps, bool) or not isinstance(target_dps, (int, float)):
         raise ValueError("target_dps 必须是数字")
     target = float(target_dps)
     if not math.isfinite(target) or target <= 0:
         raise ValueError("target_dps 必须是有限正数")
+    if metric not in TARGET_METRICS:
+        raise ValueError(
+            "metric 只支持 hit_dps、combined_dps、effective_dps_with_cull"
+        )
 
     values = _kwargs(inputs)
     values.pop("action_rate", None)
@@ -118,42 +148,111 @@ def target_action_rate(target_dps: float, inputs: Mapping[str, Any]) -> TargetRa
     if not math.isfinite(cooldown) or cooldown < 0:
         raise ValueError("cooldown_seconds 必须是有限非负数")
     triggered = bool(values.pop("triggered", False))
-    unit = hit_dps(**values, action_rate=1.0, cooldown_seconds=0.0, triggered=False)
-    per_rate = unit.dps
+    tick = values.get("server_tick_seconds")
+    cooldown_uses = values.get("cooldown_uses", 1)
+    effective_cd, _rounded = effective_cooldown(
+        cooldown,
+        server_tick_seconds=tick,
+        cooldown_uses=cooldown_uses,
+    )
+    metric_field = TARGET_METRICS[metric]
+
+    def calculate(raw_rate: float) -> tuple[HitDpsResult, float]:
+        result = hit_dps(
+            **values,
+            action_rate=raw_rate,
+            cooldown_seconds=cooldown,
+            triggered=triggered,
+        )
+        return result, float(getattr(result, metric_field))
+
+    unit, unit_value = calculate(1.0)
+    per_rate = unit_value / unit.action_rate if unit.action_rate > 0 else 0.0
+    cooldown_cap = 1 / effective_cd if effective_cd > 0 else None
+    action_repeats = values.get("action_repeats", 1)
+    channelled = bool(values.get("channelled", False))
+    tick_cap = (
+        action_repeats / float(tick)
+        if tick is not None and not channelled
+        else None
+    )
+    cap_sources: list[str] = []
+    if cooldown_cap is not None:
+        cap_sources.append("cooldown")
+    if tick_cap is not None:
+        cap_sources.append("server_tick")
     if per_rate <= 0:
         return TargetRateResult(
-            False, target, per_rate, None, None,
-            1 / cooldown if cooldown > 0 else None, None,
-            "当前参数每次使用的期望伤害为 0，无法通过提高频率达到目标",
+            reachable=False, metric=metric, target_dps=target,
+            dps_per_effective_action=per_rate,
+            required_effective_action_rate=None, required_raw_action_rate=None,
+            cooldown_cap=cooldown_cap, action_rate_cap=None,
+            cap_sources=tuple(cap_sources), maximum_achievable_dps=0.0,
+            achieved_dps=None,
+            reason="当前参数每次使用的期望伤害为 0，无法通过提高频率达到目标",
         )
 
-    required_effective = target / per_rate
-    cap = 1 / cooldown if cooldown > 0 else None
-    if cooldown <= 0:
-        required_raw = required_effective
-    elif triggered:
-        if required_effective > cap:
-            return TargetRateResult(
-                False, target, per_rate, required_effective, None, cap, None,
-                "触发冷却限制了最高有效频率",
-            )
-        required_raw = required_effective
+    lower = 1e-12
+    if tick_cap is not None:
+        upper = tick_cap
+    elif effective_cd > 0 and triggered:
+        upper = cooldown_cap or 1.0
     else:
-        # effective = 1 / (1/raw + cooldown)，其上限 1/cooldown 只能无限逼近。
-        if required_effective >= cap:
-            return TargetRateResult(
-                False, target, per_rate, required_effective, None, cap, None,
-                "非触发技能的动作时间与冷却相加，目标频率达到或超过冷却渐近上限",
-            )
-        required_raw = 1 / (1 / required_effective - cooldown)
+        upper = 1.0
+        while upper < 1e12:
+            _probe, value = calculate(upper)
+            if value >= target:
+                break
+            upper *= 2
+        upper = min(upper, 1e12)
 
-    verification = hit_dps(
-        **values,
-        action_rate=required_raw,
-        cooldown_seconds=cooldown,
-        triggered=triggered,
-    )
+    maximum: float | None = None
+    action_rate_cap: float | None = None
+    if effective_cd > 0 or tick_cap is not None:
+        if tick_cap is not None:
+            max_rate = tick_cap
+        elif triggered:
+            max_rate = cooldown_cap or 1.0
+        else:
+            max_rate = 1e12
+        maximum_result, maximum = calculate(max_rate)
+        action_rate_cap = maximum_result.action_rate
+    _upper_result, upper_value = calculate(upper)
+    if upper_value < target and not math.isclose(upper_value, target, rel_tol=1e-12):
+        if tick_cap is not None and effective_cd > 0:
+            reason = "服务器 tick 与冷却共同限制了最高有效频率"
+        elif tick_cap is not None:
+            reason = "服务器 tick 限制了最高有效频率"
+        elif triggered:
+            reason = "触发冷却限制了最高有效频率"
+        elif effective_cd > 0:
+            reason = "非触发技能的动作时间与冷却相加，目标超过冷却渐近上限"
+        else:
+            reason = "在允许的原始频率范围内无法达到目标"
+        return TargetRateResult(
+            reachable=False, metric=metric, target_dps=target,
+            dps_per_effective_action=per_rate,
+            required_effective_action_rate=None, required_raw_action_rate=None,
+            cooldown_cap=cooldown_cap, action_rate_cap=action_rate_cap,
+            cap_sources=tuple(cap_sources), maximum_achievable_dps=maximum,
+            achieved_dps=None, reason=reason,
+        )
+
+    for _ in range(120):
+        middle = (lower + upper) / 2
+        _middle_result, middle_value = calculate(middle)
+        if middle_value >= target:
+            upper = middle
+        else:
+            lower = middle
+    required_raw = upper
+    verification, achieved = calculate(required_raw)
     return TargetRateResult(
-        True, target, per_rate, required_effective, required_raw, cap,
-        verification.dps, "已用同一伤害链回代验证",
+        reachable=True, metric=metric, target_dps=target,
+        dps_per_effective_action=achieved / verification.action_rate,
+        required_effective_action_rate=verification.action_rate,
+        required_raw_action_rate=required_raw, cooldown_cap=cooldown_cap,
+        action_rate_cap=action_rate_cap, cap_sources=tuple(cap_sources),
+        maximum_achievable_dps=maximum, achieved_dps=achieved,
+        reason="已用同一伤害链数值反解并回代验证",
     )

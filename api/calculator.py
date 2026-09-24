@@ -53,13 +53,42 @@ class HitDpsRequest(BaseModel):
     triple_damage_chance_pct: float = Field(default=0, ge=0, le=100, allow_inf_nan=False)
     double_damage_chance_on_crit_pct: float = Field(default=0, ge=0, le=100, allow_inf_nan=False)
     triple_damage_chance_on_crit_pct: float = Field(default=0, ge=0, le=100, allow_inf_nan=False)
+    ruthless_blow_every_hits: int = Field(default=0, ge=0, le=1000)
+    ruthless_blow_hit_multiplier: float = Field(default=1, ge=0, allow_inf_nan=False)
+    fist_of_war_more_damage_pct: float = Field(default=0, ge=0, allow_inf_nan=False)
+    fist_of_war_cooldown_seconds: float = Field(default=0, ge=0, allow_inf_nan=False)
+    exerted_attack_more_damage_pct: float = Field(default=0, ge=0, allow_inf_nan=False)
+    exerted_attack_uptime_pct: float = Field(default=0, ge=0, le=100, allow_inf_nan=False)
     action_rate: float = Field(gt=0, allow_inf_nan=False)
     cooldown_seconds: float = Field(default=0, ge=0, allow_inf_nan=False)
+    server_tick_seconds: float | None = Field(default=None, gt=0, allow_inf_nan=False)
+    cooldown_uses: int = Field(default=1, ge=1, le=1000)
+    action_repeats: int = Field(default=1, ge=1, le=1000)
+    channelled: bool = False
     triggered: bool = False
     skill_dps_multiplier: float = Field(default=1, gt=0, allow_inf_nan=False)
     quantity_multiplier: float = Field(default=1, gt=0, allow_inf_nan=False)
     burst_hit_count: float = Field(default=1, ge=1, allow_inf_nan=False)
     repeat_damage_multiplier: float = Field(default=1, ge=0, allow_inf_nan=False)
+    impale_chance_pct: float = Field(default=0, ge=0, le=100, allow_inf_nan=False)
+    impale_chance_on_crit_pct: float | None = Field(default=None, ge=0, le=100, allow_inf_nan=False)
+    impale_stacks: float = Field(default=0, ge=0, allow_inf_nan=False)
+    impale_base_stored_damage_pct: float = Field(default=10, ge=0, allow_inf_nan=False)
+    impale_effect_increased_pct: float = Field(default=0, ge=-100, allow_inf_nan=False)
+    impale_effect_more_multiplier: float = Field(default=1, ge=0, allow_inf_nan=False)
+    impale_duration_seconds: float = Field(default=4, ge=0, allow_inf_nan=False)
+    enemy_impale_physical_reduction_pct: float | None = Field(
+        default=None, ge=0, le=90, allow_inf_nan=False
+    )
+    ignore_enemy_impale_physical_reduction: bool = False
+    enemy_reflected_damage_taken_increased_pct: float = Field(
+        default=0, ge=-100, allow_inf_nan=False
+    )
+    enemy_reflected_damage_taken_more_multiplier: float = Field(
+        default=1, ge=0, allow_inf_nan=False
+    )
+    cull_percent: float = Field(default=0, ge=0, lt=100, allow_inf_nan=False)
+    critical_cull_percent: float = Field(default=0, ge=0, lt=100, allow_inf_nan=False)
 
 
 class HitDpsScenarioRequest(BaseModel):
@@ -77,6 +106,10 @@ class HitDpsTargetRateInputs(HitDpsRequest):
 
 class HitDpsTargetRateRequest(BaseModel):
     target_dps: float = Field(gt=0, allow_inf_nan=False)
+    metric: str = Field(
+        default="hit_dps",
+        pattern="^(hit_dps|combined_dps|effective_dps_with_cull)$",
+    )
     inputs: HitDpsTargetRateInputs
 
 
@@ -110,6 +143,7 @@ def calculate_hit_dps_target_rate(
 ) -> dict[str, Any]:
     result = hit_dps_target_rate(
         target_dps=req.target_dps,
+        metric=req.metric,
         inputs=req.inputs.model_dump(exclude={"action_rate"}),
     )
     if not result.ok:

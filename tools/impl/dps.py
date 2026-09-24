@@ -14,8 +14,8 @@ from tools.registry import REGISTRY, ToolResult
 BOUNDARY = (
     "只计算单技能确定性主链与一次爆发：基础/附加伤害、增伤/更多、PoB 顺序的伤害转化与额外获得、"
     "敌方抗性/穿透/忽略/反转或物理减伤/压倒、幸运伤害、双倍/三倍伤害、暴击、命中、"
-    "触发/非触发冷却、频率、重复爆发及技能/数量倍率。不含护甲动态减伤、无情一击、战吼、"
-    "服务器 tick 上限、终结、穿刺、异常与持续伤害；"
+    "触发/非触发冷却与服务器 tick、无情一击、战争之拳/战吼覆盖、稳态穿刺、终结等效输出、"
+    "频率、重复爆发及技能/数量倍率。不含护甲对穿刺的动态减伤、非稳态穿刺层数、异常与持续伤害；"
     "缺少这些机制时不能称为完整 Build DPS"
 )
 
@@ -59,22 +59,36 @@ def _render(result: dps_calc.HitDpsResult) -> str:
         f"（{'特别幸运' if result.extreme_luck else '普通幸运/不幸'}口径）",
         f"- 双倍/三倍伤害期望倍率：{result.scaled_damage_effect:.4f}"
         f"（有效几率 {result.double_damage_chance_pct:g}% / {result.triple_damage_chance_pct:g}%）",
+        f"- 战斗机制期望倍率：{result.combat_damage_effect:.4f}"
+        f"（无情 {result.ruthless_blow_effect:.4f}、战争之拳 {result.fist_of_war_effect:.4f}、"
+        f"战吼覆盖 {result.exerted_attack_effect:.4f}）",
         f"- 平均每次击中：{fmt(result.average_hit)}",
         f"- 计入 {result.hit_chance_pct:g}% 命中率：每次使用期望 {fmt(result.average_damage_per_use)}",
         f"- 原始每秒 {result.raw_action_rate:g} 次 → 有效 {result.action_rate:g} 次"
-        f"（冷却 {result.cooldown_seconds:g} 秒，{'触发' if result.triggered else '非触发'}口径）",
+        f"（输入冷却 {result.cooldown_seconds:g} 秒，有效冷却 {result.effective_cooldown_seconds:g} 秒，"
+        f"{'触发' if result.triggered else '非触发'}口径）",
+        f"- 服务器 tick：{'已夹值' if result.action_rate_tick_capped else '未夹值'}"
+        f"（重复 {result.action_repeats} 次，{'引导' if result.channelled else '非引导'}技能）",
         f"- 技能倍率 {result.skill_dps_multiplier:g} × 数量倍率 {result.quantity_multiplier:g}",
         f"- 一轮爆发：{result.burst_hit_count:g} 击、重复伤害倍率 {result.repeat_damage_multiplier:g}"
         f" → {fmt(result.average_burst_damage)}",
+        f"- 稳态穿刺 DPS：{fmt(result.impale_dps)}；命中与穿刺合计：{fmt(result.combined_dps)}",
+        f"- 有效终结：{result.cull_percent:.2f}%（×{result.cull_multiplier:.4f}）"
+        f" → 含终结等效 DPS {fmt(result.effective_dps_with_cull)}",
         "", f"**命中 DPS：{fmt(result.dps)}**", "", BOUNDARY + "。", "", "公式来源：",
         f"- 基础与附加伤害：{_url(dps_calc.BASE_DAMAGE_LINES)}",
         f"- 伤害类型加成与转化递归：{_url(dps_calc.DAMAGE_LINES)}",
         f"- 转化 100% 缩放及技能转化优先：{_url(dps_calc.CONVERSION_LINES)}",
         f"- 触发/非触发冷却频率：{_url(dps_calc.RATE_LINES)}",
+        f"- 冷却服务器 tick 对齐：{_url(dps_calc.COOLDOWN_TICK_LINES)}",
+        f"- 无情一击与战争之拳期望：{_url(dps_calc.COMBAT_EFFECT_LINES)}",
         f"- 双倍/三倍伤害重叠：{_url(dps_calc.SCALED_DAMAGE_LINES)}",
+        f"- 终结等效倍率：{_url(dps_calc.CULL_LINES)}",
         f"- 幸运/不幸伤害期望：{_url(dps_calc.ROLL_LINES)}",
         f"- 抗性、穿透与承伤倍率：{_url(dps_calc.ENEMY_EFFECT_LINES)}",
         f"- 平均击中、命中率、爆发与最终 DPS：{_url(dps_calc.BURST_LINES)}",
+        f"- 穿刺稳态倍率：{_url(dps_calc.IMPALE_LINES)}",
+        f"- 穿刺 DPS：{_url(dps_calc.IMPALE_DPS_LINES)}",
     ])
     return "\n".join(lines)
 
@@ -83,7 +97,8 @@ def _render(result: dps_calc.HitDpsResult) -> str:
     name="hit_dps_calc",
     description=(
         "用明确输入复算单技能命中 DPS：基础/附加伤害、伤害有效度、增伤/更多、转化/额外获得、"
-        "敌方抗性/穿透、暴击、命中、频率和数量倍率。不要从装备描述猜遗漏参数，"
+        "抗性/物理减伤、暴击、倍伤、战斗周期、冷却 tick、稳态穿刺、终结、频率和数量倍率。"
+        "不要从装备描述猜遗漏参数，"
         "也不要把结果称为完整 Build DPS。"
     ),
     parameters={
@@ -124,13 +139,36 @@ def _render(result: dps_calc.HitDpsResult) -> str:
             "triple_damage_chance_pct": {"type": "number", "minimum": 0, "maximum": 100},
             "double_damage_chance_on_crit_pct": {"type": "number", "minimum": 0, "maximum": 100},
             "triple_damage_chance_on_crit_pct": {"type": "number", "minimum": 0, "maximum": 100},
+            "ruthless_blow_every_hits": {"type": "integer", "minimum": 0, "default": 0},
+            "ruthless_blow_hit_multiplier": {"type": "number", "minimum": 0, "default": 1},
+            "fist_of_war_more_damage_pct": {"type": "number", "minimum": 0, "default": 0},
+            "fist_of_war_cooldown_seconds": {"type": "number", "minimum": 0, "default": 0},
+            "exerted_attack_more_damage_pct": {"type": "number", "minimum": 0, "default": 0},
+            "exerted_attack_uptime_pct": {"type": "number", "minimum": 0, "maximum": 100},
             "action_rate": {"type": "number"},
             "cooldown_seconds": {"type": "number", "default": 0},
+            "server_tick_seconds": {"type": "number", "exclusiveMinimum": 0},
+            "cooldown_uses": {"type": "integer", "minimum": 1, "default": 1},
+            "action_repeats": {"type": "integer", "minimum": 1, "default": 1},
+            "channelled": {"type": "boolean", "default": False},
             "triggered": {"type": "boolean", "default": False},
             "skill_dps_multiplier": {"type": "number", "default": 1},
             "quantity_multiplier": {"type": "number", "default": 1},
             "burst_hit_count": {"type": "number", "default": 1},
             "repeat_damage_multiplier": {"type": "number", "default": 1},
+            "impale_chance_pct": {"type": "number", "minimum": 0, "maximum": 100},
+            "impale_chance_on_crit_pct": {"type": "number", "minimum": 0, "maximum": 100},
+            "impale_stacks": {"type": "number", "minimum": 0},
+            "impale_base_stored_damage_pct": {"type": "number", "minimum": 0, "default": 10},
+            "impale_effect_increased_pct": {"type": "number", "minimum": -100},
+            "impale_effect_more_multiplier": {"type": "number", "minimum": 0, "default": 1},
+            "impale_duration_seconds": {"type": "number", "minimum": 0, "default": 4},
+            "enemy_impale_physical_reduction_pct": {"type": "number", "minimum": 0, "maximum": 90},
+            "ignore_enemy_impale_physical_reduction": {"type": "boolean", "default": False},
+            "enemy_reflected_damage_taken_increased_pct": {"type": "number", "minimum": -100},
+            "enemy_reflected_damage_taken_more_multiplier": {"type": "number", "minimum": 0},
+            "cull_percent": {"type": "number", "minimum": 0, "exclusiveMaximum": 100},
+            "critical_cull_percent": {"type": "number", "minimum": 0, "exclusiveMaximum": 100},
         },
         "required": ["base_damage", "action_rate"],
     },
@@ -157,10 +195,24 @@ def hit_dps_calc(
     damage_roll_chance_pct: float = 0.0, crit_damage_roll_chance_pct: float | None = None,
     extreme_luck: bool = False, double_damage_chance_pct: float = 0.0,
     triple_damage_chance_pct: float = 0.0, double_damage_chance_on_crit_pct: float = 0.0,
-    triple_damage_chance_on_crit_pct: float = 0.0, cooldown_seconds: float = 0.0,
+    triple_damage_chance_on_crit_pct: float = 0.0,
+    ruthless_blow_every_hits: int = 0, ruthless_blow_hit_multiplier: float = 1.0,
+    fist_of_war_more_damage_pct: float = 0.0, fist_of_war_cooldown_seconds: float = 0.0,
+    exerted_attack_more_damage_pct: float = 0.0, exerted_attack_uptime_pct: float = 0.0,
+    cooldown_seconds: float = 0.0, server_tick_seconds: float | None = None,
+    cooldown_uses: int = 1, action_repeats: int = 1, channelled: bool = False,
     triggered: bool = False, skill_dps_multiplier: float = 1.0,
     quantity_multiplier: float = 1.0, burst_hit_count: float = 1.0,
     repeat_damage_multiplier: float = 1.0,
+    impale_chance_pct: float = 0.0, impale_chance_on_crit_pct: float | None = None,
+    impale_stacks: float = 0.0, impale_base_stored_damage_pct: float = 10.0,
+    impale_effect_increased_pct: float = 0.0, impale_effect_more_multiplier: float = 1.0,
+    impale_duration_seconds: float = 4.0,
+    enemy_impale_physical_reduction_pct: float | None = None,
+    ignore_enemy_impale_physical_reduction: bool = False,
+    enemy_reflected_damage_taken_increased_pct: float = 0.0,
+    enemy_reflected_damage_taken_more_multiplier: float = 1.0,
+    cull_percent: float = 0.0, critical_cull_percent: float = 0.0,
 ) -> ToolResult:
     try:
         if base_damage is None or action_rate is None:
@@ -201,9 +253,29 @@ def hit_dps_calc(
             triple_damage_chance_pct=triple_damage_chance_pct,
             double_damage_chance_on_crit_pct=double_damage_chance_on_crit_pct,
             triple_damage_chance_on_crit_pct=triple_damage_chance_on_crit_pct,
-            action_rate=action_rate, cooldown_seconds=cooldown_seconds, triggered=triggered,
+            ruthless_blow_every_hits=ruthless_blow_every_hits,
+            ruthless_blow_hit_multiplier=ruthless_blow_hit_multiplier,
+            fist_of_war_more_damage_pct=fist_of_war_more_damage_pct,
+            fist_of_war_cooldown_seconds=fist_of_war_cooldown_seconds,
+            exerted_attack_more_damage_pct=exerted_attack_more_damage_pct,
+            exerted_attack_uptime_pct=exerted_attack_uptime_pct,
+            action_rate=action_rate, cooldown_seconds=cooldown_seconds,
+            server_tick_seconds=server_tick_seconds, cooldown_uses=cooldown_uses,
+            action_repeats=action_repeats, channelled=channelled, triggered=triggered,
             skill_dps_multiplier=skill_dps_multiplier, quantity_multiplier=quantity_multiplier,
             burst_hit_count=burst_hit_count, repeat_damage_multiplier=repeat_damage_multiplier,
+            impale_chance_pct=impale_chance_pct,
+            impale_chance_on_crit_pct=impale_chance_on_crit_pct,
+            impale_stacks=impale_stacks,
+            impale_base_stored_damage_pct=impale_base_stored_damage_pct,
+            impale_effect_increased_pct=impale_effect_increased_pct,
+            impale_effect_more_multiplier=impale_effect_more_multiplier,
+            impale_duration_seconds=impale_duration_seconds,
+            enemy_impale_physical_reduction_pct=enemy_impale_physical_reduction_pct,
+            ignore_enemy_impale_physical_reduction=ignore_enemy_impale_physical_reduction,
+            enemy_reflected_damage_taken_increased_pct=enemy_reflected_damage_taken_increased_pct,
+            enemy_reflected_damage_taken_more_multiplier=enemy_reflected_damage_taken_more_multiplier,
+            cull_percent=cull_percent, critical_cull_percent=critical_cull_percent,
         )
     except (ValueError, TypeError, constants.MissingConstant) as exc:
         return ToolResult(ok=False, error=str(exc))
@@ -217,8 +289,8 @@ def hit_dps_calc(
 @REGISTRY.register(
     name="hit_dps_compare",
     description=(
-        "用同一条确定性命中 DPS 公式比较 2 到 10 个显式参数方案，返回相对首个基线的 DPS、"
-        "平均击中与爆发伤害差值；不从装备或 Build 猜参数。"
+        "用同一条确定性公式比较 2 到 10 个显式参数方案，返回命中、含穿刺、含终结等效 DPS、"
+        "相对首个基线的差值、平均击中与爆发伤害；不从装备或 Build 猜参数。"
     ),
     parameters={
         "type": "object",
@@ -241,7 +313,7 @@ def hit_dps_compare(scenarios: list[dict[str, Any]]) -> ToolResult:
     except (KeyError, ValueError, TypeError, constants.MissingConstant) as exc:
         return ToolResult(ok=False, error=str(exc))
     data = comparison.as_dict()
-    rows = ["### 命中 DPS 方案比较", "", "| 方案 | DPS | 相对基线 | 平均击中 | 一轮爆发 |", "| --- | ---: | ---: | ---: | ---: |"]
+    rows = ["### 命中 DPS 方案比较", "", "| 方案 | 命中 DPS | 含穿刺 | 含终结等效 | 命中相对基线 | 平均击中 | 一轮爆发 |", "| --- | ---: | ---: | ---: | ---: | ---: | ---: |"]
     for row in comparison.scenarios:
         if row.name == comparison.baseline:
             pct = "基线"
@@ -250,9 +322,13 @@ def hit_dps_compare(scenarios: list[dict[str, Any]]) -> ToolResult:
         else:
             pct = f"{row.dps_delta_pct:+.2f}%"
         rows.append(
-            f"| {row.name} | {fmt(row.dps)} | {pct} | {fmt(row.average_hit)} | {fmt(row.burst_damage)} |"
+            f"| {row.name} | {fmt(row.dps)} | {fmt(row.combined_dps)} | "
+            f"{fmt(row.effective_dps_with_cull)} | {pct} | {fmt(row.average_hit)} | "
+            f"{fmt(row.burst_damage)} |"
         )
     rows.extend(["", f"- 最高持续 DPS：{comparison.best_dps_scenario}",
+                 f"- 最高命中+穿刺 DPS：{comparison.best_combined_dps_scenario}",
+                 f"- 最高含终结等效 DPS：{comparison.best_effective_dps_scenario}",
                  f"- 最高一轮爆发：{comparison.best_burst_scenario}", "", BOUNDARY + "。"])
     answer = "\n".join(rows)
     data.update({"kind": "comparison", "answer": answer, "boundary": BOUNDARY})
@@ -266,33 +342,55 @@ def hit_dps_compare(scenarios: list[dict[str, Any]]) -> ToolResult:
 @REGISTRY.register(
     name="hit_dps_target_rate",
     description=(
-        "在其它命中 DPS 参数固定时，反解达到目标 DPS 所需的原始每秒次数，并判断触发或"
-        "非触发冷却上限是否令目标不可达。"
+        "在其它参数固定时，数值反解达到目标命中、含穿刺或含终结等效 DPS 所需的原始"
+        "每秒次数，并判断服务器 tick 及触发/非触发冷却上限是否令目标不可达。"
     ),
     parameters={
         "type": "object",
         "properties": {
             "target_dps": {"type": "number"},
+            "metric": {"type": "string", "enum": [
+                "hit_dps", "combined_dps", "effective_dps_with_cull"
+            ], "default": "hit_dps"},
             "inputs": {"type": "object", "description": "除 action_rate 外的 hit_dps_calc 参数"},
         },
         "required": ["target_dps", "inputs"],
     },
 )
-def hit_dps_target_rate(target_dps: float, inputs: dict[str, Any]) -> ToolResult:
+def hit_dps_target_rate(
+    target_dps: float,
+    inputs: dict[str, Any],
+    metric: str = "hit_dps",
+) -> ToolResult:
     try:
-        result = target_action_rate(target_dps, _with_default_crit(inputs))
+        result = target_action_rate(
+            target_dps, _with_default_crit(inputs), metric=metric
+        )
     except (ValueError, TypeError, constants.MissingConstant) as exc:
         return ToolResult(ok=False, error=str(exc))
     data = result.as_dict()
+    metric_label = {
+        "hit_dps": "命中 DPS",
+        "combined_dps": "命中+穿刺 DPS",
+        "effective_dps_with_cull": "含终结等效 DPS",
+    }[result.metric]
     if result.reachable:
         answer = (
-            f"达到 {fmt(result.target_dps)} 命中 DPS 需要原始每秒 {fmt(result.required_raw_action_rate or 0)} 次，"
+            f"达到 {fmt(result.target_dps)} {metric_label}需要原始每秒 "
+            f"{fmt(result.required_raw_action_rate or 0)} 次，"
             f"对应有效每秒 {fmt(result.required_effective_action_rate or 0)} 次；"
             f"同链路回代为 {fmt(result.achieved_dps or 0)}。"
         )
     else:
-        cap = f"，冷却上限为每秒 {fmt(result.cooldown_cap)} 次" if result.cooldown_cap else ""
-        answer = f"目标 {fmt(result.target_dps)} 命中 DPS 不可达{cap}：{result.reason}。"
+        cap = (
+            f"，有效频率上限为每秒 {fmt(result.action_rate_cap)} 次"
+            if result.action_rate_cap else ""
+        )
+        maximum = (
+            f"，该口径最高约 {fmt(result.maximum_achievable_dps)}"
+            if result.maximum_achievable_dps is not None else ""
+        )
+        answer = f"目标 {fmt(result.target_dps)} {metric_label}不可达{cap}{maximum}：{result.reason}。"
     data.update({"kind": "target_rate", "answer": answer, "boundary": BOUNDARY})
     return ToolResult(
         ok=True, data=data,

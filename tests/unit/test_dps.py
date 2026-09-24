@@ -20,7 +20,7 @@ from api.calculator import (  # noqa: E402
     calculate_hit_dps_target_rate,
     compare_hit_dps_scenarios,
 )
-from calc.dps import Conversion, effective_action_rate, hit_dps  # noqa: E402
+from calc.dps import Conversion, effective_action_rate, effective_cooldown, hit_dps  # noqa: E402
 from calc.dps_analysis import compare_hit_dps, target_action_rate  # noqa: E402
 from tools.impl.dps import hit_dps_calc, hit_dps_compare, hit_dps_target_rate  # noqa: E402
 from tests.unit.test_resistance import POB_ROOT_ENV  # noqa: E402
@@ -246,6 +246,102 @@ class HitDpsCoreTest(unittest.TestCase):
         self.assertEqual(250, result.average_burst_damage)
         self.assertEqual(100, result.dps, "重复爆发不能偷偷乘进持续 DPS")
 
+    def test_server_tick_rounds_single_use_cooldown_but_not_stored_uses(self) -> None:
+        rounded, changed = effective_cooldown(0.2, server_tick_seconds=0.033)
+        self.assertAlmostEqual(0.231, rounded)
+        self.assertTrue(changed)
+        unchanged, changed = effective_cooldown(
+            0.2, server_tick_seconds=0.033, cooldown_uses=2
+        )
+        self.assertEqual(0.2, unchanged)
+        self.assertFalse(changed)
+        result = hit_dps(
+            base_damage={"fire": [100, 100]}, action_rate=10,
+            cooldown_seconds=0.2, triggered=True, server_tick_seconds=0.033,
+        )
+        self.assertAlmostEqual(1 / 0.231, result.action_rate)
+        self.assertTrue(result.cooldown_tick_rounded)
+        capped = hit_dps(
+            base_damage={"fire": [100, 100]}, action_rate=100,
+            server_tick_seconds=0.033, action_repeats=2,
+        )
+        self.assertAlmostEqual(2 / 0.033, capped.action_rate)
+        self.assertTrue(capped.action_rate_tick_capped)
+        channelled = hit_dps(
+            base_damage={"fire": [100, 100]}, action_rate=100,
+            server_tick_seconds=0.033, channelled=True,
+        )
+        self.assertEqual(100, channelled.action_rate)
+
+    def test_ruthless_fist_of_war_and_exert_uptime_compose(self) -> None:
+        result = hit_dps(
+            base_damage={"physical": [100, 100]}, action_rate=2,
+            ruthless_blow_every_hits=3, ruthless_blow_hit_multiplier=2,
+            fist_of_war_more_damage_pct=100, fist_of_war_cooldown_seconds=1,
+            exerted_attack_more_damage_pct=50, exerted_attack_uptime_pct=40,
+        )
+        self.assertEqual(33, result.ruthless_blow_chance_pct)
+        self.assertAlmostEqual(1.33, result.ruthless_blow_effect)
+        self.assertEqual(50, result.fist_of_war_uptime_pct)
+        self.assertAlmostEqual(1.5, result.fist_of_war_effect)
+        self.assertAlmostEqual(1.2, result.exerted_attack_effect)
+        self.assertAlmostEqual(478.8, result.dps)
+
+    def test_impale_uses_pre_mitigation_physical_hit_and_separate_reduction(self) -> None:
+        result = hit_dps(
+            base_damage={"physical": [100, 100]}, action_rate=2,
+            enemy_physical_reduction_pct=20,
+            impale_chance_pct=100, impale_stacks=5,
+            impale_effect_increased_pct=50,
+            enemy_impale_physical_reduction_pct=40,
+        )
+        self.assertEqual(100, result.physical_hit_before_mitigation_average)
+        self.assertEqual(15, result.impale_stored_damage_pct)
+        self.assertAlmostEqual(0.45, result.impale_multiplier)
+        self.assertEqual(160, result.dps)
+        self.assertAlmostEqual(90, result.impale_dps)
+        self.assertAlmostEqual(250, result.combined_dps)
+
+    def test_impale_respects_crit_chance_duration_and_reflected_taken(self) -> None:
+        result = hit_dps(
+            base_damage={"physical": [100, 100]}, action_rate=1,
+            crit_chance_pct=50, crit_multiplier_pct=200,
+            impale_chance_pct=0, impale_chance_on_crit_pct=100,
+            impale_stacks=5, enemy_reflected_damage_taken_increased_pct=20,
+            enemy_reflected_damage_taken_more_multiplier=1.5,
+        )
+        self.assertEqual(50, result.impale_chance_pct)
+        self.assertAlmostEqual(67.5, result.impale_dps)
+        expired = hit_dps(
+            base_damage={"physical": [100, 100]}, action_rate=1,
+            impale_chance_pct=100, impale_stacks=5, impale_duration_seconds=0,
+        )
+        self.assertEqual(0, expired.impale_dps)
+
+    def test_regular_and_critical_cull_are_reported_as_effective_dps(self) -> None:
+        regular = hit_dps(
+            base_damage={"fire": [100, 100]}, action_rate=1, cull_percent=20,
+        )
+        self.assertEqual(100, regular.dps)
+        self.assertEqual(25, regular.culling_dps)
+        self.assertEqual(125, regular.effective_dps_with_cull)
+        critical = hit_dps(
+            base_damage={"fire": [100, 100]}, action_rate=2,
+            crit_chance_pct=50, crit_multiplier_pct=100, critical_cull_percent=20,
+        )
+        self.assertAlmostEqual(15, critical.cull_percent)
+        self.assertAlmostEqual(200 / 0.85, critical.effective_dps_with_cull)
+
+    def test_combat_mechanic_inputs_fail_closed(self) -> None:
+        with self.assertRaisesRegex(ValueError, "fist_of_war_cooldown_seconds"):
+            hit_dps(base_damage={"fire": [1, 1]}, action_rate=1,
+                    fist_of_war_more_damage_pct=100)
+        with self.assertRaisesRegex(ValueError, "整数"):
+            hit_dps(base_damage={"fire": [1, 1]}, action_rate=1,
+                    ruthless_blow_every_hits=2.5)  # type: ignore[arg-type]
+        with self.assertRaisesRegex(ValueError, "小于 100"):
+            hit_dps(base_damage={"fire": [1, 1]}, action_rate=1, cull_percent=100)
+
     def test_advanced_probability_and_type_validation(self) -> None:
         with self.assertRaisesRegex(ValueError, "-100%..100%"):
             hit_dps(base_damage={"fire": [1, 2]}, action_rate=1,
@@ -304,6 +400,47 @@ class HitDpsAnalysisTest(unittest.TestCase):
         })
         self.assertFalse(blocked.reachable)
 
+    def test_compare_and_target_support_impale_and_cull_metrics(self) -> None:
+        compared = compare_hit_dps([
+            ("纯命中", {"base_damage": {"physical": [100, 100]}, "action_rate": 1}),
+            ("穿刺", {
+                "base_damage": {"physical": [100, 100]}, "action_rate": 1,
+                "impale_chance_pct": 100, "impale_stacks": 5,
+            }),
+            ("终结", {
+                "base_damage": {"physical": [100, 100]}, "action_rate": 1,
+                "cull_percent": 20,
+            }),
+        ])
+        self.assertEqual("穿刺", compared.best_combined_dps_scenario)
+        self.assertEqual("穿刺", compared.best_effective_dps_scenario)
+        target = target_action_rate(150, {
+            "base_damage": {"physical": [100, 100]},
+            "impale_chance_pct": 100, "impale_stacks": 5,
+        }, metric="combined_dps")
+        self.assertTrue(target.reachable)
+        self.assertAlmostEqual(1, target.required_raw_action_rate or 0)
+        self.assertEqual("combined_dps", target.metric)
+
+    def test_target_rate_numerically_solves_rate_dependent_critical_cull(self) -> None:
+        result = target_action_rate(220, {
+            "base_damage": {"fire": [100, 100]},
+            "crit_chance_pct": 50, "crit_multiplier_pct": 100,
+            "critical_cull_percent": 20,
+        }, metric="effective_dps_with_cull")
+        self.assertTrue(result.reachable)
+        self.assertAlmostEqual(220, result.achieved_dps or 0, places=6)
+
+    def test_target_rate_reports_server_tick_cap(self) -> None:
+        result = target_action_rate(4_000, {
+            "base_damage": {"fire": [100, 100]},
+            "server_tick_seconds": 0.033,
+        })
+        self.assertFalse(result.reachable)
+        self.assertEqual(("server_tick",), result.cap_sources)
+        self.assertAlmostEqual(1 / 0.033, result.action_rate_cap or 0)
+        self.assertAlmostEqual(100 / 0.033, result.maximum_achievable_dps or 0)
+
 
 class HitDpsSurfaceTest(unittest.TestCase):
     def setUp(self) -> None:
@@ -335,7 +472,7 @@ class HitDpsSurfaceTest(unittest.TestCase):
         self.assertEqual(300, result.data["dps"])
         self.assertIn("命中 DPS：300", result.data["answer"])
         self.assertIn("CalcOffence.lua#L3615-L3628", result.citations[0]["url"])
-        self.assertIn("不含护甲动态减伤", result.data["boundary"])
+        self.assertIn("不含护甲对穿刺的动态减伤", result.data["boundary"])
 
     def test_advanced_tool_fields_and_output(self) -> None:
         result = hit_dps_calc(
@@ -377,13 +514,25 @@ class HitDpsSurfaceTest(unittest.TestCase):
         ])
         self.assertTrue(comparison.ok)
         self.assertIsNone(comparison.data["scenarios"][1]["dps_delta_pct"])
-        self.assertIn("| 可命中 | 100 | 不可定义 |", comparison.data["answer"])
+        self.assertIn("| 可命中 | 100 | 100 | 100 | 不可定义 |", comparison.data["answer"])
 
     def test_http_endpoint_reuses_same_calculator(self) -> None:
         request = HitDpsRequest(base_damage={"fire": (50, 150)}, action_rate=3)
         response = calculate_hit_dps(request, _caller="test")
         self.assertEqual(300, response["dps"])
         self.assertEqual("result", response["kind"])
+
+    def test_http_endpoint_exposes_combat_impale_and_cull_fields(self) -> None:
+        request = HitDpsRequest(
+            base_damage={"physical": (100, 100)}, action_rate=100,
+            server_tick_seconds=0.033, ruthless_blow_every_hits=3,
+            ruthless_blow_hit_multiplier=2, impale_chance_pct=100,
+            impale_stacks=5, cull_percent=20,
+        )
+        response = calculate_hit_dps(request, _caller="test")
+        self.assertTrue(response["action_rate_tick_capped"])
+        self.assertGreater(response["impale_dps"], 0)
+        self.assertGreater(response["effective_dps_with_cull"], response["combined_dps"])
 
     def test_compare_and_target_http_endpoints(self) -> None:
         comparison = compare_hit_dps_scenarios(HitDpsCompareRequest(scenarios=[
@@ -402,6 +551,16 @@ class HitDpsSurfaceTest(unittest.TestCase):
             ),
         ), _caller="test")
         self.assertTrue(target["reachable"])
+        combined = calculate_hit_dps_target_rate(HitDpsTargetRateRequest(
+            target_dps=150,
+            metric="combined_dps",
+            inputs=HitDpsTargetRateInputs(
+                base_damage={"physical": (100, 100)}, impale_chance_pct=100,
+                impale_stacks=5,
+            ),
+        ), _caller="test")
+        self.assertEqual("combined_dps", combined["metric"])
+        self.assertAlmostEqual(1, combined["required_raw_action_rate"])
 
     def test_registered_for_agent_and_http(self) -> None:
         from agents.knowledge import ALLOWED_TOOLS
@@ -445,6 +604,25 @@ class HitDpsSurfaceTest(unittest.TestCase):
         self.assertEqual(20, args["enemy_damage_taken_increased_pct"])
         self.assertEqual(0.2, args["cooldown_seconds"])
         self.assertTrue(args["triggered"])
+
+    def test_natural_language_extracts_combat_mechanics(self) -> None:
+        from orchestrator.loop import _hit_dps_args
+
+        args = _hit_dps_args(
+            "100-100 物理伤害，每秒攻击 2 次，每3次攻击有一次无情一击，"
+            "无情一击造成200%伤害，战争之拳100%更多伤害，战争之拳冷却1秒，"
+            "战吼增助50%更多伤害，战吼增助覆盖率40%，穿刺几率100%，"
+            "5层穿刺，穿刺效果提高50%，终结20%，服务器 tick 0.033秒"
+        )
+        self.assertEqual(3, args["ruthless_blow_every_hits"])
+        self.assertEqual(2, args["ruthless_blow_hit_multiplier"])
+        self.assertEqual(100, args["fist_of_war_more_damage_pct"])
+        self.assertEqual(40, args["exerted_attack_uptime_pct"])
+        self.assertEqual(100, args["impale_chance_pct"])
+        self.assertEqual(5, args["impale_stacks"])
+        self.assertEqual(20, args["cull_percent"])
+        self.assertEqual(0.033, args["server_tick_seconds"])
+        self.assertNotIn("cooldown_seconds", args)
 
     def test_vague_build_dps_question_is_not_silently_guessed(self) -> None:
         from orchestrator.loop import _hit_dps_args
@@ -490,6 +668,18 @@ class FormulaPinnedToUpstream(unittest.TestCase):
         rate = "\n".join(self.source.splitlines()[2403:2418])
         self.assertIn("m_max(output.HitTime, output.Cooldown)", rate)
         self.assertIn("output.HitTime + output.Cooldown", rate)
+
+    def test_combat_mechanics_cull_and_impale_stay_pinned(self) -> None:
+        tick = "\n".join(self.source.splitlines()[273:285])
+        self.assertIn("m_ceil(cooldown * data.misc.ServerTickRate)", tick)
+        combat = "\n".join(self.source.splitlines()[2804:2861])
+        self.assertIn("output.RuthlessBlowHitEffect", combat)
+        self.assertIn("globalOutput.AvgFistOfWarDamageEffect", combat)
+        cull = "\n".join(self.source.splitlines()[3128:3137])
+        self.assertIn("globalOutput.CullMultiplier", cull)
+        impale = "\n".join(self.source.splitlines()[5387:5437])
+        self.assertIn("local impaleDMGModifier", impale)
+        self.assertIn("output.ImpaleStoredDamage", impale)
 
 
 if __name__ == "__main__":
