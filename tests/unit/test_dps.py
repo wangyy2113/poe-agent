@@ -10,9 +10,19 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from api.calculator import HitDpsRequest, calculate_hit_dps  # noqa: E402
-from calc.dps import Conversion, hit_dps  # noqa: E402
-from tools.impl.dps import hit_dps_calc  # noqa: E402
+from api.calculator import (  # noqa: E402
+    HitDpsCompareRequest,
+    HitDpsRequest,
+    HitDpsScenarioRequest,
+    HitDpsTargetRateInputs,
+    HitDpsTargetRateRequest,
+    calculate_hit_dps,
+    calculate_hit_dps_target_rate,
+    compare_hit_dps_scenarios,
+)
+from calc.dps import Conversion, effective_action_rate, hit_dps  # noqa: E402
+from calc.dps_analysis import compare_hit_dps, target_action_rate  # noqa: E402
+from tools.impl.dps import hit_dps_calc, hit_dps_compare, hit_dps_target_rate  # noqa: E402
 from tests.unit.test_resistance import POB_ROOT_ENV  # noqa: E402
 
 
@@ -130,6 +140,170 @@ class HitDpsCoreTest(unittest.TestCase):
             hit_dps(base_damage={"fire": [1, 2]}, action_rate=1,
                     more_damage_multipliers=[1e15, 1e15])
 
+    def test_lucky_unlucky_and_extreme_lucky_follow_pob_expectation(self) -> None:
+        lucky = hit_dps(base_damage={"fire": [100, 200]}, action_rate=1,
+                        damage_roll_chance_pct=100)
+        unlucky = hit_dps(base_damage={"fire": [100, 200]}, action_rate=1,
+                          damage_roll_chance_pct=-100)
+        extreme = hit_dps(base_damage={"fire": [100, 200]}, action_rate=1,
+                          damage_roll_chance_pct=100, extreme_luck=True)
+        self.assertAlmostEqual(500 / 3, lucky.non_crit_average)
+        self.assertAlmostEqual(400 / 3, unlucky.non_crit_average)
+        self.assertAlmostEqual(175, extreme.non_crit_average)
+
+    def test_crit_can_use_a_separate_damage_roll_mode(self) -> None:
+        result = hit_dps(
+            base_damage={"fire": [100, 200]}, action_rate=1,
+            crit_chance_pct=50, crit_multiplier_pct=200,
+            damage_roll_chance_pct=-100, crit_damage_roll_chance_pct=100,
+        )
+        self.assertAlmostEqual(400 / 3, result.non_crit_average)
+        self.assertAlmostEqual(1000 / 3, result.crit_average)
+        self.assertAlmostEqual(700 / 3, result.average_hit)
+        self.assertEqual(-100, result.damage_roll_chance_pct)
+        self.assertEqual(100, result.crit_damage_roll_chance_pct)
+        self.assertFalse(result.extreme_luck)
+
+    def test_triple_damage_overrides_overlapping_double_damage(self) -> None:
+        result = hit_dps(
+            base_damage={"fire": [100, 100]}, action_rate=1,
+            double_damage_chance_pct=50, triple_damage_chance_pct=20,
+        )
+        self.assertEqual(40, result.double_damage_chance_pct)
+        self.assertEqual(20, result.triple_damage_chance_pct)
+        self.assertAlmostEqual(1.8, result.scaled_damage_effect)
+        self.assertAlmostEqual(180, result.dps)
+
+    def test_on_crit_double_and_triple_chances_are_weighted_first(self) -> None:
+        result = hit_dps(
+            base_damage={"fire": [100, 100]}, action_rate=1,
+            crit_chance_pct=50, crit_multiplier_pct=100,
+            double_damage_chance_pct=100, triple_damage_chance_on_crit_pct=100,
+        )
+        self.assertEqual(50, result.triple_damage_chance_pct)
+        self.assertEqual(50, result.double_damage_chance_pct)
+        self.assertEqual(2.5, result.scaled_damage_effect)
+
+    def test_resistance_inversion_ignore_and_unmodifiable_modes(self) -> None:
+        inverted = hit_dps(
+            base_damage={"fire": [100, 100]}, action_rate=1,
+            enemy_resistance={"fire": 75}, penetration={"fire": 25},
+            resistance_inversion_chance_pct={"fire": 100},
+        )
+        self.assertEqual(200, inverted.dps)
+        ignored_half = hit_dps(
+            base_damage={"fire": [100, 100]}, action_rate=1,
+            enemy_resistance={"fire": 75}, penetration={"fire": 25},
+            resistance_inversion_chance_pct={"fire": 100},
+            resistance_ignore_chance_pct={"fire": 50},
+        )
+        self.assertEqual(150, ignored_half.dps)
+        immutable = hit_dps(
+            base_damage={"fire": [100, 100]}, action_rate=1,
+            enemy_resistance={"fire": 75}, penetration={"fire": 25},
+            resistance_inversion_chance_pct={"fire": 100},
+            resistance_ignore_chance_pct={"fire": 100},
+            unmodifiable_resistance_types=["fire"],
+        )
+        self.assertEqual(175, immutable.dps)
+        self.assertTrue(immutable.by_type[0].resistance_unmodifiable)
+
+    def test_overwhelm_and_chance_to_ignore_physical_reduction(self) -> None:
+        result = hit_dps(
+            base_damage={"physical": [100, 100]}, action_rate=1,
+            enemy_physical_reduction_pct=40,
+            overwhelm_physical_reduction_pct=30,
+            physical_reduction_ignore_chance_pct=50,
+        )
+        self.assertEqual(5, result.by_type[0].effective_resistance)
+        self.assertEqual(95, result.dps)
+
+    def test_per_type_damage_taken_modifiers_stack_with_global(self) -> None:
+        result = hit_dps(
+            base_damage={"fire": [100, 100], "cold": [100, 100]}, action_rate=1,
+            enemy_damage_taken_increased_pct=30,
+            enemy_damage_taken_increased_by_type={"fire": 20},
+            enemy_damage_taken_more_multiplier=1.2,
+            enemy_damage_taken_more_by_type={"fire": 1.5},
+        )
+        fire = next(item for item in result.by_type if item.damage_type == "fire")
+        cold = next(item for item in result.by_type if item.damage_type == "cold")
+        self.assertAlmostEqual(270, fire.non_crit_average)
+        self.assertAlmostEqual(156, cold.non_crit_average)
+
+    def test_triggered_and_non_triggered_cooldowns_use_different_rates(self) -> None:
+        self.assertEqual(5, effective_action_rate(10, 0.2, triggered=True))
+        self.assertAlmostEqual(10 / 3, effective_action_rate(10, 0.2, triggered=False))
+        triggered = hit_dps(base_damage={"fire": [100, 100]}, action_rate=10,
+                            cooldown_seconds=0.2, triggered=True)
+        self.assertEqual(500, triggered.dps)
+
+    def test_burst_damage_counts_first_hit_and_penalized_repeats(self) -> None:
+        result = hit_dps(
+            base_damage={"fire": [100, 100]}, action_rate=1,
+            burst_hit_count=4, repeat_damage_multiplier=0.5,
+        )
+        self.assertEqual(250, result.average_burst_damage)
+        self.assertEqual(100, result.dps, "重复爆发不能偷偷乘进持续 DPS")
+
+    def test_advanced_probability_and_type_validation(self) -> None:
+        with self.assertRaisesRegex(ValueError, "-100%..100%"):
+            hit_dps(base_damage={"fire": [1, 2]}, action_rate=1,
+                    damage_roll_chance_pct=-101)
+        with self.assertRaisesRegex(ValueError, "抗性忽略/反转"):
+            hit_dps(base_damage={"fire": [1, 2]}, action_rate=1,
+                    resistance_ignore_chance_pct={"physical": 10})
+        with self.assertRaisesRegex(ValueError, "burst_hit_count"):
+            hit_dps(base_damage={"fire": [1, 2]}, action_rate=1, burst_hit_count=0)
+        with self.assertRaisesRegex(ValueError, "只支持闪电"):
+            hit_dps(base_damage={"chaos": [1, 2]}, action_rate=1,
+                    unmodifiable_resistance_types=["chaos"])
+
+
+class HitDpsAnalysisTest(unittest.TestCase):
+    def test_compare_uses_first_scenario_as_baseline(self) -> None:
+        result = compare_hit_dps([
+            ("基线", {"base_damage": {"fire": [100, 100]}, "action_rate": 1}),
+            ("升级", {"base_damage": {"fire": [100, 100]}, "action_rate": 2}),
+        ])
+        self.assertEqual("基线", result.baseline)
+        self.assertEqual("升级", result.best_dps_scenario)
+        self.assertEqual(100, result.scenarios[1].dps_delta)
+        self.assertEqual(100, result.scenarios[1].dps_delta_pct)
+
+    def test_compare_rejects_duplicate_names_and_bad_count(self) -> None:
+        with self.assertRaisesRegex(ValueError, "2..10"):
+            compare_hit_dps([("唯一", {"base_damage": {"fire": [1, 1]}, "action_rate": 1})])
+        with self.assertRaisesRegex(ValueError, "不能重复"):
+            compare_hit_dps([
+                ("同名", {"base_damage": {"fire": [1, 1]}, "action_rate": 1}),
+                ("同名", {"base_damage": {"fire": [2, 2]}, "action_rate": 1}),
+            ])
+
+    def test_target_rate_without_cooldown_and_with_trigger_cap(self) -> None:
+        inputs = {"base_damage": {"fire": [100, 100]}}
+        plain = target_action_rate(400, inputs)
+        self.assertTrue(plain.reachable)
+        self.assertEqual(4, plain.required_raw_action_rate)
+        triggered = target_action_rate(400, {**inputs, "cooldown_seconds": 0.2, "triggered": True})
+        self.assertTrue(triggered.reachable)
+        self.assertEqual(4, triggered.required_raw_action_rate)
+        blocked = target_action_rate(600, {**inputs, "cooldown_seconds": 0.2, "triggered": True})
+        self.assertFalse(blocked.reachable)
+        self.assertEqual(5, blocked.cooldown_cap)
+
+    def test_target_rate_solves_non_triggered_action_plus_cooldown(self) -> None:
+        result = target_action_rate(400, {
+            "base_damage": {"fire": [100, 100]}, "cooldown_seconds": 0.2,
+        })
+        self.assertTrue(result.reachable)
+        self.assertAlmostEqual(20, result.required_raw_action_rate or 0)
+        self.assertAlmostEqual(400, result.achieved_dps or 0)
+        blocked = target_action_rate(500, {
+            "base_damage": {"fire": [100, 100]}, "cooldown_seconds": 0.2,
+        })
+        self.assertFalse(blocked.reachable)
+
 
 class HitDpsSurfaceTest(unittest.TestCase):
     def setUp(self) -> None:
@@ -161,13 +335,73 @@ class HitDpsSurfaceTest(unittest.TestCase):
         self.assertEqual(300, result.data["dps"])
         self.assertIn("命中 DPS：300", result.data["answer"])
         self.assertIn("CalcOffence.lua#L3615-L3628", result.citations[0]["url"])
-        self.assertIn("不含幸运伤害", result.data["boundary"])
+        self.assertIn("不含护甲动态减伤", result.data["boundary"])
+
+    def test_advanced_tool_fields_and_output(self) -> None:
+        result = hit_dps_calc(
+            base_damage={"火焰": [100, 200]}, action_rate=10,
+            damage_roll_chance_pct=100, double_damage_chance_pct=50,
+            cooldown_seconds=0.2, triggered=True, burst_hit_count=3,
+            repeat_damage_multiplier=0.5,
+        )
+        self.assertTrue(result.ok)
+        self.assertEqual(5, result.data["action_rate"])
+        self.assertEqual(1.5, result.data["scaled_damage_effect"])
+        self.assertGreater(result.data["average_burst_damage"], 0)
+        self.assertIn("一轮爆发", result.data["answer"])
+
+    def test_compare_and_target_tools(self) -> None:
+        comparison = hit_dps_compare(scenarios=[
+            {"name": "A", "inputs": {"base_damage": {"fire": [100, 100]}, "action_rate": 1}},
+            {"name": "B", "inputs": {"base_damage": {"fire": [100, 100]}, "action_rate": 2}},
+        ])
+        self.assertTrue(comparison.ok)
+        self.assertEqual("B", comparison.data["best_dps_scenario"])
+        target = hit_dps_target_rate(
+            target_dps=400,
+            inputs={"base_damage": {"fire": [100, 100]}, "cooldown_seconds": 0.2},
+        )
+        self.assertTrue(target.ok)
+        self.assertTrue(target.data["reachable"])
+        self.assertAlmostEqual(20, target.data["required_raw_action_rate"])
+
+    def test_compare_renders_zero_baseline_delta_as_undefined(self) -> None:
+        comparison = hit_dps_compare(scenarios=[
+            {"name": "零命中", "inputs": {
+                "base_damage": {"fire": [100, 100]}, "action_rate": 1,
+                "hit_chance_pct": 0,
+            }},
+            {"name": "可命中", "inputs": {
+                "base_damage": {"fire": [100, 100]}, "action_rate": 1,
+            }},
+        ])
+        self.assertTrue(comparison.ok)
+        self.assertIsNone(comparison.data["scenarios"][1]["dps_delta_pct"])
+        self.assertIn("| 可命中 | 100 | 不可定义 |", comparison.data["answer"])
 
     def test_http_endpoint_reuses_same_calculator(self) -> None:
         request = HitDpsRequest(base_damage={"fire": (50, 150)}, action_rate=3)
         response = calculate_hit_dps(request, _caller="test")
         self.assertEqual(300, response["dps"])
         self.assertEqual("result", response["kind"])
+
+    def test_compare_and_target_http_endpoints(self) -> None:
+        comparison = compare_hit_dps_scenarios(HitDpsCompareRequest(scenarios=[
+            HitDpsScenarioRequest(name="A", inputs=HitDpsRequest(
+                base_damage={"fire": (100, 100)}, action_rate=1,
+            )),
+            HitDpsScenarioRequest(name="B", inputs=HitDpsRequest(
+                base_damage={"fire": (100, 100)}, action_rate=2,
+            )),
+        ]), _caller="test")
+        self.assertEqual("B", comparison["best_dps_scenario"])
+        target = calculate_hit_dps_target_rate(HitDpsTargetRateRequest(
+            target_dps=400,
+            inputs=HitDpsTargetRateInputs(
+                base_damage={"fire": (100, 100)}, cooldown_seconds=0.2,
+            ),
+        ), _caller="test")
+        self.assertTrue(target["reachable"])
 
     def test_registered_for_agent_and_http(self) -> None:
         from agents.knowledge import ALLOWED_TOOLS
@@ -176,8 +410,12 @@ class HitDpsSurfaceTest(unittest.TestCase):
 
         self.assertIn("hit_dps_calc", ALLOWED_TOOLS)
         self.assertIsNotNone(REGISTRY.spec("hit_dps_calc"))
+        self.assertIsNotNone(REGISTRY.spec("hit_dps_compare"))
+        self.assertIsNotNone(REGISTRY.spec("hit_dps_target_rate"))
         paths = create_app().openapi()["paths"]
         self.assertIn("/poe_agent/calc/hit-dps", paths)
+        self.assertIn("/poe_agent/calc/hit-dps/compare", paths)
+        self.assertIn("/poe_agent/calc/hit-dps/target-rate", paths)
 
     def test_natural_language_route_and_conservative_argument_extraction(self) -> None:
         from orchestrator.loop import _hit_dps_args, _preferred_tool_route
@@ -195,10 +433,32 @@ class HitDpsSurfaceTest(unittest.TestCase):
         self.assertEqual({"fire": 50.0}, args["enemy_resistance"])
         self.assertEqual({"fire": 20.0}, args["penetration"])
 
+    def test_natural_language_extracts_advanced_expected_damage_inputs(self) -> None:
+        from orchestrator.loop import _hit_dps_args
+
+        args = _hit_dps_args(
+            "100-200 火焰伤害，伤害幸运，30% 几率造成双倍伤害，"
+            "敌人受到的伤害提高 20%，冷却 0.2 秒，触发，每秒 10 次，命中 DPS 怎么算"
+        )
+        self.assertEqual(100, args["damage_roll_chance_pct"])
+        self.assertEqual(30, args["double_damage_chance_pct"])
+        self.assertEqual(20, args["enemy_damage_taken_increased_pct"])
+        self.assertEqual(0.2, args["cooldown_seconds"])
+        self.assertTrue(args["triggered"])
+
     def test_vague_build_dps_question_is_not_silently_guessed(self) -> None:
         from orchestrator.loop import _hit_dps_args
 
         self.assertEqual({}, _hit_dps_args("我的命中 DPS 怎么算"))
+
+    def test_comparison_and_target_rate_intents_select_dedicated_tools(self) -> None:
+        from orchestrator.loop import _preferred_tool_route
+
+        self.assertEqual("hit_dps_compare", _preferred_tool_route("把这两个 DPS 方案对比一下"))
+        self.assertEqual(
+            "hit_dps_target_rate",
+            _preferred_tool_route("目标 DPS 需要每秒攻击多少次"),
+        )
 
 
 @unittest.skipUnless(POB_ROOT_ENV.is_dir(), "本机没有 PathOfBuilding 检出")
@@ -217,6 +477,19 @@ class FormulaPinnedToUpstream(unittest.TestCase):
         block = "\n".join(self.source.splitlines()[3614:3628])
         self.assertIn("output.AverageDamage = output.AverageHit * output.HitChance / 100", block)
         self.assertIn("output.TotalDPS = output.AverageDamage", block)
+
+    def test_lucky_double_triple_resistance_and_cooldown_stay_pinned(self) -> None:
+        scaled = "\n".join(self.source.splitlines()[3100:3127])
+        self.assertIn("Triple Damage overrides Double Damage", scaled)
+        self.assertIn("1 + output.DoubleDamageEffect + output.TripleDamageEffect", scaled)
+        rolls = "\n".join(self.source.splitlines()[3297:3313])
+        self.assertIn("damageTypeHitAvgLucky", rolls)
+        resistance = "\n".join(self.source.splitlines()[3338:3415])
+        self.assertIn("PartialIgnoreEnemyPhysicalDamageReduction", resistance)
+        self.assertIn("HitsInvertEleResChance", resistance)
+        rate = "\n".join(self.source.splitlines()[2403:2418])
+        self.assertIn("m_max(output.HitTime, output.Cooldown)", rate)
+        self.assertIn("output.HitTime + output.Cooldown", rate)
 
 
 if __name__ == "__main__":

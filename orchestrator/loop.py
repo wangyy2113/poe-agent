@@ -821,12 +821,19 @@ _YIELDS_TO_ENUMERATION = frozenset(
     {
         "resistance_calc", "mitigation_calc", "recovery_calc", "reservation_calc",
         "ailment_dot_calc", "ailment_threshold_calc", "max_hit_calc", "crit_calc",
-        "accuracy_calc", "attack_speed_calc", "hit_dps_calc",
+        "accuracy_calc", "attack_speed_calc", "hit_dps_calc", "hit_dps_compare",
+        "hit_dps_target_rate",
     }
 )
 
 
 _PREFERRED_TOOL_INTENTS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("hit_dps_compare", (
+        "DPS方案对比", "DPS 方案对比", "DPS对比", "DPS 对比", "比较两套DPS", "比较两套 DPS",
+    )),
+    ("hit_dps_target_rate", (
+        "目标DPS需要", "目标 DPS 需要", "达到多少DPS需要", "达到多少 DPS 需要",
+    )),
     ("hit_dps_calc", (
         "命中DPS", "命中 DPS", "DPS怎么算", "DPS 怎么算", "dps怎么算", "dps 怎么算",
         "每秒伤害怎么算", "每秒能打多少伤害",
@@ -2279,6 +2286,30 @@ def _hit_dps_args(question: str) -> dict[str, Any]:
         })
     if conversions:
         args["conversions"] = conversions
+    if "伤害特别幸运" in question or "伤害极幸运" in question:
+        args["damage_roll_chance_pct"] = 100.0
+        args["extreme_luck"] = True
+    elif "伤害幸运" in question:
+        args["damage_roll_chance_pct"] = 100.0
+    elif "伤害不幸" in question:
+        args["damage_roll_chance_pct"] = -100.0
+    advanced_patterns = (
+        ("double_damage_chance_pct", r"(\d+(?:\.\d+)?)%\s*(?:几率|概率)?造成双倍伤害"),
+        ("triple_damage_chance_pct", r"(\d+(?:\.\d+)?)%\s*(?:几率|概率)?造成三倍伤害"),
+        ("overwhelm_physical_reduction_pct", r"压倒\s*(\d+(?:\.\d+)?)%\s*物理伤害减免"),
+        ("physical_reduction_ignore_chance_pct", r"(\d+(?:\.\d+)?)%\s*(?:几率|概率)?忽略敌人物理伤害减免"),
+        ("enemy_damage_taken_increased_pct", r"敌人受到的伤害(?:提高|增加)\s*(\d+(?:\.\d+)?)%"),
+        ("cooldown_seconds", r"冷却(?:时间)?\s*(\d+(?:\.\d+)?)\s*秒"),
+        ("burst_hit_count", r"一轮(?:总共)?\s*(\d+(?:\.\d+)?)\s*次击中"),
+        ("repeat_damage_multiplier", r"重复伤害倍率\s*(\d+(?:\.\d+)?)%"),
+    )
+    for key, pattern in advanced_patterns:
+        match = re.search(pattern, question)
+        if match:
+            value = float(match.group(1))
+            args[key] = value / 100 if key == "repeat_damage_multiplier" else value
+    if "触发" in question and "cooldown_seconds" in args:
+        args["triggered"] = True
     return args
 
 
