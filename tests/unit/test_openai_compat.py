@@ -97,7 +97,9 @@ class OpenAICompletionTest(unittest.TestCase):
         ):
             response = openai_chat_completions(_request(), caller="test")
 
-        run.assert_called_once_with("猎首有什么词缀？", conversation_id="conv-oai")
+        run.assert_called_once_with(
+            "猎首有什么词缀？", conversation_id="conv-oai", owner_id="test"
+        )
         ensure.assert_called_once_with("conv-oai", "猎首有什么词缀？")
         self.assertEqual(response["object"], "chat.completion")
         self.assertEqual(response["created"], 1234)
@@ -143,10 +145,14 @@ class OpenAICompletionTest(unittest.TestCase):
         ]
         req = _request(stream=True, usage=True)
         with (
-            patch("api.chat.stream_turn", return_value=iter(events)),
+            patch("api.chat.stream_turn", return_value=iter(events)) as stream,
             patch("api.chat._save_message") as save,
         ):
-            frames = list(_openai_stream(req, "猎首有什么词缀？", "conv-oai", 1234))
+            frames = list(
+                _openai_stream(
+                    req, "猎首有什么词缀？", "conv-oai", 1234, "test"
+                )
+            )
 
         self.assertEqual(frames[-1], "data: [DONE]\n\n")
         payloads = [
@@ -169,6 +175,9 @@ class OpenAICompletionTest(unittest.TestCase):
         self.assertEqual(payloads[-1]["choices"], [])
         self.assertEqual(payloads[-1]["usage"]["total_tokens"], 11)
         self.assertEqual(payloads[-2]["poe_agent"]["upstream_model"], "glm-test")
+        stream.assert_called_once_with(
+            "猎首有什么词缀？", conversation_id="conv-oai", owner_id="test"
+        )
         save.assert_called_once_with("conv-oai", "assistant", content)
 
 

@@ -61,7 +61,8 @@ POE1 的机制耦合极深，一个错误的小前提会让整条结论反向。
 | **问答** | `POST /chat`：强制检索 → 充分性判定 → 生成 → 出口绑定校验 → 装配引用 |
 | **流式问答** | `POST /chat/stream`：SSE，**按句**校验通过才下发，未校验内容不外发 |
 | **OpenAI 兼容** | `POST /v1/chat/completions`：支持文本消息、非流式与标准 SSE `[DONE]`；内部仍强制检索与出口校验 |
-| **MCP stdio** | `mcp_server.py`：按 MCP `2025-06-18` 向 Codex、Claude Desktop 等客户端暴露 Knowledge Agent 的 51 个只读工具；支持 `--tools` 白名单，工具结果保留结构化数据、引用、unknown/boundary 与耗时 |
+| **用户长期记忆** | `POST/GET/PATCH/DELETE /memories`：只保存调用方显式提交的偏好、目标、约束与备注，按 API Key 的不可逆摘要隔离；活跃项仅作为有据 LLM 问答的个性化上下文，**不自动从聊天抽取、不成为知识库证据** |
+| **MCP stdio** | `mcp_server.py`：按 MCP `2025-06-18` 向 Codex、Claude Desktop 等客户端暴露 Knowledge Agent 的 52 个只读工具；支持 `--tools` 白名单，工具结果保留结构化数据、引用、unknown/boundary 与耗时 |
 | **知识库自动同步与版本 diff** | `scripts/sync_knowledge.py`：按最后成功采集时间自动选择过期分类，复用现有结构断言与快照数量护栏；同步前后按稳定主键报告逐表新增/删除/修改与版本字段变化，历史可从 `/admin/sync/*` 查询。默认只预览，记录删除时整轮标记 `attention` |
 | **鉴权与限流** | 普通接口使用 `API_KEYS` 并按 Key 令牌桶限流；管理接口独立使用 `ADMIN_TOKEN`，可叠加 IP/CIDR 白名单 |
 | **出口闸门** | 逐句校验事实断言与计算派生是否绑定有效证据，未通过由代码拦截；47 项单测覆盖 |
@@ -313,7 +314,40 @@ curl -s -X POST http://127.0.0.1:8787/poe_agent/chat \
 对外提供服务时应在 `.env` 配置逗号分隔的 `API_KEYS`，并在普通业务请求中发送
 `Authorization: Bearer <key>`。`config.yaml` 的 `server.rate_limit` 默认允许每个 Key
 持续 60 次/分钟、最多突发 10 次；超限返回 HTTP 429 和 `Retry-After`。未配置
-`API_KEYS` 的本机开发模式无需鉴权，但所有请求共用一个 `anonymous` 限流桶。
+`API_KEYS` 的本机开发模式无需鉴权，但所有请求共用一个 `anonymous` 限流桶和长期记忆
+命名空间。因此匿名模式只适合本机单用户；多用户或对外部署必须配置 `API_KEYS`。
+
+**用户长期记忆** —— 只有调用方通过 API 明确提交时才保存，不会从聊天、装备或 PoB
+内容自动抽取。类别固定为 `preference`、`goal`、`constraint`、`note`；单个调用方最多
+100 条，单条正文最多 500 字。列表默认只返回活跃项：
+
+```bash
+# 保存
+curl -s -X POST http://127.0.0.1:8787/poe_agent/memories \
+  -H "Authorization: Bearer $POE_AGENT_API_KEY" \
+  -H 'Content-Type: application/json' \
+  -d '{"category":"preference","label":"表达","content":"先给结论，再说明依据"}'
+
+# 查询；加 include_inactive=true 可同时查看已停用项
+curl -s 'http://127.0.0.1:8787/poe_agent/memories?include_inactive=true' \
+  -H "Authorization: Bearer $POE_AGENT_API_KEY"
+
+# 修改或停用；把 <memory_id> 换成创建响应中的值
+curl -s -X PATCH http://127.0.0.1:8787/poe_agent/memories/<memory_id> \
+  -H "Authorization: Bearer $POE_AGENT_API_KEY" \
+  -H 'Content-Type: application/json' \
+  -d '{"active":false}'
+
+# 永久删除
+curl -s -X DELETE http://127.0.0.1:8787/poe_agent/memories/<memory_id> \
+  -H "Authorization: Bearer $POE_AGENT_API_KEY"
+```
+
+后续 `/chat`、`/chat/stream` 和 `/v1/chat/completions` 会在真正进入模型生成前注入同一
+调用方最近的活跃记忆，最多 20 条且整段不超过 4000 字符。它们被明确标记为不可信用户
+数据：只能个性化表达、建议目标与约束，当前问题始终优先；不能支撑游戏机制、数值、价格
+或版本事实，也不会获得 `[[E*]]` 编号。缺据拒答和确定性工具路径不读取记忆，记忆库故障
+也不会阻断核心问答。
 
 句末的 `[[E1]]` 是**证据绑定标记**，不是装饰。出口闸门会逐句检查：
 
@@ -1020,7 +1054,7 @@ PoB 排 P2 而不是 P1：它在数值上更接近一手，但不含中文名与
 .venv/bin/python -m unittest discover -s tests -t .
 ```
 
-目前 1866 项，其中与「无据不答」直接相关的：
+目前 1878 项，其中与「无据不答」直接相关的：
 
 | 组 | 项数 | 重点 |
 | --- | --- | --- |

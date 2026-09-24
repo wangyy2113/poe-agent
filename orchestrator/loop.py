@@ -30,6 +30,7 @@ from agents.knowledge import (
     render_gap,
 )
 from core import db as dbmod
+from core.user_memory import build_prompt_memory_context
 from core.config import get_config
 from core.llm import LLMClient, LLMError, TurnBudget, get_llm_client
 from orchestrator import citation as cit
@@ -3031,11 +3032,18 @@ def _call_tool(
 
 
 def _initial_user_content(
-    question: str, evidence: list[Evidence], precision_tool: str
+    question: str,
+    evidence: list[Evidence],
+    precision_tool: str,
+    memory_context: str = "",
 ) -> str:
+    memory = (
+        f"---\n\n{memory_context}\n"
+        if memory_context else ""
+    )
     if not precision_tool:
         return EVIDENCE_TEMPLATE.format(
-            evidence=render_evidence_block(evidence), question=question
+            evidence=render_evidence_block(evidence), memory=memory, question=question
         )
     initial = render_evidence_block(evidence) or "（首轮全文检索未形成可引用证据）"
     if precision_tool == "check_mod_combination":
@@ -3069,7 +3077,7 @@ def _initial_user_content(
     return (
         f"以下是首轮证据：\n\n{initial}\n\n---\n"
         f"精确工具路由已命中 `{precision_tool}`。回答前必须先调用该工具；"
-        f"{instruction}\n\n用户的问题：{question}"
+        f"{instruction}\n\n{memory}\n\n---\n用户的问题：{question}"
     )
 
 
@@ -3166,7 +3174,9 @@ class _TurnSetup:
         return bool(self.gap or self.final)
 
 
-def _prepare_turn(question: str, result: TurnResult) -> _TurnSetup:
+def _prepare_turn(
+    question: str, result: TurnResult, *, owner_id: str | None = None
+) -> _TurnSetup:
     """POE2 边界 → 强制检索 → 路由 → 维度闸门 → 编号证据 → 代码调偏好工具。
 
     只写 `result`，不落库、不发事件——收尾动作由调用方按自己的形态做。
@@ -3309,11 +3319,25 @@ def _prepare_turn(question: str, result: TurnResult) -> _TurnSetup:
         setup.gap = _preferred_tool_gap(question, preferred_tool, setup.missing_terms)
         return setup
 
+    memory_text = ""
+    if owner_id:
+        try:
+            memory = build_prompt_memory_context(
+                dbmod.get_conn(), owner_id=owner_id
+            )
+            memory_text = memory.text
+            result.retrieval_meta["memory_count"] = memory.count
+            result.retrieval_meta["memory_truncated"] = memory.truncated
+        except Exception as exc:  # noqa: BLE001 - 个性化失败不能阻断核心问答
+            logger.warning("长期记忆注入失败，继续无记忆问答：%s", type(exc).__name__)
+            result.retrieval_meta["memory_error"] = type(exc).__name__
     setup.messages = [
         {"role": "system", "content": build_system_prompt()},
         {
             "role": "user",
-            "content": _initial_user_content(question, evidence, precision_tool),
+            "content": _initial_user_content(
+                question, evidence, precision_tool, memory_text
+            ),
         },
     ]
     return setup
@@ -3547,6 +3571,7 @@ def run_turn(
     question: str,
     *,
     conversation_id: str | None = None,
+    owner_id: str | None = None,
     client: LLMClient | None = None,
 ) -> TurnResult:
     started = time.monotonic()
@@ -3555,7 +3580,7 @@ def run_turn(
     trace_id = uuid.uuid4().hex
     result = TurnResult(trace_id=trace_id, question=question, answer="")
 
-    setup = _prepare_turn(question, result)
+    setup = _prepare_turn(question, result, owner_id=owner_id)
     if setup.done:
         result.answer = setup.gap or setup.final
         return _end(result, conversation_id, started)
@@ -3644,6 +3669,7 @@ def stream_turn(
     question: str,
     *,
     conversation_id: str | None = None,
+    owner_id: str | None = None,
     client: LLMClient | None = None,
 ) -> Iterator[dict[str, Any]]:
     """流式版本。产出事件字典，由 `api/chat.py` 包成 SSE。
@@ -3665,7 +3691,7 @@ def stream_turn(
 
     # 准备阶段与非流式**同一个函数**（`_prepare_turn`）：POE2 边界、强制检索、路由、
     # 维度闸门、代码调偏好工具。这里只负责把它的结论翻译成事件。
-    setup = _prepare_turn(question, result)
+    setup = _prepare_turn(question, result, owner_id=owner_id)
     if setup.gap:
         result.answer = setup.gap
         yield {"type": "gap", "text": result.answer}

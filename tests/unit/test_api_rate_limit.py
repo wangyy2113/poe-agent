@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import unittest
 from unittest.mock import patch
 
@@ -75,13 +76,20 @@ class RequireUserRateLimitTest(unittest.TestCase):
 
     def test_valid_keys_use_distinct_non_secret_bucket_ids(self) -> None:
         identities: list[str] = []
+        alpha_identity = hashlib.sha256(b"alpha-key").hexdigest()
+        bravo_identity = hashlib.sha256(b"bravo-key").hexdigest()
         with (
             patch("api.deps.user_keys", return_value=["alpha-key", "bravo-key"]),
             patch("api.deps._enforce_user_rate_limit", side_effect=identities.append),
         ):
-            self.assertEqual(require_user("Bearer alpha-key"), "key")
-            self.assertEqual(require_user("Bearer bravo-key"), "key")
+            self.assertEqual(
+                require_user("Bearer alpha-key"), f"key:{alpha_identity[:24]}"
+            )
+            self.assertEqual(
+                require_user("Bearer bravo-key"), f"key:{bravo_identity[:24]}"
+            )
         self.assertEqual(len(set(identities)), 2)
+        self.assertEqual(identities, [alpha_identity, bravo_identity])
         self.assertNotIn("alpha-key", identities)
         self.assertNotIn("bravo-key", identities)
 

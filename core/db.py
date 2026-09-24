@@ -1494,6 +1494,23 @@ CREATE TABLE IF NOT EXISTS message (
 );
 CREATE INDEX IF NOT EXISTS idx_message_conv ON message(conversation_id);
 
+-- 用户显式保存的长期上下文。owner_id 是 API Key 的不可逆摘要；未配置鉴权时为 anonymous。
+-- 这些内容是用户数据，不是知识库证据，也不进入 FTS/向量索引。
+CREATE TABLE IF NOT EXISTS user_memory (
+    memory_id      TEXT PRIMARY KEY,
+    owner_id       TEXT NOT NULL,
+    category       TEXT NOT NULL CHECK(category IN ('preference','goal','constraint','note')),
+    label          TEXT NOT NULL DEFAULT '',
+    content        TEXT NOT NULL,
+    active         INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0,1)),
+    created_at     TEXT NOT NULL,
+    updated_at     TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_user_memory_owner
+    ON user_memory(owner_id, active, updated_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_user_memory_unique
+    ON user_memory(owner_id, category, content);
+
 CREATE TABLE IF NOT EXISTS trace (
     trace_id        TEXT PRIMARY KEY,
     conversation_id TEXT,
