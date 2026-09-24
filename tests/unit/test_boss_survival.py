@@ -16,7 +16,7 @@ from api.boss import (
     sequence,
     survival,
 )
-from api.build import BuildRequest
+from api.build import BuildBossSequenceOut, BuildRequest
 from calc import boss_survival, constants, maxhit
 from core import db as dbmod
 from core.db import SCHEMA
@@ -25,6 +25,7 @@ from parsers.pob_build import PobBuild
 from tools.impl.boss import (
     boss_defence_threshold,
     boss_sequence_check,
+    boss_sequence_from_build,
     boss_survival_check,
     boss_survival_from_build,
 )
@@ -258,6 +259,22 @@ class BossSurvivalFormulaTest(unittest.TestCase):
         self.assertEqual(3001, result.minimum_pool_for_full_range)
         self.assertEqual("Physical Hit", result.steps[1].skill)
         self.assertEqual(-500, result.steps[1].remaining_worst_case)
+        self.assertEqual(1, result.most_dangerous_hit_index)
+        self.assertEqual("Fire Hit", result.most_dangerous_skill)
+        self.assertEqual(1000, result.largest_single_hit_taken_low)
+        self.assertEqual(2000, result.largest_single_hit_taken_high)
+        self.assertEqual([
+            {
+                "damage_type": "Fire", "hit_count": 1,
+                "raw_low": 1000.0, "raw_high": 2000.0,
+                "taken_low": 1000.0, "taken_high": 2000.0,
+            },
+            {
+                "damage_type": "Physical", "hit_count": 1,
+                "raw_low": 1000.0, "raw_high": 1000.0,
+                "taken_low": 1000.0, "taken_high": 1000.0,
+            },
+        ], [item.as_dict() for item in result.damage_type_totals])
 
     def test_混合序列累计恰好等于池子时判耗尽(self) -> None:
         result = boss_survival.assess_hit_sequence(
@@ -418,6 +435,10 @@ class BossSurvivalFormulaTest(unittest.TestCase):
             [step["skill"] for step in result.data["steps"]],
         )
         self.assertEqual(3, len(result.citations))
+        self.assertEqual(2, len(result.data["damage_type_totals"]))
+        self.assertEqual("Test Slam", result.data["most_dangerous_skill"])
+        self.assertGreater(result.data["largest_single_hit_taken_high"], 0)
+        self.assertIn("按伤害类型汇总", result.data["answer"])
         self.assertIn("系统没有声称这是 Boss 的真实连招", result.data["answer"])
         self.assertFalse(REGISTRY.spec("boss_sequence_check").parameters["additionalProperties"])
         too_long = boss_sequence_check(
@@ -538,6 +559,114 @@ class BuildBossSurvivalTest(unittest.TestCase):
 
         schema = create_app().openapi()
         self.assertIn("boss_survival", schema["components"]["schemas"]["BuildRequest"]["properties"])
+
+    def test_Build请求可携带显式Boss序列并限制展开后命中数(self) -> None:
+        req = BuildRequest(code="abc", boss_sequence={
+            "sequence": [
+                {"skill": "Shaper Ball", "count": 2},
+                {"skill": "Test Slam"},
+            ],
+            "level": 84,
+        })
+        self.assertEqual("life_and_energy_shield", req.boss_sequence.pool_mode)
+        self.assertEqual(2, req.boss_sequence.sequence[0].count)
+        with self.assertRaises(ValueError):
+            BuildRequest(code="abc", boss_sequence={
+                "sequence": [
+                    {"skill": "Shaper Ball", "count": 100},
+                    {"skill": "Test Slam", "count": 1},
+                ],
+                "level": 84,
+            })
+        from main import create_app
+
+        props = create_app().openapi()["components"]["schemas"]["BuildRequest"]["properties"]
+        self.assertIn("boss_sequence", props)
+
+    def test_Build显式混合序列只读取实际需要的基础防御字段(self) -> None:
+        build = PobBuild(player_stats={
+            "Life": 12000, "LifeUnreserved": 10000, "EnergyShield": 2000,
+            "ColdResist": 75, "FireResist": 10, "Armour": 10000,
+            "ColdMaximumHitTaken": 999999,
+        })
+        result = boss_sequence_from_build(
+            build,
+            sequence=[
+                {"skill": "Shaper Ball", "count": 2},
+                {"skill": "Test Slam", "count": 1},
+            ],
+            level=84,
+        )
+        self.assertTrue(result.ok)
+        self.assertTrue(result.data["assessable"])
+        self.assertEqual("basic_defence_sequence", result.data["calculation_mode"])
+        self.assertEqual(12000, result.data["pool"])
+        self.assertEqual({
+            "LifeUnreserved": 10000.0, "EnergyShield": 2000.0,
+            "ColdResist": 75.0, "Armour": 10000.0,
+        }, result.data["source_fields"])
+        self.assertNotIn("ColdMaximumHitTaken", result.data["source_fields"])
+        self.assertNotIn("FireResist", result.data["source_fields"])
+        self.assertIn("不能拆分", result.data["fallback_reason"])
+        self.assertEqual(3, result.data["hit_count"])
+        self.assertEqual(2, len(result.data["damage_type_totals"]))
+        self.assertIn("Build 快照输入", result.data["answer"])
+        response = BuildBossSequenceOut(
+            **result.data, citations=result.citations
+        )
+        self.assertEqual("Test Slam", response.most_dangerous_skill)
+        self.assertEqual("pob_player_stat", response.input_source)
+
+    def test_Build显式序列缺任一所需防御字段则整体unknown(self) -> None:
+        result = boss_sequence_from_build(
+            PobBuild(player_stats={
+                "Life": 10000, "EnergyShield": 0, "ColdResist": 75,
+            }),
+            sequence=[{"skill": "Shaper Ball"}, {"skill": "Test Slam"}],
+            level=84,
+        )
+        self.assertTrue(result.ok)
+        self.assertFalse(result.data["assessable"])
+        self.assertEqual("unknown", result.data["calculation_mode"])
+        self.assertEqual(["Armour"], result.data["missing_inputs"])
+        self.assertEqual({
+            "Life": 10000.0, "EnergyShield": 0.0, "ColdResist": 75.0,
+        }, result.data["source_fields"])
+        response = BuildBossSequenceOut(
+            **result.data, citations=result.citations
+        )
+        self.assertEqual(10000, response.pool)
+        unknown_skill = boss_sequence_from_build(
+            PobBuild(player_stats={"Life": 10000, "EnergyShield": 0}),
+            sequence=[{"skill": "Not A Real Boss Skill"}], level=84,
+        )
+        unknown_response = BuildBossSequenceOut(
+            **unknown_skill.data, citations=unknown_skill.citations
+        )
+        self.assertFalse(unknown_response.found)
+        self.assertIsNone(unknown_response.pool)
+
+    def test_Build显式序列保留混沌与护盾机制歧义(self) -> None:
+        result = boss_sequence_from_build(
+            PobBuild(player_stats={
+                "Life": 5000, "EnergyShield": 1000, "ChaosResist": 0,
+            }),
+            sequence=[{"skill": "Test Chaos Hit"}], level=84,
+        )
+        self.assertFalse(result.data["assessable"])
+        self.assertTrue(any(
+            "混沌伤害是否绕过能量护盾" in item
+            for item in result.data["missing_inputs"]
+        ))
+        life_only = boss_sequence_from_build(
+            PobBuild(player_stats={
+                "Life": 5000, "EnergyShield": 1000, "ChaosResist": 0,
+            }),
+            sequence=[{"skill": "Test Chaos Hit"}], level=84,
+            pool_mode="life",
+        )
+        self.assertTrue(life_only.data["assessable"])
+        self.assertEqual(5000, life_only.data["pool"])
 
     def test_直接使用Build快照的未保留生命护盾和对应抗性(self) -> None:
         build = PobBuild(player_stats={

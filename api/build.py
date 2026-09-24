@@ -19,7 +19,8 @@
 `player_stats` 那一段**是 PoB 自己算的快照**，不是本库算的，也不是知识库证据——
 它反映用户自己那份 PoB 的版本与配置。字段名与 `source_note` 都写清这一点，
 免得下游把它与本库计算结果混为同一来源。只有显式请求 `boss_survival` 时，本库才把
-白名单字段当作已标注来源的输入送入单击计算器，并逐字段回传实际采用值。
+白名单字段当作已标注来源的输入送入单击或用户显式混合序列计算器，并逐字段回传实际采用值。
+混合序列始终使用基础防御字段，不会把 PoB 的单击 ``*MaximumHitTaken`` 拆开复用。
 """
 
 from __future__ import annotations
@@ -32,7 +33,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from api.deps import require_user
-from api.boss import BossSurvivalResponse
+from api.boss import BossSequenceEntry, BossSequenceResponse, BossSurvivalResponse
 from core import db as dbmod
 from core.config import get_config, get_secrets
 from kb.fetcher import Fetcher, Poe2SourceRejected
@@ -54,7 +55,7 @@ from parsers.screenshot import (
     ScreenshotBuildFields,
     screenshot_build,
 )
-from tools.impl.boss import boss_survival_from_build
+from tools.impl.boss import boss_sequence_from_build, boss_survival_from_build
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["Build"])
@@ -78,6 +79,25 @@ class BuildBossSurvivalRequest(BaseModel):
     )
 
 
+class BuildBossSequenceRequest(BaseModel):
+    """用 Build 的基础 PlayerStat 快照校验用户显式排列的混合命中。"""
+
+    sequence: list[BossSequenceEntry] = Field(min_length=1, max_length=100)
+    level: int = Field(ge=1, le=100)
+    uber: bool = False
+    roll_range: float | None = Field(default=None, ge=0, le=100, allow_inf_nan=False)
+    pool_mode: Literal["life", "life_and_energy_shield"] = Field(
+        default="life_and_energy_shield",
+        description="从 Build 快照采用未保留生命，或未保留生命加能量护盾。",
+    )
+
+    @model_validator(mode="after")
+    def expanded_sequence_limit(self) -> "BuildBossSequenceRequest":
+        if sum(item.count for item in self.sequence) > 100:
+            raise ValueError("展开后的命中序列最多包含 100 次命中")
+        return self
+
+
 class BuildRequest(BaseModel):
     code: str = Field(
         default="", max_length=200000,
@@ -97,6 +117,13 @@ class BuildRequest(BaseModel):
             "可选 Boss 单击或同一命中重复校验。配置匹配时使用导入 Build 的完整 Max Hit；"
             "否则降级到 PlayerStat 基础防御快照；连续多击不使用单击 Max Hit。"
             "缺字段或机制不明时返回 unknown。"
+        ),
+    )
+    boss_sequence: BuildBossSequenceRequest | None = Field(
+        default=None,
+        description=(
+            "可选的用户指定 Boss 混合命中序列。从 PlayerStat 读取池子、各伤害类型抗性与"
+            "物理护甲；始终不使用 PoB 单击 MaximumHitTaken。"
         ),
     )
 
@@ -254,6 +281,16 @@ class BuildBossSurvivalOut(BossSurvivalResponse):
     citations: list[BuildBossCitationOut] = []
 
 
+class BuildBossSequenceOut(BossSequenceResponse):
+    pool_mode: Literal["life", "life_and_energy_shield"]
+    input_source: str = "pob_player_stat"
+    source_fields: dict[str, float] = {}
+    source_config: dict[str, str] = {}
+    calculation_mode: str | None = None
+    fallback_reason: str = ""
+    citations: list[BuildBossCitationOut] = []
+
+
 class BuildResponse(BaseModel):
     input_type: str = "pob"
     level: int | None = None
@@ -270,6 +307,8 @@ class BuildResponse(BaseModel):
     player_stats_note: str = ""
     #: 可选：用当前 Build 的完整 Max Hit 或基础防御快照校验 Boss 命中
     boss_survival: BuildBossSurvivalOut | None = None
+    #: 可选：用当前 Build 的基础防御快照校验用户显式排列的混合 Boss 命中
+    boss_sequence: BuildBossSequenceOut | None = None
     #: 需求 8.4 的逐项体检。**只判不算**：值取自 build，判据取自本库常量
     report: list[CheckOut] = []
     #: 需求 8.6：单体 / 清图 / Boss 分开，且显式绑定当前 PoB 配置
@@ -298,7 +337,7 @@ class BuildResponse(BaseModel):
 _STATS_NOTE = (
     "以上数值取自你粘贴的 build 自带的 <PlayerStat>，是 **PoB 自己算的**，"
     "既不是本库的计算结果、也不是知识库证据——它反映你那份 PoB 的版本与配置。"
-    "本库不会把它冒充自己的重算值；若显式请求 Boss 单击校验，响应会另列实际采用字段。"
+    "本库不会把它冒充自己的重算值；若显式请求 Boss 命中校验，响应会另列实际采用字段。"
 )
 _ANALYSIS_NOTE = (
     "需求 8.4 的 16 项、8.5 的防御补充与 8.6 的输出场景已逐项核对，"
@@ -452,6 +491,7 @@ def analyze_build(req: BuildRequest, caller: str = Depends(require_user)) -> Bui
         tree_link=tree_link,
         character_meta=character_meta,
         boss_query=req.boss_survival,
+        boss_sequence_query=req.boss_sequence,
     )
 
 
@@ -486,6 +526,7 @@ def _build_response(
     tree_link=None,
     character_meta=None,
     boss_query: BuildBossSurvivalRequest | None = None,
+    boss_sequence_query: BuildBossSequenceRequest | None = None,
 ) -> BuildResponse:  # noqa: ANN001
     """四类 Build 输入共用同一份确定性报告装配，避免入口间口径漂移。"""
     report = build_health_report(dbmod.get_conn(), build)
@@ -493,6 +534,7 @@ def _build_response(
     suggestions = build_suggestions(build)
     version = check_build_version(dbmod.get_conn(), build)
     boss_result = None
+    boss_sequence_result = None
     if boss_query is not None:
         checked = boss_survival_from_build(
             build,
@@ -510,6 +552,23 @@ def _build_response(
             })
         boss_result = BuildBossSurvivalOut(
             **(checked.data or {}), citations=checked.citations
+        )
+    if boss_sequence_query is not None:
+        checked_sequence = boss_sequence_from_build(
+            build,
+            sequence=[item.model_dump() for item in boss_sequence_query.sequence],
+            level=boss_sequence_query.level,
+            uber=boss_sequence_query.uber,
+            roll_range=boss_sequence_query.roll_range,
+            pool_mode=boss_sequence_query.pool_mode,
+        )
+        if not checked_sequence.ok:
+            raise HTTPException(status_code=422, detail={
+                "error": "invalid_build_boss_sequence_query",
+                "reason": checked_sequence.error,
+            })
+        boss_sequence_result = BuildBossSequenceOut(
+            **(checked_sequence.data or {}), citations=checked_sequence.citations
         )
     bridged = sum(1 for g in build.skill_groups for x in g.gems if x.gem_id)
     total_gems = sum(len(g.gems) for g in build.skill_groups)
@@ -560,6 +619,7 @@ def _build_response(
             else _STATS_NOTE if build.player_stats else ""
         ),
         boss_survival=boss_result,
+        boss_sequence=boss_sequence_result,
         report=[_check_out(c) for c in report.items],
         output_report=[_check_out(c) for c in report.output_items],
         defence_sources=[DefenceSourceOut(**line.__dict__) for line in sources.lines],

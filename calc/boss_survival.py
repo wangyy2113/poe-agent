@@ -152,6 +152,21 @@ class BossSequenceStepResult:
 
 
 @dataclass(frozen=True)
+class BossSequenceDamageTotal:
+    """显式序列内同一伤害类型的逐击合计。"""
+
+    damage_type: str
+    hit_count: int
+    raw_low: float
+    raw_high: float
+    taken_low: float
+    taken_high: float
+
+    def as_dict(self) -> dict[str, Any]:
+        return dict(self.__dict__)
+
+
+@dataclass(frozen=True)
 class BossSequenceResult:
     pool: float
     hit_count: int
@@ -163,8 +178,14 @@ class BossSequenceResult:
     guaranteed_depletion_hit: int | None
     minimum_pool_for_any_roll: int
     minimum_pool_for_full_range: int
+    largest_single_hit_taken_low: float
+    largest_single_hit_taken_high: float
+    most_dangerous_hit_index: int
+    most_dangerous_skill: str
+    most_dangerous_damage_type: str
     outcome: Outcome
     steps: tuple[BossSequenceStepResult, ...]
+    damage_type_totals: tuple[BossSequenceDamageTotal, ...]
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -178,8 +199,14 @@ class BossSequenceResult:
             "guaranteed_depletion_hit": self.guaranteed_depletion_hit,
             "minimum_pool_for_any_roll": self.minimum_pool_for_any_roll,
             "minimum_pool_for_full_range": self.minimum_pool_for_full_range,
+            "largest_single_hit_taken_low": self.largest_single_hit_taken_low,
+            "largest_single_hit_taken_high": self.largest_single_hit_taken_high,
+            "most_dangerous_hit_index": self.most_dangerous_hit_index,
+            "most_dangerous_skill": self.most_dangerous_skill,
+            "most_dangerous_damage_type": self.most_dangerous_damage_type,
             "outcome": self.outcome,
             "steps": [step.as_dict() for step in self.steps],
+            "damage_type_totals": [item.as_dict() for item in self.damage_type_totals],
         }
 
 
@@ -199,6 +226,7 @@ def assess_hit_sequence(
     earliest_possible: int | None = None
     guaranteed: int | None = None
     steps: list[BossSequenceStepResult] = []
+    totals: dict[str, dict[str, float | int]] = {}
     for index, hit in enumerate(hits, start=1):
         single = assess_single_hit(
             damage_type=hit.damage_type,
@@ -231,6 +259,19 @@ def assess_hit_sequence(
             remaining_best_case=round(pool - cumulative_low, 2),
             remaining_worst_case=round(pool - cumulative_high, 2),
         ))
+        bucket = totals.setdefault(hit.damage_type, {
+            "hit_count": 0, "raw_low": 0.0, "raw_high": 0.0,
+            "taken_low": 0.0, "taken_high": 0.0,
+        })
+        bucket["hit_count"] += 1
+        bucket["raw_low"] = _snap_near_integer(float(bucket["raw_low"]) + hit.raw_low)
+        bucket["raw_high"] = _snap_near_integer(float(bucket["raw_high"]) + hit.raw_high)
+        bucket["taken_low"] = _snap_near_integer(
+            float(bucket["taken_low"]) + single.taken_low
+        )
+        bucket["taken_high"] = _snap_near_integer(
+            float(bucket["taken_high"]) + single.taken_high
+        )
 
     if cumulative_high < pool:
         outcome: Outcome = "survives_full_range"
@@ -238,6 +279,18 @@ def assess_hit_sequence(
         outcome = "fails_full_range"
     else:
         outcome = "roll_dependent"
+    most_dangerous = max(steps, key=lambda step: step.taken_high)
+    damage_totals = tuple(
+        BossSequenceDamageTotal(
+            damage_type=dtype,
+            hit_count=int(values["hit_count"]),
+            raw_low=round(float(values["raw_low"]), 2),
+            raw_high=round(float(values["raw_high"]), 2),
+            taken_low=round(float(values["taken_low"]), 2),
+            taken_high=round(float(values["taken_high"]), 2),
+        )
+        for dtype, values in totals.items()
+    )
     return BossSequenceResult(
         pool=float(pool),
         hit_count=len(hits),
@@ -249,8 +302,14 @@ def assess_hit_sequence(
         guaranteed_depletion_hit=guaranteed,
         minimum_pool_for_any_roll=math.floor(cumulative_low) + 1,
         minimum_pool_for_full_range=math.floor(cumulative_high) + 1,
+        largest_single_hit_taken_low=most_dangerous.taken_low,
+        largest_single_hit_taken_high=most_dangerous.taken_high,
+        most_dangerous_hit_index=most_dangerous.hit_index,
+        most_dangerous_skill=most_dangerous.skill,
+        most_dangerous_damage_type=most_dangerous.damage_type,
         outcome=outcome,
         steps=tuple(steps),
+        damage_type_totals=damage_totals,
     )
 
 
