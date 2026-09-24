@@ -25,10 +25,114 @@ const el = {
   newChat: $('new-chat'), renameChat: $('rename-chat'), deleteChat: $('delete-chat'),
   characterImport: $('import-character'), convs: $('conversations'),
   imageUpload: $('upload-image'), imageInput: $('image-input'),
+  authKey: $('auth-key'), authDialog: $('auth-dialog'), authForm: $('auth-form'),
+  authInput: $('auth-input'), authError: $('auth-error'),
+  authClear: $('auth-clear'), authCancel: $('auth-cancel'), authSave: $('auth-save'),
 };
 
 let conversationId = null;
 let busy = false;
+let authRequired = false;
+
+/* ── API 鉴权 ────────────────────────────────────────── */
+
+const AUTH_STORE = 'poe_agent_api_key';
+const CONVERSATION_STORE = 'poe_agent_convs';
+
+function storedApiKey() {
+  return sessionStorage.getItem(AUTH_STORE) || '';
+}
+
+function updateAuthButton(required = false) {
+  const configured = Boolean(storedApiKey());
+  el.authKey.textContent = configured ? 'API 密钥 ✓' : (required ? '配置 API 密钥' : 'API 密钥');
+  el.authKey.classList.toggle('auth-required', required && !configured);
+}
+
+function showAuthDialog(message = '') {
+  el.authError.textContent = message;
+  el.authError.hidden = !message;
+  el.authInput.value = '';
+  if (!el.authDialog.open) el.authDialog.showModal();
+  el.authInput.focus();
+}
+
+async function requestApi(path, options = {}, explicitKey) {
+  const headers = new Headers(options.headers || {});
+  const key = explicitKey === undefined ? storedApiKey() : explicitKey;
+  if (key) headers.set('Authorization', `Bearer ${key}`);
+  return fetch(`${API}${path}`, { ...options, headers });
+}
+
+async function apiFetch(path, options = {}) {
+  const hadKey = Boolean(storedApiKey());
+  const response = await requestApi(path, options);
+  if (response.status === 401) {
+    authRequired = true;
+    if (hadKey) {
+      sessionStorage.removeItem(AUTH_STORE);
+      clearConversationUi();
+    }
+    updateAuthButton(true);
+    showAuthDialog(hadKey ? 'API Key 无效或已失效，请重新输入。' : '此服务需要 API Key。');
+  }
+  return response;
+}
+
+function clearConversationUi() {
+  conversationId = null;
+  sessionStorage.removeItem(CONVERSATION_STORE);
+  localStorage.removeItem(CONVERSATION_STORE);
+  el.thread.innerHTML = '';
+  el.empty.style.display = '';
+  renderConversationList();
+}
+
+async function saveApiKey(event) {
+  event.preventDefault();
+  const key = el.authInput.value.trim();
+  if (!key) {
+    el.authError.textContent = 'API Key 不能为空。';
+    el.authError.hidden = false;
+    return;
+  }
+  el.authSave.disabled = true;
+  el.authError.hidden = true;
+  try {
+    const response = await requestApi('/conversations?limit=1', {}, key);
+    if (response.status === 401) {
+      el.authError.textContent = 'API Key 无效。';
+      el.authError.hidden = false;
+      return;
+    }
+    if (!response.ok) {
+      el.authError.textContent = `验证失败（HTTP ${response.status}）。`;
+      el.authError.hidden = false;
+      return;
+    }
+    const previous = storedApiKey();
+    if (previous !== key) clearConversationUi();
+    sessionStorage.setItem(AUTH_STORE, key);
+    authRequired = false;
+    el.authInput.value = '';
+    el.authDialog.close();
+    updateAuthButton(false);
+    await syncConversations();
+  } catch (err) {
+    el.authError.textContent = `连接失败：${String(err.message || err)}`;
+    el.authError.hidden = false;
+  } finally {
+    el.authSave.disabled = false;
+  }
+}
+
+function clearApiKey() {
+  sessionStorage.removeItem(AUTH_STORE);
+  el.authInput.value = '';
+  el.authDialog.close();
+  clearConversationUi();
+  updateAuthButton(authRequired);
+}
 
 /* ── Markdown ─────────────────────────────────────────── */
 
@@ -358,6 +462,10 @@ document.addEventListener('click', (e) => {
 
 async function send(text) {
   if (busy || !text.trim()) return;
+  if (authRequired && !storedApiKey()) {
+    showAuthDialog('此服务需要 API Key。');
+    return;
+  }
   busy = true;
   el.send.disabled = true;
   addUserMessage(text);
@@ -366,7 +474,7 @@ async function send(text) {
 
   const msg = addAssistantMessage();
   try {
-    const resp = await fetch(`${API}/chat/stream`, {
+    const resp = await apiFetch('/chat/stream', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message: text, conversation_id: conversationId }),
@@ -536,7 +644,7 @@ async function analyzeItem(text) {
   const msg = addAssistantMessage();
   msg.setStatus('解析装备');
   try {
-    const resp = await fetch(`${API}/item`, {
+    const resp = await apiFetch('/item', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ text }),
@@ -731,7 +839,7 @@ async function analyzeBuild(code = '', characterName = '') {
   const msg = addAssistantMessage();
   msg.setStatus(isCharacter ? '读取官方角色 API' : isTree ? '解析 PoE 天赋树' : '解析 PoB Build');
   try {
-    const resp = await fetch(`${API}/build`, {
+    const resp = await apiFetch('/build', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(isCharacter ? { character_name: characterName.trim() } : { code }),
@@ -853,7 +961,7 @@ async function recognizeScreenshot(file) {
   el.pasteCard.innerHTML = '<div class="pc-tag">正在识别截图…</div>';
   try {
     const dataUrl = await readDataUrl(file);
-    const resp = await fetch(`${API}/screenshot/recognize`, {
+    const resp = await apiFetch('/screenshot/recognize', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ data_url: dataUrl, filename: file.name }),
@@ -886,7 +994,7 @@ async function analyzeScreenshotBuild(build, filename) {
   const msg = addAssistantMessage();
   msg.setStatus('核对截图可见字段');
   try {
-    const resp = await fetch(`${API}/build/screenshot`, {
+    const resp = await apiFetch('/build/screenshot', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...build, confirmed: true }),
@@ -913,10 +1021,21 @@ async function analyzeScreenshotBuild(build, filename) {
 
 /* ── 会话 ─────────────────────────────────────────────── */
 
-const STORE = 'poe_agent_convs';
+function conversationStorage() {
+  // 已鉴权缓存跟随当前标签页，避免不同 API Key 的标签页互相暴露会话标题。
+  return storedApiKey() ? sessionStorage : localStorage;
+}
 
 function savedConversations() {
-  try { return JSON.parse(localStorage.getItem(STORE) || '[]'); } catch { return []; }
+  try {
+    return JSON.parse(conversationStorage().getItem(CONVERSATION_STORE) || '[]');
+  } catch {
+    return [];
+  }
+}
+
+function saveConversations(list) {
+  conversationStorage().setItem(CONVERSATION_STORE, JSON.stringify(list.slice(0, 30)));
 }
 
 function refreshConversations() {
@@ -932,7 +1051,7 @@ function refreshConversations() {
       : (firstUser ? firstUser.textContent : '新对话').slice(0, 60),
     customTitle: Boolean(current && current.customTitle),
   });
-  localStorage.setItem(STORE, JSON.stringify(list.slice(0, 30)));
+  saveConversations(list);
   renderConversationList();
 }
 
@@ -950,8 +1069,11 @@ function renderConversationList() {
 
 async function syncConversations() {
   try {
-    const resp = await fetch(`${API}/conversations?limit=30`);
-    if (!resp.ok) return;
+    const resp = await apiFetch('/conversations?limit=30');
+    if (!resp.ok) {
+      if (resp.status !== 401) renderConversationList();
+      return;
+    }
     const data = await resp.json();
     const server = (data.items || []).map((item) => ({
       id: item.conversation_id,
@@ -961,21 +1083,20 @@ async function syncConversations() {
     // 保留升级前仅存于浏览器的随机 ID；用户点开时服务端会安全地认领旧会话。
     const serverIds = new Set(server.map((item) => item.id));
     const legacy = savedConversations().filter((item) => !serverIds.has(item.id));
-    localStorage.setItem(STORE, JSON.stringify([...server, ...legacy].slice(0, 30)));
+    saveConversations([...server, ...legacy]);
     renderConversationList();
   } catch {
     // 服务端暂不可用时继续使用本地缓存，不影响聊天。
+    renderConversationList();
   }
 }
 
 async function loadConversation(id) {
   if (!id || busy) return;
-  const resp = await fetch(`${API}/conversations/${id}`);
+  const resp = await apiFetch(`/conversations/${id}`);
   if (!resp.ok) {
     if (resp.status === 404) {
-      localStorage.setItem(STORE, JSON.stringify(
-        savedConversations().filter((item) => item.id !== id)
-      ));
+      saveConversations(savedConversations().filter((item) => item.id !== id));
       renderConversationList();
     }
     return;
@@ -1008,7 +1129,7 @@ async function loadConversation(id) {
     customTitle: Boolean(current && current.customTitle)
       || Boolean(data.title && data.title !== generatedTitle),
   });
-  localStorage.setItem(STORE, JSON.stringify(list.slice(0, 30)));
+  saveConversations(list);
   renderConversationList();
   el.main.scrollTop = el.main.scrollHeight;
 }
@@ -1025,7 +1146,7 @@ async function renameConversation() {
   }
   busy = true;
   try {
-    const resp = await fetch(`${API}/conversations/${conversationId}`, {
+    const resp = await apiFetch(`/conversations/${conversationId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ title: normalized }),
@@ -1037,7 +1158,7 @@ async function renameConversation() {
     }
     const list = savedConversations().filter((c) => c.id !== conversationId);
     list.unshift({ id: conversationId, title: data.title, customTitle: true });
-    localStorage.setItem(STORE, JSON.stringify(list.slice(0, 30)));
+    saveConversations(list);
     renderConversationList();
   } catch (err) {
     window.alert(`重命名失败：${String(err.message || err)}`);
@@ -1051,7 +1172,7 @@ async function deleteConversation() {
   if (!window.confirm('删除当前会话及其消息？此操作不可撤销。')) return;
   busy = true;
   try {
-    const resp = await fetch(`${API}/conversations/${conversationId}`, {
+    const resp = await apiFetch(`/conversations/${conversationId}`, {
       method: 'DELETE',
     });
     const data = await resp.json().catch(() => null);
@@ -1061,9 +1182,7 @@ async function deleteConversation() {
     }
     const deletedId = conversationId;
     conversationId = null;
-    localStorage.setItem(STORE, JSON.stringify(
-      savedConversations().filter((item) => item.id !== deletedId)
-    ));
+    saveConversations(savedConversations().filter((item) => item.id !== deletedId));
     el.thread.innerHTML = '';
     el.empty.style.display = '';
     renderConversationList();
@@ -1115,11 +1234,23 @@ el.newChat.addEventListener('click', () => {
 el.renameChat.addEventListener('click', renameConversation);
 el.deleteChat.addEventListener('click', deleteConversation);
 el.convs.addEventListener('change', (e) => loadConversation(e.target.value));
+el.authKey.addEventListener('click', () => showAuthDialog());
+el.authForm.addEventListener('submit', saveApiKey);
+el.authCancel.addEventListener('click', () => {
+  el.authInput.value = '';
+  el.authDialog.close();
+});
+el.authClear.addEventListener('click', clearApiKey);
+el.authDialog.addEventListener('close', () => {
+  el.authInput.value = '';
+  el.authError.textContent = '';
+  el.authError.hidden = true;
+});
 
 document.querySelectorAll('.samples button').forEach((b) => {
   b.addEventListener('click', () => send(b.textContent));
 });
 
-renderConversationList();
+updateAuthButton(false);
 syncConversations();
 el.input.focus();

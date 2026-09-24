@@ -20,6 +20,7 @@
     <button id="upload-image" class="ghost" title="上传装备或 Build 截图">上传截图</button>
     <input id="image-input" type="file" accept="image/png,image/jpeg,image/webp" hidden>
     <button id="import-character" class="ghost" title="从 GGG 官方角色 API 导入">导入角色</button>
+    <button id="auth-key" class="ghost" title="配置当前标签页使用的 API Key">API 密钥</button>
     <button id="new-chat" class="ghost">新对话</button>
   </nav>
 </header>
@@ -50,6 +51,22 @@
     答案中的角标可点击跳转到来源。标为「已拦截」的句子是模型试图输出的无据内容，已被出口校验挡下。
   </div>
 </footer>
+
+<dialog id="auth-dialog" aria-labelledby="auth-title">
+  <form id="auth-form">
+    <h2 id="auth-title">连接 POE1-Agent</h2>
+    <p>输入服务端配置的 API Key。密钥只保存在当前浏览器标签页，不会写入聊天或日志。</p>
+    <label for="auth-input">API Key</label>
+    <input id="auth-input" type="password" autocomplete="off"
+           spellcheck="false" maxlength="512" placeholder="粘贴 API Key">
+    <div id="auth-error" class="auth-error" role="alert" hidden></div>
+    <div class="auth-actions">
+      <button id="auth-clear" type="button" class="ghost">退出并清除</button>
+      <button id="auth-cancel" type="button" class="ghost">取消</button>
+      <button id="auth-save" type="submit" class="auth-primary">验证并保存</button>
+    </div>
+  </form>
+</dialog>
 
 <script src="app.js"></script>
 </body>
