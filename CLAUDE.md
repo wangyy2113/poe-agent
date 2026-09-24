@@ -146,7 +146,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 1853 项，秒级
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 1857 项，秒级
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选
@@ -205,7 +205,7 @@ POST /chat[/stream]  api/chat.py（只做校验与编排调用）
 - **`<PlayerStat>` 是 PoB 自己算的快照，不是我们算的**。它既不是知识库证据、
   也不是本库计算结果，反映的是用户那份 PoB 的版本与配置。出口必须写清
   「取自你粘贴的 build」且不能冒充本库重算值。第九十三轮起，显式请求
-  `boss_survival` 时可把白名单字段送入单击计算器，但响应必须逐项列出 `source_fields`
+  `boss_survival` / `boss_sequence` 时可把白名单字段送入命中计算器，但响应必须逐项列出 `source_fields`
   与基础模式边界；其它分析仍只把它作为报告值与**对账口径**。
 - **桥不上的宝石留英文原文 + 告警，不猜**。实测 111 颗里 8 颗桥不上，
   成因是夹具是 3.13 而本库是 3.29——**版本偏移，不是缺陷**。
@@ -238,11 +238,14 @@ POE1/POE2 边界顺带落在同一张表上：poe.ninja 两款游戏都服务，
 就是「带着引用的错数字」。重算留作后续一轮——那时 `PlayerStat` 正好是现成的对账口径。
 **DPS 只复述你 PoB 的数并注明本库不算**（边界是「本库不算」，不是「不许引用你的数」）。
 
-**Build × Boss（第九十三至九十四轮）**：`POST /build` 的可选 `boss_survival`
+**Build × Boss（第九十三至九十四、第一百轮）**：`POST /build` 的可选 `boss_survival`
 会先核对 `presetBossSkills`、Boss/Pinnacle/Uber 档位、有效敌人等级和显式穿透覆盖。
 全部匹配且对应 `*MaximumHitTaken` 已导出时，直接用 PoB 完整 Max Hit 快照与本库 Boss
 伤害区间比较；否则降级到生命/护盾、抗性、护甲基础模式，并返回 `fallback_reason`。
 两种模式都必须回传 `source_fields`，不能把 PlayerStat 写成本库重算值。
+可选 `boss_sequence` 则只走生命/护盾、实际涉及的各类抗性与物理护甲基础链，返回逐击轨迹、
+伤害类型汇总、最大单击与最危险一击。它永不消费 `*MaximumHitTaken`，因为特定配置的单击
+阈值无法拆回混合序列；任一字段或混沌绕盾机制不明时整条序列 unknown。
 
 **基础通货 × Metamod（第九十五轮）**：`craft_operation_state` 可选接收一个来源矩阵
 逐字 guard。基础通货效果/状态转移仍只由 POEDB 证据支撑，Metamod 的原始值与注释只由
@@ -743,7 +746,9 @@ POEDB 页面仍是旧版」：`号召` PoB 侧是 `ConvocationNew`（各级需�
 内枚举，护甲反解受物理减伤上限约束；无法让累计承伤严格小于池子时返回不可达。
 `boss_sequence_check` / `POST /boss/sequence` 接受调用方显式排列的多技能序列，并将每段
 `count` 展开为最多 100 次逐击轨迹；每种伤害分别使用对应抗性/穿透或护甲，返回累计承伤、
-逐击余量、最早可能和最迟必然耗尽位置。系统不从 Boss 名称推断连招；任一步缺必要防御、
+逐击余量、按伤害类型汇总、最危险一击、最大单击承伤，以及最早可能和最迟必然耗尽位置。
+`POST /build` 的 `boss_sequence` 可从 PlayerStat 提供这些基础防御输入，并逐项披露来源字段；
+显式混合序列不使用 PoB 单击 Max Hit。系统不从 Boss 名称推断连招；任一步缺必要防御、
 属于 DoT、多伤害类型或非零暴击时，整条序列保持 unknown，不输出部分生存结论。
 DoT 直接 unknown；多伤害类型、自动推断的真实 Boss 连招、转化、非零暴击、格挡/闪避/法压、
 守护技能、Ward、MoM、恢复、阶段和打法均不进入结论。这不是整场 Boss 战的生存保证。

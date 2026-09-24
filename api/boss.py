@@ -148,6 +148,15 @@ class BossSequenceStepResponse(BaseModel):
     remaining_worst_case: float
 
 
+class BossSequenceDamageTotalResponse(BaseModel):
+    damage_type: str
+    hit_count: int
+    raw_low: float
+    raw_high: float
+    taken_low: float
+    taken_high: float
+
+
 class BossSequenceResponse(BaseModel):
     found: bool
     assessable: bool
@@ -155,7 +164,7 @@ class BossSequenceResponse(BaseModel):
     level: int
     uber: bool
     roll_range: float | None = None
-    pool: float
+    pool: float | None
     hit_count: int = 0
     requested_sequence: list[BossSequenceEntry]
     steps: list[BossSequenceStepResponse] = Field(default_factory=list)
@@ -167,6 +176,12 @@ class BossSequenceResponse(BaseModel):
     guaranteed_depletion_hit: int | None = None
     minimum_pool_for_any_roll: int | None = None
     minimum_pool_for_full_range: int | None = None
+    largest_single_hit_taken_low: float | None = None
+    largest_single_hit_taken_high: float | None = None
+    most_dangerous_hit_index: int | None = None
+    most_dangerous_skill: str | None = None
+    most_dangerous_damage_type: str | None = None
+    damage_type_totals: list[BossSequenceDamageTotalResponse] = Field(default_factory=list)
     failed_sequence_index: int | None = None
     reason: str | None = None
     candidates: list[str] = Field(default_factory=list)

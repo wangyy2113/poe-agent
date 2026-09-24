@@ -1367,6 +1367,11 @@ def _render_boss_sequence(
         f"最坏 {result.remaining_worst_case:,.2f}",
         f"- 所需防御池：至少覆盖一种掷骰 {result.minimum_pool_for_any_roll:,}；"
         f"覆盖完整区间 {result.minimum_pool_for_full_range:,}",
+        f"- 最危险一击：第 {result.most_dangerous_hit_index} 击 "
+        f"{result.most_dangerous_skill}（"
+        f"{_DAMAGE_TYPE_ZH[result.most_dangerous_damage_type]}），承伤 "
+        f"{result.largest_single_hit_taken_low:,.2f} — "
+        f"{result.largest_single_hit_taken_high:,.2f}",
     ]
     if result.earliest_possible_depletion_hit is None:
         lines.append("- 耗尽位置：最坏掷骰下完成整个序列后仍未耗尽")
@@ -1378,6 +1383,13 @@ def _render_boss_sequence(
         lines.append("- 必然耗尽位置：最低掷骰下完成整个序列后仍未耗尽")
     else:
         lines.append(f"- 最迟必然耗尽：第 {result.guaranteed_depletion_hit} 击")
+    lines += ["", "按伤害类型汇总："]
+    for item in result.damage_type_totals:
+        lines.append(
+            f"- {_DAMAGE_TYPE_ZH[item.damage_type]}（{item.hit_count} 击）："
+            f"原始 {item.raw_low:,.2f}–{item.raw_high:,.2f}；"
+            f"承伤 {item.taken_low:,.2f}–{item.taken_high:,.2f}"
+        )
     lines += [
         "",
         "| # | 技能 | 类型 | 本击承伤区间 | 累计承伤区间 | 最坏余量 |",
@@ -1616,3 +1628,166 @@ def boss_sequence_check(
         "verdict": assessed.outcome,
         "mode": "explicit_hit_sequence",
     })
+
+
+def boss_sequence_from_build(
+    build: "PobBuild",
+    *,
+    sequence: list[dict[str, Any]],
+    level: int,
+    uber: bool = False,
+    roll_range: float | None = None,
+    pool_mode: BuildPoolMode = "life_and_energy_shield",
+) -> ToolResult:
+    """用 PoB PlayerStat 基础字段校验用户给出的混合 Boss 命中序列。
+
+    混合/多击序列绝不消费 ``*MaximumHitTaken``：它只代表一个特定 PoB 配置下的
+    单击阈值，不能逐击拆回不同伤害类型。缺少任一实际需要的抗性、护甲或防御池字段时，
+    整个序列保持 unknown。
+    """
+    if pool_mode not in {"life", "life_and_energy_shield"}:
+        return ToolResult(ok=False, error="pool_mode 只支持 life 或 life_and_energy_shield")
+
+    # 先用中性防御输入复用工具自身的序列结构、技能唯一性与机制边界校验；这里的
+    # 数值结果不会对外返回，只用来取得实际出现的伤害类型和可靠引用。
+    preflight = boss_sequence_check(
+        sequence=sequence, level=level, pool=1, uber=uber,
+        roll_range=roll_range, fire_resist_pct=0, cold_resist_pct=0,
+        lightning_resist_pct=0, chaos_resist_pct=0, armour=0,
+    )
+    if not preflight.ok:
+        return preflight
+    max_hit_reason = (
+        "PoB *MaximumHitTaken 是特定配置的单击阈值，不能拆分为混合/多击序列的逐击承伤"
+    )
+    if not (preflight.data or {}).get("assessable"):
+        data = dict(preflight.data or {})
+        data.update({
+            "pool": None,
+            "pool_mode": pool_mode,
+            "input_source": "pob_player_stat",
+            "source_fields": {},
+            "source_config": {},
+            "calculation_mode": "unknown",
+            "fallback_reason": max_hit_reason,
+            "boundary": f"{data['boundary']}；{_BUILD_SNAPSHOT_BOUNDARY}",
+            "answer": f"{data['answer']}\n> Build 快照边界：{_BUILD_SNAPSHOT_BOUNDARY}",
+        })
+        return ToolResult(
+            ok=True, data=data, citations=preflight.citations, meta=preflight.meta
+        )
+
+    damage_types = {
+        str(item["damage_type"])
+        for item in (preflight.data or {}).get("damage_type_totals", [])
+    }
+    source_fields: dict[str, float] = {}
+    missing: list[str] = []
+    life_key = "LifeUnreserved" if "LifeUnreserved" in build.player_stats else "Life"
+    life = build.player_stats.get(life_key)
+    if life is None:
+        missing.append("Life（或 LifeUnreserved）")
+    elif not math.isfinite(life) or life <= 0:
+        missing.append(f"有效的 {life_key}")
+    else:
+        source_fields[life_key] = float(life)
+
+    energy_shield = 0.0
+    if pool_mode == "life_and_energy_shield":
+        value = build.player_stats.get("EnergyShield")
+        if value is None:
+            missing.append("EnergyShield")
+        elif not math.isfinite(value) or value < 0:
+            missing.append("有效的 EnergyShield")
+        else:
+            energy_shield = float(value)
+            source_fields["EnergyShield"] = energy_shield
+
+    resist_keys = {
+        "Fire": "FireResist", "Cold": "ColdResist",
+        "Lightning": "LightningResist", "Chaos": "ChaosResist",
+    }
+    resists: dict[str, float | None] = {
+        "Fire": None, "Cold": None, "Lightning": None, "Chaos": None,
+    }
+    for dtype in ("Fire", "Cold", "Lightning", "Chaos"):
+        if dtype not in damage_types:
+            continue
+        key = resist_keys[dtype]
+        value = build.player_stats.get(key)
+        if value is None:
+            missing.append(key)
+        elif not math.isfinite(value) or not -200 <= value <= 90:
+            missing.append(f"有效的 {key}")
+        else:
+            resists[dtype] = float(value)
+            source_fields[key] = float(value)
+
+    armour = 0.0
+    if "Physical" in damage_types:
+        value = build.player_stats.get("Armour")
+        if value is None:
+            missing.append("Armour")
+        elif not math.isfinite(value) or value < 0:
+            missing.append("有效的 Armour")
+        else:
+            armour = float(value)
+            source_fields["Armour"] = armour
+
+    pool = float(life) + energy_shield if life is not None and math.isfinite(life) else None
+    if "Chaos" in damage_types and energy_shield > 0:
+        missing.append("混沌伤害是否绕过能量护盾的 Build 机制")
+    if missing or pool is None or pool <= 0:
+        reason = "Build 快照缺少完整序列安全计算所需字段或机制"
+        answer = "\n".join([
+            "### Build 的 Boss 显式命中序列校验", "",
+            "**结论：无法安全计算**", f"- 原因：{reason}",
+            f"- 缺少：{'、'.join(missing)}", "",
+            f"> {_SEQUENCE_BOUNDARY}。", f"> Build 快照边界：{_BUILD_SNAPSHOT_BOUNDARY}",
+            f"> 未采用 PoB Max Hit：{max_hit_reason}。",
+        ])
+        return ToolResult(ok=True, data={
+            "found": True, "assessable": False, "verdict": "unknown",
+            "level": int(level), "uber": bool(uber), "roll_range": roll_range,
+            "pool": pool, "pool_mode": pool_mode,
+            "hit_count": int((preflight.data or {})["hit_count"]),
+            "requested_sequence": sequence, "steps": [], "damage_type_totals": [],
+            "missing_inputs": missing, "candidates": [], "reason": reason,
+            "input_source": "pob_player_stat", "source_fields": source_fields,
+            "source_config": {}, "calculation_mode": "unknown",
+            "fallback_reason": max_hit_reason,
+            "boundary": f"{_SEQUENCE_BOUNDARY}；{_BUILD_SNAPSHOT_BOUNDARY}",
+            "answer": answer,
+        }, citations=preflight.citations, meta={
+            "channel": "derived", "input_source": "pob_player_stat",
+            "verdict": "unknown", "mode": "build_explicit_hit_sequence",
+        })
+
+    checked = boss_sequence_check(
+        sequence=sequence, level=level, pool=pool, uber=uber,
+        roll_range=roll_range, fire_resist_pct=resists["Fire"],
+        cold_resist_pct=resists["Cold"],
+        lightning_resist_pct=resists["Lightning"],
+        chaos_resist_pct=resists["Chaos"], armour=armour,
+    )
+    if not checked.ok:
+        return checked
+    data = dict(checked.data or {})
+    data.update({
+        "pool_mode": pool_mode,
+        "input_source": "pob_player_stat",
+        "source_fields": source_fields,
+        "source_config": {},
+        "calculation_mode": "basic_defence_sequence",
+        "fallback_reason": max_hit_reason,
+        "boundary": f"{data['boundary']}；{_BUILD_SNAPSHOT_BOUNDARY}",
+        "answer": (
+            f"{data['answer']}\n> Build 快照输入：{', '.join(source_fields)}；"
+            f"{_BUILD_SNAPSHOT_BOUNDARY}\n> 未采用 PoB Max Hit：{max_hit_reason}。"
+        ),
+    })
+    meta = dict(checked.meta)
+    meta.update({
+        "input_source": "pob_player_stat", "mode": "build_explicit_hit_sequence",
+    })
+    return ToolResult(ok=True, data=data, citations=checked.citations, meta=meta)
