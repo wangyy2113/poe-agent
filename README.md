@@ -67,7 +67,7 @@ POE1 的机制耦合极深，一个错误的小前提会让整条结论反向。
 | **鉴权与限流** | 普通接口使用 `API_KEYS` 并按 Key 令牌桶限流；管理接口独立使用 `ADMIN_TOKEN`，可叠加 IP/CIDR 白名单 |
 | **出口闸门** | 逐句校验事实断言与计算派生是否绑定有效证据，未通过由代码拦截；47 项单测覆盖 |
 | **聊天界面** | `static/` 单页前端，无构建步骤、无 Node、无第三方 JS |
-| **会话历史** | 最近 30 个会话保存在浏览器列表中，可从 SQLite 回放消息并重命名；自定义标题不会被后续消息覆盖 |
+| **会话历史** | `GET /conversations` 从 SQLite 恢复当前调用方最近会话，可读取、重命名和删除；会话按 API Key 的不可逆摘要隔离，浏览器 `localStorage` 只作缓存 |
 | **装备解析** | 游戏内 Ctrl+C / Ctrl+Alt+C 文本 → 结构化装备；中英文都认 |
 | **词缀 T 级** | 按底材类别 + 数值区间定档；查不到就标「未匹配」并说明原因 |
 | **装备分析** | `POST /item`：基础信息、词缀档位、前后缀容量、可制作方向，全程不调 LLM |
@@ -316,6 +316,29 @@ curl -s -X POST http://127.0.0.1:8787/poe_agent/chat \
 持续 60 次/分钟、最多突发 10 次；超限返回 HTTP 429 和 `Retry-After`。未配置
 `API_KEYS` 的本机开发模式无需鉴权，但所有请求共用一个 `anonymous` 限流桶和长期记忆
 命名空间。因此匿名模式只适合本机单用户；多用户或对外部署必须配置 `API_KEYS`。
+
+**服务端会话历史** —— 聊天、流式聊天与 OpenAI 兼容入口创建的会话都会绑定当前调用方。
+列表默认返回最近 30 条，含消息数与末条消息摘要；读取、续聊、重命名和删除均校验同一
+调用方，不会通过响应暴露其他调用方是否持有某个会话 ID：
+
+```bash
+# 最近会话
+curl -s 'http://127.0.0.1:8787/poe_agent/conversations?limit=30' \
+  -H "Authorization: Bearer $POE_AGENT_API_KEY"
+
+# 读取、重命名、删除；把 <conversation_id> 换成列表中的值
+curl -s http://127.0.0.1:8787/poe_agent/conversations/<conversation_id> \
+  -H "Authorization: Bearer $POE_AGENT_API_KEY"
+curl -s -X PATCH http://127.0.0.1:8787/poe_agent/conversations/<conversation_id> \
+  -H "Authorization: Bearer $POE_AGENT_API_KEY" \
+  -H 'Content-Type: application/json' -d '{"title":"火花配装复盘"}'
+curl -s -X DELETE http://127.0.0.1:8787/poe_agent/conversations/<conversation_id> \
+  -H "Authorization: Bearer $POE_AGENT_API_KEY"
+```
+
+Web 页启动时会与服务端同步列表，刷新、清缓存或换浏览器后仍能恢复会话。升级前创建的
+旧会话没有所有者信息，不会直接进入任何人的服务端列表；仍持有原随机 ID 的浏览器可在
+首次读取或续聊时将它认领到当前调用方，避免用不可靠信息猜测旧数据归属。
 
 **用户长期记忆** —— 只有调用方通过 API 明确提交时才保存，不会从聊天、装备或 PoB
 内容自动抽取。类别固定为 `preference`、`goal`、`constraint`、`note`；单个调用方最多
@@ -1231,9 +1254,9 @@ logs/                   按日期命名的日志（不入版本库）
 - **截图识别需要单独指定视觉模型。** `config.yaml` 的 `llm.vision_model` 默认留空；
   未经真实模型验证前不替用户选择一个名字。视觉模型只转录可见内容，用户确认后的字段
   才进入确定性分析；图片不落盘，单张上限 5 MB。
-- **会话列表只存在浏览器 `localStorage` 里**（上限 30 条）。换浏览器或清缓存就看不到
-  列表了——消息与自定义标题本身在 `data/poe.db` 里，也可以重命名当前会话，但没有按
-  用户维度检索会话的接口，所以服务端不会自动恢复浏览器已经遗失的列表。
+- **升级前的旧会话无法自动确定所有者。** 数据库迁移会保留它们但不放进任何调用方的
+  服务端列表；持有原随机会话 ID 的浏览器可首次认领。没有该 ID 时不会猜测归属或跨用户
+  展示。新会话从创建起按 API Key 摘要隔离；未配置 Key 的本机模式统一属于 `anonymous`。
 - **`.env` 里的 `LLM_API_KEY` 需要填真值。** 模板里是占位符 `sk-`；不填的话
   有据路径会返回「生成失败」，但缺据路径仍能正常工作（它不调模型）。
 - **出口闸门的事实句判定是规则驱动的。** 判不出类型时默认按事实句处理（要求绑定

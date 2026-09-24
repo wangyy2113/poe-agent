@@ -100,7 +100,7 @@ class OpenAICompletionTest(unittest.TestCase):
         run.assert_called_once_with(
             "猎首有什么词缀？", conversation_id="conv-oai", owner_id="test"
         )
-        ensure.assert_called_once_with("conv-oai", "猎首有什么词缀？")
+        ensure.assert_called_once_with("conv-oai", "猎首有什么词缀？", "test")
         self.assertEqual(response["object"], "chat.completion")
         self.assertEqual(response["created"], 1234)
         self.assertEqual(response["model"], "poe-agent")
@@ -125,7 +125,7 @@ class OpenAICompletionTest(unittest.TestCase):
             response = openai_chat_completions(_request(stream=True), caller="test")
         self.assertIsInstance(response, StreamingResponse)
         self.assertEqual(response.media_type, "text/event-stream")
-        ensure.assert_called_once_with("conv-oai", "猎首有什么词缀？")
+        ensure.assert_called_once_with("conv-oai", "猎首有什么词缀？", "test")
         save.assert_called_once_with("conv-oai", "user", "猎首有什么词缀？")
 
     def test_stream_maps_only_verified_content_and_finishes_with_done(self) -> None:

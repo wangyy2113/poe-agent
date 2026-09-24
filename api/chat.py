@@ -13,7 +13,7 @@ import time
 import uuid
 from typing import Any, Iterator, Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, field_validator
 
@@ -38,6 +38,21 @@ class ConversationUpdate(BaseModel):
     @classmethod
     def normalize_title(cls, value: Any) -> Any:
         return value.strip() if isinstance(value, str) else value
+
+
+class ConversationSummary(BaseModel):
+    conversation_id: str
+    title: str
+    created_at: str
+    updated_at: str
+    message_count: int
+    last_message_preview: str
+
+
+class ConversationListResponse(BaseModel):
+    items: list[ConversationSummary]
+    total: int
+    limit: int
 
 
 class OpenAITextPart(BaseModel):
@@ -271,7 +286,7 @@ def openai_chat_completions(
     question = _openai_question(req.messages)
     conversation_id = req.conversation_id or uuid.uuid4().hex
     created = int(time.time())
-    _ensure_conversation(conversation_id, question)
+    _ensure_conversation(conversation_id, question, caller)
 
     if req.stream:
         _save_message(conversation_id, "user", question)
@@ -333,7 +348,7 @@ def openai_chat_completions(
 @router.post("/chat", response_model=ChatResponse)
 def chat(req: ChatRequest, caller: str = Depends(require_user)) -> ChatResponse:
     conversation_id = req.conversation_id or uuid.uuid4().hex
-    _ensure_conversation(conversation_id, req.message)
+    _ensure_conversation(conversation_id, req.message, caller)
 
     result = run_turn(
         req.message, conversation_id=conversation_id, owner_id=caller
@@ -389,7 +404,7 @@ def chat_stream(req: ChatRequest, caller: str = Depends(require_user)) -> Stream
     `fetch` + `ReadableStream` 一套解析逻辑处理完，不必区分 event 名。
     """
     conversation_id = req.conversation_id or uuid.uuid4().hex
-    _ensure_conversation(conversation_id, req.message)
+    _ensure_conversation(conversation_id, req.message, caller)
     _save_message(conversation_id, "user", req.message)
 
     def gen() -> Iterator[str]:
@@ -433,18 +448,35 @@ def chat_stream(req: ChatRequest, caller: str = Depends(require_user)) -> Stream
     )
 
 
-def _ensure_conversation(conversation_id: str, first_message: str) -> None:
+def _ensure_conversation(
+    conversation_id: str, first_message: str, owner_id: str
+) -> None:
+    conn = None
     try:
         conn = dbmod.get_conn()
         conn.execute(
-            "INSERT INTO conversation(conversation_id, title, created_at, updated_at) "
-            "VALUES (?,?,datetime('now'),datetime('now')) "
-            "ON CONFLICT(conversation_id) DO UPDATE SET updated_at=datetime('now')",
-            (conversation_id, first_message[:60]),
+            "INSERT INTO conversation("
+            "conversation_id, title, created_at, updated_at, owner_id"
+            ") VALUES (?,?,datetime('now'),datetime('now'),?) "
+            "ON CONFLICT(conversation_id) DO NOTHING",
+            (conversation_id, first_message[:60], owner_id),
+        )
+        _require_conversation_owner(conn, conversation_id, owner_id, claim_legacy=True)
+        conn.execute(
+            "UPDATE conversation SET updated_at=datetime('now') "
+            "WHERE conversation_id=? AND owner_id=?",
+            (conversation_id, owner_id),
         )
         conn.commit()
-    except Exception as exc:  # noqa: BLE001  会话记录失败不该让问答失败
+    except HTTPException:
+        if conn is not None:
+            conn.rollback()
+        raise
+    except Exception as exc:  # noqa: BLE001
+        if conn is not None:
+            conn.rollback()
         logger.warning("写会话失败：%s", exc)
+        raise HTTPException(status_code=503, detail="会话存储暂不可用") from exc
 
 
 def _save_message(conversation_id: str, role: str, content: str) -> None:
@@ -452,12 +484,85 @@ def _save_message(conversation_id: str, role: str, content: str) -> None:
         conn = dbmod.get_conn()
         conn.execute(
             "INSERT INTO message(message_id, conversation_id, role, content, created_at) "
-            "VALUES (?,?,?,?,datetime('now'))",
-            (uuid.uuid4().hex, conversation_id, role, content),
+            "SELECT ?,?,?,?,datetime('now') WHERE EXISTS ("
+            "SELECT 1 FROM conversation WHERE conversation_id=?"
+            ")",
+            (uuid.uuid4().hex, conversation_id, role, content, conversation_id),
         )
         conn.commit()
     except Exception as exc:  # noqa: BLE001
         logger.warning("写消息失败：%s", exc)
+
+
+def _require_conversation_owner(
+    conn: Any,
+    conversation_id: str,
+    owner_id: str,
+    *,
+    claim_legacy: bool,
+) -> Any:
+    row = conn.execute(
+        "SELECT * FROM conversation WHERE conversation_id = ?",
+        (conversation_id,),
+    ).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail="会话不存在")
+    stored_owner = str(row["owner_id"] or "")
+    if not stored_owner and claim_legacy:
+        cursor = conn.execute(
+            "UPDATE conversation SET owner_id=? "
+            "WHERE conversation_id=? AND owner_id=''",
+            (owner_id, conversation_id),
+        )
+        if cursor.rowcount:
+            stored_owner = owner_id
+        else:
+            refreshed = conn.execute(
+                "SELECT owner_id FROM conversation WHERE conversation_id=?",
+                (conversation_id,),
+            ).fetchone()
+            stored_owner = str(refreshed["owner_id"] or "") if refreshed else ""
+    if stored_owner != owner_id:
+        # 不泄露该随机 ID 是否属于另一位调用方。
+        raise HTTPException(status_code=404, detail="会话不存在")
+    return row
+
+
+@router.get("/conversations", response_model=ConversationListResponse)
+def conversations(
+    limit: int = Query(default=30, ge=1, le=100),
+    caller: str = Depends(require_user),
+) -> ConversationListResponse:
+    """列出当前调用方最近更新的服务端会话。"""
+    conn = dbmod.get_conn()
+    total = int(conn.execute(
+        "SELECT count(*) FROM conversation WHERE owner_id=?", (caller,)
+    ).fetchone()[0])
+    rows = conn.execute(
+        "SELECT c.conversation_id, c.title, c.created_at, c.updated_at, "
+        "count(m.message_id) AS message_count, "
+        "(SELECT lm.content FROM message lm "
+        " WHERE lm.conversation_id=c.conversation_id "
+        " ORDER BY lm.created_at DESC, lm.rowid DESC LIMIT 1) AS last_message "
+        "FROM conversation c LEFT JOIN message m "
+        "ON m.conversation_id=c.conversation_id "
+        "WHERE c.owner_id=? GROUP BY c.conversation_id "
+        "ORDER BY c.updated_at DESC, c.created_at DESC, c.conversation_id DESC "
+        "LIMIT ?",
+        (caller, limit),
+    ).fetchall()
+    items = [
+        ConversationSummary(
+            conversation_id=str(row["conversation_id"]),
+            title=str(row["title"] or "新对话"),
+            created_at=str(row["created_at"]),
+            updated_at=str(row["updated_at"]),
+            message_count=int(row["message_count"] or 0),
+            last_message_preview=" ".join(str(row["last_message"] or "").split())[:120],
+        )
+        for row in rows
+    ]
+    return ConversationListResponse(items=items, total=total, limit=limit)
 
 
 @router.get("/conversations/{conversation_id}")
@@ -466,17 +571,15 @@ def conversation(
     caller: str = Depends(require_user),
 ) -> dict[str, Any]:
     conn = dbmod.get_conn()
-    conv = conn.execute(
-        "SELECT title FROM conversation WHERE conversation_id = ?",
-        (conversation_id,),
-    ).fetchone()
-    if conv is None:
-        raise HTTPException(status_code=404, detail="会话不存在")
+    conv = _require_conversation_owner(
+        conn, conversation_id, caller, claim_legacy=True
+    )
+    conn.commit()
     msgs = [
         dict(r)
         for r in conn.execute(
             "SELECT role, content, created_at FROM message "
-            "WHERE conversation_id = ? ORDER BY created_at",
+            "WHERE conversation_id = ? ORDER BY created_at, rowid",
             (conversation_id,),
         )
     ]
@@ -494,13 +597,37 @@ def rename_conversation(
     caller: str = Depends(require_user),
 ) -> dict[str, str]:
     conn = dbmod.get_conn()
+    _require_conversation_owner(conn, conversation_id, caller, claim_legacy=True)
     cursor = conn.execute(
         "UPDATE conversation SET title = ?, updated_at = datetime('now') "
-        "WHERE conversation_id = ?",
-        (req.title, conversation_id),
+        "WHERE conversation_id = ? AND owner_id = ?",
+        (req.title, conversation_id, caller),
     )
     if cursor.rowcount == 0:
         raise HTTPException(status_code=404, detail="会话不存在")
     conn.commit()
     logger.info("会话重命名 caller=%s conversation=%s", caller, conversation_id)
     return {"conversation_id": conversation_id, "title": req.title}
+
+
+@router.delete("/conversations/{conversation_id}")
+def delete_conversation(
+    conversation_id: str,
+    caller: str = Depends(require_user),
+) -> dict[str, Any]:
+    conn = dbmod.get_conn()
+    _require_conversation_owner(conn, conversation_id, caller, claim_legacy=True)
+    deleted_messages = conn.execute(
+        "DELETE FROM message WHERE conversation_id=?", (conversation_id,)
+    ).rowcount
+    deleted = conn.execute(
+        "DELETE FROM conversation WHERE conversation_id=? AND owner_id=?",
+        (conversation_id, caller),
+    ).rowcount
+    conn.commit()
+    logger.info("会话删除 caller=%s conversation=%s", caller, conversation_id)
+    return {
+        "conversation_id": conversation_id,
+        "deleted": bool(deleted),
+        "deleted_messages": int(deleted_messages),
+    }

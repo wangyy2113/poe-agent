@@ -1481,7 +1481,9 @@ CREATE TABLE IF NOT EXISTS conversation (
     conversation_id TEXT PRIMARY KEY,
     title           TEXT,
     created_at      TEXT NOT NULL,
-    updated_at      TEXT NOT NULL
+    updated_at      TEXT NOT NULL,
+    -- API Key 的不可逆摘要；旧库迁移后为空，首次持有原 conversation_id 的调用方可认领。
+    owner_id        TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS message (
@@ -1583,6 +1585,9 @@ def _migrate(conn: sqlite3.Connection) -> None:
       让同类 bug 以后直接撞约束而不是静默积累。
     """
     try:
+        # 会话 API 的运行时查询直接依赖 owner_id，先迁移它，避免后续某个历史修复失败时
+        # 把会话鉴权留在旧结构上。
+        _migrate_conversation_owner(conn)
         dup = conn.execute(
             "SELECT count(*) FROM (SELECT 1 FROM knowledge_gap "
             "GROUP BY question, missing_point HAVING count(*) > 1)"
@@ -1620,8 +1625,21 @@ def _migrate(conn: sqlite3.Connection) -> None:
         _migrate_cluster_skill_weight_tag(conn)
         conn.commit()
     except sqlite3.Error as exc:
-        # 迁移失败不能让启动失败——但必须告警，否则台账会继续悄悄积累重复
-        logger.warning("缺口台账迁移未完成：%s", exc)
+        # 迁移失败不能让启动失败——但必须告警，否则运行时会出现旧结构行为。
+        logger.warning("数据库迁移未完成：%s", exc)
+
+
+def _migrate_conversation_owner(conn: sqlite3.Connection) -> None:
+    """给旧会话补所有者列；未知所有者只允许凭原随机 ID 首次认领。"""
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(conversation)")}
+    if "owner_id" not in cols:
+        conn.execute(
+            "ALTER TABLE conversation ADD COLUMN owner_id TEXT NOT NULL DEFAULT ''"
+        )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_conversation_owner_updated "
+        "ON conversation(owner_id, updated_at DESC)"
+    )
 
 
 #: 台账条目的来源。分开是因为对应的待办完全不同：
