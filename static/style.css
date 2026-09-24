@@ -142,6 +142,76 @@ dialog::backdrop { background: rgba(0, 0, 0, .42); }
 .auth-primary:disabled { opacity: .5; cursor: default; }
 #auth-key.auth-required { border-color: var(--block-border); color: var(--block-border); }
 
+/* ── 长期记忆 ── */
+
+dialog.memory-dialog { width: min(720px, calc(100vw - 32px)); }
+.memory-panel { padding: 20px; }
+.memory-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.memory-heading h2 { margin: 0 0 4px; font-size: 18px; }
+.memory-heading p { margin: 0; color: var(--fg-dim); font-size: 13px; }
+.memory-status { min-height: 22px; margin: 12px 0 6px; color: var(--fg-dim); font-size: 13px; }
+.memory-list {
+  max-height: min(310px, 38vh);
+  overflow: auto;
+  display: grid;
+  gap: 8px;
+}
+.memory-empty {
+  padding: 18px;
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  color: var(--fg-dim);
+  text-align: center;
+}
+.memory-item {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-soft);
+}
+.memory-item.inactive { opacity: .64; }
+.memory-item-head { display: flex; align-items: center; gap: 8px; }
+.memory-category {
+  flex: 0 0 auto;
+  padding: 1px 7px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--fg-dim);
+  font-size: 11px;
+}
+.memory-item-label { min-width: 0; font-weight: 600; overflow-wrap: anywhere; }
+.memory-item-content { margin-top: 5px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.memory-item-actions { display: flex; gap: 6px; margin-top: 8px; }
+.memory-item-actions button { padding: 3px 8px; font-size: 12px; }
+.memory-form { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); }
+.memory-form h3 { margin: 0 0 10px; font-size: 15px; }
+.memory-form label { display: block; color: var(--fg-dim); font-size: 12px; }
+.memory-fields { display: grid; grid-template-columns: 150px 1fr; gap: 10px; }
+.memory-form input:not([type="checkbox"]),
+.memory-form select,
+.memory-form textarea {
+  width: 100%;
+  margin-top: 4px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 7px 9px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+}
+.memory-form textarea { min-height: 76px; max-height: 150px; resize: vertical; }
+.memory-form input:focus,
+.memory-form select:focus,
+.memory-form textarea:focus { outline: 1px solid var(--accent); border-color: var(--accent); }
+.memory-form > label { margin-top: 10px; }
+.memory-form .memory-active { display: flex; align-items: center; gap: 7px; }
+.memory-active input { margin: 0; }
+
 /* ── 消息区 ── */
 
 main {
@@ -513,4 +583,6 @@ button.ghost, .send { white-space: nowrap; }
   .brand span { display: none; }
   select.ghost { max-width: 42vw; }
   .hint { font-size: 11px; }
+  .memory-panel { padding: 16px; }
+  .memory-fields { grid-template-columns: 1fr; }
 }
