@@ -9,14 +9,16 @@ from unittest.mock import patch
 
 from api.boss import (
     BossDefenceThresholdRequest,
+    BossRiskAuditRequest,
     BossSequenceEntry,
     BossSequenceRequest,
     BossSurvivalRequest,
     defence_threshold,
+    risk_audit,
     sequence,
     survival,
 )
-from api.build import BuildBossSequenceOut, BuildRequest
+from api.build import BuildBossRiskAuditOut, BuildBossSequenceOut, BuildRequest
 from calc import boss_survival, constants, maxhit
 from core import db as dbmod
 from core.db import SCHEMA
@@ -24,6 +26,8 @@ from orchestrator import loop
 from parsers.pob_build import PobBuild
 from tools.impl.boss import (
     boss_defence_threshold,
+    boss_risk_audit,
+    boss_risk_audit_from_build,
     boss_sequence_check,
     boss_sequence_from_build,
     boss_survival_check,
@@ -475,6 +479,63 @@ class BossSurvivalFormulaTest(unittest.TestCase):
 
         self.assertIn("/poe_agent/boss/sequence", create_app().openapi()["paths"])
 
+    def test_Boss风险审计排序已知单击并保留未知项(self) -> None:
+        result = boss_risk_audit(
+            level=84, pool=10000, cold_resist_pct=75,
+            chaos_resist_pct=0, armour=10000,
+        )
+        self.assertTrue(result.ok)
+        self.assertTrue(result.data["assessable"])
+        self.assertEqual("partial", result.data["assessment_status"])
+        self.assertEqual(4, result.data["total_skill_count"])
+        self.assertEqual(3, result.data["assessed_skill_count"])
+        self.assertEqual(1, result.data["unknown_skill_count"])
+        self.assertEqual("unknown", result.data["verdict"])
+        self.assertEqual("Test Chaos Hit", result.data["most_dangerous_skill"])
+        self.assertEqual(
+            [1, 2, 3],
+            [item["risk_rank"] for item in result.data["skills"] if item["assessable"]],
+        )
+        self.assertEqual("Shaper Beam", result.data["skills"][-1]["skill"])
+        self.assertIn("不是全部 Boss/技能清单", result.data["boundary"])
+        self.assertEqual(5, len(result.citations))
+        self.assertFalse(REGISTRY.spec("boss_risk_audit").parameters["additionalProperties"])
+
+    def test_Boss风险审计缺部分防御时只报告部分覆盖(self) -> None:
+        result = boss_risk_audit(
+            level=84, pool=10000, cold_resist_pct=75,
+        )
+        self.assertTrue(result.data["assessable"])
+        self.assertEqual(1, result.data["assessed_skill_count"])
+        self.assertEqual(3, result.data["unknown_skill_count"])
+        self.assertEqual(["armour", "chaos_resist_pct"], result.data["missing_inputs"])
+        self.assertEqual("Shaper Ball", result.data["most_dangerous_skill"])
+        self.assertIn("未知项不会被当成低风险", result.data["answer"])
+
+    def test_Boss风险审计API公开结构化排名(self) -> None:
+        response = risk_audit(BossRiskAuditRequest(
+            level=84, pool=10000, cold_resist_pct=75,
+            chaos_resist_pct=0, armour=10000,
+        ), _caller="test")
+        self.assertEqual("partial", response.assessment_status)
+        self.assertEqual("Test Chaos Hit", response.most_dangerous_skill)
+        from main import create_app
+
+        self.assertIn("/poe_agent/boss/audit", create_app().openapi()["paths"])
+
+    def test_Boss风险审计自然问法确定性直达(self) -> None:
+        question = "84级，10000血、75冰抗、0混抗、10000护甲，所有 Boss 技能哪个最危险"
+        self.assertEqual("boss_risk_audit", loop._preferred_tool_route(question))
+        self.assertEqual({
+            "level": 84, "pool": 10000, "cold_resist_pct": 75,
+            "chaos_resist_pct": 0, "armour": 10000,
+        }, loop._boss_risk_audit_args(question))
+        self.assertIn("boss_risk_audit", loop._CODE_INVOKED_TOOLS)
+        self.assertIn("boss_risk_audit", loop._DETERMINISTIC_DIRECT_TOOLS)
+        self.assertIsNone(loop._boss_risk_audit_args(
+            "84级，所有 Boss 技能哪个最危险"
+        ))
+
     def test_聊天路由只在参数能唯一冻结时直接执行(self) -> None:
         question = "84级 Shaper Ball，6000血、75冰抗，能扛得住吗"
         self.assertEqual("boss_survival_check", loop._preferred_tool_route(question))
@@ -583,6 +644,14 @@ class BuildBossSurvivalTest(unittest.TestCase):
         props = create_app().openapi()["components"]["schemas"]["BuildRequest"]["properties"]
         self.assertIn("boss_sequence", props)
 
+    def test_Build请求可携带Boss风险审计(self) -> None:
+        req = BuildRequest(code="abc", boss_risk_audit={"level": 84})
+        self.assertEqual("life_and_energy_shield", req.boss_risk_audit.pool_mode)
+        from main import create_app
+
+        props = create_app().openapi()["components"]["schemas"]["BuildRequest"]["properties"]
+        self.assertIn("boss_risk_audit", props)
+
     def test_Build显式混合序列只读取实际需要的基础防御字段(self) -> None:
         build = PobBuild(player_stats={
             "Life": 12000, "LifeUnreserved": 10000, "EnergyShield": 2000,
@@ -667,6 +736,71 @@ class BuildBossSurvivalTest(unittest.TestCase):
         )
         self.assertTrue(life_only.data["assessable"])
         self.assertEqual(5000, life_only.data["pool"])
+
+    def test_Build风险审计逐字段披露并隔离单击MaxHit(self) -> None:
+        result = boss_risk_audit_from_build(
+            PobBuild(player_stats={
+                "Life": 10000, "EnergyShield": 0, "ColdResist": 75,
+                "ChaosResist": 0, "Armour": 10000,
+                "FireResist": 75, "LightningResist": 75,
+                "PhysicalMaximumHitTaken": 999999,
+            }),
+            level=84,
+        )
+        self.assertTrue(result.ok)
+        self.assertEqual("partial", result.data["assessment_status"])
+        self.assertEqual("basic_defence_risk_audit", result.data["calculation_mode"])
+        self.assertEqual({
+            "Life": 10000.0, "EnergyShield": 0.0, "ColdResist": 75.0,
+            "ChaosResist": 0.0, "Armour": 10000.0,
+        }, result.data["source_fields"])
+        self.assertNotIn("PhysicalMaximumHitTaken", result.data["source_fields"])
+        self.assertIn("不使用", result.data["fallback_reason"])
+        response = BuildBossRiskAuditOut(
+            **result.data, citations=result.citations
+        )
+        self.assertEqual("Test Chaos Hit", response.most_dangerous_skill)
+
+    def test_Build风险审计不把缺失护甲当作零护甲(self) -> None:
+        result = boss_risk_audit_from_build(
+            PobBuild(player_stats={
+                "Life": 10000, "EnergyShield": 0,
+                "ColdResist": 75, "ChaosResist": 0,
+            }),
+            level=84,
+        )
+        physical = next(
+            item for item in result.data["skills"] if item["skill"] == "Test Slam"
+        )
+        self.assertFalse(physical["assessable"])
+        self.assertEqual(["armour"], physical["missing_inputs"])
+        self.assertNotIn("Armour", result.data["source_fields"])
+        missing_pool = boss_risk_audit_from_build(
+            PobBuild(player_stats={"ColdResist": 75}), level=84,
+        )
+        self.assertFalse(missing_pool.data["assessable"])
+        self.assertEqual(4, missing_pool.data["total_skill_count"])
+        self.assertEqual(4, missing_pool.data["unknown_skill_count"])
+        BuildBossRiskAuditOut(
+            **missing_pool.data, citations=missing_pool.citations
+        )
+
+    def test_Build风险审计保留混沌与护盾歧义但继续已知项(self) -> None:
+        result = boss_risk_audit_from_build(
+            PobBuild(player_stats={
+                "Life": 10000, "EnergyShield": 1000, "ColdResist": 75,
+                "ChaosResist": 0, "Armour": 10000,
+            }),
+            level=84,
+        )
+        chaos = next(
+            item for item in result.data["skills"] if item["skill"] == "Test Chaos Hit"
+        )
+        self.assertFalse(chaos["assessable"])
+        self.assertIn("绕过能量护盾", chaos["reason"])
+        self.assertTrue(result.data["assessable"])
+        self.assertEqual("partial", result.data["assessment_status"])
+        self.assertNotIn("ChaosResist", result.data["source_fields"])
 
     def test_直接使用Build快照的未保留生命护盾和对应抗性(self) -> None:
         build = PobBuild(player_stats={

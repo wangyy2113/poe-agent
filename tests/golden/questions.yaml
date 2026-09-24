@@ -1607,6 +1607,14 @@ cases:
       只在用户逐字给出至少两种已知 Boss 技能、顺序、等级和防御池时直达序列工具；
       每种伤害分别使用对应抗性或护甲，不把用户假设的序列称为真实 Boss 连招
 
+  - id: route_boss_risk_audit
+    query: 84级，10000血、75冰抗、0混抗、10000护甲，所有 Boss 技能哪个最危险
+    kind: tool_route
+    expect_tool: boss_risk_audit
+    note: >-
+      等级与防御池可唯一冻结时横向审计当前收录的单击；缺少火抗或电抗只让对应技能保留
+      unknown，不能把未知项排到末尾当作低风险，也不能把单击承伤排行称为 Boss 难度排行
+
   - id: gap_boss_fight_mechanics
     query: 谢勒怎么打，有什么机制要躲
     kind: gap

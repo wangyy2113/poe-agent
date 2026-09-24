@@ -18,8 +18,9 @@
 
 `player_stats` 那一段**是 PoB 自己算的快照**，不是本库算的，也不是知识库证据——
 它反映用户自己那份 PoB 的版本与配置。字段名与 `source_note` 都写清这一点，
-免得下游把它与本库计算结果混为同一来源。只有显式请求 `boss_survival` 时，本库才把
-白名单字段当作已标注来源的输入送入单击或用户显式混合序列计算器，并逐字段回传实际采用值。
+免得下游把它与本库计算结果混为同一来源。只有显式请求 `boss_survival`、
+`boss_sequence` 或 `boss_risk_audit` 时，本库才把白名单字段当作已标注来源的输入送入
+单击、用户显式混合序列或横向风险审计计算器，并逐字段回传实际采用值。
 混合序列始终使用基础防御字段，不会把 PoB 的单击 ``*MaximumHitTaken`` 拆开复用。
 """
 
@@ -33,7 +34,12 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from api.deps import require_user
-from api.boss import BossSequenceEntry, BossSequenceResponse, BossSurvivalResponse
+from api.boss import (
+    BossRiskAuditResponse,
+    BossSequenceEntry,
+    BossSequenceResponse,
+    BossSurvivalResponse,
+)
 from core import db as dbmod
 from core.config import get_config, get_secrets
 from kb.fetcher import Fetcher, Poe2SourceRejected
@@ -55,7 +61,11 @@ from parsers.screenshot import (
     ScreenshotBuildFields,
     screenshot_build,
 )
-from tools.impl.boss import boss_sequence_from_build, boss_survival_from_build
+from tools.impl.boss import (
+    boss_risk_audit_from_build,
+    boss_sequence_from_build,
+    boss_survival_from_build,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["Build"])
@@ -98,6 +108,18 @@ class BuildBossSequenceRequest(BaseModel):
         return self
 
 
+class BuildBossRiskAuditRequest(BaseModel):
+    """用 Build 基础快照横向审计当前收录的 Boss 单击。"""
+
+    level: int = Field(ge=1, le=100)
+    uber: bool = False
+    roll_range: float | None = Field(default=None, ge=0, le=100, allow_inf_nan=False)
+    pool_mode: Literal["life", "life_and_energy_shield"] = Field(
+        default="life_and_energy_shield",
+        description="从 Build 快照采用未保留生命，或未保留生命加能量护盾。",
+    )
+
+
 class BuildRequest(BaseModel):
     code: str = Field(
         default="", max_length=200000,
@@ -124,6 +146,13 @@ class BuildRequest(BaseModel):
         description=(
             "可选的用户指定 Boss 混合命中序列。从 PlayerStat 读取池子、各伤害类型抗性与"
             "物理护甲；始终不使用 PoB 单击 MaximumHitTaken。"
+        ),
+    )
+    boss_risk_audit: BuildBossRiskAuditRequest | None = Field(
+        default=None,
+        description=(
+            "可选的 Boss 单击风险横向审计。按最坏承伤排列本地已收录的技能；"
+            "缺字段或模型不覆盖的技能保留为 unknown。"
         ),
     )
 
@@ -291,6 +320,15 @@ class BuildBossSequenceOut(BossSequenceResponse):
     citations: list[BuildBossCitationOut] = []
 
 
+class BuildBossRiskAuditOut(BossRiskAuditResponse):
+    pool_mode: Literal["life", "life_and_energy_shield"]
+    input_source: str = "pob_player_stat"
+    source_fields: dict[str, float] = {}
+    calculation_mode: str | None = None
+    fallback_reason: str = ""
+    citations: list[BuildBossCitationOut] = []
+
+
 class BuildResponse(BaseModel):
     input_type: str = "pob"
     level: int | None = None
@@ -309,6 +347,8 @@ class BuildResponse(BaseModel):
     boss_survival: BuildBossSurvivalOut | None = None
     #: 可选：用当前 Build 的基础防御快照校验用户显式排列的混合 Boss 命中
     boss_sequence: BuildBossSequenceOut | None = None
+    #: 可选：按当前 Build 基础防御快照横向审计已收录的 Boss 单击
+    boss_risk_audit: BuildBossRiskAuditOut | None = None
     #: 需求 8.4 的逐项体检。**只判不算**：值取自 build，判据取自本库常量
     report: list[CheckOut] = []
     #: 需求 8.6：单体 / 清图 / Boss 分开，且显式绑定当前 PoB 配置
@@ -492,6 +532,7 @@ def analyze_build(req: BuildRequest, caller: str = Depends(require_user)) -> Bui
         character_meta=character_meta,
         boss_query=req.boss_survival,
         boss_sequence_query=req.boss_sequence,
+        boss_risk_audit_query=req.boss_risk_audit,
     )
 
 
@@ -527,6 +568,7 @@ def _build_response(
     character_meta=None,
     boss_query: BuildBossSurvivalRequest | None = None,
     boss_sequence_query: BuildBossSequenceRequest | None = None,
+    boss_risk_audit_query: BuildBossRiskAuditRequest | None = None,
 ) -> BuildResponse:  # noqa: ANN001
     """四类 Build 输入共用同一份确定性报告装配，避免入口间口径漂移。"""
     report = build_health_report(dbmod.get_conn(), build)
@@ -535,6 +577,7 @@ def _build_response(
     version = check_build_version(dbmod.get_conn(), build)
     boss_result = None
     boss_sequence_result = None
+    boss_risk_audit_result = None
     if boss_query is not None:
         checked = boss_survival_from_build(
             build,
@@ -569,6 +612,22 @@ def _build_response(
             })
         boss_sequence_result = BuildBossSequenceOut(
             **(checked_sequence.data or {}), citations=checked_sequence.citations
+        )
+    if boss_risk_audit_query is not None:
+        checked_audit = boss_risk_audit_from_build(
+            build,
+            level=boss_risk_audit_query.level,
+            uber=boss_risk_audit_query.uber,
+            roll_range=boss_risk_audit_query.roll_range,
+            pool_mode=boss_risk_audit_query.pool_mode,
+        )
+        if not checked_audit.ok:
+            raise HTTPException(status_code=422, detail={
+                "error": "invalid_build_boss_risk_audit_query",
+                "reason": checked_audit.error,
+            })
+        boss_risk_audit_result = BuildBossRiskAuditOut(
+            **(checked_audit.data or {}), citations=checked_audit.citations
         )
     bridged = sum(1 for g in build.skill_groups for x in g.gems if x.gem_id)
     total_gems = sum(len(g.gems) for g in build.skill_groups)
@@ -620,6 +679,7 @@ def _build_response(
         ),
         boss_survival=boss_result,
         boss_sequence=boss_sequence_result,
+        boss_risk_audit=boss_risk_audit_result,
         report=[_check_out(c) for c in report.items],
         output_report=[_check_out(c) for c in report.output_items],
         defence_sources=[DefenceSourceOut(**line.__dict__) for line in sources.lines],
