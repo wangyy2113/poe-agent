@@ -11,6 +11,8 @@ import math
 from dataclasses import asdict, dataclass
 from typing import Iterable, Mapping
 
+from calc import constants
+
 
 DAMAGE_TYPES = ("physical", "lightning", "cold", "fire", "chaos")
 TYPE_ZH = {
@@ -33,6 +35,11 @@ FINAL_DPS_LINES = (3615, 3628)
 BURST_LINES = (3624, 3680)
 IMPALE_LINES = (5388, 5437)
 IMPALE_DPS_LINES = (5943, 6000)
+AILMENT_CHANCE_LINES = (3987, 4097)
+AILMENT_DAMAGE_LINES = (4125, 4202)
+BLEED_DPS_LINES = (4204, 4475)
+POISON_DPS_LINES = (4477, 4780)
+IGNITE_DPS_LINES = (4782, 5110)
 MAX_VALUE = 1_000_000_000_000_000.0
 
 
@@ -75,6 +82,36 @@ class TypeDamage:
     damage_roll_chance_pct: float
     non_crit_average: float
     crit_average: float
+
+
+@dataclass(frozen=True)
+class DamagingAilmentDps:
+    name: str
+    name_en: str
+    source_damage: DamageRange
+    crit_source_damage: DamageRange
+    chance_on_hit_pct: float
+    chance_on_crit_pct: float
+    effective_chance_pct: float
+    application_rate: float
+    duration_seconds: float
+    stack_potential: float
+    active_stacks: float
+    stack_limit: float | None
+    average_roll_pct: float
+    ailment_crit_chance_pct: float
+    average_source_damage: float
+    percent_per_second: float
+    dot_multiplier_pct: float
+    crit_dot_multiplier_pct: float
+    mitigation_pct: float
+    damage_taken_multiplier: float
+    single_instance_dps: float
+    single_instance_total_damage: float
+    uncapped_dps: float
+    dps: float
+    dps_cap: float
+    capped: bool
 
 
 @dataclass(frozen=True)
@@ -132,6 +169,10 @@ class HitDpsResult:
     cull_multiplier: float
     culling_dps: float
     effective_dps_with_cull: float
+    damaging_ailments: tuple[DamagingAilmentDps, ...]
+    ailment_dps: float
+    total_dps: float
+    effective_total_dps_with_cull: float
 
     def as_dict(self) -> dict[str, object]:
         return asdict(self)
@@ -305,6 +346,246 @@ def _conversion_table(conversions: Iterable[Conversion]) -> dict[str, dict[str, 
     return table
 
 
+_AILMENT_SPECS: dict[str, tuple[str, str, str, str, float | None]] = {
+    "ignite": ("点燃", "Ignite", constants.IGNITE_PERCENT, constants.IGNITE_DURATION, 1.0),
+    "poison": ("中毒", "Poison", constants.POISON_PERCENT, constants.POISON_DURATION, None),
+    "bleed": ("流血", "Bleed", constants.BLEED_PERCENT, constants.BLEED_DURATION, 1.0),
+}
+_AILMENT_ALIASES = {
+    "ignite": "ignite", "点燃": "ignite",
+    "poison": "poison", "中毒": "poison",
+    "bleed": "bleed", "流血": "bleed",
+}
+
+
+def _ailment_range(value: object, label: str) -> DamageRange:
+    if not isinstance(value, (tuple, list)) or len(value) != 2:
+        raise ValueError(f"{label} 必须是 [最小值, 最大值]")
+    low = _number(value[0], f"{label}.minimum")  # type: ignore[arg-type]
+    high = _number(value[1], f"{label}.maximum")  # type: ignore[arg-type]
+    if low > high:
+        raise ValueError(f"{label} 的最小值不能大于最大值")
+    return DamageRange(low, high)
+
+
+def _calculate_damaging_ailments(
+    raw_ailments: Iterable[Mapping[str, object]],
+    *,
+    crit_chance_pct: float,
+    hit_chance_pct: float,
+    action_rate: float,
+    skill_dps_multiplier: float,
+    quantity_multiplier: float,
+    ruthless_chance_pct: float,
+    fist_of_war_effect: float,
+    shared_taken_increased_pct: float,
+    shared_taken_increased_by_type: Mapping[str, float],
+    shared_taken_more_multiplier: float,
+    shared_taken_more_by_type: Mapping[str, float],
+    enemy_resistance: Mapping[str, float],
+    enemy_physical_reduction_pct: float,
+) -> tuple[DamagingAilmentDps, ...]:
+    """按 PoB 的稳态层数与强实例加权模型计算三种伤害性异常。
+
+    ``source_damage`` 是异常专用的减伤前源伤区间。调用方必须显式提供它，避免把穿透、
+    双倍/三倍伤害或仅击中生效的修正错误带入异常伤害。
+    """
+    ailments = list(raw_ailments)
+    if not ailments:
+        return ()
+    if len(ailments) > 3:
+        raise ValueError("damaging_ailments 最多各提供一种点燃、中毒和流血")
+    cap = constants.get(constants.DOT_DPS_CAP)
+    monster_phys_cap = constants.get(constants.MONSTER_MAX_PHYS_DR)
+    seen: set[str] = set()
+    results: list[DamagingAilmentDps] = []
+    for index, raw in enumerate(ailments):
+        if not isinstance(raw, Mapping):
+            raise ValueError(f"damaging_ailments[{index}] 必须是对象")
+        alias = str(raw.get("name", "")).strip().lower()
+        kind = _AILMENT_ALIASES.get(alias)
+        if kind is None:
+            raise ValueError("异常 name 只支持 ignite/点燃、poison/中毒、bleed/流血")
+        if kind in seen:
+            raise ValueError(f"damaging_ailments 不能重复提供 {_AILMENT_SPECS[kind][0]}")
+        seen.add(kind)
+        zh, en, percent_key, duration_key, default_limit = _AILMENT_SPECS[kind]
+        if "source_damage" not in raw:
+            raise ValueError(f"{zh}必须显式提供异常专用 source_damage，不能从最终命中伤害反推")
+        source = _ailment_range(raw["source_damage"], f"{zh}.source_damage")
+        crit_source_value = raw.get("crit_source_damage")
+        crit_source = _ailment_range(
+            raw["source_damage"] if crit_source_value is None else crit_source_value,
+            f"{zh}.crit_source_damage",
+        )
+        chance_hit = _chance(  # type: ignore[arg-type]
+            raw.get("chance_on_hit_pct", 0.0), f"{zh}.chance_on_hit_pct"
+        )
+        chance_crit_value = raw.get("chance_on_crit_pct")
+        chance_crit = _chance(  # type: ignore[arg-type]
+            chance_hit if chance_crit_value is None else chance_crit_value,
+            f"{zh}.chance_on_crit_pct",
+        )
+        effective_chance = (
+            chance_hit * (1 - crit_chance_pct / 100)
+            + chance_crit * crit_chance_pct / 100
+        )
+        extra_stacks = _number(
+            raw.get("stacks_per_application", 1.0), f"{zh}.stacks_per_application"  # type: ignore[arg-type]
+        )
+        if extra_stacks <= 0:
+            raise ValueError(f"{zh}.stacks_per_application 必须大于 0")
+        duration_value = raw.get("base_duration_seconds")
+        duration_base = _number(
+            constants.get(duration_key) if duration_value is None else duration_value,  # type: ignore[arg-type]
+            f"{zh}.base_duration_seconds",
+        )
+        duration_inc = _number(
+            raw.get("duration_increased_pct", 0.0),  # type: ignore[arg-type]
+            f"{zh}.duration_increased_pct",
+            minimum=-100.0,
+        )
+        faster_pct = _number(
+            raw.get("faster_damage_pct", 0.0),  # type: ignore[arg-type]
+            f"{zh}.faster_damage_pct",
+            minimum=-99.999999,
+        )
+        rate_mod = 1 + faster_pct / 100
+        duration = duration_base * (1 + duration_inc / 100) / rate_mod
+        # PoB 只把 quantityMultiplier 接入中毒层数；点燃/流血以同一目标上的强实例/层数上限
+        # 结算，不能把投射物数量直接当成更多同时生效层数。
+        application_quantity = quantity_multiplier if kind == "poison" else 1.0
+        application_rate = (
+            action_rate * skill_dps_multiplier * application_quantity
+            * hit_chance_pct / 100 * effective_chance / 100 * extra_stacks
+        )
+        stack_potential = application_rate * duration
+        raw_limit = raw.get("stack_limit", default_limit)
+        stack_limit = (
+            None
+            if raw_limit is None
+            else _number(raw_limit, f"{zh}.stack_limit")  # type: ignore[arg-type]
+        )
+        if stack_limit is not None and stack_limit <= 0:
+            raise ValueError(f"{zh}.stack_limit 必须大于 0")
+        active_stacks = min(stack_potential, stack_limit) if stack_limit is not None else stack_potential
+
+        if (
+            kind in {"ignite", "bleed"}
+            and stack_limit is not None
+            and stack_potential / stack_limit > 1
+        ):
+            roll = (stack_potential - (stack_limit - 1) / 2) / (stack_potential + 1)
+        else:
+            roll = 0.5
+        roll = min(max(roll, 0.0), 1.0)
+        candidate_count = max(stack_potential, 1.0) if kind in {"ignite", "bleed"} else 1.0
+        ailment_crit_chance = 100 * (1 - (1 - crit_chance_pct / 100) ** candidate_count)
+        normal_source = source.minimum + (source.maximum - source.minimum) * roll
+        critical_source = crit_source.minimum + (crit_source.maximum - crit_source.minimum) * roll
+        normal_dot_multi = _number(  # type: ignore[arg-type]
+            raw.get("dot_multiplier_pct", 0.0),
+            f"{zh}.dot_multiplier_pct",
+            minimum=-100.0,
+        )
+        crit_dot_value = raw.get("crit_dot_multiplier_pct")
+        crit_dot_multi = _number(
+            normal_dot_multi if crit_dot_value is None else crit_dot_value,  # type: ignore[arg-type]
+            f"{zh}.crit_dot_multiplier_pct",
+            minimum=-100.0,
+        )
+        chance_from_hit = chance_hit / 100 * (1 - ailment_crit_chance / 100)
+        chance_from_crit = chance_crit / 100 * ailment_crit_chance / 100
+        chance_total = chance_from_hit + chance_from_crit
+        if chance_total > 0:
+            average_source = (
+                normal_source * (1 + normal_dot_multi / 100) * chance_from_hit
+                + critical_source * (1 + crit_dot_multi / 100) * chance_from_crit
+            ) / chance_total
+        else:
+            average_source = 0.0
+
+        percent_raw = constants.get(percent_key)
+        percent = percent_raw * 100 if kind in {"ignite", "poison"} else percent_raw
+        effect_inc = _number(
+            raw.get("ailment_effect_increased_pct", 0.0),  # type: ignore[arg-type]
+            f"{zh}.ailment_effect_increased_pct",
+            minimum=-100.0,
+        )
+        ruthless_multi = _number(
+            raw.get("ruthless_blow_ailment_multiplier", 1.0),  # type: ignore[arg-type]
+            f"{zh}.ruthless_blow_ailment_multiplier",
+        )
+        ruthless_effect = 1 + ruthless_chance_pct / 100 * (ruthless_multi - 1)
+        warcry_more = _number(
+            raw.get("exerted_ailment_more_damage_pct", 0.0),  # type: ignore[arg-type]
+            f"{zh}.exerted_ailment_more_damage_pct",
+        )
+        warcry_uptime = _chance(
+            raw.get("exerted_ailment_uptime_pct", 0.0),  # type: ignore[arg-type]
+            f"{zh}.exerted_ailment_uptime_pct",
+        )
+        combat_effect = ruthless_effect * fist_of_war_effect * (
+            1 + warcry_more / 100 * warcry_uptime / 100
+        )
+
+        damage_type_key = (
+            "fire" if kind == "ignite" else "chaos" if kind == "poison" else "physical"
+        )
+        if "enemy_mitigation_pct" in raw:
+            mitigation_pct = _number(
+                raw["enemy_mitigation_pct"], f"{zh}.enemy_mitigation_pct", minimum=-200.0  # type: ignore[arg-type]
+            )
+        elif kind == "bleed":
+            mitigation_pct = min(max(enemy_physical_reduction_pct, 0.0), monster_phys_cap)
+        else:
+            mitigation_pct = max(
+                -200.0, min(90.0, enemy_resistance.get(damage_type_key, 0.0))
+            )
+        if mitigation_pct > (monster_phys_cap if kind == "bleed" else 90):
+            raise ValueError(f"{zh}.enemy_mitigation_pct 超出有效上限")
+        ailment_taken_inc = _number(
+            raw.get(
+                "enemy_damage_taken_increased_pct",
+                shared_taken_increased_pct + shared_taken_increased_by_type.get(damage_type_key, 0.0),
+            ),  # type: ignore[arg-type]
+            f"{zh}.enemy_damage_taken_increased_pct",
+            minimum=-100.0,
+        )
+        ailment_taken_more = _number(
+            raw.get(
+                "enemy_damage_taken_more_multiplier",
+                shared_taken_more_multiplier * shared_taken_more_by_type.get(damage_type_key, 1.0),
+            ),  # type: ignore[arg-type]
+            f"{zh}.enemy_damage_taken_more_multiplier",
+        )
+        taken_multiplier = max(0.0, 1 + ailment_taken_inc / 100) * ailment_taken_more
+        single_dps = _bounded(
+            average_source * percent / 100 * combat_effect
+            * (1 + effect_inc / 100) * rate_mod
+            * (1 - mitigation_pct / 100) * taken_multiplier,
+            f"{zh}单实例 DPS",
+        )
+        uncapped = _bounded(single_dps * active_stacks, f"{zh}稳态 DPS")
+        capped_dps = min(uncapped, cap)
+        results.append(DamagingAilmentDps(
+            name=zh, name_en=en, source_damage=source, crit_source_damage=crit_source,
+            chance_on_hit_pct=chance_hit, chance_on_crit_pct=chance_crit,
+            effective_chance_pct=effective_chance, application_rate=application_rate,
+            duration_seconds=duration, stack_potential=stack_potential,
+            active_stacks=active_stacks, stack_limit=stack_limit,
+            average_roll_pct=roll * 100, ailment_crit_chance_pct=ailment_crit_chance,
+            average_source_damage=average_source, percent_per_second=percent,
+            dot_multiplier_pct=normal_dot_multi,
+            crit_dot_multiplier_pct=crit_dot_multi, mitigation_pct=mitigation_pct,
+            damage_taken_multiplier=taken_multiplier, single_instance_dps=single_dps,
+            single_instance_total_damage=single_dps * duration,
+            uncapped_dps=uncapped, dps=capped_dps, dps_cap=cap,
+            capped=uncapped > cap,
+        ))
+    return tuple(results)
+
+
 def hit_dps(
     *,
     base_damage: Mapping[str, tuple[float, float] | list[float]],
@@ -369,8 +650,9 @@ def hit_dps(
     enemy_reflected_damage_taken_more_multiplier: float = 1.0,
     cull_percent: float = 0.0,
     critical_cull_percent: float = 0.0,
+    damaging_ailments: Iterable[Mapping[str, object]] = (),
 ) -> HitDpsResult:
-    """复算单技能 hit、稳态穿刺、终结等效 DPS 与一次爆发。"""
+    """复算单技能 hit、稳态穿刺、伤害性异常、终结等效 DPS 与一次爆发。"""
     base = _ranges(base_damage, "base_damage")
     added = _ranges(added_damage, "added_damage")
     if not any(item.maximum > 0 for item in base.values()) and not any(item.maximum > 0 for item in added.values()):
@@ -641,7 +923,7 @@ def hit_dps(
         "平均击中伤害",
     )
     average_use = _bounded(average_hit * hit_chance / 100, "每次使用期望伤害")
-    total_dps = _bounded(average_use * rate * dps_mult * quantity, "命中 DPS")
+    hit_total_dps = _bounded(average_use * rate * dps_mult * quantity, "命中 DPS")
     burst_damage = _bounded(
         average_use + average_use * (burst_hits - 1) * repeat_mult,
         "平均爆发伤害",
@@ -679,7 +961,25 @@ def hit_dps(
         * (1 if impale_duration > 0 else 0),
         "穿刺 DPS",
     )
-    combined_dps = _bounded(total_dps + impale_dps, "命中与穿刺合计 DPS")
+    combined_dps = _bounded(hit_total_dps + impale_dps, "命中与穿刺合计 DPS")
+    ailment_results = _calculate_damaging_ailments(
+        damaging_ailments,
+        crit_chance_pct=crit_chance,
+        hit_chance_pct=hit_chance,
+        action_rate=rate,
+        skill_dps_multiplier=dps_mult,
+        quantity_multiplier=quantity,
+        ruthless_chance_pct=ruthless_chance,
+        fist_of_war_effect=fist_effect,
+        shared_taken_increased_pct=taken_inc,
+        shared_taken_increased_by_type=taken_inc_type,
+        shared_taken_more_multiplier=taken_more,
+        shared_taken_more_by_type=taken_more_type,
+        enemy_resistance=resist,
+        enemy_physical_reduction_pct=physical_reduction,
+    )
+    ailment_dps = _bounded(sum(item.dps for item in ailment_results), "伤害性异常 DPS")
+    all_damage_dps = _bounded(combined_dps + ailment_dps, "命中、穿刺与异常总 DPS")
     cull_hit_rate = hit_chance / 100 * rate * dps_mult
     effective_crit_cull = crit_cull * (
         1 - (1 - crit_chance / 100) ** cull_hit_rate
@@ -688,10 +988,13 @@ def hit_dps(
     cull_multiplier = 100 / (100 - effective_cull)
     culling_dps = _bounded(combined_dps * (cull_multiplier - 1), "终结等效 DPS")
     effective_dps_with_cull = _bounded(combined_dps * cull_multiplier, "含终结等效 DPS")
+    effective_total_dps_with_cull = _bounded(
+        all_damage_dps * cull_multiplier, "含异常与终结的总等效 DPS"
+    )
     return HitDpsResult(
         conversion=table, by_type=tuple(breakdown), non_crit_hit=total_noncrit,
         non_crit_average=noncrit_average, crit_average=crit_average,
-        average_hit=average_hit, average_damage_per_use=average_use, dps=total_dps,
+        average_hit=average_hit, average_damage_per_use=average_use, dps=hit_total_dps,
         hit_chance_pct=hit_chance, crit_chance_pct=crit_chance,
         crit_multiplier_pct=crit_multi, crit_effect=crit_effect,
         damage_roll_chance_pct=normal_roll_chance,
@@ -718,4 +1021,7 @@ def hit_dps(
         impale_dps=impale_dps, combined_dps=combined_dps,
         cull_percent=effective_cull, cull_multiplier=cull_multiplier,
         culling_dps=culling_dps, effective_dps_with_cull=effective_dps_with_cull,
+        damaging_ailments=ailment_results, ailment_dps=ailment_dps,
+        total_dps=all_damage_dps,
+        effective_total_dps_with_cull=effective_total_dps_with_cull,
     )

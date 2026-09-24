@@ -11,6 +11,7 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from api.calculator import (  # noqa: E402
+    DamagingAilmentRequest,
     HitDpsCompareRequest,
     HitDpsRequest,
     HitDpsScenarioRequest,
@@ -20,10 +21,29 @@ from api.calculator import (  # noqa: E402
     calculate_hit_dps_target_rate,
     compare_hit_dps_scenarios,
 )
+from calc import dps as dps_module  # noqa: E402
 from calc.dps import Conversion, effective_action_rate, effective_cooldown, hit_dps  # noqa: E402
 from calc.dps_analysis import compare_hit_dps, target_action_rate  # noqa: E402
+from calc import constants  # noqa: E402
 from tools.impl.dps import hit_dps_calc, hit_dps_compare, hit_dps_target_rate  # noqa: E402
 from tests.unit.test_resistance import POB_ROOT_ENV  # noqa: E402
+
+
+AILMENT_CONSTANT_VALUES = {
+    constants.BASE_CRIT_MULTIPLIER: 150.0,
+    constants.IGNITE_PERCENT: 0.9,
+    constants.IGNITE_DURATION: 4.0,
+    constants.POISON_PERCENT: 0.3,
+    constants.POISON_DURATION: 2.0,
+    constants.BLEED_PERCENT: 70.0,
+    constants.BLEED_DURATION: 5.0,
+    constants.DOT_DPS_CAP: (2**31 - 1) / 60,
+    constants.MONSTER_MAX_PHYS_DR: 75.0,
+}
+
+
+def _ailment_constant(key: str) -> float:
+    return AILMENT_CONSTANT_VALUES[key]
 
 
 class HitDpsCoreTest(unittest.TestCase):
@@ -332,6 +352,129 @@ class HitDpsCoreTest(unittest.TestCase):
         self.assertAlmostEqual(15, critical.cull_percent)
         self.assertAlmostEqual(200 / 0.85, critical.effective_dps_with_cull)
 
+    @patch("calc.dps.constants.get", side_effect=_ailment_constant)
+    def test_poison_steady_state_uses_rate_duration_and_chance(self, _get: object) -> None:
+        result = hit_dps(
+            base_damage={"chaos": [100, 100]}, action_rate=2,
+            damaging_ailments=[{
+                "name": "poison", "source_damage": [100, 100],
+                "chance_on_hit_pct": 100,
+            }],
+        )
+        poison = result.damaging_ailments[0]
+        self.assertEqual(2, poison.application_rate)
+        self.assertEqual(4, poison.stack_potential)
+        self.assertEqual(4, poison.active_stacks)
+        self.assertEqual(30, poison.single_instance_dps)
+        self.assertEqual(120, result.ailment_dps)
+        self.assertEqual(320, result.total_dps)
+
+    @patch("calc.dps.constants.get", side_effect=_ailment_constant)
+    def test_ignite_models_uptime_and_strongest_roll(self, _get: object) -> None:
+        sparse = hit_dps(
+            base_damage={"fire": [100, 100]}, action_rate=0.125,
+            damaging_ailments=[{
+                "name": "点燃", "source_damage": [100, 200],
+                "chance_on_hit_pct": 100,
+            }],
+        ).damaging_ailments[0]
+        self.assertEqual(0.5, sparse.stack_potential)
+        self.assertEqual(0.5, sparse.active_stacks)
+        self.assertEqual(50, sparse.average_roll_pct)
+        self.assertEqual(67.5, sparse.dps)
+
+        sustained = hit_dps(
+            base_damage={"fire": [100, 100]}, action_rate=1,
+            damaging_ailments=[{
+                "name": "ignite", "source_damage": [100, 200],
+                "chance_on_hit_pct": 100,
+            }],
+        ).damaging_ailments[0]
+        self.assertEqual(4, sustained.stack_potential)
+        self.assertEqual(1, sustained.active_stacks)
+        self.assertEqual(80, sustained.average_roll_pct)
+        self.assertEqual(162, sustained.dps)
+
+    @patch("calc.dps.constants.get", side_effect=_ailment_constant)
+    def test_ailment_crit_chance_source_and_dot_multipliers_are_separate(self, _get: object) -> None:
+        result = hit_dps(
+            base_damage={"chaos": [100, 100]}, action_rate=1,
+            crit_chance_pct=50, crit_multiplier_pct=500,
+            damaging_ailments=[{
+                "name": "poison", "source_damage": [100, 100],
+                "crit_source_damage": [200, 200],
+                "chance_on_hit_pct": 0, "chance_on_crit_pct": 100,
+                "dot_multiplier_pct": 25, "crit_dot_multiplier_pct": 50,
+            }],
+        )
+        poison = result.damaging_ailments[0]
+        self.assertEqual(50, poison.effective_chance_pct)
+        self.assertEqual(300, poison.average_source_damage)
+        self.assertEqual(90, poison.single_instance_dps)
+        self.assertEqual(90, poison.dps)
+
+    @patch("calc.dps.constants.get", side_effect=_ailment_constant)
+    def test_ailment_mitigation_does_not_use_hit_penetration(self, _get: object) -> None:
+        result = hit_dps(
+            base_damage={"fire": [100, 100]}, action_rate=1,
+            enemy_resistance={"fire": 75}, penetration={"fire": 75},
+            damaging_ailments=[{
+                "name": "ignite", "source_damage": [100, 100],
+                "chance_on_hit_pct": 100,
+            }],
+        )
+        self.assertEqual(100, result.dps)
+        self.assertEqual(22.5, result.ailment_dps)
+        self.assertEqual(75, result.damaging_ailments[0].mitigation_pct)
+
+    @patch("calc.dps.constants.get", side_effect=lambda key: {
+        **AILMENT_CONSTANT_VALUES, constants.DOT_DPS_CAP: 100.0,
+    }[key])
+    def test_each_ailment_has_an_independent_dot_cap(self, _get: object) -> None:
+        result = hit_dps(
+            base_damage={"fire": [1, 1]}, action_rate=100,
+            damaging_ailments=[
+                {"name": "ignite", "source_damage": [1000, 1000], "chance_on_hit_pct": 100},
+                {"name": "poison", "source_damage": [1000, 1000], "chance_on_hit_pct": 100},
+            ],
+        )
+        self.assertEqual(200, result.ailment_dps)
+        self.assertTrue(all(item.capped for item in result.damaging_ailments))
+
+    @patch("calc.dps.constants.get", side_effect=_ailment_constant)
+    def test_only_poison_stacks_use_quantity_and_bleed_uses_dot_reduction_cap(self, _get: object) -> None:
+        result = hit_dps(
+            base_damage={"physical": [1, 1]}, action_rate=1,
+            quantity_multiplier=3, enemy_physical_reduction_pct=90,
+            damaging_ailments=[
+                {"name": "bleed", "source_damage": [100, 100], "chance_on_hit_pct": 100},
+                {"name": "poison", "source_damage": [100, 100], "chance_on_hit_pct": 100},
+            ],
+        )
+        bleed, poison = result.damaging_ailments
+        self.assertEqual(1, bleed.application_rate)
+        self.assertEqual(75, bleed.mitigation_pct)
+        self.assertEqual(17.5, bleed.dps)
+        self.assertEqual(3, poison.application_rate)
+        self.assertEqual(6, poison.active_stacks)
+        self.assertEqual(180, poison.dps)
+
+    @patch("calc.dps.constants.get", side_effect=_ailment_constant)
+    def test_ailment_inputs_fail_closed(self, _get: object) -> None:
+        with self.assertRaisesRegex(ValueError, "source_damage"):
+            hit_dps(
+                base_damage={"fire": [1, 1]}, action_rate=1,
+                damaging_ailments=[{"name": "ignite", "chance_on_hit_pct": 100}],
+            )
+        with self.assertRaisesRegex(ValueError, "不能重复"):
+            hit_dps(
+                base_damage={"fire": [1, 1]}, action_rate=1,
+                damaging_ailments=[
+                    {"name": "ignite", "source_damage": [1, 1]},
+                    {"name": "点燃", "source_damage": [1, 1]},
+                ],
+            )
+
     def test_combat_mechanic_inputs_fail_closed(self) -> None:
         with self.assertRaisesRegex(ValueError, "fist_of_war_cooldown_seconds"):
             hit_dps(base_damage={"fire": [1, 1]}, action_rate=1,
@@ -421,6 +564,56 @@ class HitDpsAnalysisTest(unittest.TestCase):
         self.assertTrue(target.reachable)
         self.assertAlmostEqual(1, target.required_raw_action_rate or 0)
         self.assertEqual("combined_dps", target.metric)
+
+    @patch("calc.dps.constants.get", side_effect=_ailment_constant)
+    def test_compare_and_target_support_ailment_and_total_metrics(self, _get: object) -> None:
+        ailment = {
+            "name": "poison", "source_damage": [100, 100],
+            "chance_on_hit_pct": 100,
+        }
+        compared = compare_hit_dps([
+            ("慢速", {"base_damage": {"chaos": [100, 100]}, "action_rate": 1,
+                     "damaging_ailments": [ailment]}),
+            ("快速", {"base_damage": {"chaos": [100, 100]}, "action_rate": 2,
+                     "damaging_ailments": [ailment]}),
+        ])
+        self.assertEqual("快速", compared.best_ailment_dps_scenario)
+        self.assertEqual("快速", compared.best_total_dps_scenario)
+        target = target_action_rate(120, {
+            "base_damage": {"chaos": [100, 100]},
+            "damaging_ailments": [ailment],
+        }, metric="ailment_dps")
+        self.assertTrue(target.reachable)
+        self.assertAlmostEqual(2, target.required_raw_action_rate or 0)
+
+    @patch("calc.dps.constants.get", side_effect=lambda key: {
+        **AILMENT_CONSTANT_VALUES, constants.DOT_DPS_CAP: 100.0,
+    }[key])
+    def test_target_rate_reports_independent_dot_cap(self, _get: object) -> None:
+        result = target_action_rate(101, {
+            "base_damage": {"fire": [1, 1]},
+            "damaging_ailments": [{
+                "name": "ignite", "source_damage": [1000, 1000],
+                "chance_on_hit_pct": 100,
+            }],
+        }, metric="ailment_dps")
+        self.assertFalse(result.reachable)
+        self.assertEqual(("dot_cap",), result.cap_sources)
+        self.assertEqual(100, result.maximum_achievable_dps)
+        self.assertIn("DoT 上限", result.reason)
+
+    @patch("calc.dps.constants.get", side_effect=_ailment_constant)
+    def test_target_rate_rejects_non_monotonic_ailment_inputs(self, _get: object) -> None:
+        with self.assertRaisesRegex(ValueError, "可能非单调"):
+            target_action_rate(100, {
+                "base_damage": {"fire": [100, 100]},
+                "fist_of_war_more_damage_pct": 100,
+                "fist_of_war_cooldown_seconds": 1,
+                "damaging_ailments": [{
+                    "name": "ignite", "source_damage": [100, 100],
+                    "chance_on_hit_pct": 100,
+                }],
+            }, metric="ailment_dps")
 
     def test_target_rate_numerically_solves_rate_dependent_critical_cull(self) -> None:
         result = target_action_rate(220, {
@@ -514,7 +707,7 @@ class HitDpsSurfaceTest(unittest.TestCase):
         ])
         self.assertTrue(comparison.ok)
         self.assertIsNone(comparison.data["scenarios"][1]["dps_delta_pct"])
-        self.assertIn("| 可命中 | 100 | 100 | 100 | 不可定义 |", comparison.data["answer"])
+        self.assertIn("| 可命中 | 100 | 100 | 0 | 100 | 100 | 不可定义 |", comparison.data["answer"])
 
     def test_http_endpoint_reuses_same_calculator(self) -> None:
         request = HitDpsRequest(base_damage={"fire": (50, 150)}, action_rate=3)
@@ -533,6 +726,27 @@ class HitDpsSurfaceTest(unittest.TestCase):
         self.assertTrue(response["action_rate_tick_capped"])
         self.assertGreater(response["impale_dps"], 0)
         self.assertGreater(response["effective_dps_with_cull"], response["combined_dps"])
+
+    @patch("calc.dps.constants.get", side_effect=_ailment_constant)
+    def test_tool_and_http_expose_steady_state_ailments(self, _get: object) -> None:
+        tool_result = hit_dps_calc(
+            base_damage={"chaos": [100, 100]}, action_rate=2,
+            damaging_ailments=[{
+                "name": "poison", "source_damage": [100, 100],
+                "chance_on_hit_pct": 100,
+            }],
+        )
+        self.assertTrue(tool_result.ok)
+        self.assertEqual(120, tool_result.data["ailment_dps"])
+        self.assertIn("伤害性异常合计：120", tool_result.data["answer"])
+        response = calculate_hit_dps(HitDpsRequest(
+            base_damage={"chaos": (100, 100)}, action_rate=2,
+            damaging_ailments=[DamagingAilmentRequest(
+                name="poison", source_damage=(100, 100), chance_on_hit_pct=100,
+            )],
+        ), _caller="test")
+        self.assertEqual(320, response["total_dps"])
+        self.assertEqual("中毒", response["damaging_ailments"][0]["name"])
 
     def test_compare_and_target_http_endpoints(self) -> None:
         comparison = compare_hit_dps_scenarios(HitDpsCompareRequest(scenarios=[
@@ -624,6 +838,21 @@ class HitDpsSurfaceTest(unittest.TestCase):
         self.assertEqual(0.033, args["server_tick_seconds"])
         self.assertNotIn("cooldown_seconds", args)
 
+    def test_natural_language_extracts_only_explicit_ailment_source_damage(self) -> None:
+        from orchestrator.loop import _hit_dps_args
+
+        args = _hit_dps_args(
+            "100-100 火焰伤害，每秒攻击2次，点燃源伤害100-200，"
+            "点燃几率100%，点燃持续伤害加成50%，点燃持续时间提高25%，命中和点燃 DPS 怎么算"
+        )
+        self.assertEqual([{
+            "name": "ignite", "source_damage": [100.0, 200.0],
+            "chance_on_hit_pct": 100.0, "dot_multiplier_pct": 50.0,
+            "duration_increased_pct": 25.0,
+        }], args["damaging_ailments"])
+        vague = _hit_dps_args("100-100 火焰伤害，每秒攻击2次，点燃几率100%，总 DPS 怎么算")
+        self.assertNotIn("damaging_ailments", vague)
+
     def test_vague_build_dps_question_is_not_silently_guessed(self) -> None:
         from orchestrator.loop import _hit_dps_args
 
@@ -680,6 +909,22 @@ class FormulaPinnedToUpstream(unittest.TestCase):
         impale = "\n".join(self.source.splitlines()[5387:5437])
         self.assertIn("local impaleDMGModifier", impale)
         self.assertIn("output.ImpaleStoredDamage", impale)
+
+    def test_damaging_ailment_steady_state_stays_pinned(self) -> None:
+        lines = self.source.splitlines()
+        chance = "\n".join(lines[dps_module.AILMENT_CHANCE_LINES[0] - 1:dps_module.AILMENT_CHANCE_LINES[1]])
+        source = "\n".join(lines[dps_module.AILMENT_DAMAGE_LINES[0] - 1:dps_module.AILMENT_DAMAGE_LINES[1]])
+        bleed = "\n".join(lines[dps_module.BLEED_DPS_LINES[0] - 1:dps_module.BLEED_DPS_LINES[1]])
+        poison = "\n".join(lines[dps_module.POISON_DPS_LINES[0] - 1:dps_module.POISON_DPS_LINES[1]])
+        ignite = "\n".join(lines[dps_module.IGNITE_DPS_LINES[0] - 1:dps_module.IGNITE_DPS_LINES[1]])
+        self.assertIn("BleedChanceOnCrit", chance)
+        self.assertIn("local function calcAilmentDamage", source)
+        self.assertIn("bleedStacks = bleedStacks * globalOutput.BleedDuration", bleed)
+        self.assertIn("activeBleeds = m_min(bleedStacks, maxStacks)", bleed)
+        self.assertIn("PoisonStacks = PoisonStacks * globalOutput.PoisonDuration", poison)
+        self.assertIn("PoisonDPSCapped = m_min(PoisonDPSUncapped, data.misc.DotDpsCap)", poison)
+        self.assertIn("igniteStacks = igniteStacks * globalOutput.IgniteDuration", ignite)
+        self.assertIn("activeIgnites = m_min(igniteStacks, maxStacks)", ignite)
 
 
 if __name__ == "__main__":

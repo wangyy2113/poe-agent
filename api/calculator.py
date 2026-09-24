@@ -20,6 +20,32 @@ class ConversionRequest(BaseModel):
     kind: str = Field(default="global", pattern="^(global|skill|gain)$")
 
 
+class DamagingAilmentRequest(BaseModel):
+    name: str = Field(pattern="^(ignite|poison|bleed|点燃|中毒|流血)$")
+    source_damage: tuple[float, float]
+    crit_source_damage: tuple[float, float] | None = None
+    chance_on_hit_pct: float = Field(default=0, ge=0, le=100, allow_inf_nan=False)
+    chance_on_crit_pct: float | None = Field(default=None, ge=0, le=100, allow_inf_nan=False)
+    dot_multiplier_pct: float = Field(default=0, ge=-100, allow_inf_nan=False)
+    crit_dot_multiplier_pct: float | None = Field(default=None, ge=-100, allow_inf_nan=False)
+    base_duration_seconds: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    duration_increased_pct: float = Field(default=0, ge=-100, allow_inf_nan=False)
+    faster_damage_pct: float = Field(default=0, gt=-100, allow_inf_nan=False)
+    stack_limit: float | None = Field(default=None, gt=0, allow_inf_nan=False)
+    stacks_per_application: float = Field(default=1, gt=0, allow_inf_nan=False)
+    ailment_effect_increased_pct: float = Field(default=0, ge=-100, allow_inf_nan=False)
+    ruthless_blow_ailment_multiplier: float = Field(default=1, ge=0, allow_inf_nan=False)
+    exerted_ailment_more_damage_pct: float = Field(default=0, ge=0, allow_inf_nan=False)
+    exerted_ailment_uptime_pct: float = Field(default=0, ge=0, le=100, allow_inf_nan=False)
+    enemy_mitigation_pct: float | None = Field(default=None, ge=-200, le=90, allow_inf_nan=False)
+    enemy_damage_taken_increased_pct: float | None = Field(
+        default=None, ge=-100, allow_inf_nan=False
+    )
+    enemy_damage_taken_more_multiplier: float | None = Field(
+        default=None, ge=0, allow_inf_nan=False
+    )
+
+
 class HitDpsRequest(BaseModel):
     base_damage: dict[str, tuple[float, float]]
     added_damage: dict[str, tuple[float, float]] = Field(default_factory=dict)
@@ -89,6 +115,7 @@ class HitDpsRequest(BaseModel):
     )
     cull_percent: float = Field(default=0, ge=0, lt=100, allow_inf_nan=False)
     critical_cull_percent: float = Field(default=0, ge=0, lt=100, allow_inf_nan=False)
+    damaging_ailments: list[DamagingAilmentRequest] = Field(default_factory=list, max_length=3)
 
 
 class HitDpsScenarioRequest(BaseModel):
@@ -108,7 +135,10 @@ class HitDpsTargetRateRequest(BaseModel):
     target_dps: float = Field(gt=0, allow_inf_nan=False)
     metric: str = Field(
         default="hit_dps",
-        pattern="^(hit_dps|combined_dps|effective_dps_with_cull)$",
+        pattern=(
+            "^(hit_dps|combined_dps|effective_dps_with_cull|ailment_dps|total_dps|"
+            "effective_total_dps_with_cull)$"
+        ),
     )
     inputs: HitDpsTargetRateInputs
 
@@ -116,7 +146,7 @@ class HitDpsTargetRateRequest(BaseModel):
 @router.post("/calc/hit-dps", response_model=None)
 def calculate_hit_dps(req: HitDpsRequest, _caller: str = Depends(require_user)) -> dict[str, Any]:
     result = hit_dps_calc(
-        **req.model_dump(exclude={"conversions"}),
+        **req.model_dump(exclude={"conversions"}, exclude_none=True),
         conversions=[item.model_dump() for item in req.conversions],
     )
     if not result.ok:
@@ -129,7 +159,7 @@ def compare_hit_dps_scenarios(
     req: HitDpsCompareRequest, _caller: str = Depends(require_user)
 ) -> dict[str, Any]:
     result = hit_dps_compare(scenarios=[
-        {"name": scenario.name, "inputs": scenario.inputs.model_dump()}
+        {"name": scenario.name, "inputs": scenario.inputs.model_dump(exclude_none=True)}
         for scenario in req.scenarios
     ])
     if not result.ok:
@@ -144,7 +174,7 @@ def calculate_hit_dps_target_rate(
     result = hit_dps_target_rate(
         target_dps=req.target_dps,
         metric=req.metric,
-        inputs=req.inputs.model_dump(exclude={"action_rate"}),
+        inputs=req.inputs.model_dump(exclude={"action_rate"}, exclude_none=True),
     )
     if not result.ok:
         raise HTTPException(status_code=422, detail=result.error)
