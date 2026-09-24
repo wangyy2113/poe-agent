@@ -7,8 +7,8 @@
 同一份分享码永远得到同一份结果。也正因如此它不过出口绑定闸门——
 闸门防的是模型编造，这里没有模型。
 
-需求 8.4 的 16 项体检、8.5 的防御补充、8.6 的三类输出分析与 8.7 的
-双档优化建议已经接入，
+需求 8.4 的 16 项体检、8.5 的防御补充、8.6 的三类输出分析、8.7 的
+双档优化建议与 V3 的显式目标成长里程碑已经接入，
 但遵守「**只判不算**」边界：值只取输入本身携带的字段，本库只用有出处的
 常量与规则判读；缺失项标为「未知」，不会估计。因此返回里
 `analysis_done=true` 表示这些项目均已检查，**不表示本库重算了 Build**。输出分析中，
@@ -44,6 +44,12 @@ from core import db as dbmod
 from core.config import get_config, get_secrets
 from kb.fetcher import Fetcher, Poe2SourceRejected
 from parsers.build_advice import build_suggestions
+from parsers.build_growth import (
+    GROWTH_METRICS,
+    BuildGrowthPlan,
+    GrowthObjective,
+    plan_build_growth,
+)
 from parsers.build_report import build_health_report
 from parsers.build_sources import build_defence_sources
 from parsers.build_version import check_build_version
@@ -121,6 +127,65 @@ class BuildBossRiskAuditRequest(BaseModel):
     )
 
 
+GrowthMetric = Literal[
+    "life",
+    "energy_shield",
+    "fire_resistance",
+    "cold_resistance",
+    "lightning_resistance",
+    "chaos_resistance",
+    "spell_suppression",
+    "attack_block",
+    "spell_block",
+    "armour",
+    "evasion",
+    "life_recovery",
+    "dps",
+    "physical_max_hit",
+    "fire_max_hit",
+    "cold_max_hit",
+    "lightning_max_hit",
+    "chaos_max_hit",
+]
+
+
+class BuildGrowthObjectiveRequest(BaseModel):
+    """一个用户显式目标；priority 数字越小越优先。"""
+
+    metric: GrowthMetric
+    target: float = Field(allow_inf_nan=False)
+    priority: int = Field(default=50, ge=1, le=100)
+    label: str = Field(default="", max_length=80)
+
+    @field_validator("target", mode="before")
+    @classmethod
+    def reject_boolean_target(cls, value):  # noqa: ANN001
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ValueError("成长目标必须是 JSON number，不能是字符串或布尔值")
+        return value
+
+    @model_validator(mode="after")
+    def validate_metric_target(self) -> "BuildGrowthObjectiveRequest":
+        spec = GROWTH_METRICS[self.metric]
+        if abs(self.target) > 1_000_000_000_000_000:
+            raise ValueError("成长目标超出安全数值范围")
+        if self.target < 0 and not spec.allow_negative_target:
+            raise ValueError(f"{self.metric} 的目标不能为负数")
+        self.label = self.label.strip()
+        return self
+
+
+class BuildGrowthPlanRequest(BaseModel):
+    objectives: list[BuildGrowthObjectiveRequest] = Field(min_length=1, max_length=20)
+
+    @model_validator(mode="after")
+    def unique_metrics(self) -> "BuildGrowthPlanRequest":
+        metrics = [item.metric for item in self.objectives]
+        if len(set(metrics)) != len(metrics):
+            raise ValueError("同一个成长指标不能重复")
+        return self
+
+
 class BuildRequest(BaseModel):
     code: str = Field(
         default="", max_length=200000,
@@ -156,6 +221,13 @@ class BuildRequest(BaseModel):
             "给出池子及抗性/护甲目标；缺字段或模型不覆盖的技能保留为 unknown。"
         ),
     )
+    growth_plan: BuildGrowthPlanRequest | None = Field(
+        default=None,
+        description=(
+            "可选的 Build 成长目标。只比较用户目标与当前 PlayerStat，按显式优先级输出"
+            "里程碑；不推断具体装备、工艺、价格或目标可达性。"
+        ),
+    )
 
     @model_validator(mode="after")
     def exactly_one_input(self) -> "BuildRequest":
@@ -180,6 +252,7 @@ class ScreenshotBuildRequest(BaseModel):
     player_stats: dict[str, float] = Field(default_factory=dict, max_length=80)
     player_stat_text: dict[str, str] = Field(default_factory=dict, max_length=20)
     enemy_is_boss: str = Field(default="", max_length=20)
+    growth_plan: BuildGrowthPlanRequest | None = None
 
     @field_validator("player_stats", mode="before")
     @classmethod
@@ -330,6 +403,37 @@ class BuildBossRiskAuditOut(BossRiskAuditResponse):
     citations: list[BuildBossCitationOut] = []
 
 
+class BuildGrowthMilestoneOut(BaseModel):
+    sequence: int
+    metric: GrowthMetric
+    label: str
+    priority: int
+    status: Literal["met", "gap", "unknown"]
+    current: float | None = None
+    target: float
+    gap: float | None = None
+    unit: str = ""
+    source_field: str = ""
+    current_source: str
+    target_source: str
+    action: str
+    expected_gain: str = ""
+    verification: str
+    assumptions: str
+
+
+class BuildGrowthPlanOut(BaseModel):
+    status: Literal["ready", "partial", "complete", "unknown"]
+    total: int
+    met: int
+    remaining: int
+    unknown: int
+    completion_percent: float
+    next_metric: str = ""
+    milestones: list[BuildGrowthMilestoneOut] = []
+    note: str
+
+
 class BuildResponse(BaseModel):
     input_type: str = "pob"
     level: int | None = None
@@ -350,6 +454,8 @@ class BuildResponse(BaseModel):
     boss_sequence: BuildBossSequenceOut | None = None
     #: 可选：按当前 Build 基础防御快照横向审计已收录的 Boss 单击
     boss_risk_audit: BuildBossRiskAuditOut | None = None
+    #: 可选：用户显式目标与当前 PlayerStat 之间的确定性成长里程碑
+    growth_plan: BuildGrowthPlanOut | None = None
     #: 需求 8.4 的逐项体检。**只判不算**：值取自 build，判据取自本库常量
     report: list[CheckOut] = []
     #: 需求 8.6：单体 / 清图 / Boss 分开，且显式绑定当前 PoB 配置
@@ -534,6 +640,7 @@ def analyze_build(req: BuildRequest, caller: str = Depends(require_user)) -> Bui
         boss_query=req.boss_survival,
         boss_sequence_query=req.boss_sequence,
         boss_risk_audit_query=req.boss_risk_audit,
+        growth_plan_query=req.growth_plan,
     )
 
 
@@ -557,7 +664,12 @@ def analyze_screenshot_build(
         "截图 Build 已确认 caller=%s 字段=%d 文本字段=%d",
         caller, len(fields.player_stats), len(fields.player_stat_text),
     )
-    return _build_response(build, input_type="screenshot", caller=caller)
+    return _build_response(
+        build,
+        input_type="screenshot",
+        caller=caller,
+        growth_plan_query=req.growth_plan,
+    )
 
 
 def _build_response(
@@ -570,6 +682,7 @@ def _build_response(
     boss_query: BuildBossSurvivalRequest | None = None,
     boss_sequence_query: BuildBossSequenceRequest | None = None,
     boss_risk_audit_query: BuildBossRiskAuditRequest | None = None,
+    growth_plan_query: BuildGrowthPlanRequest | None = None,
 ) -> BuildResponse:  # noqa: ANN001
     """四类 Build 输入共用同一份确定性报告装配，避免入口间口径漂移。"""
     report = build_health_report(dbmod.get_conn(), build)
@@ -579,6 +692,7 @@ def _build_response(
     boss_result = None
     boss_sequence_result = None
     boss_risk_audit_result = None
+    growth_plan_result: BuildGrowthPlan | None = None
     if boss_query is not None:
         checked = boss_survival_from_build(
             build,
@@ -631,6 +745,17 @@ def _build_response(
         boss_risk_audit_result = BuildBossRiskAuditOut(
             **(checked_audit.data or {}), citations=checked_audit.citations
         )
+    if growth_plan_query is not None:
+        objectives = [
+            GrowthObjective(
+                metric=item.metric,
+                target=item.target,
+                priority=item.priority,
+                label=item.label,
+            )
+            for item in growth_plan_query.objectives
+        ]
+        growth_plan_result = plan_build_growth(build, objectives)
     bridged = sum(1 for g in build.skill_groups for x in g.gems if x.gem_id)
     total_gems = sum(len(g.gems) for g in build.skill_groups)
     logger.info(
@@ -682,6 +807,10 @@ def _build_response(
         boss_survival=boss_result,
         boss_sequence=boss_sequence_result,
         boss_risk_audit=boss_risk_audit_result,
+        growth_plan=(
+            BuildGrowthPlanOut.model_validate(growth_plan_result, from_attributes=True)
+            if growth_plan_result else None
+        ),
         report=[_check_out(c) for c in report.items],
         output_report=[_check_out(c) for c in report.output_items],
         defence_sources=[DefenceSourceOut(**line.__dict__) for line in sources.lines],

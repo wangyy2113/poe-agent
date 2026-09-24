@@ -146,7 +146,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 1878 项，秒级
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 1889 项，秒级
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选
@@ -203,6 +203,14 @@ POST /chat[/stream]  api/chat.py（只做校验与编排调用）
 持久化必须来自显式 CRUD。缺据、POE2 越界、覆盖声明和 `_DETERMINISTIC_DIRECT_TOOLS`
 都在读取记忆前结束；记忆查询异常只记 `memory_error`，不得把核心问答变成 500。未配置
 `API_KEYS` 时所有请求共享 `anonymous`，只适合本机单用户。
+
+**Build 成长规划（第一百零四轮）**：`BuildRequest.growth_plan.objectives` 接受 1–20 个
+显式数值目标与优先级，`parsers/build_growth.py` 只比较同一份 `PlayerStat` 快照并输出
+`met / gap / unknown`、采用字段、精确差额、下一里程碑和复核方式。字段优先级必须保持：
+`LifeUnreserved → Life`、`Effective* → 非 Effective`、DPS 按报告已有顺序；不要从装备文本
+聚合当前值。目标是用户输入，不是知识库事实，也不表示游戏内一定可达。缺字段必须 unknown；
+具体装备、天赋、工艺、价格和 DPS 加成链继续不推断。长期记忆中的自然语言目标不会自动
+进入规划，请求必须显式给结构化目标，避免旧目标覆盖当前意图。
 
 **PoB 分享码解析（第四十八轮，V2 的地基）**：`parsers/pob_build.py`，
 编码方式取自 PoB `Classes/ImportTab.lua:504/631`——**zlib deflate + URL-safe base64**
@@ -292,7 +300,7 @@ Craft of Exile 矩阵证据支撑；两条 Citation 不得互相夹带正文。�
 | `kb/sync.py` / `scripts/sync_knowledge.py` | 过期分类计划、现有采集器编排、事实行快照与版本 diff。默认 CLI 只预览，`--apply` 才执行；记录删除提升为 `attention`。唯一装备不得加入自动集合，直到主列表 + 1,342 页详情补全可原子执行 |
 | `retrieval/` | FTS5、别名、RRF 融合、jieba 分词、领域词表 |
 | `kb/` | `pipeline.py` 采集管线、`sources/` 各来源抽取器、`coverage.py` 知识库自描述层、`stat_channels.py` 属性来源渠道注册表、`render*.py` 卡片切片 |
-| `parsers/` | `item_text.py`（纯文本，不连库）→ `item_mods.py` T 级匹配 → `mod_bridge.py` 英文桥接 → `item_report.py` 报告 |
+| `parsers/` | `item_text.py`（纯文本，不连库）→ `item_mods.py` T 级匹配 → `mod_bridge.py` 英文桥接 → `item_report.py` 报告；`build_growth.py` 只做用户目标与 PlayerStat 的确定性差额规划 |
 | `craft/` | `feasibility.py` 词缀组合三态可行性、`pool.py` 胸甲普通词缀有效池与条件概率、`awakener_operations.py` 觉醒者之石双物品状态转移；各制作状态机只实现来源原文明示的变化，随机结果与未证实前提保留 unknown |
 | `calc/` | `constants.py` 常量访问层，**缺失即抛异常，绝不给默认值**；`derive.py` 各计算器共用的推导件（`Step` / 引用推导）；`resistance.py` 抗性结算；`mitigation.py` 受击结算（闪避/命中、格挡、法术压制、护甲）；`recovery.py` 回复（护盾回充、偷取、魔力再生）；`reservation.py` 保留（取整是难点）；`ailment.py` 持续伤害；`threshold.py` 门槛型异常；`maxhit.py` 一发最大承受伤害；`boss_survival.py` Boss 同一命中重复累加与 Max Hit 合流；`crit.py` 暴击；`accuracy.py` 命中率（攻击侧，与 `mitigation` 共用同一个 `hitChance`）；`attack_speed.py` 攻击速度。**DPS 仍未实现**——整条加成链（增加/更多/转化/穿透）没有采集，伤害转化下的 Max Hit、冰冻时长曲线同样未实现 |
 | `static/` | 单页前端三个文件，无构建步骤、无 Node、无第三方 JS（Markdown 渲染器自写，为了强制先转义再解析） |
