@@ -836,7 +836,7 @@ _PREFERRED_TOOL_INTENTS: tuple[tuple[str, tuple[str, ...]], ...] = (
     )),
     ("hit_dps_calc", (
         "命中DPS", "命中 DPS", "DPS怎么算", "DPS 怎么算", "dps怎么算", "dps 怎么算",
-        "每秒伤害怎么算", "每秒能打多少伤害",
+        "每秒伤害怎么算", "每秒能打多少伤害", "命中和点燃", "命中和中毒", "命中和流血",
     )),
     # 利润/Flip 必须先于普通价格匹配，由双边挂单、深度、时效与显式费用共同判定。
     ("economy_flip_analysis", (
@@ -2328,6 +2328,35 @@ def _hit_dps_args(question: str) -> dict[str, Any]:
             } else value
     if "触发" in question and "cooldown_seconds" in args:
         args["triggered"] = True
+    ailments: list[dict[str, Any]] = []
+    for zh, en in (("点燃", "ignite"), ("中毒", "poison"), ("流血", "bleed")):
+        source = re.search(
+            rf"(?:{zh}(?:的)?(?:源伤害|异常源伤害)|用于{zh}的伤害)\s*"
+            rf"(\d+(?:\.\d+)?)\s*(?:到|至|[-~～—])\s*(\d+(?:\.\d+)?)",
+            question,
+        )
+        if source is None:
+            continue
+        item: dict[str, Any] = {
+            "name": en,
+            "source_damage": [float(source.group(1)), float(source.group(2))],
+        }
+        ailment_patterns = (
+            ("chance_on_hit_pct", rf"{zh}(?:几率|概率)\s*(\d+(?:\.\d+)?)%"),
+            ("chance_on_crit_pct", rf"暴击时{zh}(?:几率|概率)\s*(\d+(?:\.\d+)?)%"),
+            ("dot_multiplier_pct", rf"{zh}(?:持续)?伤害加成\s*(\d+(?:\.\d+)?)%"),
+            ("duration_increased_pct", rf"{zh}持续时间(?:提高|增加)\s*(\d+(?:\.\d+)?)%"),
+            ("faster_damage_pct", rf"{zh}(?:伤害|生效)(?:加快|加速)\s*(\d+(?:\.\d+)?)%"),
+            ("stack_limit", rf"最多\s*(\d+(?:\.\d+)?)\s*层{zh}"),
+            ("stacks_per_application", rf"每次(?:命中)?施加\s*(\d+(?:\.\d+)?)\s*层{zh}"),
+        )
+        for key, pattern in ailment_patterns:
+            match = re.search(pattern, question)
+            if match:
+                item[key] = float(match.group(1))
+        ailments.append(item)
+    if ailments:
+        args["damaging_ailments"] = ailments
     return args
 
 

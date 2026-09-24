@@ -146,7 +146,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 1985 项，秒级
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 1998 项，秒级
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选
@@ -163,7 +163,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 .venv/bin/python scripts/eval_run.py --record        # 重录真实响应（**要凭证、烧 token**）
 ```
 
-黄金问答集是 `tests/golden/questions.yaml`（171 条，六类），基线与全部结论在
+黄金问答集是 `tests/golden/questions.yaml`（172 条，六类），基线与全部结论在
 `tests/golden/BASELINE.md`——**动闸门前先读它**，里面记了多个已修缺陷与三条已知未修边界，
 以及两次「测量本身写错」的教训。
 
@@ -302,7 +302,7 @@ Craft of Exile 矩阵证据支撑；两条 Citation 不得互相夹带正文。�
 | `kb/` | `pipeline.py` 采集管线、`sources/` 各来源抽取器、`coverage.py` 知识库自描述层、`stat_channels.py` 属性来源渠道注册表、`render*.py` 卡片切片 |
 | `parsers/` | `item_text.py`（纯文本，不连库）→ `item_mods.py` T 级匹配 → `mod_bridge.py` 英文桥接 → `item_report.py` 报告；`build_growth.py` 只做用户目标与 PlayerStat 的确定性差额规划 |
 | `craft/` | `feasibility.py` 词缀组合三态可行性、`pool.py` 胸甲普通词缀有效池与条件概率、`awakener_operations.py` 觉醒者之石双物品状态转移；各制作状态机只实现来源原文明示的变化，随机结果与未证实前提保留 unknown |
-| `calc/` | `constants.py` 常量访问层，**缺失即抛异常，绝不给默认值**；`derive.py` 各计算器共用的推导件（`Step` / 引用推导）；`resistance.py` 抗性结算；`mitigation.py` 受击结算（闪避/命中、格挡、法术压制、护甲）；`recovery.py` 回复（护盾回充、偷取、魔力再生）；`reservation.py` 保留（取整是难点）；`ailment.py` 持续伤害；`threshold.py` 门槛型异常；`maxhit.py` 一发最大承受伤害；`boss_survival.py` Boss 同一命中重复累加与 Max Hit 合流；`crit.py` 暴击；`accuracy.py` 命中率（攻击侧，与 `mitigation` 共用同一个 `hitChance`）；`attack_speed.py` 攻击速度。**DPS 仍未实现**——整条加成链（增加/更多/转化/穿透）没有采集，伤害转化下的 Max Hit、冰冻时长曲线同样未实现 |
+| `calc/` | `constants.py` 常量访问层，**缺失即抛异常，绝不给默认值**；`derive.py` 各计算器共用的推导件；`resistance.py` 抗性结算；`mitigation.py` 受击结算；`recovery.py` 回复；`reservation.py` 保留；`ailment.py` 独立持续伤害；`threshold.py` 门槛型异常；`maxhit.py` 一发最大承受伤害；`boss_survival.py` Boss 命中生存；`crit.py` 暴击；`accuracy.py` 命中率；`attack_speed.py` 攻击速度；`dps.py` / `dps_analysis.py` 显式单技能命中、穿刺、点燃/中毒/流血稳态、终结、方案比较与目标频率反解。完整 Build 自动汇总、伤害转化下的 Max Hit、冰冻时长曲线仍未实现 |
 | `static/` | 单页前端三个文件，无构建步骤、无 Node、无第三方 JS（Markdown 渲染器自写，为了强制先转义再解析） |
 | `tests/golden/` | 评测资产：`questions.yaml` 黄金问答集、`loader.py` 严格校验、`recording.py` 录制回放、`recordings/` 真实响应、`audit.yaml` 人工结论、`BASELINE.md` 指标基线 |
 
@@ -340,6 +340,9 @@ Craft of Exile 矩阵证据支撑；两条 Citation 不得互相夹带正文。�
 `crit_calc`（暴击率与平均伤害倍率；基础暴击查库，**只给倍率不给 DPS**）→
 `accuracy_calc`（命中率：我的命中值 vs 怪物闪避，含「要多少命中」的反解）→
 `attack_speed_calc`（每秒攻击次数与攻击间隔；武器攻速与技能倍率查库）→
+`hit_dps_calc`（显式单技能命中/穿刺/伤害性异常/终结等效 DPS）→
+`hit_dps_compare`（2–10 套同口径 DPS 方案比较）→
+`hit_dps_target_rate`（六种 DPS 指标的频率反解与平台判定）→
 `stat_sources`（某属性能从哪来）→
 `entity_lookup` → `kb_coverage` → `kb_search`（兜底）
 

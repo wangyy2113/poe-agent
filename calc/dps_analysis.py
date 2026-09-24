@@ -17,6 +17,9 @@ TARGET_METRICS = {
     "hit_dps": "dps",
     "combined_dps": "combined_dps",
     "effective_dps_with_cull": "effective_dps_with_cull",
+    "ailment_dps": "ailment_dps",
+    "total_dps": "total_dps",
+    "effective_total_dps_with_cull": "effective_total_dps_with_cull",
 }
 
 
@@ -28,6 +31,9 @@ class ScenarioDelta:
     dps_delta_pct: float | None
     combined_dps: float
     effective_dps_with_cull: float
+    ailment_dps: float
+    total_dps: float
+    effective_total_dps_with_cull: float
     average_hit: float
     average_hit_delta: float
     burst_damage: float
@@ -45,6 +51,9 @@ class DpsComparison:
     best_dps_scenario: str
     best_combined_dps_scenario: str
     best_effective_dps_scenario: str
+    best_ailment_dps_scenario: str
+    best_total_dps_scenario: str
+    best_effective_total_dps_scenario: str
     best_burst_scenario: str
 
     def as_dict(self) -> dict[str, Any]:
@@ -104,6 +113,9 @@ def compare_hit_dps(
             dps_delta_pct=delta_pct,
             combined_dps=result.combined_dps,
             effective_dps_with_cull=result.effective_dps_with_cull,
+            ailment_dps=result.ailment_dps,
+            total_dps=result.total_dps,
+            effective_total_dps_with_cull=result.effective_total_dps_with_cull,
             average_hit=result.average_hit,
             average_hit_delta=result.average_hit - baseline.average_hit,
             burst_damage=result.average_burst_damage,
@@ -117,6 +129,11 @@ def compare_hit_dps(
         best_combined_dps_scenario=max(rows, key=lambda row: row.combined_dps).name,
         best_effective_dps_scenario=max(
             rows, key=lambda row: row.effective_dps_with_cull
+        ).name,
+        best_ailment_dps_scenario=max(rows, key=lambda row: row.ailment_dps).name,
+        best_total_dps_scenario=max(rows, key=lambda row: row.total_dps).name,
+        best_effective_total_dps_scenario=max(
+            rows, key=lambda row: row.effective_total_dps_with_cull
         ).name,
         best_burst_scenario=max(rows, key=lambda row: row.burst_damage).name,
     )
@@ -136,11 +153,38 @@ def target_action_rate(
         raise ValueError("target_dps 必须是有限正数")
     if metric not in TARGET_METRICS:
         raise ValueError(
-            "metric 只支持 hit_dps、combined_dps、effective_dps_with_cull"
+            "metric 只支持 hit_dps、combined_dps、effective_dps_with_cull、"
+            "ailment_dps、total_dps、effective_total_dps_with_cull"
         )
 
     values = _kwargs(inputs)
     values.pop("action_rate", None)
+    if metric in {"ailment_dps", "total_dps", "effective_total_dps_with_cull"}:
+        if float(values.get("fist_of_war_more_damage_pct", 0.0)) > 0:
+            raise ValueError(
+                "含异常指标在战争之拳覆盖随频率变化时可能非单调，不能可靠反解目标频率"
+            )
+        for raw_ailment in values.get("damaging_ailments", ()):
+            if not isinstance(raw_ailment, Mapping):
+                continue
+            source = raw_ailment.get("source_damage")
+            crit_source = raw_ailment.get("crit_source_damage")
+            normal_dot = raw_ailment.get("dot_multiplier_pct", 0.0)
+            crit_dot = raw_ailment.get("crit_dot_multiplier_pct", normal_dot)
+            if (
+                isinstance(source, (list, tuple))
+                and isinstance(crit_source, (list, tuple))
+                and len(source) == 2 and len(crit_source) == 2
+                and (float(crit_source[0]) < float(source[0])
+                     or float(crit_source[1]) < float(source[1]))
+            ) or (
+                crit_dot is not None and normal_dot is not None
+                and float(crit_dot) < float(normal_dot)
+            ):
+                raise ValueError(
+                    "含异常指标的暴击源伤或暴击 DoT 加成低于非暴击时可能非单调，"
+                    "不能可靠反解目标频率"
+                )
     raw_cooldown = values.pop("cooldown_seconds", 0.0)
     if isinstance(raw_cooldown, bool) or not isinstance(raw_cooldown, (int, float)):
         raise ValueError("cooldown_seconds 必须是数字")
@@ -217,9 +261,20 @@ def target_action_rate(
             max_rate = 1e12
         maximum_result, maximum = calculate(max_rate)
         action_rate_cap = maximum_result.action_rate
+        if metric == "ailment_dps" and any(
+            item.capped for item in maximum_result.damaging_ailments
+        ):
+            cap_sources.append("dot_cap")
     _upper_result, upper_value = calculate(upper)
     if upper_value < target and not math.isclose(upper_value, target, rel_tol=1e-12):
-        if tick_cap is not None and effective_cd > 0:
+        if metric == "ailment_dps" and any(
+            item.capped for item in _upper_result.damaging_ailments
+        ):
+            if "dot_cap" not in cap_sources:
+                cap_sources.append("dot_cap")
+            maximum = upper_value
+            reason = "每种伤害性异常的独立 DoT 上限使目标不可达"
+        elif tick_cap is not None and effective_cd > 0:
             reason = "服务器 tick 与冷却共同限制了最高有效频率"
         elif tick_cap is not None:
             reason = "服务器 tick 限制了最高有效频率"
