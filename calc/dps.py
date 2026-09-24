@@ -1,6 +1,7 @@
 """显式输入的单技能命中 DPS 链。
 
-复算 PoB 的基础伤害、伤害转化、增伤/更多、抗性与穿透、暴击、命中和频率主链。
+复算 PoB 的基础伤害、伤害转化、增伤/更多、抗性与穿透、暴击、命中、频率、战斗周期、
+稳态穿刺与终结等效输出主链。
 输入必须由调用方明确提供；本模块不从不完整装备或描述中猜任何一项。
 """
 
@@ -22,11 +23,16 @@ CONVERSION_LINES = (1879, 1922)
 BASE_DAMAGE_LINES = (3163, 3180)
 DAMAGE_LINES = (68, 151)
 RATE_LINES = (2404, 2418)
+COOLDOWN_TICK_LINES = (274, 285)
+COMBAT_EFFECT_LINES = (2805, 2861)
 SCALED_DAMAGE_LINES = (3101, 3127)
+CULL_LINES = (3129, 3137)
 ROLL_LINES = (3298, 3313)
 ENEMY_EFFECT_LINES = (3319, 3421)
 FINAL_DPS_LINES = (3615, 3628)
 BURST_LINES = (3624, 3680)
+IMPALE_LINES = (5388, 5437)
+IMPALE_DPS_LINES = (5943, 6000)
 MAX_VALUE = 1_000_000_000_000_000.0
 
 
@@ -91,15 +97,41 @@ class HitDpsResult:
     double_damage_chance_pct: float
     triple_damage_chance_pct: float
     scaled_damage_effect: float
+    ruthless_blow_chance_pct: float
+    ruthless_blow_effect: float
+    fist_of_war_uptime_pct: float
+    fist_of_war_effect: float
+    exerted_attack_uptime_pct: float
+    exerted_attack_effect: float
+    combat_damage_effect: float
     raw_action_rate: float
+    tick_limited_action_rate: float
+    action_rate_tick_capped: bool
+    action_repeats: int
+    channelled: bool
     action_rate: float
     cooldown_seconds: float
+    effective_cooldown_seconds: float
+    cooldown_tick_rounded: bool
+    server_tick_seconds: float | None
+    cooldown_uses: int
     triggered: bool
     skill_dps_multiplier: float
     quantity_multiplier: float
     burst_hit_count: float
     repeat_damage_multiplier: float
     average_burst_damage: float
+    physical_hit_before_mitigation_average: float
+    impale_chance_pct: float
+    impale_stacks: float
+    impale_stored_damage_pct: float
+    impale_multiplier: float
+    impale_dps: float
+    combined_dps: float
+    cull_percent: float
+    cull_multiplier: float
+    culling_dps: float
+    effective_dps_with_cull: float
 
     def as_dict(self) -> dict[str, object]:
         return asdict(self)
@@ -155,10 +187,55 @@ def _roll_average(damage: DamageRange, chance_pct: float, extreme: bool) -> floa
     return normal * (1 - abs(chance)) + adjusted * abs(chance)
 
 
-def effective_action_rate(raw_rate: float, cooldown_seconds: float = 0.0, *, triggered: bool = False) -> float:
+def effective_cooldown(
+    cooldown_seconds: float,
+    *,
+    server_tick_seconds: float | None = None,
+    cooldown_uses: int = 1,
+) -> tuple[float, bool]:
+    """按 PoB 规则把单次充能冷却向上对齐服务器 tick。"""
+    cooldown = _number(cooldown_seconds, "cooldown_seconds")
+    if isinstance(cooldown_uses, bool) or not isinstance(cooldown_uses, int) or cooldown_uses < 1:
+        raise ValueError("cooldown_uses 必须是至少为 1 的整数")
+    if server_tick_seconds is None:
+        return cooldown, False
+    tick = _number(server_tick_seconds, "server_tick_seconds")
+    if tick <= 0:
+        raise ValueError("server_tick_seconds 必须大于 0")
+    if cooldown == 0 or cooldown_uses > 1:
+        return cooldown, False
+    rounded = math.ceil(cooldown / tick) * tick
+    return rounded, not math.isclose(rounded, cooldown, rel_tol=0, abs_tol=1e-12)
+
+
+def effective_action_rate(
+    raw_rate: float,
+    cooldown_seconds: float = 0.0,
+    *,
+    triggered: bool = False,
+    server_tick_seconds: float | None = None,
+    cooldown_uses: int = 1,
+    action_repeats: int = 1,
+    channelled: bool = False,
+) -> float:
     """按 PoB 的 hitTime/cooldown 顺序得到实际每秒击中次数。"""
     rate = _number(raw_rate, "action_rate")
-    cooldown = _number(cooldown_seconds, "cooldown_seconds")
+    if (
+        isinstance(action_repeats, bool)
+        or not isinstance(action_repeats, int)
+        or action_repeats < 1
+    ):
+        raise ValueError("action_repeats 必须是至少为 1 的整数")
+    if server_tick_seconds is not None and not channelled:
+        tick = _number(server_tick_seconds, "server_tick_seconds")
+        if tick <= 0:
+            raise ValueError("server_tick_seconds 必须大于 0")
+        rate = min(rate, action_repeats / tick)
+    cooldown, _rounded = effective_cooldown(
+        cooldown_seconds,
+        server_tick_seconds=server_tick_seconds,
+        cooldown_uses=cooldown_uses,
+    )
     if rate <= 0:
         raise ValueError("action_rate 必须大于 0")
     if cooldown == 0:
@@ -262,15 +339,38 @@ def hit_dps(
     triple_damage_chance_pct: float = 0.0,
     double_damage_chance_on_crit_pct: float = 0.0,
     triple_damage_chance_on_crit_pct: float = 0.0,
+    ruthless_blow_every_hits: int = 0,
+    ruthless_blow_hit_multiplier: float = 1.0,
+    fist_of_war_more_damage_pct: float = 0.0,
+    fist_of_war_cooldown_seconds: float = 0.0,
+    exerted_attack_more_damage_pct: float = 0.0,
+    exerted_attack_uptime_pct: float = 0.0,
     action_rate: float = 1.0,
     cooldown_seconds: float = 0.0,
+    server_tick_seconds: float | None = None,
+    cooldown_uses: int = 1,
+    action_repeats: int = 1,
+    channelled: bool = False,
     triggered: bool = False,
     skill_dps_multiplier: float = 1.0,
     quantity_multiplier: float = 1.0,
     burst_hit_count: float = 1.0,
     repeat_damage_multiplier: float = 1.0,
+    impale_chance_pct: float = 0.0,
+    impale_chance_on_crit_pct: float | None = None,
+    impale_stacks: float = 0.0,
+    impale_base_stored_damage_pct: float = 10.0,
+    impale_effect_increased_pct: float = 0.0,
+    impale_effect_more_multiplier: float = 1.0,
+    impale_duration_seconds: float = 4.0,
+    enemy_impale_physical_reduction_pct: float | None = None,
+    ignore_enemy_impale_physical_reduction: bool = False,
+    enemy_reflected_damage_taken_increased_pct: float = 0.0,
+    enemy_reflected_damage_taken_more_multiplier: float = 1.0,
+    cull_percent: float = 0.0,
+    critical_cull_percent: float = 0.0,
 ) -> HitDpsResult:
-    """复算单技能 hit DPS 与一次爆发；不含异常、持续伤害和穿刺。"""
+    """复算单技能 hit、稳态穿刺、终结等效 DPS 与一次爆发。"""
     base = _ranges(base_damage, "base_damage")
     added = _ranges(added_damage, "added_damage")
     if not any(item.maximum > 0 for item in base.values()) and not any(item.maximum > 0 for item in added.values()):
@@ -342,7 +442,32 @@ def hit_dps(
     scaled_effect = 1 + double / 100 + 2 * triple / 100
     raw_rate = _number(action_rate, "action_rate")
     cooldown = _number(cooldown_seconds, "cooldown_seconds")
-    rate = effective_action_rate(raw_rate, cooldown, triggered=triggered)
+    effective_cd, cooldown_rounded = effective_cooldown(
+        cooldown,
+        server_tick_seconds=server_tick_seconds,
+        cooldown_uses=cooldown_uses,
+    )
+    if (
+        isinstance(action_repeats, bool)
+        or not isinstance(action_repeats, int)
+        or action_repeats < 1
+    ):
+        raise ValueError("action_repeats 必须是至少为 1 的整数")
+    tick_limited_rate = raw_rate
+    if server_tick_seconds is not None and not channelled:
+        tick = _number(server_tick_seconds, "server_tick_seconds")
+        if tick <= 0:
+            raise ValueError("server_tick_seconds 必须大于 0")
+        tick_limited_rate = min(raw_rate, action_repeats / tick)
+    rate = effective_action_rate(
+        raw_rate,
+        cooldown,
+        triggered=triggered,
+        server_tick_seconds=server_tick_seconds,
+        cooldown_uses=cooldown_uses,
+        action_repeats=action_repeats,
+        channelled=channelled,
+    )
     dps_mult = _number(skill_dps_multiplier, "skill_dps_multiplier")
     quantity = _number(quantity_multiplier, "quantity_multiplier")
     burst_hits = _number(burst_hit_count, "burst_hit_count")
@@ -351,6 +476,67 @@ def hit_dps(
         raise ValueError("频率、技能 DPS 倍率与数量倍率必须大于 0")
     if burst_hits < 1:
         raise ValueError("burst_hit_count 必须至少为 1")
+
+    if isinstance(ruthless_blow_every_hits, bool) or not isinstance(ruthless_blow_every_hits, int):
+        raise ValueError("ruthless_blow_every_hits 必须是整数")
+    if ruthless_blow_every_hits < 0:
+        raise ValueError("ruthless_blow_every_hits 不能为负数")
+    ruthless_multiplier = _number(ruthless_blow_hit_multiplier, "ruthless_blow_hit_multiplier")
+    ruthless_chance = (
+        _pob_round(100 / ruthless_blow_every_hits) if ruthless_blow_every_hits else 0.0
+    )
+    ruthless_effect = 1 + ruthless_chance / 100 * (ruthless_multiplier - 1)
+    fist_more = _number(fist_of_war_more_damage_pct, "fist_of_war_more_damage_pct") / 100
+    fist_cooldown = _number(fist_of_war_cooldown_seconds, "fist_of_war_cooldown_seconds")
+    if fist_more > 0 and fist_cooldown <= 0:
+        raise ValueError("启用战争之拳伤害时必须提供正数 fist_of_war_cooldown_seconds")
+    fist_uptime = min((1 / rate) / fist_cooldown, 1.0) if fist_more > 0 else 0.0
+    fist_effect = 1 + fist_more * fist_uptime
+    exert_uptime = _chance(exerted_attack_uptime_pct, "exerted_attack_uptime_pct")
+    exert_more = _number(exerted_attack_more_damage_pct, "exerted_attack_more_damage_pct") / 100
+    exert_effect = 1 + exert_more * exert_uptime / 100
+    combat_effect = _bounded(
+        ruthless_effect * fist_effect * exert_effect, "战斗机制期望倍率"
+    )
+
+    impale_chance = _chance(impale_chance_pct, "impale_chance_pct")
+    impale_crit_chance = _chance(
+        impale_chance if impale_chance_on_crit_pct is None else impale_chance_on_crit_pct,
+        "impale_chance_on_crit_pct",
+    )
+    effective_impale_chance = (
+        impale_chance * (1 - crit_chance / 100) + impale_crit_chance * crit_chance / 100
+    )
+    impale_stack_count = _number(impale_stacks, "impale_stacks")
+    impale_base = _number(impale_base_stored_damage_pct, "impale_base_stored_damage_pct")
+    impale_inc = _number(
+        impale_effect_increased_pct, "impale_effect_increased_pct", minimum=-100.0
+    )
+    impale_more = _number(impale_effect_more_multiplier, "impale_effect_more_multiplier")
+    impale_duration = _number(impale_duration_seconds, "impale_duration_seconds")
+    impale_stored_pct = impale_base * (1 + impale_inc / 100) * impale_more
+    impale_resist = _number(
+        physical_reduction if enemy_impale_physical_reduction_pct is None
+        else enemy_impale_physical_reduction_pct,
+        "enemy_impale_physical_reduction_pct",
+    )
+    if impale_resist > 90:
+        raise ValueError("敌人穿刺物理伤害减免不能超过 90%")
+    if ignore_enemy_impale_physical_reduction:
+        impale_resist = 0.0
+    reflected_taken_inc = _number(
+        enemy_reflected_damage_taken_increased_pct,
+        "enemy_reflected_damage_taken_increased_pct",
+        minimum=-100.0,
+    )
+    reflected_taken_more = _number(
+        enemy_reflected_damage_taken_more_multiplier,
+        "enemy_reflected_damage_taken_more_multiplier",
+    )
+    regular_cull = _chance(cull_percent, "cull_percent")
+    crit_cull = _chance(critical_cull_percent, "critical_cull_percent")
+    if regular_cull >= 100 or crit_cull >= 100:
+        raise ValueError("终结比例必须小于 100%")
 
     initial = {
         kind: base[kind].scale(base_mult).add(added[kind].scale(effectiveness * added_mult))
@@ -385,9 +571,13 @@ def hit_dps(
     total_noncrit = DamageRange(0.0, 0.0)
     noncrit_average = 0.0
     crit_average = 0.0
+    physical_pre_mitigation_average = 0.0
     for kind in DAMAGE_TYPES:
         before = calculate(kind, frozenset()).scale(
-            _bounded(float(table[kind]["mult"]) * scaled_effect, "伤害倍增期望倍率")
+            _bounded(
+                float(table[kind]["mult"]) * scaled_effect * combat_effect,
+                "伤害倍增期望倍率",
+            )
         )
         raw_resist = 0.0
         used_penetration = 0.0
@@ -421,11 +611,13 @@ def hit_dps(
         mitigation = (1 - effective_resist / 100) * inc_taken_mult * more_taken_mult
         after = before.scale(_bounded(mitigation, "承伤倍率"))
         if before.maximum or after.maximum:
-            noncrit = _bounded(_roll_average(before, normal_roll_chance, extreme_luck) * mitigation,
-                               "非暴击平均伤害")
+            pre_noncrit = _roll_average(before, normal_roll_chance, extreme_luck)
+            pre_crit = _roll_average(
+                before.scale(crit_multi / 100), crit_roll_chance, extreme_luck
+            )
+            noncrit = _bounded(pre_noncrit * mitigation, "非暴击平均伤害")
             crit = _bounded(
-                _roll_average(before.scale(crit_multi / 100), crit_roll_chance, extreme_luck)
-                * mitigation,
+                pre_crit * mitigation,
                 "暴击平均伤害",
             )
             breakdown.append(TypeDamage(
@@ -436,6 +628,12 @@ def hit_dps(
             total_noncrit = total_noncrit.add(after)
             noncrit_average += noncrit
             crit_average += crit
+            if kind == "physical":
+                physical_pre_mitigation_average = _bounded(
+                    pre_noncrit * (1 - crit_chance / 100)
+                    + pre_crit * crit_chance / 100,
+                    "减伤前物理平均击中",
+                )
 
     crit_effect = 1 - crit_chance / 100 + crit_chance / 100 * crit_multi / 100
     average_hit = _bounded(
@@ -448,6 +646,48 @@ def hit_dps(
         average_use + average_use * (burst_hits - 1) * repeat_mult,
         "平均爆发伤害",
     )
+    impale_taken = _bounded(
+        max(
+            0.0,
+            1
+            + (
+                taken_inc
+                + taken_inc_type.get("physical", 0.0)
+                + reflected_taken_inc
+            )
+            / 100,
+        )
+        * taken_more
+        * taken_more_type.get("physical", 1.0)
+        * reflected_taken_more,
+        "穿刺承伤倍率",
+    )
+    impale_multiplier = (
+        impale_stored_pct / 100
+        * impale_stack_count
+        * effective_impale_chance / 100
+        * (1 - impale_resist / 100)
+        * impale_taken
+    )
+    impale_dps = _bounded(
+        physical_pre_mitigation_average
+        * impale_multiplier
+        * hit_chance / 100
+        * rate
+        * dps_mult
+        * quantity
+        * (1 if impale_duration > 0 else 0),
+        "穿刺 DPS",
+    )
+    combined_dps = _bounded(total_dps + impale_dps, "命中与穿刺合计 DPS")
+    cull_hit_rate = hit_chance / 100 * rate * dps_mult
+    effective_crit_cull = crit_cull * (
+        1 - (1 - crit_chance / 100) ** cull_hit_rate
+    ) if crit_cull > 0 and cull_hit_rate > 0 else 0.0
+    effective_cull = max(regular_cull, effective_crit_cull)
+    cull_multiplier = 100 / (100 - effective_cull)
+    culling_dps = _bounded(combined_dps * (cull_multiplier - 1), "终结等效 DPS")
+    effective_dps_with_cull = _bounded(combined_dps * cull_multiplier, "含终结等效 DPS")
     return HitDpsResult(
         conversion=table, by_type=tuple(breakdown), non_crit_hit=total_noncrit,
         non_crit_average=noncrit_average, crit_average=crit_average,
@@ -457,9 +697,25 @@ def hit_dps(
         damage_roll_chance_pct=normal_roll_chance,
         crit_damage_roll_chance_pct=crit_roll_chance, extreme_luck=bool(extreme_luck),
         double_damage_chance_pct=double, triple_damage_chance_pct=triple,
-        scaled_damage_effect=scaled_effect, raw_action_rate=raw_rate, action_rate=rate,
-        cooldown_seconds=cooldown, triggered=bool(triggered),
+        scaled_damage_effect=scaled_effect,
+        ruthless_blow_chance_pct=ruthless_chance, ruthless_blow_effect=ruthless_effect,
+        fist_of_war_uptime_pct=fist_uptime * 100, fist_of_war_effect=fist_effect,
+        exerted_attack_uptime_pct=exert_uptime, exerted_attack_effect=exert_effect,
+        combat_damage_effect=combat_effect,
+        raw_action_rate=raw_rate, tick_limited_action_rate=tick_limited_rate,
+        action_rate_tick_capped=tick_limited_rate < raw_rate,
+        action_repeats=action_repeats, channelled=bool(channelled), action_rate=rate,
+        cooldown_seconds=cooldown, effective_cooldown_seconds=effective_cd,
+        cooldown_tick_rounded=cooldown_rounded,
+        server_tick_seconds=server_tick_seconds, cooldown_uses=cooldown_uses,
+        triggered=bool(triggered),
         skill_dps_multiplier=dps_mult, quantity_multiplier=quantity,
         burst_hit_count=burst_hits, repeat_damage_multiplier=repeat_mult,
         average_burst_damage=burst_damage,
+        physical_hit_before_mitigation_average=physical_pre_mitigation_average,
+        impale_chance_pct=effective_impale_chance, impale_stacks=impale_stack_count,
+        impale_stored_damage_pct=impale_stored_pct, impale_multiplier=impale_multiplier,
+        impale_dps=impale_dps, combined_dps=combined_dps,
+        cull_percent=effective_cull, cull_multiplier=cull_multiplier,
+        culling_dps=culling_dps, effective_dps_with_cull=effective_dps_with_cull,
     )

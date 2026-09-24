@@ -197,6 +197,15 @@ class AttackSpeedTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             spd.attack_rate(1.55, increased_pct=-100)
 
+    def test_非引导技能受服务器tick与重复次数上限约束(self) -> None:
+        capped = spd.attack_rate(10, increased_pct=900)
+        self.assertTrue(capped.server_limited)
+        self.assertAlmostEqual(30.3, capped.rate, places=1)
+        repeated = spd.attack_rate(10, increased_pct=900, repeats=2)
+        self.assertAlmostEqual(60.61, repeated.rate, places=2)
+        channelled = spd.attack_rate(10, increased_pct=900, channelled=True)
+        self.assertEqual(100, channelled.rate)
+
 
 @unittest.skipUnless(POB_ROOT_ENV.is_dir(), "本机没有 PathOfBuilding 检出")
 class FormulaPinnedToUpstream(unittest.TestCase):
@@ -240,11 +249,9 @@ class FormulaPinnedToUpstream(unittest.TestCase):
         line = self.offence.splitlines()[spd.SPEED_LINE - 1]
         self.assertIn("output.Speed = 1 / (baseTime / round((1 + inc/100) * more, 2)", line)
 
-    def test_服务器tick只出现在创伤那一段(self) -> None:
-        """社区常说「攻速有 tick 上限」，而 PoB 的 `output.Speed` 并不夹上限——
-        这条差异要有证据，不能凭印象写进答案。"""
-        line = self.offence.splitlines()[spd.TRAUMA_CAP_LINE - 1]
-        self.assertIn("effectiveAttackRateCap = data.misc.ServerTickRate", line)
+    def test_非引导技能服务器tick上限仍在(self) -> None:
+        line = self.offence.splitlines()[spd.SERVER_CAP_LINE - 1]
+        self.assertIn("output.Speed = m_min(output.Speed, data.misc.ServerTickRate", line)
 
 
 def tool_conn() -> sqlite3.Connection:
@@ -393,9 +400,10 @@ class AttackSpeedToolTest(unittest.TestCase):
         self.assertIn("双持", boundary)
         self.assertIn("DPS", boundary)
 
-    def test_不设上限这条差异写进证据(self) -> None:
-        text = self.tool(weapon="凿钉", increased_pct=600).citations[0]["text"]
-        self.assertIn("不设上限", text)
+    def test_服务器tick上限写进证据(self) -> None:
+        result = self.tool(base_rate=10, increased_pct=900)
+        self.assertTrue(result.data["server_limited"])
+        self.assertIn("服务器 tick 上限", result.citations[0]["text"])
 
 
 class RouteTest(unittest.TestCase):

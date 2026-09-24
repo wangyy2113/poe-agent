@@ -14,12 +14,10 @@
 * **`round(…, 2)` 在分母上**：先把「(1+增加)×更多」四舍五入到两位小数，再去除基础间隔。
   照直算不取整会在高攻速时差出一次攻击（与 `calc/reservation.py` 的取整同一类坑）。
 
-## PoB 没有给每秒次数设上限
+## 服务器 tick 上限
 
-社区常说「攻速有服务器 tick 上限（1/0.033 ≈ 30.3 次/秒）」。`data.misc.ServerTickRate`
-确实是这个数，但在 PoB 里它**只出现在创伤（Trauma）叠层的可维持计算里**
-（`CalcOffence.lua:2250`），`output.Speed` 本身不夹上限。本模块复算的是 PoB，
-所以也不夹——但把这条差异写进证据，不让用户以为 PoB 帮他算过 tick 上限。
+PoB 对非引导技能执行 `min(output.Speed, ServerTickRate × Repeats)`；默认服务器 tick
+是 0.033 秒，所以单次技能约为 30.30 次/秒。重复次数会同比放宽上限，引导技能不走这一夹值。
 
 ## 刻意不做
 
@@ -39,8 +37,8 @@ OFFENCE_FILE = "src/Modules/CalcOffence.lua"
 BASE_TIME_LINES = (2230, 2241)
 #: 每秒次数（注意 round(…, 2) 在分母里）
 SPEED_LINE = 2337
-#: 服务器 tick 只在创伤那一段出现，不是 Speed 的上限
-TRAUMA_CAP_LINE = 2250
+#: 非引导技能的服务器 tick 上限
+SERVER_CAP_LINE = 2367
 
 
 @dataclass(frozen=True)
@@ -53,6 +51,12 @@ class SpeedResult:
     more_mult: float
     #: 技能倍率之后的武器攻速
     weapon_rate: float
+    #: tick 夹值前的理论次数
+    uncapped_rate: float
+    server_tick_seconds: float
+    repeats: int
+    channelled: bool
+    server_limited: bool
     #: 每秒攻击次数
     rate: float
     #: 一次攻击的间隔（秒）
@@ -66,6 +70,9 @@ def attack_rate(
     skill_multiplier: float = 0.0,
     increased_pct: float = 0.0,
     more_mult: float = 1.0,
+    server_tick_seconds: float = 0.033,
+    repeats: int = 1,
+    channelled: bool = False,
 ) -> SpeedResult:
     """每秒攻击次数。
 
@@ -76,13 +83,20 @@ def attack_rate(
     """
     if base_rate <= 0:
         raise ValueError("武器基础攻速必须大于 0——没有武器就没有攻击速度这一维")
+    if server_tick_seconds <= 0:
+        raise ValueError("服务器 tick 秒数必须大于 0")
+    if isinstance(repeats, bool) or not isinstance(repeats, int) or repeats < 1:
+        raise ValueError("重复次数必须是至少为 1 的整数")
     weapon_rate = base_rate * (1 + skill_multiplier / 100)
     base_time = 1 / weapon_rate
     multiplier = round((1 + increased_pct / 100) * more_mult, 2)
     if multiplier <= 0:
         raise ValueError("攻速修正总量为 0 或负数，PoB 在这里会得到无穷长的攻击间隔")
-    interval = base_time / multiplier
-    rate = 1 / interval
+    uncapped_interval = base_time / multiplier
+    uncapped_rate = 1 / uncapped_interval
+    server_cap = repeats / server_tick_seconds
+    rate = uncapped_rate if channelled else min(uncapped_rate, server_cap)
+    interval = 1 / rate
 
     steps = [Step("武器基础攻速", f"{base_rate:g} 次/秒", base_rate)]
     if skill_multiplier:
@@ -102,14 +116,27 @@ def attack_rate(
             multiplier,
         )
     )
-    steps.append(Step("攻击间隔", f"{base_time:.4f} ÷ {multiplier:g}", round(interval, 4)))
-    steps.append(Step("每秒攻击次数", f"1 / {interval:.4f}", round(rate, 2)))
+    steps.append(Step(
+        "理论攻击间隔", f"{base_time:.4f} ÷ {multiplier:g}", round(uncapped_interval, 4)
+    ))
+    steps.append(Step("理论每秒次数", f"1 / {uncapped_interval:.4f}", round(uncapped_rate, 2)))
+    if not channelled:
+        steps.append(Step(
+            "服务器 tick 上限",
+            f"min({uncapped_rate:.4f}, {repeats} / {server_tick_seconds:g})",
+            round(rate, 2),
+        ))
     return SpeedResult(
         base_rate=float(base_rate),
         skill_multiplier=float(skill_multiplier),
         increased_pct=float(increased_pct),
         more_mult=float(more_mult),
         weapon_rate=weapon_rate,
+        uncapped_rate=round(uncapped_rate, 2),
+        server_tick_seconds=float(server_tick_seconds),
+        repeats=repeats,
+        channelled=bool(channelled),
+        server_limited=not channelled and uncapped_rate > server_cap,
         rate=round(rate, 2),
         interval=round(interval, 4),
         steps=tuple(steps),

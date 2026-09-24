@@ -853,6 +853,14 @@ cases:
     query: 基础伤害和全部倍率都给你，目标 DPS 需要每秒攻击多少次
     kind: tool_route
     expect_tool: hit_dps_target_rate
+
+  - id: route_hit_dps_combat_mechanics
+    query: 100-100 物理伤害，每秒攻击 2 次，每3次攻击有一次无情一击，无情一击造成200%伤害，战争之拳100%更多伤害，战争之拳冷却1秒，战吼增助50%更多伤害，战吼增助覆盖率40%，穿刺几率100%，5层穿刺，终结20%，命中 DPS 怎么算
+    kind: tool_route
+    expect_tool: hit_dps_calc
+    note: >-
+      所有战斗机制参数都由用户明确给出；必须进入同一确定性主链，同时分别回显命中、
+      稳态穿刺与终结等效口径，不能交给模型心算或把终结增量混进原始 DPS
     note: >-
       目标频率反解必须识别触发与非触发冷却上限，并用同一伤害链回代
 
