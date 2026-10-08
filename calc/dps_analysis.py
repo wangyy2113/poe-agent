@@ -22,6 +22,7 @@ TARGET_METRICS = {
     "total_dot_dps": "total_dot_dps",
     "total_dps": "total_dps",
     "effective_total_dps_with_cull": "effective_total_dps_with_cull",
+    "combat_average_combined_dps": "combat_average_combined_dps",
 }
 
 
@@ -38,6 +39,7 @@ class ScenarioDelta:
     total_dot_dps: float
     total_dps: float
     effective_total_dps_with_cull: float
+    combat_average_combined_dps: float | None
     average_hit: float
     average_hit_delta: float
     burst_damage: float
@@ -60,6 +62,7 @@ class DpsComparison:
     best_total_dot_dps_scenario: str
     best_total_dps_scenario: str
     best_effective_total_dps_scenario: str
+    best_combat_average_scenario: str | None
     best_burst_scenario: str
 
     def as_dict(self) -> dict[str, Any]:
@@ -124,12 +127,14 @@ def compare_hit_dps(
             total_dot_dps=result.total_dot_dps,
             total_dps=result.total_dps,
             effective_total_dps_with_cull=result.effective_total_dps_with_cull,
+            combat_average_combined_dps=result.combat_average_combined_dps,
             average_hit=result.average_hit,
             average_hit_delta=result.average_hit - baseline.average_hit,
             burst_damage=result.average_burst_damage,
             burst_damage_delta=result.average_burst_damage - baseline.average_burst_damage,
             result=result,
         ))
+    combat_rows = [row for row in rows if row.combat_average_combined_dps is not None]
     return DpsComparison(
         baseline=baseline_name,
         scenarios=tuple(rows),
@@ -145,6 +150,10 @@ def compare_hit_dps(
         best_effective_total_dps_scenario=max(
             rows, key=lambda row: row.effective_total_dps_with_cull
         ).name,
+        best_combat_average_scenario=(
+            max(combat_rows, key=lambda row: row.combat_average_combined_dps or 0).name
+            if combat_rows else None
+        ),
         best_burst_scenario=max(rows, key=lambda row: row.burst_damage).name,
     )
 
@@ -165,11 +174,13 @@ def target_action_rate(
         raise ValueError(
             "metric 只支持 hit_dps、combined_dps、effective_dps_with_cull、"
             "ailment_dps、skill_dot_dps、total_dot_dps、total_dps、"
-            "effective_total_dps_with_cull"
+            "effective_total_dps_with_cull、combat_average_combined_dps"
         )
 
     values = _kwargs(inputs)
     values.pop("action_rate", None)
+    if metric == "combat_average_combined_dps" and values.get("combat_duration_seconds") is None:
+        raise ValueError("combat_average_combined_dps 反解必须提供 combat_duration_seconds")
     if metric in {
         "ailment_dps", "total_dot_dps", "total_dps",
         "effective_total_dps_with_cull",
@@ -226,7 +237,10 @@ def target_action_rate(
             cooldown_seconds=cooldown,
             triggered=triggered,
         )
-        return result, float(getattr(result, metric_field))
+        metric_value = getattr(result, metric_field)
+        if metric_value is None:
+            raise ValueError(f"{metric} 当前没有可计算值")
+        return result, float(metric_value)
 
     unit, unit_value = calculate(1.0)
     per_rate = unit_value / unit.action_rate if unit.action_rate > 0 else 0.0

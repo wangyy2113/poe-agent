@@ -2312,6 +2312,9 @@ def _hit_dps_args(question: str) -> dict[str, Any]:
         ("impale_chance_pct", r"穿刺几率\s*(\d+(?:\.\d+)?)%"),
         ("impale_stacks", r"(?:敌人身上)?\s*(\d+(?:\.\d+)?)\s*层穿刺"),
         ("impale_effect_increased_pct", r"穿刺效果(?:提高|增加)\s*(\d+(?:\.\d+)?)%"),
+        ("impale_duration_seconds", r"穿刺持续(?:时间)?\s*(\d+(?:\.\d+)?)\s*秒"),
+        ("enemy_armour", r"敌人(?:有|的)?\s*(\d+(?:\.\d+)?)\s*(?:点)?护甲"),
+        ("combat_duration_seconds", r"(?:战斗持续|战斗时长)\s*(\d+(?:\.\d+)?)\s*秒"),
         ("cull_percent", r"(?:终结|扑杀)\s*(\d+(?:\.\d+)?)%"),
         ("server_tick_seconds", r"服务器\s*tick\s*(\d+(?:\.\d+)?)\s*秒"),
     )

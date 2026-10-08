@@ -339,6 +339,73 @@ class HitDpsCoreTest(unittest.TestCase):
         )
         self.assertEqual(0, expired.impale_dps)
 
+    def test_impale_armour_uses_total_stored_hit_and_dynamic_reduction(self) -> None:
+        result = hit_dps(
+            base_damage={"physical": [100, 100]}, action_rate=2,
+            impale_chance_pct=100, impale_stacks=5, enemy_armour=1000,
+        )
+        # PoB armour input: 100 average physical × 10% stored × 5 stacks = 50.
+        self.assertEqual(1000, result.enemy_armour)
+        self.assertAlmostEqual(80, result.impale_armour_reduction_pct)
+        self.assertAlmostEqual(80, result.impale_effective_reduction_pct)
+        self.assertAlmostEqual(20, result.impale_dps)
+        ignored = hit_dps(
+            base_damage={"physical": [100, 100]}, action_rate=2,
+            impale_chance_pct=100, impale_stacks=5, enemy_armour=1000,
+            enemy_impale_physical_reduction_pct=30,
+            ignore_enemy_impale_physical_reduction=True,
+        )
+        self.assertEqual(0, ignored.impale_armour_reduction_pct)
+        self.assertEqual(0, ignored.impale_effective_reduction_pct)
+        self.assertEqual(100, ignored.impale_dps)
+
+    def test_impale_timeline_compares_startup_with_steady_state(self) -> None:
+        result = hit_dps(
+            base_damage={"physical": [100, 100]}, action_rate=2,
+            impale_chance_pct=100, impale_stacks=5,
+            combat_duration_seconds=3,
+        )
+        timeline = result.impale_timeline
+        self.assertIsNotNone(timeline)
+        assert timeline is not None
+        self.assertEqual("exact_discrete", timeline.calculation_mode)
+        self.assertEqual(2.5, timeline.steady_state_seconds)
+        self.assertTrue(timeline.steady_state_reachable)
+        self.assertEqual(100, timeline.steady_state_impale_dps)
+        self.assertAlmostEqual(50, timeline.average_impale_dps)
+        self.assertAlmostEqual(250, timeline.average_combined_dps)
+        self.assertAlmostEqual(50, timeline.startup_loss_pct)
+        self.assertEqual(0, timeline.points[0].expected_active_stacks)
+        self.assertEqual(5, timeline.points[-1].expected_active_stacks)
+
+    def test_impale_timeline_reports_duration_limited_stack_capacity(self) -> None:
+        result = hit_dps(
+            base_damage={"physical": [100, 100]}, action_rate=1,
+            impale_chance_pct=50, impale_stacks=5, impale_duration_seconds=2,
+            combat_duration_seconds=10,
+        )
+        timeline = result.impale_timeline
+        assert timeline is not None
+        self.assertEqual("expected_value_discrete", timeline.calculation_mode)
+        self.assertTrue(timeline.duration_limited)
+        self.assertFalse(timeline.steady_state_reachable)
+        self.assertEqual(2, timeline.sustainable_stack_capacity)
+        self.assertEqual(1, timeline.sustainable_expected_stacks)
+        self.assertEqual(10, timeline.sustainable_impale_dps)
+        self.assertAlmostEqual(8.5, timeline.average_impale_dps)
+
+    def test_impale_timeline_validates_explicit_duration(self) -> None:
+        with self.assertRaisesRegex(ValueError, "必须大于 0"):
+            hit_dps(
+                base_damage={"physical": [100, 100]}, action_rate=1,
+                combat_duration_seconds=0,
+            )
+        with self.assertRaisesRegex(ValueError, "不能超过 3600"):
+            hit_dps(
+                base_damage={"physical": [100, 100]}, action_rate=1,
+                combat_duration_seconds=3601,
+            )
+
     def test_regular_and_critical_cull_are_reported_as_effective_dps(self) -> None:
         regular = hit_dps(
             base_damage={"fire": [100, 100]}, action_rate=1, cull_percent=20,
@@ -672,6 +739,33 @@ class HitDpsAnalysisTest(unittest.TestCase):
         self.assertAlmostEqual(1, target.required_raw_action_rate or 0)
         self.assertEqual("combined_dps", target.metric)
 
+    def test_compare_and_target_support_finite_impale_window(self) -> None:
+        common = {
+            "base_damage": {"physical": [100, 100]},
+            "impale_chance_pct": 100, "impale_stacks": 5,
+            "combat_duration_seconds": 3,
+        }
+        compared = compare_hit_dps([
+            ("慢速", {**common, "action_rate": 1}),
+            ("快速", {**common, "action_rate": 2}),
+        ])
+        self.assertEqual("快速", compared.best_combat_average_scenario)
+        self.assertAlmostEqual(
+            250,
+            compared.scenarios[1].combat_average_combined_dps or 0,
+        )
+        target = target_action_rate(
+            250, common,
+            metric="combat_average_combined_dps",
+        )
+        self.assertTrue(target.reachable)
+        self.assertAlmostEqual(2, target.required_raw_action_rate or 0, places=6)
+        with self.assertRaisesRegex(ValueError, "combat_duration_seconds"):
+            target_action_rate(100, {
+                "base_damage": {"physical": [100, 100]},
+                "impale_chance_pct": 100, "impale_stacks": 5,
+            }, metric="combat_average_combined_dps")
+
     @patch("calc.dps.constants.get", side_effect=_ailment_constant)
     def test_compare_and_target_support_ailment_and_total_metrics(self, _get: object) -> None:
         ailment = {
@@ -799,7 +893,7 @@ class HitDpsSurfaceTest(unittest.TestCase):
         self.assertEqual(300, result.data["dps"])
         self.assertIn("命中 DPS：300", result.data["answer"])
         self.assertIn("CalcOffence.lua#L3615-L3628", result.citations[0]["url"])
-        self.assertIn("不含护甲对穿刺的动态减伤", result.data["boundary"])
+        self.assertIn("动态护甲下的稳态穿刺", result.data["boundary"])
 
     def test_advanced_tool_fields_and_output(self) -> None:
         result = hit_dps_calc(
@@ -841,7 +935,7 @@ class HitDpsSurfaceTest(unittest.TestCase):
         ])
         self.assertTrue(comparison.ok)
         self.assertIsNone(comparison.data["scenarios"][1]["dps_delta_pct"])
-        self.assertIn("| 可命中 | 100 | 100 | 0 | 0 | 0 | 100 | 100 | 不可定义 |", comparison.data["answer"])
+        self.assertIn("| 可命中 | 100 | 100 | — | 0 | 0 | 0 | 100 | 100 | 不可定义 |", comparison.data["answer"])
 
     def test_http_endpoint_reuses_same_calculator(self) -> None:
         request = HitDpsRequest(base_damage={"fire": (50, 150)}, action_rate=3)
@@ -860,6 +954,25 @@ class HitDpsSurfaceTest(unittest.TestCase):
         self.assertTrue(response["action_rate_tick_capped"])
         self.assertGreater(response["impale_dps"], 0)
         self.assertGreater(response["effective_dps_with_cull"], response["combined_dps"])
+
+    def test_tool_and_http_expose_dynamic_impale_timeline(self) -> None:
+        tool_result = hit_dps_calc(
+            base_damage={"physical": [100, 100]}, action_rate=2,
+            impale_chance_pct=100, impale_stacks=5, enemy_armour=1000,
+            combat_duration_seconds=3,
+        )
+        self.assertTrue(tool_result.ok)
+        self.assertAlmostEqual(80, tool_result.data["impale_armour_reduction_pct"])
+        self.assertAlmostEqual(207.8599034, tool_result.data["combat_average_combined_dps"])
+        self.assertIn("3 秒穿刺时间线", tool_result.data["answer"])
+        response = calculate_hit_dps(HitDpsRequest(
+            base_damage={"physical": (100, 100)}, action_rate=2,
+            impale_chance_pct=100, impale_stacks=5, enemy_armour=1000,
+            combat_duration_seconds=3,
+        ), _caller="test")
+        self.assertEqual(1000, response["enemy_armour"])
+        self.assertEqual(3, response["impale_timeline"]["combat_duration_seconds"])
+        self.assertGreater(len(response["impale_timeline"]["points"]), 5)
 
     @patch("calc.dps.constants.get", side_effect=_ailment_constant)
     def test_tool_and_http_expose_steady_state_ailments(self, _get: object) -> None:
@@ -936,9 +1049,19 @@ class HitDpsSurfaceTest(unittest.TestCase):
         from tools.registry import REGISTRY
 
         self.assertIn("hit_dps_calc", ALLOWED_TOOLS)
-        self.assertIsNotNone(REGISTRY.spec("hit_dps_calc"))
+        calc_spec = REGISTRY.spec("hit_dps_calc")
+        self.assertIsNotNone(calc_spec)
+        assert calc_spec is not None
+        self.assertIn("enemy_armour", calc_spec.parameters["properties"])
+        self.assertIn("combat_duration_seconds", calc_spec.parameters["properties"])
         self.assertIsNotNone(REGISTRY.spec("hit_dps_compare"))
-        self.assertIsNotNone(REGISTRY.spec("hit_dps_target_rate"))
+        target_spec = REGISTRY.spec("hit_dps_target_rate")
+        self.assertIsNotNone(target_spec)
+        assert target_spec is not None
+        self.assertIn(
+            "combat_average_combined_dps",
+            target_spec.parameters["properties"]["metric"]["enum"],
+        )
         paths = create_app().openapi()["paths"]
         self.assertIn("/poe_agent/calc/hit-dps", paths)
         self.assertIn("/poe_agent/calc/hit-dps/compare", paths)
@@ -980,7 +1103,8 @@ class HitDpsSurfaceTest(unittest.TestCase):
             "100-100 物理伤害，每秒攻击 2 次，每3次攻击有一次无情一击，"
             "无情一击造成200%伤害，战争之拳100%更多伤害，战争之拳冷却1秒，"
             "战吼增助50%更多伤害，战吼增助覆盖率40%，穿刺几率100%，"
-            "5层穿刺，穿刺效果提高50%，终结20%，服务器 tick 0.033秒"
+            "5层穿刺，穿刺效果提高50%，穿刺持续4秒，敌人1000点护甲，"
+            "战斗持续3秒，终结20%，服务器 tick 0.033秒"
         )
         self.assertEqual(3, args["ruthless_blow_every_hits"])
         self.assertEqual(2, args["ruthless_blow_hit_multiplier"])
@@ -988,6 +1112,9 @@ class HitDpsSurfaceTest(unittest.TestCase):
         self.assertEqual(40, args["exerted_attack_uptime_pct"])
         self.assertEqual(100, args["impale_chance_pct"])
         self.assertEqual(5, args["impale_stacks"])
+        self.assertEqual(4, args["impale_duration_seconds"])
+        self.assertEqual(1000, args["enemy_armour"])
+        self.assertEqual(3, args["combat_duration_seconds"])
         self.assertEqual(20, args["cull_percent"])
         self.assertEqual(0.033, args["server_tick_seconds"])
         self.assertNotIn("cooldown_seconds", args)
@@ -1045,6 +1172,7 @@ class FormulaPinnedToUpstream(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.source = (POB_ROOT_ENV / "src/Modules/CalcOffence.lua").read_text(encoding="utf-8")
+        cls.defence_source = (POB_ROOT_ENV / "src/Modules/CalcDefence.lua").read_text(encoding="utf-8")
 
     def test_conversion_order_and_cap_logic_remain_pinned(self) -> None:
         self.assertIn('local dmgTypeList = {"Physical", "Lightning", "Cold", "Fire", "Chaos"}', self.source)
@@ -1092,6 +1220,11 @@ class FormulaPinnedToUpstream(unittest.TestCase):
         impale = "\n".join(self.source.splitlines()[5387:5437])
         self.assertIn("local impaleDMGModifier", impale)
         self.assertIn("output.ImpaleStoredDamage", impale)
+        self.assertIn("impaleHitDamageMod * output.impaleStoredHitAvg", impale)
+        duration = "\n".join(self.source.splitlines()[1604:1621])
+        self.assertIn("output.ImpaleDuration", duration)
+        armour = "\n".join(self.defence_source.splitlines()[64:76])
+        self.assertIn("armour / (armour + raw * 5) * 100", armour)
 
     def test_damaging_ailment_steady_state_stays_pinned(self) -> None:
         lines = self.source.splitlines()

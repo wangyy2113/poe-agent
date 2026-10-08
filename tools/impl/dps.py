@@ -14,10 +14,11 @@ from tools.registry import REGISTRY, ToolResult
 BOUNDARY = (
     "只计算单技能确定性主链与一次爆发：基础/附加伤害、增伤/更多、PoB 顺序的伤害转化与额外获得、"
     "敌方抗性/穿透/忽略/反转或物理减伤/压倒、幸运伤害、双倍/三倍伤害、暴击、命中、"
-    "触发/非触发冷却与服务器 tick、无情一击、战争之拳/战吼覆盖、稳态穿刺、终结等效输出、"
+    "触发/非触发冷却与服务器 tick、无情一击、战争之拳/战吼覆盖、动态护甲下的稳态穿刺、"
+    "可选固定战斗时长的起手叠层时间线、终结等效输出、"
     "频率、重复爆发及技能/数量倍率；可选联算显式异常源伤的点燃、中毒和流血稳态 DPS，"
     "以及技能自身的物理/元素/混沌持续伤害、叠层和全局 DoT 上限。"
-    "不含护甲对穿刺的动态减伤、起手期异常层数、持续伤害快照/刷新时序或完整 Build 自动汇总；"
+    "不含起手期异常层数、持续伤害快照/刷新时序或完整 Build 自动汇总；"
     "缺少这些机制时不能称为完整 Build DPS"
 )
 
@@ -74,8 +75,44 @@ def _render(result: dps_calc.HitDpsResult) -> str:
         f"- 技能倍率 {result.skill_dps_multiplier:g} × 数量倍率 {result.quantity_multiplier:g}",
         f"- 一轮爆发：{result.burst_hit_count:g} 击、重复伤害倍率 {result.repeat_damage_multiplier:g}"
         f" → {fmt(result.average_burst_damage)}",
+        f"- 稳态穿刺：敌方护甲 {fmt(result.enemy_armour)} → 护甲减伤 "
+        f"{result.impale_armour_reduction_pct:.2f}% → 有效物理减伤 "
+        f"{result.impale_effective_reduction_pct:.2f}%",
         f"- 稳态穿刺 DPS：{fmt(result.impale_dps)}；命中与穿刺合计：{fmt(result.combined_dps)}",
     ])
+    if result.impale_timeline is not None:
+        timeline = result.impale_timeline
+        lines.extend([
+            "", f"### {timeline.combat_duration_seconds:g} 秒穿刺时间线", "",
+            "| 时间 | 期望命中数 | 层位容量 | 期望活跃层 | 护甲减伤 | 有效物减 | 当时穿刺 DPS |",
+            "| ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+        ])
+        for point in timeline.points:
+            lines.append(
+                f"| {point.time_seconds:.3f}s | {fmt(point.expected_landed_hits)} | "
+                f"{fmt(point.stack_capacity)} | {fmt(point.expected_active_stacks)} | "
+                f"{point.armour_reduction_pct:.2f}% | {point.effective_reduction_pct:.2f}% | "
+                f"{fmt(point.impale_dps)} |"
+            )
+        reach = (
+            f"约 {timeline.steady_state_seconds:.3f}s"
+            if timeline.steady_state_seconds is not None else "无法到达"
+        )
+        timeline_mode = {
+            "exact_discrete": "逐击精确",
+            "expected_value_discrete": "逐击期望值",
+            "expected_value_continuous_approximation": "连续期望近似（极端高事件数）",
+        }[timeline.calculation_mode]
+        lines.extend([
+            "", f"- 时间线口径：{timeline_mode}",
+            f"- 配置稳态到达时间：{reach}；"
+            f"穿刺持续时间下{'可到达' if timeline.steady_state_reachable else '不可到达'}",
+            f"- 可持续层位：{fmt(timeline.sustainable_stack_capacity)} / "
+            f"{fmt(timeline.configured_stacks)}；可持续穿刺 DPS：{fmt(timeline.sustainable_impale_dps)}",
+            f"- 窗口平均穿刺 DPS：{fmt(timeline.average_impale_dps)}；"
+            f"窗口平均命中+穿刺 DPS：{fmt(timeline.average_combined_dps)}",
+            f"- 相对配置稳态的穿刺起手损失：{timeline.startup_loss_pct:.2f}%",
+        ])
     if result.damaging_ailments:
         lines.extend([
             "", "| 伤害性异常 | 有效施加率 | 持续时间 | 稳态层数 | 强实例 roll | 单实例 DPS | 稳态 DPS |",
@@ -138,6 +175,8 @@ def _render(result: dps_calc.HitDpsResult) -> str:
         f"- 平均击中、命中率、爆发与最终 DPS：{_url(dps_calc.BURST_LINES)}",
         f"- 穿刺稳态倍率：{_url(dps_calc.IMPALE_LINES)}",
         f"- 穿刺 DPS：{_url(dps_calc.IMPALE_DPS_LINES)}",
+        f"- 穿刺持续时间与 tick 对齐：{_url(dps_calc.IMPALE_DURATION_LINES)}",
+        f"- 穿刺护甲减伤：{pob_url(constants.provenance(constants.BASE_CRIT_MULTIPLIER).url, dps_calc.DEFENCE_FILE, lines=dps_calc.ARMOUR_REDUCTION_LINES)}",
         f"- 异常施加率与暴击加权：{_url(dps_calc.AILMENT_CHANCE_LINES)}",
         f"- 异常源伤加权：{_url(dps_calc.AILMENT_DAMAGE_LINES)}",
         f"- 流血稳态：{_url(dps_calc.BLEED_DPS_LINES)}",
@@ -154,7 +193,8 @@ def _render(result: dps_calc.HitDpsResult) -> str:
     name="hit_dps_calc",
     description=(
         "用明确输入复算单技能命中 DPS：基础/附加伤害、伤害有效度、增伤/更多、转化/额外获得、"
-        "抗性/物理减伤、暴击、倍伤、战斗周期、冷却 tick、稳态穿刺、伤害性异常、终结、"
+        "抗性/物理减伤、暴击、倍伤、战斗周期、冷却 tick、动态护甲稳态穿刺与固定时长时间线、"
+        "伤害性异常、终结、"
         "技能自身持续伤害、频率和数量倍率。异常必须单独提供不含命中专属修正的源伤区间；"
         "技能 DoT 必须直接提供每秒基础值。"
         "不要从装备描述猜遗漏参数，"
@@ -222,6 +262,7 @@ def _render(result: dps_calc.HitDpsResult) -> str:
             "impale_effect_increased_pct": {"type": "number", "minimum": -100},
             "impale_effect_more_multiplier": {"type": "number", "minimum": 0, "default": 1},
             "impale_duration_seconds": {"type": "number", "minimum": 0, "default": 4},
+            "enemy_armour": {"type": "number", "minimum": 0, "default": 0},
             "enemy_impale_physical_reduction_pct": {"type": "number", "minimum": 0, "maximum": 90},
             "ignore_enemy_impale_physical_reduction": {"type": "boolean", "default": False},
             "enemy_reflected_damage_taken_increased_pct": {"type": "number", "minimum": -100},
@@ -271,6 +312,7 @@ def _render(result: dps_calc.HitDpsResult) -> str:
                 "instance_multiplier": {"type": "number", "exclusiveMinimum": 0, "default": 1},
                 "stack_limit": {"type": "number", "exclusiveMinimum": 0}
             }, "required": ["base_damage_per_second"]},
+            "combat_duration_seconds": {"type": "number", "exclusiveMinimum": 0, "maximum": 3600},
         },
         "required": ["action_rate"],
     },
@@ -310,6 +352,7 @@ def hit_dps_calc(
     impale_stacks: float = 0.0, impale_base_stored_damage_pct: float = 10.0,
     impale_effect_increased_pct: float = 0.0, impale_effect_more_multiplier: float = 1.0,
     impale_duration_seconds: float = 4.0,
+    enemy_armour: float = 0.0,
     enemy_impale_physical_reduction_pct: float | None = None,
     ignore_enemy_impale_physical_reduction: bool = False,
     enemy_reflected_damage_taken_increased_pct: float = 0.0,
@@ -317,6 +360,7 @@ def hit_dps_calc(
     cull_percent: float = 0.0, critical_cull_percent: float = 0.0,
     damaging_ailments: list[dict[str, Any]] | None = None,
     skill_dot: dict[str, Any] | None = None,
+    combat_duration_seconds: float | None = None,
 ) -> ToolResult:
     try:
         if (base_damage is None and skill_dot is None) or action_rate is None:
@@ -375,6 +419,7 @@ def hit_dps_calc(
             impale_effect_increased_pct=impale_effect_increased_pct,
             impale_effect_more_multiplier=impale_effect_more_multiplier,
             impale_duration_seconds=impale_duration_seconds,
+            enemy_armour=enemy_armour,
             enemy_impale_physical_reduction_pct=enemy_impale_physical_reduction_pct,
             ignore_enemy_impale_physical_reduction=ignore_enemy_impale_physical_reduction,
             enemy_reflected_damage_taken_increased_pct=enemy_reflected_damage_taken_increased_pct,
@@ -382,6 +427,7 @@ def hit_dps_calc(
             cull_percent=cull_percent, critical_cull_percent=critical_cull_percent,
             damaging_ailments=damaging_ailments or (),
             skill_dot=skill_dot,
+            combat_duration_seconds=combat_duration_seconds,
         )
     except (ValueError, TypeError, constants.MissingConstant) as exc:
         return ToolResult(ok=False, error=str(exc))
@@ -395,7 +441,7 @@ def hit_dps_calc(
 @REGISTRY.register(
     name="hit_dps_compare",
     description=(
-        "用同一条确定性公式比较 2 到 10 个显式参数方案，返回命中、穿刺、异常、总计及终结等效 DPS、"
+        "用同一条确定性公式比较 2 到 10 个显式参数方案，返回命中、稳态/固定时长穿刺、异常、总计及终结等效 DPS、"
         "相对首个基线的差值、平均击中与爆发伤害；不从装备或 Build 猜参数。"
     ),
     parameters={
@@ -419,7 +465,7 @@ def hit_dps_compare(scenarios: list[dict[str, Any]]) -> ToolResult:
     except (KeyError, ValueError, TypeError, constants.MissingConstant) as exc:
         return ToolResult(ok=False, error=str(exc))
     data = comparison.as_dict()
-    rows = ["### 单技能 DPS 方案比较", "", "| 方案 | 命中 DPS | 含穿刺 | 异常 DPS | 技能 DoT | 全部 DoT | 总 DPS | 含终结 | 命中相对基线 | 平均击中 | 一轮爆发 |", "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"]
+    rows = ["### 单技能 DPS 方案比较", "", "| 方案 | 命中 DPS | 稳态含穿刺 | 固定时长含穿刺 | 异常 DPS | 技能 DoT | 全部 DoT | 总 DPS | 含终结 | 命中相对基线 | 平均击中 | 一轮爆发 |", "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"]
     for row in comparison.scenarios:
         if row.name == comparison.baseline:
             pct = "基线"
@@ -429,6 +475,7 @@ def hit_dps_compare(scenarios: list[dict[str, Any]]) -> ToolResult:
             pct = f"{row.dps_delta_pct:+.2f}%"
         rows.append(
             f"| {row.name} | {fmt(row.dps)} | {fmt(row.combined_dps)} | "
+            f"{fmt(row.combat_average_combined_dps) if row.combat_average_combined_dps is not None else '—'} | "
             f"{fmt(row.ailment_dps)} | {fmt(row.skill_dot_dps)} | {fmt(row.total_dot_dps)} | "
             f"{fmt(row.total_dps)} | "
             f"{fmt(row.effective_total_dps_with_cull)} | {pct} | {fmt(row.average_hit)} | "
@@ -442,6 +489,7 @@ def hit_dps_compare(scenarios: list[dict[str, Any]]) -> ToolResult:
                  f"- 最高全部 DoT：{comparison.best_total_dot_dps_scenario}",
                  f"- 最高命中+穿刺+持续伤害总 DPS：{comparison.best_total_dps_scenario}",
                  f"- 最高含持续伤害与终结总等效 DPS：{comparison.best_effective_total_dps_scenario}",
+                 f"- 最高固定时长命中+穿刺 DPS：{comparison.best_combat_average_scenario or '未提供战斗时长'}",
                  f"- 最高一轮爆发：{comparison.best_burst_scenario}", "", BOUNDARY + "。"])
     answer = "\n".join(rows)
     data.update({"kind": "comparison", "answer": answer, "boundary": BOUNDARY})
@@ -455,7 +503,7 @@ def hit_dps_compare(scenarios: list[dict[str, Any]]) -> ToolResult:
 @REGISTRY.register(
     name="hit_dps_target_rate",
     description=(
-        "在其它参数固定时，数值反解达到目标命中、穿刺、异常、技能 DoT、全部 DoT、总计或含终结等效 DPS 所需的原始"
+        "在其它参数固定时，数值反解达到目标命中、稳态/固定时长穿刺、异常、技能 DoT、全部 DoT、总计或含终结等效 DPS 所需的原始"
         "每秒次数，并判断服务器 tick 及触发/非触发冷却上限是否令目标不可达。"
     ),
     parameters={
@@ -464,7 +512,8 @@ def hit_dps_compare(scenarios: list[dict[str, Any]]) -> ToolResult:
             "target_dps": {"type": "number"},
             "metric": {"type": "string", "enum": [
                 "hit_dps", "combined_dps", "effective_dps_with_cull", "ailment_dps",
-                "skill_dot_dps", "total_dot_dps", "total_dps", "effective_total_dps_with_cull"
+                "skill_dot_dps", "total_dot_dps", "total_dps", "effective_total_dps_with_cull",
+                "combat_average_combined_dps"
             ], "default": "hit_dps"},
             "inputs": {"type": "object", "description": "除 action_rate 外的 hit_dps_calc 参数"},
         },
@@ -492,6 +541,7 @@ def hit_dps_target_rate(
         "total_dot_dps": "全部持续伤害 DPS",
         "total_dps": "命中+穿刺+持续伤害总 DPS",
         "effective_total_dps_with_cull": "含持续伤害与终结总等效 DPS",
+        "combat_average_combined_dps": "固定战斗时长的命中+穿刺平均 DPS",
     }[result.metric]
     if result.reachable:
         answer = (
