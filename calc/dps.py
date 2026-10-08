@@ -105,6 +105,7 @@ class DamagingAilmentDps:
     active_stacks: float
     stack_limit: float | None
     average_roll_pct: float
+    critical_hit_chance_pct: float
     ailment_crit_chance_pct: float
     average_source_damage: float
     percent_per_second: float
@@ -142,6 +143,7 @@ class SkillDotDps:
     can_stack: bool
     duration_seconds: float
     application_rate: float
+    refresh_rate: float
     stack_potential: float
     active_instances: float
     stack_limit: float | None
@@ -150,6 +152,80 @@ class SkillDotDps:
     dps: float
     dps_cap: float
     capped: bool
+
+
+@dataclass(frozen=True)
+class AilmentTimelineState:
+    name: str
+    name_en: str
+    candidate_instances: float
+    active_stacks: float
+    average_roll_pct: float
+    single_instance_dps: float
+    uncapped_dps: float
+    dps: float
+    capped: bool
+
+
+@dataclass(frozen=True)
+class CombatTimelinePoint:
+    time_seconds: float
+    ailments: tuple[AilmentTimelineState, ...]
+    ailment_dps: float
+    skill_dot_active_instances: float
+    skill_dot_uncapped_dps: float
+    skill_dot_dps: float
+    total_dot_dps_uncapped: float
+    total_dot_dps: float
+    total_dot_dps_capped: bool
+    hit_dps: float
+    impale_dps: float
+    total_dps: float
+
+
+@dataclass(frozen=True)
+class AilmentCombatSummary:
+    name: str
+    name_en: str
+    average_candidate_instances: float
+    average_active_stacks: float
+    average_dps: float
+    steady_state_dps: float
+    time_to_steady_state_seconds: float | None
+    startup_loss_pct: float
+
+
+@dataclass(frozen=True)
+class SkillDotCombatSummary:
+    average_active_instances: float
+    steady_state_active_instances: float
+    average_dps: float
+    steady_state_dps: float
+    time_to_steady_state_seconds: float | None
+    refresh_limited: bool
+    startup_loss_pct: float
+
+
+@dataclass(frozen=True)
+class CombatTimeline:
+    combat_duration_seconds: float
+    calculation_mode: str
+    integration_steps: int
+    average_ailment_dps: float
+    average_skill_dot_dps: float
+    average_total_dot_dps: float
+    average_impale_dps: float
+    average_combined_dps: float
+    average_total_dps: float
+    average_effective_total_dps_with_cull: float
+    steady_state_total_dps: float
+    startup_loss_pct: float
+    global_dot_cap_reached: bool
+    global_dot_cap_first_reached_seconds: float | None
+    global_dot_cap_uptime_pct: float
+    ailment_summaries: tuple[AilmentCombatSummary, ...]
+    skill_dot_summary: SkillDotCombatSummary | None
+    points: tuple[CombatTimelinePoint, ...]
 
 
 @dataclass(frozen=True)
@@ -237,8 +313,14 @@ class HitDpsResult:
     impale_dps: float
     combined_dps: float
     impale_timeline: ImpaleTimeline | None
+    combat_timeline: CombatTimeline | None
     combat_average_impale_dps: float | None
     combat_average_combined_dps: float | None
+    combat_average_ailment_dps: float | None
+    combat_average_skill_dot_dps: float | None
+    combat_average_total_dot_dps: float | None
+    combat_average_total_dps: float | None
+    combat_average_effective_total_dps_with_cull: float | None
     cull_percent: float
     cull_multiplier: float
     culling_dps: float
@@ -654,7 +736,8 @@ def _calculate_damaging_ailments(
             effective_chance_pct=effective_chance, application_rate=application_rate,
             duration_seconds=duration, stack_potential=stack_potential,
             active_stacks=active_stacks, stack_limit=stack_limit,
-            average_roll_pct=roll * 100, ailment_crit_chance_pct=ailment_crit_chance,
+            average_roll_pct=roll * 100, critical_hit_chance_pct=crit_chance_pct,
+            ailment_crit_chance_pct=ailment_crit_chance,
             average_source_damage=average_source, percent_per_second=percent,
             dot_multiplier_pct=normal_dot_multi,
             crit_dot_multiplier_pct=crit_dot_multi, mitigation_pct=mitigation_pct,
@@ -848,11 +931,12 @@ def _calculate_skill_dot(
     )
     if stack_limit is not None and stack_limit <= 0:
         raise ValueError("skill_dot.stack_limit 必须大于 0")
+    refresh_rate = _bounded(
+        action_rate * rate_multiplier * skill_dps_multiplier * quantity_multiplier,
+        "技能 DoT 刷新率",
+    )
     if can_stack:
-        application_rate = _bounded(
-            action_rate * rate_multiplier * skill_dps_multiplier * quantity_multiplier,
-            "技能 DoT 施加率",
-        )
+        application_rate = refresh_rate
         stack_potential = _bounded(application_rate * duration, "技能 DoT 潜在层数")
         active_instances = (
             min(stack_potential, stack_limit) if stack_limit is not None else stack_potential
@@ -869,6 +953,7 @@ def _calculate_skill_dot(
         by_type=tuple(rows), per_instance_uncapped_dps=per_instance_uncapped,
         per_instance_dps=per_instance, can_stack=can_stack,
         duration_seconds=duration, application_rate=application_rate,
+        refresh_rate=refresh_rate,
         stack_potential=stack_potential, active_instances=active_instances,
         stack_limit=stack_limit, instance_multiplier=instance_multiplier,
         uncapped_dps=uncapped, dps=min(uncapped, cap), dps_cap=cap,
@@ -1037,6 +1122,347 @@ def _impale_timeline(
         sustainable_impale_dps=sustainable_dps, average_impale_dps=average_impale,
         average_combined_dps=_bounded(hit_dps + average_impale, "战斗窗口平均命中与穿刺 DPS"),
         startup_loss_pct=loss, points=tuple(points),
+    )
+
+
+def _ailment_timeline_state(
+    ailment: DamagingAilmentDps, seconds: float,
+) -> AilmentTimelineState:
+    """把稳态异常公式投影到给定时刻的活跃实例与强实例取样。"""
+    candidate_instances = (
+        ailment.application_rate * min(seconds, ailment.duration_seconds)
+        if seconds > 0 and ailment.duration_seconds > 0 else 0.0
+    )
+    active_stacks = (
+        min(candidate_instances, ailment.stack_limit)
+        if ailment.stack_limit is not None else candidate_instances
+    )
+    strong_instance = ailment.name_en in {"Ignite", "Bleed"}
+    if (
+        strong_instance and ailment.stack_limit is not None
+        and candidate_instances / ailment.stack_limit > 1
+    ):
+        roll = (
+            candidate_instances - (ailment.stack_limit - 1) / 2
+        ) / (candidate_instances + 1)
+    else:
+        roll = 0.5
+    roll = min(max(roll, 0.0), 1.0)
+    if active_stacks <= 0:
+        single_dps = uncapped = dps = 0.0
+    elif strong_instance:
+        crit_candidates = max(candidate_instances, 1.0)
+        crit_chance = 100 * (
+            1 - (1 - ailment.critical_hit_chance_pct / 100) ** crit_candidates
+        )
+        normal_source = (
+            ailment.source_damage.minimum
+            + (ailment.source_damage.maximum - ailment.source_damage.minimum) * roll
+        )
+        critical_source = (
+            ailment.crit_source_damage.minimum
+            + (ailment.crit_source_damage.maximum - ailment.crit_source_damage.minimum) * roll
+        )
+        chance_from_hit = ailment.chance_on_hit_pct / 100 * (1 - crit_chance / 100)
+        chance_from_crit = ailment.chance_on_crit_pct / 100 * crit_chance / 100
+        chance_total = chance_from_hit + chance_from_crit
+        current_source = (
+            (
+                normal_source * (1 + ailment.dot_multiplier_pct / 100) * chance_from_hit
+                + critical_source * (1 + ailment.crit_dot_multiplier_pct / 100)
+                * chance_from_crit
+            ) / chance_total
+            if chance_total > 0 else 0.0
+        )
+        source_scale = (
+            ailment.single_instance_dps / ailment.average_source_damage
+            if ailment.average_source_damage > 0 else 0.0
+        )
+        single_dps = _bounded(current_source * source_scale, f"{ailment.name}时间线单实例 DPS")
+        uncapped = _bounded(single_dps * active_stacks, f"{ailment.name}时间线 DPS")
+        dps = min(uncapped, ailment.dps_cap)
+    else:
+        single_dps = ailment.single_instance_dps
+        uncapped = _bounded(single_dps * active_stacks, f"{ailment.name}时间线 DPS")
+        dps = min(uncapped, ailment.dps_cap)
+    return AilmentTimelineState(
+        name=ailment.name, name_en=ailment.name_en,
+        candidate_instances=candidate_instances, active_stacks=active_stacks,
+        average_roll_pct=roll * 100, single_instance_dps=single_dps,
+        uncapped_dps=uncapped, dps=dps, capped=uncapped > ailment.dps_cap,
+    )
+
+
+def _skill_dot_timeline_state(
+    skill_dot: SkillDotDps | None, seconds: float,
+) -> tuple[float, float, float]:
+    if skill_dot is None:
+        return 0.0, 0.0, 0.0
+    if skill_dot.can_stack:
+        active = (
+            skill_dot.application_rate * min(seconds, skill_dot.duration_seconds)
+            if seconds > 0 and skill_dot.duration_seconds > 0 else 0.0
+        )
+    elif skill_dot.duration_seconds <= 0:
+        # 未提供生存期的不可叠层地面/持续效果沿用稳态口径，视为调用方保证持续存在。
+        active = skill_dot.instance_multiplier
+    else:
+        coverage = min(
+            skill_dot.refresh_rate * min(seconds, skill_dot.duration_seconds), 1.0
+        )
+        active = skill_dot.instance_multiplier * coverage
+    if skill_dot.stack_limit is not None:
+        active = min(active, skill_dot.stack_limit)
+    uncapped = _bounded(skill_dot.per_instance_dps * active, "技能 DoT 时间线 DPS")
+    return active, uncapped, min(uncapped, skill_dot.dps_cap)
+
+
+def _combat_timeline(
+    *, combat_duration_seconds: float,
+    ailments: tuple[DamagingAilmentDps, ...], skill_dot: SkillDotDps | None,
+    hit_dps: float, impale_timeline: ImpaleTimeline,
+    configured_impale_stacks: float, impale_duration_seconds: float,
+    impale_chance_pct: float, stored_damage_pct: float, physical_hit: float,
+    enemy_armour: float, flat_reduction_pct: float, ignore_reduction: bool,
+    impale_damage_taken_multiplier: float, quantity_multiplier: float,
+    dot_cap: float, steady_state_total_dps: float, cull_multiplier: float,
+) -> CombatTimeline:
+    """计算有限战斗窗口中的异常、技能 DoT、命中与穿刺统一时间线。"""
+    duration = combat_duration_seconds
+
+    def state_at(seconds: float) -> tuple[
+        tuple[AilmentTimelineState, ...], float, float, float, float, float, bool
+    ]:
+        ailment_states = tuple(
+            _ailment_timeline_state(item, seconds) for item in ailments
+        )
+        ailment_dps = _bounded(
+            sum(item.dps for item in ailment_states), "时间线异常 DPS"
+        )
+        skill_active, skill_uncapped, skill_dps = _skill_dot_timeline_state(
+            skill_dot, seconds
+        )
+        total_uncapped = _bounded(ailment_dps + skill_dps, "时间线全部 DoT")
+        total_dot = min(total_uncapped, dot_cap) if dot_cap > 0 else 0.0
+        return (
+            ailment_states, ailment_dps, skill_active, skill_uncapped,
+            skill_dps, total_dot, total_uncapped > dot_cap if dot_cap > 0 else False,
+        )
+
+    # Simpson 积分给强实例取样、逐层到期、刷新覆盖和两级 DoT 封顶统一一个有界口径。
+    integration_steps = 2048
+    width = duration / integration_steps
+    ailment_values: list[float] = []
+    ailment_dps_values: list[list[float]] = [[] for _ in ailments]
+    ailment_candidate_values: list[list[float]] = [[] for _ in ailments]
+    ailment_stack_values: list[list[float]] = [[] for _ in ailments]
+    skill_values: list[float] = []
+    skill_active_values: list[float] = []
+    total_dot_values: list[float] = []
+    cap_values: list[bool] = []
+    for index in range(integration_steps + 1):
+        state = state_at(index * width)
+        ailment_values.append(state[1])
+        for ailment_index, ailment_state in enumerate(state[0]):
+            ailment_dps_values[ailment_index].append(ailment_state.dps)
+            ailment_candidate_values[ailment_index].append(
+                ailment_state.candidate_instances
+            )
+            ailment_stack_values[ailment_index].append(ailment_state.active_stacks)
+        skill_values.append(state[4])
+        skill_active_values.append(state[2])
+        total_dot_values.append(state[5])
+        cap_values.append(state[6])
+
+    def simpson(values: list[float]) -> float:
+        area = width / 3 * (
+            values[0] + values[-1]
+            + 4 * sum(values[1:-1:2]) + 2 * sum(values[2:-1:2])
+        )
+        return area / duration
+
+    average_ailment = simpson(ailment_values)
+    average_skill = simpson(skill_values)
+    average_total_dot = simpson(total_dot_values)
+    average_impale = impale_timeline.average_impale_dps
+    average_combined = impale_timeline.average_combined_dps
+    average_total = _bounded(
+        average_combined + average_total_dot, "战斗窗口平均总 DPS"
+    )
+    ailment_summaries: list[AilmentCombatSummary] = []
+    for index, item in enumerate(ailments):
+        average_candidates = simpson(ailment_candidate_values[index])
+        average_stacks = simpson(ailment_stack_values[index])
+        average_dps = simpson(ailment_dps_values[index])
+        if item.application_rate <= 0 or item.duration_seconds <= 0:
+            steady_seconds = None
+        elif item.name_en in {"Ignite", "Bleed"}:
+            # 强实例 roll 直到完整持续时间窗口填满才与稳态候选池一致。
+            steady_seconds = item.duration_seconds
+        elif item.stack_limit is None:
+            steady_seconds = item.duration_seconds
+        else:
+            steady_seconds = min(
+                item.duration_seconds, item.stack_limit / item.application_rate
+            )
+        ailment_summaries.append(AilmentCombatSummary(
+            name=item.name, name_en=item.name_en,
+            average_candidate_instances=average_candidates,
+            average_active_stacks=average_stacks, average_dps=average_dps,
+            steady_state_dps=item.dps,
+            time_to_steady_state_seconds=steady_seconds,
+            startup_loss_pct=(
+                max(0.0, (item.dps - average_dps) / item.dps * 100)
+                if item.dps > 0 else 0.0
+            ),
+        ))
+    skill_summary = None
+    if skill_dot is not None:
+        average_active = simpson(skill_active_values)
+        if skill_dot.can_stack:
+            if skill_dot.application_rate <= 0 or skill_dot.duration_seconds <= 0:
+                skill_steady_seconds = None
+            elif skill_dot.stack_limit is None:
+                skill_steady_seconds = skill_dot.duration_seconds
+            else:
+                skill_steady_seconds = min(
+                    skill_dot.duration_seconds,
+                    skill_dot.stack_limit / skill_dot.application_rate,
+                )
+            timeline_steady_active = skill_dot.active_instances
+            refresh_limited = False
+        elif skill_dot.duration_seconds <= 0:
+            skill_steady_seconds = 0.0
+            timeline_steady_active = skill_dot.active_instances
+            refresh_limited = False
+        else:
+            skill_steady_seconds = min(
+                skill_dot.duration_seconds, 1 / skill_dot.refresh_rate
+            ) if skill_dot.refresh_rate > 0 else None
+            coverage = min(skill_dot.refresh_rate * skill_dot.duration_seconds, 1.0)
+            timeline_steady_active = skill_dot.instance_multiplier * coverage
+            if skill_dot.stack_limit is not None:
+                timeline_steady_active = min(
+                    timeline_steady_active, skill_dot.stack_limit
+                )
+            refresh_limited = coverage < 1
+        timeline_steady_dps = min(
+            skill_dot.per_instance_dps * timeline_steady_active, skill_dot.dps_cap
+        )
+        skill_summary = SkillDotCombatSummary(
+            average_active_instances=average_active,
+            steady_state_active_instances=timeline_steady_active,
+            average_dps=average_skill, steady_state_dps=timeline_steady_dps,
+            time_to_steady_state_seconds=skill_steady_seconds,
+            refresh_limited=refresh_limited,
+            startup_loss_pct=(
+                max(
+                    0.0,
+                    (timeline_steady_dps - average_skill) / timeline_steady_dps * 100,
+                )
+                if timeline_steady_dps > 0 else 0.0
+            ),
+        )
+
+    cap_first_reached = None
+    if cap_values[-1]:
+        first_capped_index = next(
+            index for index, capped in enumerate(cap_values) if capped
+        )
+        lower = max(0.0, (first_capped_index - 1) * width)
+        upper = first_capped_index * width
+        for _ in range(60):
+            middle = (lower + upper) / 2
+            if state_at(middle)[6]:
+                upper = middle
+            else:
+                lower = middle
+        cap_first_reached = upper
+    cap_uptime = (
+        (duration - cap_first_reached) / duration * 100
+        if cap_first_reached is not None else 0.0
+    )
+
+    sample_times = {0.0, duration}
+    for item in ailments:
+        if 0 < item.duration_seconds < duration:
+            sample_times.add(item.duration_seconds)
+        if item.application_rate > 0:
+            for milestone in range(1, 6):
+                seconds = milestone / item.application_rate
+                if seconds < duration:
+                    sample_times.add(seconds)
+            if item.stack_limit is not None:
+                capped_at = item.stack_limit / item.application_rate
+                if 0 < capped_at < duration:
+                    sample_times.add(capped_at)
+    if skill_dot is not None:
+        if 0 < skill_dot.duration_seconds < duration:
+            sample_times.add(skill_dot.duration_seconds)
+        rate = skill_dot.application_rate if skill_dot.can_stack else skill_dot.refresh_rate
+        if rate > 0:
+            for milestone in range(1, 6):
+                seconds = milestone / rate
+                if seconds < duration:
+                    sample_times.add(seconds)
+    for item in impale_timeline.points:
+        sample_times.add(item.time_seconds)
+
+    points: list[CombatTimelinePoint] = []
+    for seconds in sorted(sample_times):
+        (
+            ailment_states, ailment_dps, skill_active, skill_uncapped,
+            skill_dps, total_dot, total_dot_capped,
+        ) = state_at(seconds)
+        capacity = min(
+            configured_impale_stacks,
+            impale_timeline.effective_hit_rate * seconds,
+            impale_timeline.effective_hit_rate * impale_duration_seconds,
+        ) if impale_timeline.effective_hit_rate > 0 and impale_duration_seconds > 0 else 0.0
+        impale_dps, _, _ = _impale_dps_at_capacity(
+            stack_capacity=capacity, impale_chance_pct=impale_chance_pct,
+            stored_damage_pct=stored_damage_pct, physical_hit=physical_hit,
+            enemy_armour=enemy_armour, flat_reduction_pct=flat_reduction_pct,
+            ignore_reduction=ignore_reduction,
+            damage_taken_multiplier=impale_damage_taken_multiplier,
+            effective_hit_rate=impale_timeline.effective_hit_rate,
+            quantity_multiplier=quantity_multiplier,
+        )
+        total_uncapped = _bounded(ailment_dps + skill_dps, "时间线全部 DoT")
+        points.append(CombatTimelinePoint(
+            time_seconds=seconds, ailments=ailment_states,
+            ailment_dps=ailment_dps,
+            skill_dot_active_instances=skill_active,
+            skill_dot_uncapped_dps=skill_uncapped, skill_dot_dps=skill_dps,
+            total_dot_dps_uncapped=total_uncapped, total_dot_dps=total_dot,
+            total_dot_dps_capped=total_dot_capped, hit_dps=hit_dps,
+            impale_dps=impale_dps,
+            total_dps=_bounded(hit_dps + impale_dps + total_dot, "时间线总 DPS"),
+        ))
+    startup_loss = (
+        max(0.0, (steady_state_total_dps - average_total) / steady_state_total_dps * 100)
+        if steady_state_total_dps > 0 else 0.0
+    )
+    return CombatTimeline(
+        combat_duration_seconds=duration,
+        calculation_mode="continuous_expected_value_simpson",
+        integration_steps=integration_steps,
+        average_ailment_dps=average_ailment,
+        average_skill_dot_dps=average_skill,
+        average_total_dot_dps=average_total_dot,
+        average_impale_dps=average_impale,
+        average_combined_dps=average_combined,
+        average_total_dps=average_total,
+        average_effective_total_dps_with_cull=_bounded(
+            average_total * cull_multiplier, "战斗窗口含终结平均总 DPS"
+        ),
+        steady_state_total_dps=steady_state_total_dps,
+        startup_loss_pct=startup_loss,
+        global_dot_cap_reached=cap_first_reached is not None,
+        global_dot_cap_first_reached_seconds=cap_first_reached,
+        global_dot_cap_uptime_pct=cap_uptime,
+        ailment_summaries=tuple(ailment_summaries),
+        skill_dot_summary=skill_summary, points=tuple(points),
     )
 
 
@@ -1500,6 +1926,26 @@ def hit_dps(
     effective_total_dps_with_cull = _bounded(
         all_damage_dps * cull_multiplier, "含持续伤害与终结的总等效 DPS"
     )
+    combat_timeline = (
+        _combat_timeline(
+            combat_duration_seconds=combat_duration_seconds,
+            ailments=ailment_results, skill_dot=skill_dot_result,
+            hit_dps=hit_total_dps, impale_timeline=timeline,
+            configured_impale_stacks=impale_stack_count,
+            impale_duration_seconds=impale_duration,
+            impale_chance_pct=effective_impale_chance,
+            stored_damage_pct=impale_stored_pct,
+            physical_hit=physical_pre_mitigation_average,
+            enemy_armour=impale_armour,
+            flat_reduction_pct=impale_flat_reduction,
+            ignore_reduction=ignore_enemy_impale_physical_reduction,
+            impale_damage_taken_multiplier=impale_taken,
+            quantity_multiplier=quantity, dot_cap=dot_cap,
+            steady_state_total_dps=all_damage_dps,
+            cull_multiplier=cull_multiplier,
+        )
+        if combat_duration_seconds is not None and timeline is not None else None
+    )
     return HitDpsResult(
         conversion=table, by_type=tuple(breakdown), non_crit_hit=total_noncrit,
         non_crit_average=noncrit_average, crit_average=crit_average,
@@ -1531,8 +1977,25 @@ def hit_dps(
         impale_effective_reduction_pct=impale_effective_reduction,
         impale_multiplier=impale_multiplier, impale_dps=impale_dps,
         combined_dps=combined_dps, impale_timeline=timeline,
+        combat_timeline=combat_timeline,
         combat_average_impale_dps=timeline.average_impale_dps if timeline else None,
         combat_average_combined_dps=timeline.average_combined_dps if timeline else None,
+        combat_average_ailment_dps=(
+            combat_timeline.average_ailment_dps if combat_timeline else None
+        ),
+        combat_average_skill_dot_dps=(
+            combat_timeline.average_skill_dot_dps if combat_timeline else None
+        ),
+        combat_average_total_dot_dps=(
+            combat_timeline.average_total_dot_dps if combat_timeline else None
+        ),
+        combat_average_total_dps=(
+            combat_timeline.average_total_dps if combat_timeline else None
+        ),
+        combat_average_effective_total_dps_with_cull=(
+            combat_timeline.average_effective_total_dps_with_cull
+            if combat_timeline else None
+        ),
         cull_percent=effective_cull, cull_multiplier=cull_multiplier,
         culling_dps=culling_dps, effective_dps_with_cull=effective_dps_with_cull,
         damaging_ailments=ailment_results, ailment_dps=ailment_dps,

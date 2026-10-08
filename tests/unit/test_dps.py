@@ -406,6 +406,108 @@ class HitDpsCoreTest(unittest.TestCase):
                 combat_duration_seconds=3601,
             )
 
+    @patch("calc.dps.constants.get", side_effect=_ailment_constant)
+    def test_combat_timeline_integrates_poison_and_stacking_skill_dot_startup(
+        self, _get: object,
+    ) -> None:
+        result = hit_dps(
+            base_damage={"chaos": [100, 100]}, action_rate=1,
+            damaging_ailments=[{
+                "name": "poison", "source_damage": [100, 100],
+                "chance_on_hit_pct": 100,
+            }],
+            skill_dot={
+                "base_damage_per_second": {"chaos": 100},
+                "can_stack": True, "duration_seconds": 2,
+            },
+            combat_duration_seconds=4,
+        )
+        timeline = result.combat_timeline
+        self.assertIsNotNone(timeline)
+        assert timeline is not None
+        self.assertEqual("continuous_expected_value_simpson", timeline.calculation_mode)
+        self.assertEqual(2048, timeline.integration_steps)
+        self.assertAlmostEqual(45, timeline.average_ailment_dps, places=4)
+        self.assertAlmostEqual(150, timeline.average_skill_dot_dps, places=4)
+        self.assertAlmostEqual(195, timeline.average_total_dot_dps, places=4)
+        self.assertAlmostEqual(295, timeline.average_total_dps, places=4)
+        self.assertEqual(0, timeline.points[0].ailment_dps)
+        self.assertEqual(0, timeline.points[0].skill_dot_dps)
+        self.assertEqual(60, timeline.points[-1].ailment_dps)
+        self.assertEqual(200, timeline.points[-1].skill_dot_dps)
+        self.assertEqual(1, len(timeline.ailment_summaries))
+        self.assertAlmostEqual(1.5, timeline.ailment_summaries[0].average_active_stacks)
+        self.assertEqual(2, timeline.ailment_summaries[0].time_to_steady_state_seconds)
+        assert timeline.skill_dot_summary is not None
+        self.assertAlmostEqual(1.5, timeline.skill_dot_summary.average_active_instances)
+        self.assertFalse(timeline.skill_dot_summary.refresh_limited)
+
+    @patch("calc.dps.constants.get", side_effect=_ailment_constant)
+    def test_combat_timeline_refreshes_strong_ignite_instances(self, _get: object) -> None:
+        result = hit_dps(
+            base_damage={"fire": [1, 1]}, action_rate=2,
+            damaging_ailments=[{
+                "name": "ignite", "source_damage": [100, 200],
+                "chance_on_hit_pct": 100,
+            }],
+            combat_duration_seconds=2,
+        )
+        timeline = result.combat_timeline
+        assert timeline is not None
+        ignite_points = [point.ailments[0] for point in timeline.points]
+        self.assertEqual(0, ignite_points[0].active_stacks)
+        self.assertGreater(ignite_points[-1].average_roll_pct, 50)
+        self.assertGreater(ignite_points[-1].single_instance_dps, ignite_points[1].single_instance_dps)
+        self.assertLess(timeline.average_ailment_dps, result.ailment_dps)
+
+    @patch("calc.dps.constants.get", side_effect=_ailment_constant)
+    def test_nonstacking_skill_dot_timeline_models_refresh_coverage(self, _get: object) -> None:
+        result = hit_dps(
+            base_damage={}, action_rate=0.5,
+            skill_dot={
+                "base_damage_per_second": {"fire": 100},
+                "duration_seconds": 1, "instance_multiplier": 2,
+            },
+            combat_duration_seconds=4,
+        )
+        assert result.skill_dot is not None
+        timeline = result.combat_timeline
+        assert timeline is not None
+        self.assertEqual(0, result.skill_dot.application_rate)
+        self.assertEqual(0.5, result.skill_dot.refresh_rate)
+        self.assertEqual(200, result.skill_dot_dps)
+        self.assertAlmostEqual(87.5, timeline.average_skill_dot_dps, places=4)
+        self.assertEqual(1, timeline.points[-1].skill_dot_active_instances)
+        assert timeline.skill_dot_summary is not None
+        self.assertTrue(timeline.skill_dot_summary.refresh_limited)
+        self.assertEqual(1, timeline.skill_dot_summary.steady_state_active_instances)
+
+    @patch("calc.dps.constants.get", side_effect=lambda key: {
+        **AILMENT_CONSTANT_VALUES, constants.DOT_DPS_CAP: 100.0,
+    }[key])
+    def test_combat_timeline_applies_independent_then_global_dot_caps(self, _get: object) -> None:
+        result = hit_dps(
+            base_damage={"chaos": [1, 1]}, action_rate=10,
+            damaging_ailments=[{
+                "name": "poison", "source_damage": [100, 100],
+                "chance_on_hit_pct": 100,
+            }],
+            skill_dot={
+                "base_damage_per_second": {"chaos": 80},
+                "can_stack": True, "duration_seconds": 2,
+            },
+            combat_duration_seconds=2,
+        )
+        timeline = result.combat_timeline
+        assert timeline is not None
+        self.assertTrue(any(point.total_dot_dps_capped for point in timeline.points[1:]))
+        self.assertTrue(all(point.total_dot_dps <= 100 for point in timeline.points))
+        self.assertLess(timeline.average_total_dot_dps, 100)
+        self.assertGreater(timeline.average_total_dot_dps, 90)
+        self.assertTrue(timeline.global_dot_cap_reached)
+        self.assertIsNotNone(timeline.global_dot_cap_first_reached_seconds)
+        self.assertGreater(timeline.global_dot_cap_uptime_pct, 90)
+
     def test_regular_and_critical_cull_are_reported_as_effective_dps(self) -> None:
         regular = hit_dps(
             base_damage={"fire": [100, 100]}, action_rate=1, cull_percent=20,
@@ -767,6 +869,31 @@ class HitDpsAnalysisTest(unittest.TestCase):
             }, metric="combat_average_combined_dps")
 
     @patch("calc.dps.constants.get", side_effect=_ailment_constant)
+    def test_compare_and_target_support_full_combat_window(self, _get: object) -> None:
+        dot = {
+            "base_damage_per_second": {"chaos": 100},
+            "can_stack": True, "duration_seconds": 2,
+        }
+        common = {
+            "base_damage": {}, "skill_dot": dot,
+            "combat_duration_seconds": 4,
+        }
+        compared = compare_hit_dps([
+            ("慢速", {**common, "action_rate": 1}),
+            ("快速", {**common, "action_rate": 2}),
+        ])
+        self.assertEqual("快速", compared.best_combat_average_dot_scenario)
+        self.assertEqual("快速", compared.best_combat_average_total_scenario)
+        self.assertAlmostEqual(300, compared.scenarios[1].combat_average_total_dps or 0, places=4)
+        target = target_action_rate(300, common, metric="combat_average_total_dps")
+        self.assertTrue(target.reachable)
+        self.assertAlmostEqual(2, target.required_raw_action_rate or 0, places=5)
+        with self.assertRaisesRegex(ValueError, "combat_duration_seconds"):
+            target_action_rate(100, {
+                "base_damage": {}, "skill_dot": dot,
+            }, metric="combat_average_total_dot_dps")
+
+    @patch("calc.dps.constants.get", side_effect=_ailment_constant)
     def test_compare_and_target_support_ailment_and_total_metrics(self, _get: object) -> None:
         ailment = {
             "name": "poison", "source_damage": [100, 100],
@@ -1015,6 +1142,27 @@ class HitDpsSurfaceTest(unittest.TestCase):
         self.assertEqual(7200, response["total_dot_dps"])
         self.assertEqual("fire", response["skill_dot"]["by_type"][0]["damage_type"])
 
+    @patch("calc.dps.constants.get", side_effect=_ailment_constant)
+    def test_tool_and_http_expose_full_combat_timeline(self, _get: object) -> None:
+        dot = {
+            "base_damage_per_second": {"chaos": 100},
+            "can_stack": True, "duration_seconds": 2,
+        }
+        tool_result = hit_dps_calc(
+            base_damage={}, action_rate=2, skill_dot=dot,
+            combat_duration_seconds=4,
+        )
+        self.assertTrue(tool_result.ok)
+        self.assertAlmostEqual(300, tool_result.data["combat_average_total_dps"], places=4)
+        self.assertIn("4 秒完整伤害时间线", tool_result.data["answer"])
+        response = calculate_hit_dps(HitDpsRequest(
+            action_rate=2, skill_dot=SkillDotRequest(**dot),
+            combat_duration_seconds=4,
+        ), _caller="test")
+        self.assertEqual(4, response["combat_timeline"]["combat_duration_seconds"])
+        self.assertGreater(len(response["combat_timeline"]["points"]), 3)
+        self.assertAlmostEqual(300, response["combat_average_total_dot_dps"], places=4)
+
     def test_compare_and_target_http_endpoints(self) -> None:
         comparison = compare_hit_dps_scenarios(HitDpsCompareRequest(scenarios=[
             HitDpsScenarioRequest(name="A", inputs=HitDpsRequest(
@@ -1060,6 +1208,10 @@ class HitDpsSurfaceTest(unittest.TestCase):
         assert target_spec is not None
         self.assertIn(
             "combat_average_combined_dps",
+            target_spec.parameters["properties"]["metric"]["enum"],
+        )
+        self.assertIn(
+            "combat_average_total_dps",
             target_spec.parameters["properties"]["metric"]["enum"],
         )
         paths = create_app().openapi()["paths"]
