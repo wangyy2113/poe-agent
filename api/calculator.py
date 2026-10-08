@@ -9,6 +9,11 @@ from pydantic import BaseModel, Field
 
 from api.deps import require_user
 from tools.impl.dps import hit_dps_calc, hit_dps_compare, hit_dps_target_rate
+from tools.impl.dps_rotation import (
+    rotation_dps_calc,
+    rotation_dps_compare,
+    rotation_dps_target_multiplier,
+)
 
 router = APIRouter(tags=["计算器"])
 
@@ -173,6 +178,57 @@ class HitDpsTargetRateRequest(BaseModel):
     inputs: HitDpsTargetRateInputs
 
 
+class RotationSkillRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+    allocation_pct: float | None = Field(
+        default=None, gt=0, le=100, allow_inf_nan=False
+    )
+    inputs: HitDpsRequest
+
+
+class RotationDotGroupMemberRequest(BaseModel):
+    skill: str = Field(min_length=1, max_length=80)
+    component: str = Field(pattern="^(ignite|poison|bleed|skill_dot)$")
+
+
+class RotationDotGroupRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+    policy: str = Field(default="strongest", pattern="^strongest$")
+    members: list[RotationDotGroupMemberRequest] = Field(min_length=2, max_length=40)
+
+
+class RotationDpsRequest(BaseModel):
+    skills: list[RotationSkillRequest] = Field(min_length=2, max_length=10)
+    mode: str = Field(default="rotation", pattern="^(rotation|parallel)$")
+    dot_groups: list[RotationDotGroupRequest] = Field(default_factory=list, max_length=20)
+    combat_duration_seconds: float | None = Field(
+        default=None, gt=0, le=3600, allow_inf_nan=False
+    )
+    cull_percent: float = Field(default=0, ge=0, lt=100, allow_inf_nan=False)
+
+
+class RotationScenarioRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+    inputs: RotationDpsRequest
+
+
+class RotationCompareRequest(BaseModel):
+    scenarios: list[RotationScenarioRequest] = Field(min_length=2, max_length=10)
+
+
+class RotationTargetRequest(BaseModel):
+    target_dps: float = Field(gt=0, allow_inf_nan=False)
+    metric: str = Field(
+        default="steady_total_dps",
+        pattern=(
+            "^(steady_total_dps|steady_total_dot_dps|effective_steady_total_dps|"
+            "combat_average_total_dps|combat_average_total_dot_dps|"
+            "combat_average_effective_total_dps)$"
+        ),
+    )
+    inputs: RotationDpsRequest
+
+
 @router.post("/calc/hit-dps", response_model=None)
 def calculate_hit_dps(req: HitDpsRequest, _caller: str = Depends(require_user)) -> dict[str, Any]:
     result = hit_dps_calc(
@@ -205,6 +261,42 @@ def calculate_hit_dps_target_rate(
         target_dps=req.target_dps,
         metric=req.metric,
         inputs=req.inputs.model_dump(exclude={"action_rate"}, exclude_none=True),
+    )
+    if not result.ok:
+        raise HTTPException(status_code=422, detail=result.error)
+    return dict(result.data or {})
+
+
+@router.post("/calc/rotation-dps", response_model=None)
+def calculate_rotation_dps(
+    req: RotationDpsRequest, _caller: str = Depends(require_user)
+) -> dict[str, Any]:
+    result = rotation_dps_calc(**req.model_dump(exclude_none=True))
+    if not result.ok:
+        raise HTTPException(status_code=422, detail=result.error)
+    return dict(result.data or {})
+
+
+@router.post("/calc/rotation-dps/compare", response_model=None)
+def compare_rotation_dps_scenarios(
+    req: RotationCompareRequest, _caller: str = Depends(require_user)
+) -> dict[str, Any]:
+    result = rotation_dps_compare(scenarios=[
+        {"name": scenario.name, "inputs": scenario.inputs.model_dump(exclude_none=True)}
+        for scenario in req.scenarios
+    ])
+    if not result.ok:
+        raise HTTPException(status_code=422, detail=result.error)
+    return dict(result.data or {})
+
+
+@router.post("/calc/rotation-dps/target-multiplier", response_model=None)
+def calculate_rotation_target_multiplier(
+    req: RotationTargetRequest, _caller: str = Depends(require_user)
+) -> dict[str, Any]:
+    result = rotation_dps_target_multiplier(
+        target_dps=req.target_dps, metric=req.metric,
+        inputs=req.inputs.model_dump(exclude_none=True),
     )
     if not result.ok:
         raise HTTPException(status_code=422, detail=result.error)

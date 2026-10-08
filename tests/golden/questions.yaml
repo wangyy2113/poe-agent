@@ -909,6 +909,28 @@ cases:
       点燃和流血按活跃候选刷新强实例；中毒与可叠层技能 DoT 按持续时间逐层到期；
       战斗窗口平均值与稳态值是两个不能混用的口径。
 
+  - id: route_rotation_dps_calc
+    query: 我给你两个技能的完整伤害参数和各自动作占比，帮我算技能循环 DPS
+    kind: tool_route
+    expect_tool: rotation_dps_calc
+    note: >-
+      多技能共享动作时间时必须先把占比回灌各技能频率，再复用完整单技能链；不能分别算满速
+      DPS 后直接相加，也不能从“常用轮转”猜动作占比。
+
+  - id: route_rotation_dps_compare
+    query: 两套多技能 DPS 方案对比，包含轮转占比和互斥持续伤害
+    kind: tool_route
+    expect_tool: rotation_dps_compare
+    note: >-
+      多套组合必须在同一动作预算、DoT 互斥和全局封顶口径下比较，不能退回单技能方案工具。
+
+  - id: route_rotation_dps_target
+    query: 多技能目标 DPS 需要把整套循环的攻击施法频率提高多少倍
+    kind: tool_route
+    expect_tool: rotation_dps_target_multiplier
+    note: >-
+      保持各技能分配比例不变统一缩放配置频率，并由完整组合链二分回代；不能只做目标除法。
+
   - id: num_spell_suppression_effect
     query: 法术压制触发时减多少伤害
     kind: numeric

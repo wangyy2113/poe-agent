@@ -1226,6 +1226,7 @@ def _combat_timeline(
     enemy_armour: float, flat_reduction_pct: float, ignore_reduction: bool,
     impale_damage_taken_multiplier: float, quantity_multiplier: float,
     dot_cap: float, steady_state_total_dps: float, cull_multiplier: float,
+    extra_sample_times: Iterable[float] = (),
 ) -> CombatTimeline:
     """计算有限战斗窗口中的异常、技能 DoT、命中与穿刺统一时间线。"""
     duration = combat_duration_seconds
@@ -1384,6 +1385,14 @@ def _combat_timeline(
     )
 
     sample_times = {0.0, duration}
+    extra_times = list(extra_sample_times)
+    if len(extra_times) > 4097:
+        raise ValueError("combat_sample_times 最多 4097 项")
+    for index, raw_time in enumerate(extra_times):
+        seconds = _number(raw_time, f"combat_sample_times[{index}]")
+        if seconds > duration:
+            raise ValueError("combat_sample_times 不能超过 combat_duration_seconds")
+        sample_times.add(seconds)
     for item in ailments:
         if 0 < item.duration_seconds < duration:
             sample_times.add(item.duration_seconds)
@@ -1534,8 +1543,12 @@ def hit_dps(
     damaging_ailments: Iterable[Mapping[str, object]] = (),
     skill_dot: Mapping[str, object] | None = None,
     combat_duration_seconds: float | None = None,
+    combat_sample_times: Iterable[float] = (),
 ) -> HitDpsResult:
     """复算单技能 hit、穿刺、异常、技能 DoT、终结等效 DPS 与一次爆发。"""
+    combat_samples = tuple(combat_sample_times)
+    if combat_samples and combat_duration_seconds is None:
+        raise ValueError("combat_sample_times 必须与 combat_duration_seconds 一起提供")
     base = _ranges(base_damage, "base_damage")
     added = _ranges(added_damage, "added_damage")
     if (
@@ -1943,6 +1956,7 @@ def hit_dps(
             quantity_multiplier=quantity, dot_cap=dot_cap,
             steady_state_total_dps=all_damage_dps,
             cull_multiplier=cull_multiplier,
+            extra_sample_times=combat_samples,
         )
         if combat_duration_seconds is not None and timeline is not None else None
     )
