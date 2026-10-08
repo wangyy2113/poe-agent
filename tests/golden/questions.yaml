@@ -864,6 +864,17 @@ cases:
     lesson: >-
       目标频率反解必须识别触发与非触发冷却上限，并用同一伤害链回代
 
+  - id: route_hit_dps_impale_timeline
+    query: 100-100 物理伤害，每秒攻击 2 次，穿刺几率 100%，5 层穿刺，穿刺持续 4 秒，敌人 1000 点护甲，战斗持续 3 秒，平均 DPS 怎么算
+    kind: tool_route
+    expect_tool: hit_dps_calc
+    expect_values: ["1000", "3"]
+    note: >-
+      护甲必须按当前穿刺层位对应的合计储存伤害动态计算；固定战斗窗口要同时返回
+      起手叠层时间线、稳态与窗口平均值，不能把稳态穿刺直接当作三秒平均
+    lesson: >-
+      敌方护甲会让穿刺减伤随层数变化；低命中率或穿刺持续时间不足时，配置层数也未必可持续
+
   - id: route_hit_dps_damaging_ailments
     query: 100-100 火焰伤害，每秒攻击 2 次，点燃源伤害 100-200，点燃几率 100%，点燃持续伤害加成 50%，点燃持续时间提高 25%，命中和点燃 DPS 怎么算
     kind: tool_route

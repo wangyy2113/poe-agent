@@ -1,7 +1,7 @@
 """显式输入的单技能 DPS 链。
 
 复算 PoB 的基础伤害、伤害转化、增伤/更多、抗性与穿透、暴击、命中、频率、战斗周期、
-稳态穿刺、伤害性异常、非异常技能 DoT 与终结等效输出主链。
+动态护甲下的稳态/起手穿刺、伤害性异常、非异常技能 DoT 与终结等效输出主链。
 输入必须由调用方明确提供；本模块不从不完整装备或描述中猜任何一项。
 """
 
@@ -21,6 +21,7 @@ TYPE_ZH = {
 }
 TYPE_ALIASES = {**{key: key for key in DAMAGE_TYPES}, **{value: key for key, value in TYPE_ZH.items()}}
 OFFENCE_FILE = "src/Modules/CalcOffence.lua"
+DEFENCE_FILE = "src/Modules/CalcDefence.lua"
 CONVERSION_LINES = (1879, 1922)
 BASE_DAMAGE_LINES = (3163, 3180)
 DAMAGE_LINES = (68, 151)
@@ -35,6 +36,8 @@ FINAL_DPS_LINES = (3615, 3628)
 BURST_LINES = (3624, 3680)
 IMPALE_LINES = (5388, 5437)
 IMPALE_DPS_LINES = (5943, 6000)
+IMPALE_DURATION_LINES = (1605, 1621)
+ARMOUR_REDUCTION_LINES = (65, 76)
 AILMENT_CHANCE_LINES = (3987, 4097)
 AILMENT_DAMAGE_LINES = (4125, 4202)
 BLEED_DPS_LINES = (4204, 4475)
@@ -150,6 +153,36 @@ class SkillDotDps:
 
 
 @dataclass(frozen=True)
+class ImpaleTimelinePoint:
+    time_seconds: float
+    expected_landed_hits: float
+    stack_capacity: float
+    expected_active_stacks: float
+    armour_reduction_pct: float
+    effective_reduction_pct: float
+    impale_dps: float
+
+
+@dataclass(frozen=True)
+class ImpaleTimeline:
+    combat_duration_seconds: float
+    calculation_mode: str
+    effective_hit_rate: float
+    configured_stacks: float
+    sustainable_stack_capacity: float
+    sustainable_expected_stacks: float
+    steady_state_seconds: float | None
+    steady_state_reachable: bool
+    duration_limited: bool
+    steady_state_impale_dps: float
+    sustainable_impale_dps: float
+    average_impale_dps: float
+    average_combined_dps: float
+    startup_loss_pct: float
+    points: tuple[ImpaleTimelinePoint, ...]
+
+
+@dataclass(frozen=True)
 class HitDpsResult:
     conversion: dict[str, dict[str, object]]
     by_type: tuple[TypeDamage, ...]
@@ -197,9 +230,15 @@ class HitDpsResult:
     impale_chance_pct: float
     impale_stacks: float
     impale_stored_damage_pct: float
+    enemy_armour: float
+    impale_armour_reduction_pct: float
+    impale_effective_reduction_pct: float
     impale_multiplier: float
     impale_dps: float
     combined_dps: float
+    impale_timeline: ImpaleTimeline | None
+    combat_average_impale_dps: float | None
+    combat_average_combined_dps: float | None
     cull_percent: float
     cull_multiplier: float
     culling_dps: float
@@ -837,6 +876,170 @@ def _calculate_skill_dot(
     )
 
 
+def _impale_reduction(
+    *, stack_capacity: float, stored_damage_pct: float, physical_hit: float,
+    enemy_armour: float, flat_reduction_pct: float, ignore_reduction: bool,
+) -> tuple[float, float]:
+    """返回穿刺反射击中的护甲减伤与最终物理减伤。"""
+    if ignore_reduction:
+        return 0.0, 0.0
+    armour_input = stored_damage_pct / 100 * stack_capacity * physical_hit
+    if armour_input <= 0:
+        armour_reduction = 0.0
+    else:
+        armour_reduction = enemy_armour / (enemy_armour + 5 * armour_input) * 100
+    effective = min(max(0.0, flat_reduction_pct + armour_reduction), 90.0)
+    return armour_reduction, effective
+
+
+def _impale_dps_at_capacity(
+    *, stack_capacity: float, impale_chance_pct: float, stored_damage_pct: float,
+    physical_hit: float, enemy_armour: float, flat_reduction_pct: float,
+    ignore_reduction: bool, damage_taken_multiplier: float,
+    effective_hit_rate: float, quantity_multiplier: float,
+) -> tuple[float, float, float]:
+    armour_reduction, effective_reduction = _impale_reduction(
+        stack_capacity=stack_capacity, stored_damage_pct=stored_damage_pct,
+        physical_hit=physical_hit, enemy_armour=enemy_armour,
+        flat_reduction_pct=flat_reduction_pct, ignore_reduction=ignore_reduction,
+    )
+    dps = _bounded(
+        physical_hit * stored_damage_pct / 100 * stack_capacity
+        * impale_chance_pct / 100 * (1 - effective_reduction / 100)
+        * damage_taken_multiplier * effective_hit_rate * quantity_multiplier,
+        "穿刺 DPS",
+    )
+    return dps, armour_reduction, effective_reduction
+
+
+def _impale_timeline(
+    *, combat_duration_seconds: float, action_rate: float, hit_chance_pct: float,
+    skill_dps_multiplier: float, configured_stacks: float,
+    impale_duration_seconds: float, impale_chance_pct: float,
+    stored_damage_pct: float, physical_hit: float, enemy_armour: float,
+    flat_reduction_pct: float, ignore_reduction: bool,
+    damage_taken_multiplier: float, quantity_multiplier: float,
+    hit_dps: float, steady_state_impale_dps: float,
+) -> ImpaleTimeline:
+    """计算固定战斗窗口内的穿刺起手爬坡。
+
+    时间线使用期望命中率：`有效击中频率 × 时间` 给出可占用的穿刺层位，
+    穿刺几率作用于期望活跃层数和伤害。100% 命中/穿刺时等同逐击爬坡；
+    概率不足 100% 时是 PoB 稳态公式的期望值延伸，不枚举随机序列。
+    """
+    duration = _number(combat_duration_seconds, "combat_duration_seconds")
+    if duration <= 0:
+        raise ValueError("combat_duration_seconds 必须大于 0")
+    if duration > 3600:
+        raise ValueError("combat_duration_seconds 不能超过 3600 秒")
+    opportunity_rate = _bounded(
+        action_rate * skill_dps_multiplier, "穿刺击中机会频率"
+    )
+    hit_rate = _bounded(opportunity_rate * hit_chance_pct / 100, "穿刺有效击中频率")
+    chance = impale_chance_pct / 100
+    if configured_stacks <= 0 or hit_rate <= 0 or impale_duration_seconds <= 0:
+        sustainable_capacity = 0.0
+        ramp_seconds = None if configured_stacks > 0 and hit_rate <= 0 else 0.0
+    else:
+        sustainable_capacity = min(configured_stacks, hit_rate * impale_duration_seconds)
+        ramp_seconds = configured_stacks / hit_rate
+    duration_limited = sustainable_capacity + 1e-12 < configured_stacks
+    reachable = configured_stacks == 0 or (
+        ramp_seconds is not None and impale_duration_seconds + 1e-12 >= ramp_seconds
+    )
+
+    def at_time(seconds: float) -> tuple[float, float, float, float]:
+        capacity = min(
+            configured_stacks, hit_rate * seconds, hit_rate * impale_duration_seconds,
+        ) if hit_rate > 0 and impale_duration_seconds > 0 else 0.0
+        current_dps, armour_reduction, effective_reduction = _impale_dps_at_capacity(
+            stack_capacity=capacity, impale_chance_pct=impale_chance_pct,
+            stored_damage_pct=stored_damage_pct, physical_hit=physical_hit,
+            enemy_armour=enemy_armour, flat_reduction_pct=flat_reduction_pct,
+            ignore_reduction=ignore_reduction, damage_taken_multiplier=damage_taken_multiplier,
+            effective_hit_rate=hit_rate, quantity_multiplier=quantity_multiplier,
+        )
+        return capacity, current_dps, armour_reduction, effective_reduction
+
+    sustainable_dps, _, _ = _impale_dps_at_capacity(
+        stack_capacity=sustainable_capacity, impale_chance_pct=impale_chance_pct,
+        stored_damage_pct=stored_damage_pct, physical_hit=physical_hit,
+        enemy_armour=enemy_armour, flat_reduction_pct=flat_reduction_pct,
+        ignore_reduction=ignore_reduction, damage_taken_multiplier=damage_taken_multiplier,
+        effective_hit_rate=hit_rate, quantity_multiplier=quantity_multiplier,
+    )
+    ramp_end = min(duration, sustainable_capacity / hit_rate if hit_rate > 0 else 0.0)
+    total_events = (
+        int(math.ceil(duration * opportunity_rate - 1e-12))
+        if opportunity_rate > 0 else 0
+    )
+    ramp_events = min(
+        total_events,
+        int(math.ceil(ramp_end * opportunity_rate - 1e-12))
+        if opportunity_rate > 0 else 0,
+    )
+    if ramp_events <= 10_000:
+        ramp_damage = sum(
+            at_time(index / opportunity_rate)[1] / opportunity_rate
+            for index in range(ramp_events)
+        ) if opportunity_rate > 0 else 0.0
+    else:
+        # 极端低命中率会让起手阶段跨越海量攻击机会；此时用 Simpson 积分，
+        # 避免按用户输入构造无界循环。常规层数始终走上面的逐击精确分支。
+        steps = 1024
+        width = ramp_end / steps
+        values = [at_time(index * width)[1] for index in range(steps + 1)]
+        ramp_damage = width / 3 * (
+            values[0] + values[-1]
+            + 4 * sum(values[1:-1:2]) + 2 * sum(values[2:-1:2])
+        )
+    plateau_damage = (
+        sustainable_dps / opportunity_rate * (total_events - ramp_events)
+        if opportunity_rate > 0 else 0.0
+    )
+    average_impale = (ramp_damage + plateau_damage) / duration
+
+    sample_times = {0.0, duration}
+    if opportunity_rate > 0 and total_events > 0:
+        milestone_count = min(20, total_events)
+        sample_times.update(index / opportunity_rate for index in range(milestone_count))
+        sample_times.add((total_events - 1) / opportunity_rate)
+    if ramp_end > 0:
+        sample_times.add(ramp_end)
+    points = []
+    for seconds in sorted(sample_times):
+        capacity, current_dps, armour_reduction, effective_reduction = at_time(seconds)
+        points.append(ImpaleTimelinePoint(
+            time_seconds=seconds, expected_landed_hits=hit_rate * seconds,
+            stack_capacity=capacity, expected_active_stacks=capacity * chance,
+            armour_reduction_pct=armour_reduction,
+            effective_reduction_pct=effective_reduction, impale_dps=current_dps,
+        ))
+    loss = (
+        max(0.0, (steady_state_impale_dps - average_impale) / steady_state_impale_dps * 100)
+        if steady_state_impale_dps > 0 else 0.0
+    )
+    if ramp_events > 10_000:
+        calculation_mode = "expected_value_continuous_approximation"
+    elif hit_chance_pct == 100 and impale_chance_pct == 100:
+        calculation_mode = "exact_discrete"
+    else:
+        calculation_mode = "expected_value_discrete"
+    return ImpaleTimeline(
+        combat_duration_seconds=duration, calculation_mode=calculation_mode,
+        effective_hit_rate=hit_rate,
+        configured_stacks=configured_stacks,
+        sustainable_stack_capacity=sustainable_capacity,
+        sustainable_expected_stacks=sustainable_capacity * chance,
+        steady_state_seconds=ramp_seconds, steady_state_reachable=reachable,
+        duration_limited=duration_limited,
+        steady_state_impale_dps=steady_state_impale_dps,
+        sustainable_impale_dps=sustainable_dps, average_impale_dps=average_impale,
+        average_combined_dps=_bounded(hit_dps + average_impale, "战斗窗口平均命中与穿刺 DPS"),
+        startup_loss_pct=loss, points=tuple(points),
+    )
+
+
 def hit_dps(
     *,
     base_damage: Mapping[str, tuple[float, float] | list[float]],
@@ -895,6 +1098,7 @@ def hit_dps(
     impale_effect_increased_pct: float = 0.0,
     impale_effect_more_multiplier: float = 1.0,
     impale_duration_seconds: float = 4.0,
+    enemy_armour: float = 0.0,
     enemy_impale_physical_reduction_pct: float | None = None,
     ignore_enemy_impale_physical_reduction: bool = False,
     enemy_reflected_damage_taken_increased_pct: float = 0.0,
@@ -903,6 +1107,7 @@ def hit_dps(
     critical_cull_percent: float = 0.0,
     damaging_ailments: Iterable[Mapping[str, object]] = (),
     skill_dot: Mapping[str, object] | None = None,
+    combat_duration_seconds: float | None = None,
 ) -> HitDpsResult:
     """复算单技能 hit、穿刺、异常、技能 DoT、终结等效 DPS 与一次爆发。"""
     base = _ranges(base_damage, "base_damage")
@@ -1053,15 +1258,14 @@ def hit_dps(
     impale_more = _number(impale_effect_more_multiplier, "impale_effect_more_multiplier")
     impale_duration = _number(impale_duration_seconds, "impale_duration_seconds")
     impale_stored_pct = impale_base * (1 + impale_inc / 100) * impale_more
-    impale_resist = _number(
+    impale_armour = _number(enemy_armour, "enemy_armour")
+    impale_flat_reduction = _number(
         physical_reduction if enemy_impale_physical_reduction_pct is None
         else enemy_impale_physical_reduction_pct,
         "enemy_impale_physical_reduction_pct",
     )
-    if impale_resist > 90:
+    if impale_flat_reduction > 90:
         raise ValueError("敌人穿刺物理伤害减免不能超过 90%")
-    if ignore_enemy_impale_physical_reduction:
-        impale_resist = 0.0
     reflected_taken_inc = _number(
         enemy_reflected_damage_taken_increased_pct,
         "enemy_reflected_damage_taken_increased_pct",
@@ -1200,11 +1404,19 @@ def hit_dps(
         * reflected_taken_more,
         "穿刺承伤倍率",
     )
+    impale_armour_reduction, impale_effective_reduction = _impale_reduction(
+        stack_capacity=impale_stack_count,
+        stored_damage_pct=impale_stored_pct,
+        physical_hit=physical_pre_mitigation_average,
+        enemy_armour=impale_armour,
+        flat_reduction_pct=impale_flat_reduction,
+        ignore_reduction=ignore_enemy_impale_physical_reduction,
+    )
     impale_multiplier = (
         impale_stored_pct / 100
         * impale_stack_count
         * effective_impale_chance / 100
-        * (1 - impale_resist / 100)
+        * (1 - impale_effective_reduction / 100)
         * impale_taken
     )
     impale_dps = _bounded(
@@ -1218,6 +1430,24 @@ def hit_dps(
         "穿刺 DPS",
     )
     combined_dps = _bounded(hit_total_dps + impale_dps, "命中与穿刺合计 DPS")
+    timeline = (
+        _impale_timeline(
+            combat_duration_seconds=combat_duration_seconds,
+            action_rate=rate, hit_chance_pct=hit_chance,
+            skill_dps_multiplier=dps_mult, configured_stacks=impale_stack_count,
+            impale_duration_seconds=impale_duration,
+            impale_chance_pct=effective_impale_chance,
+            stored_damage_pct=impale_stored_pct,
+            physical_hit=physical_pre_mitigation_average,
+            enemy_armour=impale_armour,
+            flat_reduction_pct=impale_flat_reduction,
+            ignore_reduction=ignore_enemy_impale_physical_reduction,
+            damage_taken_multiplier=impale_taken,
+            quantity_multiplier=quantity, hit_dps=hit_total_dps,
+            steady_state_impale_dps=impale_dps,
+        )
+        if combat_duration_seconds is not None else None
+    )
     ailment_results = _calculate_damaging_ailments(
         damaging_ailments,
         crit_chance_pct=crit_chance,
@@ -1296,8 +1526,13 @@ def hit_dps(
         average_burst_damage=burst_damage,
         physical_hit_before_mitigation_average=physical_pre_mitigation_average,
         impale_chance_pct=effective_impale_chance, impale_stacks=impale_stack_count,
-        impale_stored_damage_pct=impale_stored_pct, impale_multiplier=impale_multiplier,
-        impale_dps=impale_dps, combined_dps=combined_dps,
+        impale_stored_damage_pct=impale_stored_pct, enemy_armour=impale_armour,
+        impale_armour_reduction_pct=impale_armour_reduction,
+        impale_effective_reduction_pct=impale_effective_reduction,
+        impale_multiplier=impale_multiplier, impale_dps=impale_dps,
+        combined_dps=combined_dps, impale_timeline=timeline,
+        combat_average_impale_dps=timeline.average_impale_dps if timeline else None,
+        combat_average_combined_dps=timeline.average_combined_dps if timeline else None,
         cull_percent=effective_cull, cull_multiplier=cull_multiplier,
         culling_dps=culling_dps, effective_dps_with_cull=effective_dps_with_cull,
         damaging_ailments=ailment_results, ailment_dps=ailment_dps,

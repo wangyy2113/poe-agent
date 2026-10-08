@@ -124,6 +124,7 @@ class HitDpsRequest(BaseModel):
     impale_effect_increased_pct: float = Field(default=0, ge=-100, allow_inf_nan=False)
     impale_effect_more_multiplier: float = Field(default=1, ge=0, allow_inf_nan=False)
     impale_duration_seconds: float = Field(default=4, ge=0, allow_inf_nan=False)
+    enemy_armour: float = Field(default=0, ge=0, allow_inf_nan=False)
     enemy_impale_physical_reduction_pct: float | None = Field(
         default=None, ge=0, le=90, allow_inf_nan=False
     )
@@ -138,6 +139,9 @@ class HitDpsRequest(BaseModel):
     critical_cull_percent: float = Field(default=0, ge=0, lt=100, allow_inf_nan=False)
     damaging_ailments: list[DamagingAilmentRequest] = Field(default_factory=list, max_length=3)
     skill_dot: SkillDotRequest | None = None
+    combat_duration_seconds: float | None = Field(
+        default=None, gt=0, le=3600, allow_inf_nan=False
+    )
 
 
 class HitDpsScenarioRequest(BaseModel):
@@ -160,7 +164,7 @@ class HitDpsTargetRateRequest(BaseModel):
         pattern=(
             "^(hit_dps|combined_dps|effective_dps_with_cull|ailment_dps|skill_dot_dps|"
             "total_dot_dps|total_dps|"
-            "effective_total_dps_with_cull)$"
+            "effective_total_dps_with_cull|combat_average_combined_dps)$"
         ),
     )
     inputs: HitDpsTargetRateInputs
