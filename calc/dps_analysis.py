@@ -23,6 +23,13 @@ TARGET_METRICS = {
     "total_dps": "total_dps",
     "effective_total_dps_with_cull": "effective_total_dps_with_cull",
     "combat_average_combined_dps": "combat_average_combined_dps",
+    "combat_average_ailment_dps": "combat_average_ailment_dps",
+    "combat_average_skill_dot_dps": "combat_average_skill_dot_dps",
+    "combat_average_total_dot_dps": "combat_average_total_dot_dps",
+    "combat_average_total_dps": "combat_average_total_dps",
+    "combat_average_effective_total_dps_with_cull": (
+        "combat_average_effective_total_dps_with_cull"
+    ),
 }
 
 
@@ -40,6 +47,11 @@ class ScenarioDelta:
     total_dps: float
     effective_total_dps_with_cull: float
     combat_average_combined_dps: float | None
+    combat_average_ailment_dps: float | None
+    combat_average_skill_dot_dps: float | None
+    combat_average_total_dot_dps: float | None
+    combat_average_total_dps: float | None
+    combat_average_effective_total_dps_with_cull: float | None
     average_hit: float
     average_hit_delta: float
     burst_damage: float
@@ -63,6 +75,9 @@ class DpsComparison:
     best_total_dps_scenario: str
     best_effective_total_dps_scenario: str
     best_combat_average_scenario: str | None
+    best_combat_average_dot_scenario: str | None
+    best_combat_average_total_scenario: str | None
+    best_combat_average_effective_total_scenario: str | None
     best_burst_scenario: str
 
     def as_dict(self) -> dict[str, Any]:
@@ -128,6 +143,13 @@ def compare_hit_dps(
             total_dps=result.total_dps,
             effective_total_dps_with_cull=result.effective_total_dps_with_cull,
             combat_average_combined_dps=result.combat_average_combined_dps,
+            combat_average_ailment_dps=result.combat_average_ailment_dps,
+            combat_average_skill_dot_dps=result.combat_average_skill_dot_dps,
+            combat_average_total_dot_dps=result.combat_average_total_dot_dps,
+            combat_average_total_dps=result.combat_average_total_dps,
+            combat_average_effective_total_dps_with_cull=(
+                result.combat_average_effective_total_dps_with_cull
+            ),
             average_hit=result.average_hit,
             average_hit_delta=result.average_hit - baseline.average_hit,
             burst_damage=result.average_burst_damage,
@@ -135,6 +157,7 @@ def compare_hit_dps(
             result=result,
         ))
     combat_rows = [row for row in rows if row.combat_average_combined_dps is not None]
+    combat_total_rows = [row for row in rows if row.combat_average_total_dps is not None]
     return DpsComparison(
         baseline=baseline_name,
         scenarios=tuple(rows),
@@ -153,6 +176,21 @@ def compare_hit_dps(
         best_combat_average_scenario=(
             max(combat_rows, key=lambda row: row.combat_average_combined_dps or 0).name
             if combat_rows else None
+        ),
+        best_combat_average_dot_scenario=(
+            max(combat_total_rows, key=lambda row: row.combat_average_total_dot_dps or 0).name
+            if combat_total_rows else None
+        ),
+        best_combat_average_total_scenario=(
+            max(combat_total_rows, key=lambda row: row.combat_average_total_dps or 0).name
+            if combat_total_rows else None
+        ),
+        best_combat_average_effective_total_scenario=(
+            max(
+                combat_total_rows,
+                key=lambda row: row.combat_average_effective_total_dps_with_cull or 0,
+            ).name
+            if combat_total_rows else None
         ),
         best_burst_scenario=max(rows, key=lambda row: row.burst_damage).name,
     )
@@ -174,16 +212,21 @@ def target_action_rate(
         raise ValueError(
             "metric 只支持 hit_dps、combined_dps、effective_dps_with_cull、"
             "ailment_dps、skill_dot_dps、total_dot_dps、total_dps、"
-            "effective_total_dps_with_cull、combat_average_combined_dps"
+            "effective_total_dps_with_cull、combat_average_combined_dps、"
+            "combat_average_ailment_dps、combat_average_skill_dot_dps、"
+            "combat_average_total_dot_dps、combat_average_total_dps、"
+            "combat_average_effective_total_dps_with_cull"
         )
 
     values = _kwargs(inputs)
     values.pop("action_rate", None)
-    if metric == "combat_average_combined_dps" and values.get("combat_duration_seconds") is None:
-        raise ValueError("combat_average_combined_dps 反解必须提供 combat_duration_seconds")
+    if metric.startswith("combat_average_") and values.get("combat_duration_seconds") is None:
+        raise ValueError(f"{metric} 反解必须提供 combat_duration_seconds")
     if metric in {
         "ailment_dps", "total_dot_dps", "total_dps",
-        "effective_total_dps_with_cull",
+        "effective_total_dps_with_cull", "combat_average_ailment_dps",
+        "combat_average_total_dot_dps", "combat_average_total_dps",
+        "combat_average_effective_total_dps_with_cull",
     }:
         if float(values.get("fist_of_war_more_damage_pct", 0.0)) > 0:
             raise ValueError(
@@ -210,9 +253,11 @@ def target_action_rate(
                     "含异常指标的暴击源伤或暴击 DoT 加成低于非暴击时可能非单调，"
                     "不能可靠反解目标频率"
                 )
-    if metric == "skill_dot_dps":
+    if metric in {"skill_dot_dps", "combat_average_skill_dot_dps"}:
         raw_skill_dot = values.get("skill_dot")
-        if not isinstance(raw_skill_dot, Mapping) or not raw_skill_dot.get("can_stack", False):
+        if not isinstance(raw_skill_dot, Mapping):
+            raise ValueError(f"{metric} 反解必须提供 skill_dot")
+        if metric == "skill_dot_dps" and not raw_skill_dot.get("can_stack", False):
             raise ValueError("skill_dot_dps 目标频率只支持 can_stack=true 的技能 DoT")
     raw_cooldown = values.pop("cooldown_seconds", 0.0)
     if isinstance(raw_cooldown, bool) or not isinstance(raw_cooldown, (int, float)):
@@ -294,28 +339,36 @@ def target_action_rate(
         maximum_result, maximum = calculate(max_rate)
         action_rate_cap = maximum_result.action_rate
         if (
-            metric == "ailment_dps"
+            metric in {"ailment_dps", "combat_average_ailment_dps"}
             and any(item.capped for item in maximum_result.damaging_ailments)
         ) or (
-            metric == "skill_dot_dps"
+            metric in {"skill_dot_dps", "combat_average_skill_dot_dps"}
             and maximum_result.skill_dot is not None
             and maximum_result.skill_dot.capped
         ) or (
-            metric in {"total_dot_dps", "total_dps", "effective_total_dps_with_cull"}
+            metric in {
+                "total_dot_dps", "total_dps", "effective_total_dps_with_cull",
+                "combat_average_total_dot_dps", "combat_average_total_dps",
+                "combat_average_effective_total_dps_with_cull",
+            }
             and maximum_result.total_dot_dps_capped
         ):
             cap_sources.append("dot_cap")
     _upper_result, upper_value = calculate(upper)
     if upper_value < target and not math.isclose(upper_value, target, rel_tol=1e-12):
         dot_capped = (
-            metric == "ailment_dps"
+            metric in {"ailment_dps", "combat_average_ailment_dps"}
             and any(item.capped for item in _upper_result.damaging_ailments)
         ) or (
-            metric == "skill_dot_dps"
+            metric in {"skill_dot_dps", "combat_average_skill_dot_dps"}
             and _upper_result.skill_dot is not None
             and _upper_result.skill_dot.capped
         ) or (
-            metric in {"total_dot_dps", "total_dps", "effective_total_dps_with_cull"}
+            metric in {
+                "total_dot_dps", "total_dps", "effective_total_dps_with_cull",
+                "combat_average_total_dot_dps", "combat_average_total_dps",
+                "combat_average_effective_total_dps_with_cull",
+            }
             and _upper_result.total_dot_dps_capped
         )
         if dot_capped:

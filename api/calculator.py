@@ -164,7 +164,10 @@ class HitDpsTargetRateRequest(BaseModel):
         pattern=(
             "^(hit_dps|combined_dps|effective_dps_with_cull|ailment_dps|skill_dot_dps|"
             "total_dot_dps|total_dps|"
-            "effective_total_dps_with_cull|combat_average_combined_dps)$"
+            "effective_total_dps_with_cull|combat_average_combined_dps|"
+            "combat_average_ailment_dps|combat_average_skill_dot_dps|"
+            "combat_average_total_dot_dps|combat_average_total_dps|"
+            "combat_average_effective_total_dps_with_cull)$"
         ),
     )
     inputs: HitDpsTargetRateInputs

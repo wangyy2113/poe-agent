@@ -288,7 +288,7 @@ FastAPI 自带的 Swagger UI，可以填参数、点 **Try it out** 直接发请
 
 **单技能 DPS** —— 只用调用方明确提供的数值走确定性主链，响应包含逐伤害类型区间、
 有效抗性/减伤、暴击与命中期望、战斗机制倍率、命中 DPS、动态护甲下的稳态穿刺、可选固定时长
-穿刺时间线、伤害性异常与技能 DoT、
+穿刺与持续伤害统一时间线、伤害性异常与技能 DoT、
 终结等效输出及边界：
 
 ```bash
@@ -315,6 +315,16 @@ curl -s -X POST http://127.0.0.1:8787/poe_agent/calc/hit-dps \
 护甲公式，再与固定物理减伤合计并夹在 90%。显式给出 `combat_duration_seconds` 时还会按
 有效命中频率生成起手层数、逐阶段护甲减伤、可持续层位与窗口平均穿刺 DPS；100% 命中且
 100% 穿刺时是逐击爬坡，概率不足 100% 时是与 PoB 稳态公式一致的期望值延伸。
+
+同一个 `combat_duration_seconds` 还会生成完整伤害时间线：点燃/流血按截至当前时刻仍活跃的
+候选实例重算强实例 roll，中毒和可叠层技能 DoT 按施加率起手并在持续时间后逐层到期；
+不可叠层技能 DoT 按刷新频率与持续时间计算覆盖率。每个时点先应用各异常/技能 DoT 的独立
+上限，再对合计应用全局 DoT 上限，最后与命中和动态穿刺合并。结果单列
+`combat_average_ailment_dps`、`combat_average_skill_dot_dps`、
+`combat_average_total_dot_dps`、`combat_average_total_dps` 与含终结口径。时间维度采用固定输入
+快照，并为各异常/技能 DoT 返回平均活跃实例、到达稳态时间和起手损失；若触及全局上限，
+还会报告首次封顶时间与窗口封顶覆盖率。战斗途中 buff/debuff 改变后的重新快照、特殊地面
+效果互斥仍不在本轮范围内。
 
 `damaging_ailments` 最多分别提供一组 `ignite` / `poison` / `bleed`。每组必须显式给出
 异常专用 `source_damage`；还可给非暴击/暴击施加率与源伤、DoT 加成、持续时间、加速、
@@ -350,7 +360,9 @@ curl -s -X POST http://127.0.0.1:8787/poe_agent/calc/hit-dps \
 同一模型下比较 2–10 套输入使用 `/calc/hit-dps/compare`，同时排列命中、命中+穿刺、异常、技能 DoT、全部 DoT、
 总计及含终结等效 DPS 与一轮爆发。`/calc/hit-dps/target-rate` 的 `metric` 可选 `hit_dps`、
 `combined_dps`、`effective_dps_with_cull`、`ailment_dps`、`skill_dot_dps`、`total_dot_dps`、`total_dps` 或
-`effective_total_dps_with_cull` 或 `combat_average_combined_dps`；反解使用同一主链二分回代，可处理强实例取样、稳态层数、
+`effective_total_dps_with_cull`、`combat_average_combined_dps`、`combat_average_ailment_dps`、
+`combat_average_skill_dot_dps`、`combat_average_total_dot_dps`、`combat_average_total_dps` 或
+`combat_average_effective_total_dps_with_cull`；反解使用同一主链二分回代，可处理强实例取样、稳态层数、
 DoT 上限、战争之拳覆盖率、暴击终结和 tick/冷却平台，不假设 DPS 与频率永远线性。
 
 **问答** —— 主接口。返回的 `answer` 是**已通过出口绑定校验**的文本。
@@ -1179,7 +1191,7 @@ PoB 排 P2 而不是 P1：它在数值上更接近一手，但不含中文名与
 ### 评测：四项指标与黄金问答集
 
 `config.yaml` 里的阈值与 `orchestrator/binding.py` 的闸门规则都需要判据，否则改动之后
-无法判断是变好还是变坏。判据来自 `tests/golden/questions.yaml`（174 条，六类样本：
+无法判断是变好还是变坏。判据来自 `tests/golden/questions.yaml`（175 条，六类样本：
 专名 / 描述性 / 数值 / 跨来源 / **确定不覆盖** / 工具路由），基线与结论记在
 `tests/golden/BASELINE.md`。
 
@@ -1210,7 +1222,7 @@ PoB 排 P2 而不是 P1：它在数值上更接近一手，但不含中文名与
 .venv/bin/python -m unittest discover -s tests -t .
 ```
 
-目前 2015 项，其中与「无据不答」直接相关的：
+目前 2021 项，其中与「无据不答」直接相关的：
 
 | 组 | 项数 | 重点 |
 | --- | --- | --- |

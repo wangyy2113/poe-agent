@@ -15,10 +15,11 @@ BOUNDARY = (
     "只计算单技能确定性主链与一次爆发：基础/附加伤害、增伤/更多、PoB 顺序的伤害转化与额外获得、"
     "敌方抗性/穿透/忽略/反转或物理减伤/压倒、幸运伤害、双倍/三倍伤害、暴击、命中、"
     "触发/非触发冷却与服务器 tick、无情一击、战争之拳/战吼覆盖、动态护甲下的稳态穿刺、"
-    "可选固定战斗时长的起手叠层时间线、终结等效输出、"
-    "频率、重复爆发及技能/数量倍率；可选联算显式异常源伤的点燃、中毒和流血稳态 DPS，"
-    "以及技能自身的物理/元素/混沌持续伤害、叠层和全局 DoT 上限。"
-    "不含起手期异常层数、持续伤害快照/刷新时序或完整 Build 自动汇总；"
+    "可选固定战斗时长的穿刺、异常和技能 DoT 起手/刷新/到期统一时间线、终结等效输出、"
+    "频率、重复爆发及技能/数量倍率；可选联算显式异常源伤的点燃、中毒和流血，"
+    "以及技能自身的物理/元素/混沌持续伤害、叠层、独立与全局 DoT 上限。"
+    "每次施加使用固定输入快照；不模拟战斗途中动态 buff/debuff 快照、特殊地面效果互斥"
+    "或完整 Build 自动汇总；"
     "缺少这些机制时不能称为完整 Build DPS"
 )
 
@@ -156,6 +157,60 @@ def _render(result: dps_calc.HitDpsResult) -> str:
             f"- 全部持续伤害：{fmt(result.total_dot_dps)}"
             f"{'（全局 DoT 上限封顶）' if result.total_dot_dps_capped else ''}"
         )
+    if result.combat_timeline is not None:
+        combat = result.combat_timeline
+        lines.extend([
+            "", f"### {combat.combat_duration_seconds:g} 秒完整伤害时间线", "",
+            "| 时间 | 异常 DPS | 技能 DoT | 全部 DoT | 穿刺 DPS | 总 DPS |",
+            "| ---: | ---: | ---: | ---: | ---: | ---: |",
+        ])
+        for point in combat.points:
+            lines.append(
+                f"| {point.time_seconds:.3f}s | {fmt(point.ailment_dps)} | "
+                f"{fmt(point.skill_dot_dps)} | {fmt(point.total_dot_dps)}"
+                f"{'*' if point.total_dot_dps_capped else ''} | {fmt(point.impale_dps)} | "
+                f"{fmt(point.total_dps)} |"
+            )
+        lines.extend([
+            "", f"- 时间线口径：连续期望值 + Simpson {combat.integration_steps} 段有界积分；"
+            "点燃/流血按当前候选数刷新强实例，中毒与可叠层技能 DoT 按持续时间逐层到期",
+            f"- 窗口平均异常 / 技能 DoT / 全部 DoT：{fmt(combat.average_ailment_dps)} / "
+            f"{fmt(combat.average_skill_dot_dps)} / {fmt(combat.average_total_dot_dps)}",
+            f"- 窗口平均命中+穿刺：{fmt(combat.average_combined_dps)}；"
+            f"窗口平均总 DPS：{fmt(combat.average_total_dps)}",
+            f"- 窗口平均含终结总等效 DPS："
+            f"{fmt(combat.average_effective_total_dps_with_cull)}；"
+            f"相对稳态总 DPS 的起手损失：{combat.startup_loss_pct:.2f}%",
+            "- 表中 * 表示该时点触及全局 DoT 上限；每种异常与技能 DoT 在合计前已各自封顶",
+        ])
+        for item in combat.ailment_summaries:
+            steady_at = (
+                f"{item.time_to_steady_state_seconds:.3f}s"
+                if item.time_to_steady_state_seconds is not None else "不可到达"
+            )
+            lines.append(
+                f"- {item.name}窗口平均：{fmt(item.average_dps)} DPS，平均活跃 "
+                f"{fmt(item.average_active_stacks)} 层，稳态时间 {steady_at}，"
+                f"起手损失 {item.startup_loss_pct:.2f}%"
+            )
+        if combat.skill_dot_summary is not None:
+            skill = combat.skill_dot_summary
+            steady_at = (
+                f"{skill.time_to_steady_state_seconds:.3f}s"
+                if skill.time_to_steady_state_seconds is not None else "不可到达"
+            )
+            lines.append(
+                f"- 技能 DoT 窗口平均：{fmt(skill.average_dps)} DPS，平均活跃 "
+                f"{fmt(skill.average_active_instances)} 实例，稳态时间 {steady_at}"
+                f"{'（刷新覆盖受限）' if skill.refresh_limited else ''}，"
+                f"起手损失 {skill.startup_loss_pct:.2f}%"
+            )
+        if combat.global_dot_cap_reached:
+            lines.append(
+                f"- 全局 DoT 上限首次到达："
+                f"{combat.global_dot_cap_first_reached_seconds:.3f}s；"
+                f"窗口封顶覆盖率 {combat.global_dot_cap_uptime_pct:.2f}%"
+            )
     lines.extend([
         f"- 有效终结：{result.cull_percent:.2f}%（×{result.cull_multiplier:.4f}）"
         f" → 含终结等效 DPS {fmt(result.effective_dps_with_cull)}",
@@ -465,7 +520,7 @@ def hit_dps_compare(scenarios: list[dict[str, Any]]) -> ToolResult:
     except (KeyError, ValueError, TypeError, constants.MissingConstant) as exc:
         return ToolResult(ok=False, error=str(exc))
     data = comparison.as_dict()
-    rows = ["### 单技能 DPS 方案比较", "", "| 方案 | 命中 DPS | 稳态含穿刺 | 固定时长含穿刺 | 异常 DPS | 技能 DoT | 全部 DoT | 总 DPS | 含终结 | 命中相对基线 | 平均击中 | 一轮爆发 |", "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"]
+    rows = ["### 单技能 DPS 方案比较", "", "| 方案 | 命中 DPS | 稳态含穿刺 | 固定时长含穿刺 | 异常 DPS | 技能 DoT | 全部 DoT | 总 DPS | 含终结 | 命中相对基线 | 平均击中 | 一轮爆发 | 固定时长 DoT | 固定时长总 DPS |", "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"]
     for row in comparison.scenarios:
         if row.name == comparison.baseline:
             pct = "基线"
@@ -479,7 +534,9 @@ def hit_dps_compare(scenarios: list[dict[str, Any]]) -> ToolResult:
             f"{fmt(row.ailment_dps)} | {fmt(row.skill_dot_dps)} | {fmt(row.total_dot_dps)} | "
             f"{fmt(row.total_dps)} | "
             f"{fmt(row.effective_total_dps_with_cull)} | {pct} | {fmt(row.average_hit)} | "
-            f"{fmt(row.burst_damage)} |"
+            f"{fmt(row.burst_damage)} | "
+            f"{fmt(row.combat_average_total_dot_dps) if row.combat_average_total_dot_dps is not None else '—'} | "
+            f"{fmt(row.combat_average_total_dps) if row.combat_average_total_dps is not None else '—'} |"
         )
     rows.extend(["", f"- 最高持续 DPS：{comparison.best_dps_scenario}",
                  f"- 最高命中+穿刺 DPS：{comparison.best_combined_dps_scenario}",
@@ -490,6 +547,9 @@ def hit_dps_compare(scenarios: list[dict[str, Any]]) -> ToolResult:
                  f"- 最高命中+穿刺+持续伤害总 DPS：{comparison.best_total_dps_scenario}",
                  f"- 最高含持续伤害与终结总等效 DPS：{comparison.best_effective_total_dps_scenario}",
                  f"- 最高固定时长命中+穿刺 DPS：{comparison.best_combat_average_scenario or '未提供战斗时长'}",
+                 f"- 最高固定时长全部 DoT：{comparison.best_combat_average_dot_scenario or '未提供战斗时长'}",
+                 f"- 最高固定时长总 DPS：{comparison.best_combat_average_total_scenario or '未提供战斗时长'}",
+                 f"- 最高固定时长含终结总等效 DPS：{comparison.best_combat_average_effective_total_scenario or '未提供战斗时长'}",
                  f"- 最高一轮爆发：{comparison.best_burst_scenario}", "", BOUNDARY + "。"])
     answer = "\n".join(rows)
     data.update({"kind": "comparison", "answer": answer, "boundary": BOUNDARY})
@@ -503,7 +563,8 @@ def hit_dps_compare(scenarios: list[dict[str, Any]]) -> ToolResult:
 @REGISTRY.register(
     name="hit_dps_target_rate",
     description=(
-        "在其它参数固定时，数值反解达到目标命中、稳态/固定时长穿刺、异常、技能 DoT、全部 DoT、总计或含终结等效 DPS 所需的原始"
+        "在其它参数固定时，数值反解达到目标命中、稳态/固定时长穿刺、异常、技能 DoT、"
+        "全部 DoT、固定时长平均总计或含终结等效 DPS 所需的原始"
         "每秒次数，并判断服务器 tick 及触发/非触发冷却上限是否令目标不可达。"
     ),
     parameters={
@@ -513,7 +574,9 @@ def hit_dps_compare(scenarios: list[dict[str, Any]]) -> ToolResult:
             "metric": {"type": "string", "enum": [
                 "hit_dps", "combined_dps", "effective_dps_with_cull", "ailment_dps",
                 "skill_dot_dps", "total_dot_dps", "total_dps", "effective_total_dps_with_cull",
-                "combat_average_combined_dps"
+                "combat_average_combined_dps", "combat_average_ailment_dps",
+                "combat_average_skill_dot_dps", "combat_average_total_dot_dps",
+                "combat_average_total_dps", "combat_average_effective_total_dps_with_cull"
             ], "default": "hit_dps"},
             "inputs": {"type": "object", "description": "除 action_rate 外的 hit_dps_calc 参数"},
         },
@@ -542,6 +605,11 @@ def hit_dps_target_rate(
         "total_dps": "命中+穿刺+持续伤害总 DPS",
         "effective_total_dps_with_cull": "含持续伤害与终结总等效 DPS",
         "combat_average_combined_dps": "固定战斗时长的命中+穿刺平均 DPS",
+        "combat_average_ailment_dps": "固定战斗时长的异常平均 DPS",
+        "combat_average_skill_dot_dps": "固定战斗时长的技能 DoT 平均 DPS",
+        "combat_average_total_dot_dps": "固定战斗时长的全部 DoT 平均 DPS",
+        "combat_average_total_dps": "固定战斗时长的平均总 DPS",
+        "combat_average_effective_total_dps_with_cull": "固定战斗时长含终结的平均总等效 DPS",
     }[result.metric]
     if result.reachable:
         answer = (

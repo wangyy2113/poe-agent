@@ -897,6 +897,18 @@ cases:
       纯 DoT 技能可以没有命中伤害；可叠层与不可叠层技能必须使用不同的实例数口径，
       所有持续伤害最终还要经过全局 DoT 上限
 
+  - id: route_hit_dps_full_combat_timeline
+    query: 100-100 混沌伤害，每秒攻击 2 次，中毒源伤害 100-100，中毒几率 100%，混沌技能持续伤害基础每秒 100，可叠层，技能持续 2 秒，战斗持续 4 秒，平均总 DPS 怎么算
+    kind: tool_route
+    expect_tool: hit_dps_calc
+    expect_values: ["4"]
+    note: >-
+      同一固定窗口内必须同时计算中毒逐层起手/到期、技能 DoT 叠层、命中与穿刺，
+      并在每个时间点按独立 DoT 上限后再应用全局上限，不能把各稳态值直接相加。
+    lesson: >-
+      点燃和流血按活跃候选刷新强实例；中毒与可叠层技能 DoT 按持续时间逐层到期；
+      战斗窗口平均值与稳态值是两个不能混用的口径。
+
   - id: num_spell_suppression_effect
     query: 法术压制触发时减多少伤害
     kind: numeric
