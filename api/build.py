@@ -19,8 +19,9 @@
 `player_stats` 那一段**是 PoB 自己算的快照**，不是本库算的，也不是知识库证据——
 它反映用户自己那份 PoB 的版本与配置。字段名与 `source_note` 都写清这一点，
 免得下游把它与本库计算结果混为同一来源。只有显式请求 `boss_survival`、
-`boss_sequence` 或 `boss_risk_audit` 时，本库才把白名单字段当作已标注来源的输入送入
-单击、用户显式混合序列或横向风险审计计算器，并逐字段回传实际采用值。
+`boss_sequence`、`boss_timed_sequence` 或 `boss_risk_audit` 时，本库才把白名单字段当作
+已标注来源的输入送入单击、用户显式混合序列、带恢复时间轴或横向风险审计计算器，并逐字段
+回传实际采用值。
 混合序列始终使用基础防御字段，不会把 PoB 的单击 ``*MaximumHitTaken`` 拆开复用。
 """
 
@@ -39,6 +40,8 @@ from api.boss import (
     BossSequenceEntry,
     BossSequenceResponse,
     BossSurvivalResponse,
+    BossTimedEvent,
+    BossTimedSequenceResponse,
 )
 from core import db as dbmod
 from core.config import get_config, get_secrets
@@ -73,6 +76,7 @@ from tools.impl.boss import (
     boss_sequence_from_build,
     boss_survival_from_build,
 )
+from tools.impl.boss_timeline import boss_timed_sequence_from_build
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["Build"])
@@ -113,6 +117,29 @@ class BuildBossSequenceRequest(BaseModel):
         if sum(item.count for item in self.sequence) > 100:
             raise ValueError("展开后的命中序列最多包含 100 次命中")
         return self
+
+
+class BuildBossTimedSequenceRequest(BaseModel):
+    """用 Build 基础防御快照推进用户显式标时的命中与恢复。"""
+
+    events: list[BossTimedEvent] = Field(min_length=1, max_length=100)
+    level: int = Field(ge=1, le=100)
+    uber: bool = False
+    roll_range: float | None = Field(default=None, ge=0, le=100, allow_inf_nan=False)
+    pool_mode: Literal["life", "life_and_energy_shield"] = Field(
+        default="life",
+        description="默认只用未保留生命；生命+护盾为分立池，自动恢复无法安全合并。",
+    )
+    recovery_per_second: float | None = Field(
+        default=None, ge=0, le=1_000_000_000, allow_inf_nan=False,
+        description=(
+            "省略时 life 模式按 NetLifeRegen/LifeRegenRecovery/LifeRegen 顺序取快照；"
+            "life_and_energy_shield 模式必须显式提供共享恢复值。"
+        ),
+    )
+    recovery_delay_seconds: float = Field(
+        default=0, ge=0, le=3600, allow_inf_nan=False
+    )
 
 
 class BuildBossRiskAuditRequest(BaseModel):
@@ -248,6 +275,13 @@ class BuildRequest(BaseModel):
         description=(
             "可选的用户指定 Boss 混合命中序列。从 PlayerStat 读取池子、各伤害类型抗性与"
             "物理护甲；始终不使用 PoB 单击 MaximumHitTaken。"
+        ),
+    )
+    boss_timed_sequence: BuildBossTimedSequenceRequest | None = Field(
+        default=None,
+        description=(
+            "可选的用户指定 Boss 命中时间轴。从 PlayerStat 读取基础防御；life 模式可读取"
+            "净生命回复，或由调用方显式给共享恢复速率。不会使用 PoB 单击 Max Hit。"
         ),
     )
     boss_risk_audit: BuildBossRiskAuditRequest | None = Field(
@@ -430,6 +464,16 @@ class BuildBossSequenceOut(BossSequenceResponse):
     citations: list[BuildBossCitationOut] = []
 
 
+class BuildBossTimedSequenceOut(BossTimedSequenceResponse):
+    pool_mode: Literal["life", "life_and_energy_shield"]
+    input_source: str = "pob_player_stat"
+    source_fields: dict[str, float] = {}
+    source_config: dict[str, str] = {}
+    calculation_mode: str | None = None
+    fallback_reason: str = ""
+    citations: list[BuildBossCitationOut] = []
+
+
 class BuildBossRiskAuditOut(BossRiskAuditResponse):
     pool_mode: Literal["life", "life_and_energy_shield"]
     input_source: str = "pob_player_stat"
@@ -552,6 +596,8 @@ class BuildResponse(BaseModel):
     boss_survival: BuildBossSurvivalOut | None = None
     #: 可选：用当前 Build 的基础防御快照校验用户显式排列的混合 Boss 命中
     boss_sequence: BuildBossSequenceOut | None = None
+    #: 可选：用当前 Build 基础防御与净回复推进显式标时的 Boss 命中
+    boss_timed_sequence: BuildBossTimedSequenceOut | None = None
     #: 可选：按当前 Build 基础防御快照横向审计已收录的 Boss 单击
     boss_risk_audit: BuildBossRiskAuditOut | None = None
     #: 可选：用户显式目标与当前 PlayerStat 之间的确定性成长里程碑
@@ -739,6 +785,7 @@ def analyze_build(req: BuildRequest, caller: str = Depends(require_user)) -> Bui
         character_meta=character_meta,
         boss_query=req.boss_survival,
         boss_sequence_query=req.boss_sequence,
+        boss_timed_sequence_query=req.boss_timed_sequence,
         boss_risk_audit_query=req.boss_risk_audit,
         growth_plan_query=req.growth_plan,
     )
@@ -839,6 +886,7 @@ def _build_response(
     character_meta=None,
     boss_query: BuildBossSurvivalRequest | None = None,
     boss_sequence_query: BuildBossSequenceRequest | None = None,
+    boss_timed_sequence_query: BuildBossTimedSequenceRequest | None = None,
     boss_risk_audit_query: BuildBossRiskAuditRequest | None = None,
     growth_plan_query: BuildGrowthPlanRequest | None = None,
 ) -> BuildResponse:  # noqa: ANN001
@@ -849,6 +897,7 @@ def _build_response(
     version = check_build_version(dbmod.get_conn(), build)
     boss_result = None
     boss_sequence_result = None
+    boss_timed_sequence_result = None
     boss_risk_audit_result = None
     growth_plan_result: BuildGrowthPlan | None = None
     if boss_query is not None:
@@ -885,6 +934,25 @@ def _build_response(
             })
         boss_sequence_result = BuildBossSequenceOut(
             **(checked_sequence.data or {}), citations=checked_sequence.citations
+        )
+    if boss_timed_sequence_query is not None:
+        checked_timeline = boss_timed_sequence_from_build(
+            build,
+            events=[item.model_dump() for item in boss_timed_sequence_query.events],
+            level=boss_timed_sequence_query.level,
+            uber=boss_timed_sequence_query.uber,
+            roll_range=boss_timed_sequence_query.roll_range,
+            pool_mode=boss_timed_sequence_query.pool_mode,
+            recovery_per_second=boss_timed_sequence_query.recovery_per_second,
+            recovery_delay_seconds=boss_timed_sequence_query.recovery_delay_seconds,
+        )
+        if not checked_timeline.ok:
+            raise HTTPException(status_code=422, detail={
+                "error": "invalid_build_boss_timed_sequence_query",
+                "reason": checked_timeline.error,
+            })
+        boss_timed_sequence_result = BuildBossTimedSequenceOut(
+            **(checked_timeline.data or {}), citations=checked_timeline.citations
         )
     if boss_risk_audit_query is not None:
         checked_audit = boss_risk_audit_from_build(
@@ -964,6 +1032,7 @@ def _build_response(
         ),
         boss_survival=boss_result,
         boss_sequence=boss_sequence_result,
+        boss_timed_sequence=boss_timed_sequence_result,
         boss_risk_audit=boss_risk_audit_result,
         growth_plan=(
             BuildGrowthPlanOut.model_validate(growth_plan_result, from_attributes=True)
