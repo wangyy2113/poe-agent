@@ -874,6 +874,18 @@ cases:
     lesson: >-
       伤害性异常共享攻击频率，但不共享穿透、双倍/三倍等命中专属修正；源伤必须独立输入
 
+  - id: route_hit_dps_skill_dot
+    query: 火焰技能持续伤害基础每秒 1000，技能持续伤害提高 50%，持续伤害加成 20%，可叠层，技能持续 2 秒，每秒施法 2 次，DPS 怎么算
+    kind: tool_route
+    expect_tool: hit_dps_calc
+    expect_values: ["7200"]
+    note: >-
+      非异常技能 DoT 的基础每秒值、修正、持续时间和施加频率均由用户显式给出；
+      必须走逐类型减伤与叠层链，不能套用命中穿透、暴击或倍伤
+    lesson: >-
+      纯 DoT 技能可以没有命中伤害；可叠层与不可叠层技能必须使用不同的实例数口径，
+      所有持续伤害最终还要经过全局 DoT 上限
+
   - id: num_spell_suppression_effect
     query: 法术压制触发时减多少伤害
     kind: numeric

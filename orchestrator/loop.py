@@ -837,6 +837,7 @@ _PREFERRED_TOOL_INTENTS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("hit_dps_calc", (
         "命中DPS", "命中 DPS", "DPS怎么算", "DPS 怎么算", "dps怎么算", "dps 怎么算",
         "每秒伤害怎么算", "每秒能打多少伤害", "命中和点燃", "命中和中毒", "命中和流血",
+        "技能持续伤害", "技能 DoT", "技能DOT", "非异常持续伤害",
     )),
     # 利润/Flip 必须先于普通价格匹配，由双边挂单、深度、时效与显式费用共同判定。
     ("economy_flip_analysis", (
@@ -2357,6 +2358,38 @@ def _hit_dps_args(question: str) -> dict[str, Any]:
         ailments.append(item)
     if ailments:
         args["damaging_ailments"] = ailments
+    skill_dot_base: dict[str, float] = {}
+    for kind, amount in re.findall(
+        r"(物理|闪电|冰霜|火焰|混沌)(?:技能)?(?:持续伤害|\s*DoT|DOT)"
+        r"(?:基础)?(?:每秒)?\s*(\d+(?:\.\d+)?)",
+        question,
+    ):
+        key = _DPS_TYPE_KEYS[kind]
+        if key in skill_dot_base:
+            return {}
+        skill_dot_base[key] = float(amount)
+    if skill_dot_base:
+        skill_dot: dict[str, Any] = {"base_damage_per_second": skill_dot_base}
+        dot_inc = re.search(
+            r"技能(?:自身)?持续伤害(?:提高|增加)\s*(\d+(?:\.\d+)?)%", question
+        )
+        dot_multi = re.search(r"持续伤害加成\s*(\d+(?:\.\d+)?)%", question)
+        duration = re.search(r"技能(?:持续伤害)?持续\s*(\d+(?:\.\d+)?)\s*秒", question)
+        stack_limit = re.search(r"技能持续伤害最多\s*(\d+(?:\.\d+)?)\s*层", question)
+        instances = re.search(r"同时(?:生效|存在)\s*(\d+(?:\.\d+)?)\s*个实例", question)
+        if dot_inc:
+            skill_dot["increased_damage_pct"] = float(dot_inc.group(1))
+        if dot_multi:
+            skill_dot["dot_multiplier_pct"] = float(dot_multi.group(1))
+        if "可叠层" in question or "可以叠层" in question:
+            skill_dot["can_stack"] = True
+        if duration:
+            skill_dot["duration_seconds"] = float(duration.group(1))
+        if stack_limit:
+            skill_dot["stack_limit"] = float(stack_limit.group(1))
+        if instances:
+            skill_dot["instance_multiplier"] = float(instances.group(1))
+        args["skill_dot"] = skill_dot
     return args
 
 

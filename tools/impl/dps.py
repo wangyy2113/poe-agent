@@ -1,4 +1,4 @@
-"""显式输入的单技能命中 DPS 工具。"""
+"""显式输入的单技能 DPS 工具。"""
 
 from __future__ import annotations
 
@@ -15,8 +15,9 @@ BOUNDARY = (
     "只计算单技能确定性主链与一次爆发：基础/附加伤害、增伤/更多、PoB 顺序的伤害转化与额外获得、"
     "敌方抗性/穿透/忽略/反转或物理减伤/压倒、幸运伤害、双倍/三倍伤害、暴击、命中、"
     "触发/非触发冷却与服务器 tick、无情一击、战争之拳/战吼覆盖、稳态穿刺、终结等效输出、"
-    "频率、重复爆发及技能/数量倍率；可选联算显式异常源伤的点燃、中毒和流血稳态 DPS。"
-    "不含护甲对穿刺的动态减伤、起手期异常层数、非异常持续伤害或完整 Build 自动汇总；"
+    "频率、重复爆发及技能/数量倍率；可选联算显式异常源伤的点燃、中毒和流血稳态 DPS，"
+    "以及技能自身的物理/元素/混沌持续伤害、叠层和全局 DoT 上限。"
+    "不含护甲对穿刺的动态减伤、起手期异常层数、持续伤害快照/刷新时序或完整 Build 自动汇总；"
     "缺少这些机制时不能称为完整 Build DPS"
 )
 
@@ -45,7 +46,7 @@ def _with_default_crit(inputs: dict[str, Any]) -> dict[str, Any]:
 
 
 def _render(result: dps_calc.HitDpsResult) -> str:
-    lines = ["### 单技能命中 DPS", "", "| 最终类型 | 非暴击区间 | 有效抗性/减伤 | 结算后区间 |", "| --- | ---: | ---: | ---: |"]
+    lines = ["### 单技能 DPS", "", "| 最终类型 | 非暴击区间 | 有效抗性/减伤 | 结算后区间 |", "| --- | ---: | ---: | ---: |"]
     for item in result.by_type:
         lines.append(
             f"| {dps_calc.TYPE_ZH[item.damage_type]} | {fmt(item.before_mitigation.minimum)}–"
@@ -89,13 +90,41 @@ def _render(result: dps_calc.HitDpsResult) -> str:
             )
         lines.extend([
             "", f"- 伤害性异常合计：{fmt(result.ailment_dps)}",
-            f"- 命中、穿刺与异常总 DPS：{fmt(result.total_dps)}",
+            f"- 命中、穿刺与持续伤害总 DPS：{fmt(result.total_dps)}",
         ])
+    if result.skill_dot is not None:
+        dot = result.skill_dot
+        lines.extend([
+            "", "| 技能持续伤害类型 | 基础 DPS | 增伤 | 更多倍率 | DoT 加成 | 有效减伤 | 单实例 DPS |",
+            "| --- | ---: | ---: | ---: | ---: | ---: | ---: |",
+        ])
+        for item in dot.by_type:
+            lines.append(
+                f"| {dps_calc.TYPE_ZH[item.damage_type]} | {fmt(item.base_dps)} | "
+                f"{item.increased_pct:g}% | {item.more_multiplier:.4f} | "
+                f"{item.dot_multiplier_pct:g}% | {item.mitigation_pct:g}% | {fmt(item.dps)} |"
+            )
+        mode = (
+            f"可叠层，施加率 {fmt(dot.application_rate)}/s × {dot.duration_seconds:g}s"
+            if dot.can_stack else f"不可叠层，实例倍率 {fmt(dot.instance_multiplier)}"
+        )
+        limit = "∞" if dot.stack_limit is None else fmt(dot.stack_limit)
+        lines.extend([
+            "", f"- 技能 DoT 单实例：{fmt(dot.per_instance_dps)}",
+            f"- {mode} → 活跃实例 {fmt(dot.active_instances)} / {limit}",
+            f"- 技能 DoT：{fmt(result.skill_dot_dps)}{'（封顶）' if dot.capped else ''}",
+        ])
+    if result.damaging_ailments or result.skill_dot is not None:
+        lines.append(
+            f"- 全部持续伤害：{fmt(result.total_dot_dps)}"
+            f"{'（全局 DoT 上限封顶）' if result.total_dot_dps_capped else ''}"
+        )
     lines.extend([
         f"- 有效终结：{result.cull_percent:.2f}%（×{result.cull_multiplier:.4f}）"
         f" → 含终结等效 DPS {fmt(result.effective_dps_with_cull)}",
-        f"- 含异常与终结的总等效 DPS：{fmt(result.effective_total_dps_with_cull)}",
-        "", f"**命中 DPS：{fmt(result.dps)}**", "", BOUNDARY + "。", "", "公式来源：",
+        f"- 含持续伤害与终结的总等效 DPS：{fmt(result.effective_total_dps_with_cull)}",
+        "", f"**命中 DPS：{fmt(result.dps)}；总 DPS：{fmt(result.total_dps)}**",
+        "", BOUNDARY + "。", "", "公式来源：",
         f"- 基础与附加伤害：{_url(dps_calc.BASE_DAMAGE_LINES)}",
         f"- 伤害类型加成与转化递归：{_url(dps_calc.DAMAGE_LINES)}",
         f"- 转化 100% 缩放及技能转化优先：{_url(dps_calc.CONVERSION_LINES)}",
@@ -114,6 +143,9 @@ def _render(result: dps_calc.HitDpsResult) -> str:
         f"- 流血稳态：{_url(dps_calc.BLEED_DPS_LINES)}",
         f"- 中毒稳态：{_url(dps_calc.POISON_DPS_LINES)}",
         f"- 点燃稳态：{_url(dps_calc.IGNITE_DPS_LINES)}",
+        f"- 技能持续伤害逐类型结算：{_url(dps_calc.SKILL_DOT_LINES)}",
+        f"- 可叠层技能 DoT 的频率、持续时间与实例数：{_url(dps_calc.SKILL_DOT_STACK_LINES)}",
+        f"- 全部持续伤害合计与全局上限：{_url(dps_calc.TOTAL_DOT_LINES)}",
     ])
     return "\n".join(lines)
 
@@ -123,7 +155,8 @@ def _render(result: dps_calc.HitDpsResult) -> str:
     description=(
         "用明确输入复算单技能命中 DPS：基础/附加伤害、伤害有效度、增伤/更多、转化/额外获得、"
         "抗性/物理减伤、暴击、倍伤、战斗周期、冷却 tick、稳态穿刺、伤害性异常、终结、"
-        "频率和数量倍率。异常必须单独提供不含命中专属修正的源伤区间。"
+        "技能自身持续伤害、频率和数量倍率。异常必须单独提供不含命中专属修正的源伤区间；"
+        "技能 DoT 必须直接提供每秒基础值。"
         "不要从装备描述猜遗漏参数，"
         "也不要把结果称为完整 Build DPS。"
     ),
@@ -218,8 +251,28 @@ def _render(result: dps_calc.HitDpsResult) -> str:
                     "enemy_damage_taken_more_multiplier": {"type": "number", "minimum": 0}
                 }, "required": ["name", "source_damage"]
             }},
+            "skill_dot": {"type": "object", "properties": {
+                "base_damage_per_second": {"type": "object", "description": "逐伤害类型的每秒基础 DoT"},
+                "increased_damage_pct": {"type": "number", "minimum": -100},
+                "increased_by_type": {"type": "object"},
+                "more_damage_multipliers": {"type": "array", "maxItems": 50, "items": {"type": "number", "minimum": 0}},
+                "more_by_type": {"type": "object"},
+                "dot_multiplier_pct": {"type": "number", "minimum": -100},
+                "dot_multiplier_by_type": {"type": "object"},
+                "aura_effect_multiplier": {"type": "number", "minimum": 0, "default": 1},
+                "enemy_mitigation_pct_by_type": {"type": "object"},
+                "enemy_damage_taken_increased_pct": {"type": "number", "minimum": -100},
+                "enemy_damage_taken_increased_by_type": {"type": "object"},
+                "enemy_damage_taken_more_multiplier": {"type": "number", "minimum": 0},
+                "enemy_damage_taken_more_by_type": {"type": "object"},
+                "can_stack": {"type": "boolean", "default": False},
+                "duration_seconds": {"type": "number", "minimum": 0},
+                "application_rate_multiplier": {"type": "number", "exclusiveMinimum": 0, "default": 1},
+                "instance_multiplier": {"type": "number", "exclusiveMinimum": 0, "default": 1},
+                "stack_limit": {"type": "number", "exclusiveMinimum": 0}
+            }, "required": ["base_damage_per_second"]},
         },
-        "required": ["base_damage", "action_rate"],
+        "required": ["action_rate"],
     },
 )
 def hit_dps_calc(
@@ -263,12 +316,13 @@ def hit_dps_calc(
     enemy_reflected_damage_taken_more_multiplier: float = 1.0,
     cull_percent: float = 0.0, critical_cull_percent: float = 0.0,
     damaging_ailments: list[dict[str, Any]] | None = None,
+    skill_dot: dict[str, Any] | None = None,
 ) -> ToolResult:
     try:
-        if base_damage is None or action_rate is None:
+        if (base_damage is None and skill_dot is None) or action_rate is None:
             missing = []
-            if base_damage is None:
-                missing.append("各伤害类型的基础区间 base_damage")
+            if base_damage is None and skill_dot is None:
+                missing.append("命中基础区间 base_damage 或技能持续伤害 skill_dot")
             if action_rate is None:
                 missing.append("每秒攻击/施法次数 action_rate")
             answer = "无法计算命中 DPS：还缺" + "、".join(missing) + "。不会从‘这套配置’猜这些输入。\n\n" + BOUNDARY + "。"
@@ -279,7 +333,7 @@ def hit_dps_calc(
             })
         base_crit_multi = constants.get(constants.BASE_CRIT_MULTIPLIER)
         result = dps_calc.hit_dps(
-            base_damage=base_damage, added_damage=added_damage, base_multiplier=base_multiplier,
+            base_damage=base_damage or {}, added_damage=added_damage, base_multiplier=base_multiplier,
             damage_effectiveness=damage_effectiveness, added_damage_multiplier=added_damage_multiplier,
             increased_damage_pct=increased_damage_pct, increased_by_type=increased_by_type,
             more_damage_multipliers=more_damage_multipliers or (), more_by_type=more_by_type,
@@ -327,6 +381,7 @@ def hit_dps_calc(
             enemy_reflected_damage_taken_more_multiplier=enemy_reflected_damage_taken_more_multiplier,
             cull_percent=cull_percent, critical_cull_percent=critical_cull_percent,
             damaging_ailments=damaging_ailments or (),
+            skill_dot=skill_dot,
         )
     except (ValueError, TypeError, constants.MissingConstant) as exc:
         return ToolResult(ok=False, error=str(exc))
@@ -364,7 +419,7 @@ def hit_dps_compare(scenarios: list[dict[str, Any]]) -> ToolResult:
     except (KeyError, ValueError, TypeError, constants.MissingConstant) as exc:
         return ToolResult(ok=False, error=str(exc))
     data = comparison.as_dict()
-    rows = ["### 命中 DPS 方案比较", "", "| 方案 | 命中 DPS | 含穿刺 | 异常 DPS | 总 DPS | 含异常与终结 | 命中相对基线 | 平均击中 | 一轮爆发 |", "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"]
+    rows = ["### 单技能 DPS 方案比较", "", "| 方案 | 命中 DPS | 含穿刺 | 异常 DPS | 技能 DoT | 全部 DoT | 总 DPS | 含终结 | 命中相对基线 | 平均击中 | 一轮爆发 |", "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"]
     for row in comparison.scenarios:
         if row.name == comparison.baseline:
             pct = "基线"
@@ -374,7 +429,8 @@ def hit_dps_compare(scenarios: list[dict[str, Any]]) -> ToolResult:
             pct = f"{row.dps_delta_pct:+.2f}%"
         rows.append(
             f"| {row.name} | {fmt(row.dps)} | {fmt(row.combined_dps)} | "
-            f"{fmt(row.ailment_dps)} | {fmt(row.total_dps)} | "
+            f"{fmt(row.ailment_dps)} | {fmt(row.skill_dot_dps)} | {fmt(row.total_dot_dps)} | "
+            f"{fmt(row.total_dps)} | "
             f"{fmt(row.effective_total_dps_with_cull)} | {pct} | {fmt(row.average_hit)} | "
             f"{fmt(row.burst_damage)} |"
         )
@@ -382,8 +438,10 @@ def hit_dps_compare(scenarios: list[dict[str, Any]]) -> ToolResult:
                  f"- 最高命中+穿刺 DPS：{comparison.best_combined_dps_scenario}",
                  f"- 最高含终结等效 DPS：{comparison.best_effective_dps_scenario}",
                  f"- 最高异常 DPS：{comparison.best_ailment_dps_scenario}",
-                 f"- 最高命中+穿刺+异常总 DPS：{comparison.best_total_dps_scenario}",
-                 f"- 最高含异常与终结总等效 DPS：{comparison.best_effective_total_dps_scenario}",
+                 f"- 最高技能 DoT：{comparison.best_skill_dot_dps_scenario}",
+                 f"- 最高全部 DoT：{comparison.best_total_dot_dps_scenario}",
+                 f"- 最高命中+穿刺+持续伤害总 DPS：{comparison.best_total_dps_scenario}",
+                 f"- 最高含持续伤害与终结总等效 DPS：{comparison.best_effective_total_dps_scenario}",
                  f"- 最高一轮爆发：{comparison.best_burst_scenario}", "", BOUNDARY + "。"])
     answer = "\n".join(rows)
     data.update({"kind": "comparison", "answer": answer, "boundary": BOUNDARY})
@@ -397,7 +455,7 @@ def hit_dps_compare(scenarios: list[dict[str, Any]]) -> ToolResult:
 @REGISTRY.register(
     name="hit_dps_target_rate",
     description=(
-        "在其它参数固定时，数值反解达到目标命中、穿刺、异常、总计或含终结等效 DPS 所需的原始"
+        "在其它参数固定时，数值反解达到目标命中、穿刺、异常、技能 DoT、全部 DoT、总计或含终结等效 DPS 所需的原始"
         "每秒次数，并判断服务器 tick 及触发/非触发冷却上限是否令目标不可达。"
     ),
     parameters={
@@ -406,7 +464,7 @@ def hit_dps_compare(scenarios: list[dict[str, Any]]) -> ToolResult:
             "target_dps": {"type": "number"},
             "metric": {"type": "string", "enum": [
                 "hit_dps", "combined_dps", "effective_dps_with_cull", "ailment_dps",
-                "total_dps", "effective_total_dps_with_cull"
+                "skill_dot_dps", "total_dot_dps", "total_dps", "effective_total_dps_with_cull"
             ], "default": "hit_dps"},
             "inputs": {"type": "object", "description": "除 action_rate 外的 hit_dps_calc 参数"},
         },
@@ -430,8 +488,10 @@ def hit_dps_target_rate(
         "combined_dps": "命中+穿刺 DPS",
         "effective_dps_with_cull": "含终结等效 DPS",
         "ailment_dps": "伤害性异常 DPS",
-        "total_dps": "命中+穿刺+异常总 DPS",
-        "effective_total_dps_with_cull": "含异常与终结总等效 DPS",
+        "skill_dot_dps": "技能持续伤害 DPS",
+        "total_dot_dps": "全部持续伤害 DPS",
+        "total_dps": "命中+穿刺+持续伤害总 DPS",
+        "effective_total_dps_with_cull": "含持续伤害与终结总等效 DPS",
     }[result.metric]
     if result.reachable:
         answer = (

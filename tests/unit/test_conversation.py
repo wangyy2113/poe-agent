@@ -107,14 +107,14 @@ class ConversationApiTest(unittest.TestCase):
         self.conn.execute(
             "INSERT INTO conversation("
             "conversation_id,title,created_at,updated_at,owner_id"
-            ") VALUES ('conv-2','最近会话','2026-09-24 09:00:00',"
-            "'2026-09-24 12:00:00','owner-a')"
+            ") VALUES ('conv-2','最近会话',datetime('now','+1 second'),"
+            "datetime('now','+1 second'),'owner-a')"
         )
         self.conn.execute(
             "INSERT INTO conversation("
             "conversation_id,title,created_at,updated_at,owner_id"
-            ") VALUES ('other','他人会话','2026-09-24 10:00:00',"
-            "'2026-09-24 13:00:00','owner-b')"
+            ") VALUES ('other','他人会话',datetime('now','+2 seconds'),"
+            "datetime('now','+2 seconds'),'owner-b')"
         )
         self.conn.executemany(
             "INSERT INTO message(message_id,conversation_id,role,content,created_at) "
