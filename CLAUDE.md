@@ -146,7 +146,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 1998 项，秒级
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 2009 项，秒级
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选
@@ -163,7 +163,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 .venv/bin/python scripts/eval_run.py --record        # 重录真实响应（**要凭证、烧 token**）
 ```
 
-黄金问答集是 `tests/golden/questions.yaml`（172 条，六类），基线与全部结论在
+黄金问答集是 `tests/golden/questions.yaml`（173 条，六类），基线与全部结论在
 `tests/golden/BASELINE.md`——**动闸门前先读它**，里面记了多个已修缺陷与三条已知未修边界，
 以及两次「测量本身写错」的教训。
 
@@ -340,9 +340,9 @@ Craft of Exile 矩阵证据支撑；两条 Citation 不得互相夹带正文。�
 `crit_calc`（暴击率与平均伤害倍率；基础暴击查库，**只给倍率不给 DPS**）→
 `accuracy_calc`（命中率：我的命中值 vs 怪物闪避，含「要多少命中」的反解）→
 `attack_speed_calc`（每秒攻击次数与攻击间隔；武器攻速与技能倍率查库）→
-`hit_dps_calc`（显式单技能命中/穿刺/伤害性异常/终结等效 DPS）→
+`hit_dps_calc`（显式单技能命中/穿刺/伤害性异常/技能 DoT/终结等效 DPS）→
 `hit_dps_compare`（2–10 套同口径 DPS 方案比较）→
-`hit_dps_target_rate`（六种 DPS 指标的频率反解与平台判定）→
+`hit_dps_target_rate`（八种 DPS 指标的频率反解与平台判定）→
 `stat_sources`（某属性能从哪来）→
 `entity_lookup` → `kb_coverage` → `kb_search`（兜底）
 

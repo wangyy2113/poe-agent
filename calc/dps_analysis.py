@@ -1,4 +1,4 @@
-"""命中 DPS 的多方案比较与目标频率反解。
+"""单技能 DPS 的多方案比较与目标频率反解。
 
 这里不重新实现伤害公式，只编排 :func:`calc.dps.hit_dps`，保证单方案、比较和反解
 使用同一条计算链。
@@ -18,6 +18,8 @@ TARGET_METRICS = {
     "combined_dps": "combined_dps",
     "effective_dps_with_cull": "effective_dps_with_cull",
     "ailment_dps": "ailment_dps",
+    "skill_dot_dps": "skill_dot_dps",
+    "total_dot_dps": "total_dot_dps",
     "total_dps": "total_dps",
     "effective_total_dps_with_cull": "effective_total_dps_with_cull",
 }
@@ -32,6 +34,8 @@ class ScenarioDelta:
     combined_dps: float
     effective_dps_with_cull: float
     ailment_dps: float
+    skill_dot_dps: float
+    total_dot_dps: float
     total_dps: float
     effective_total_dps_with_cull: float
     average_hit: float
@@ -52,6 +56,8 @@ class DpsComparison:
     best_combined_dps_scenario: str
     best_effective_dps_scenario: str
     best_ailment_dps_scenario: str
+    best_skill_dot_dps_scenario: str
+    best_total_dot_dps_scenario: str
     best_total_dps_scenario: str
     best_effective_total_dps_scenario: str
     best_burst_scenario: str
@@ -114,6 +120,8 @@ def compare_hit_dps(
             combined_dps=result.combined_dps,
             effective_dps_with_cull=result.effective_dps_with_cull,
             ailment_dps=result.ailment_dps,
+            skill_dot_dps=result.skill_dot_dps,
+            total_dot_dps=result.total_dot_dps,
             total_dps=result.total_dps,
             effective_total_dps_with_cull=result.effective_total_dps_with_cull,
             average_hit=result.average_hit,
@@ -131,6 +139,8 @@ def compare_hit_dps(
             rows, key=lambda row: row.effective_dps_with_cull
         ).name,
         best_ailment_dps_scenario=max(rows, key=lambda row: row.ailment_dps).name,
+        best_skill_dot_dps_scenario=max(rows, key=lambda row: row.skill_dot_dps).name,
+        best_total_dot_dps_scenario=max(rows, key=lambda row: row.total_dot_dps).name,
         best_total_dps_scenario=max(rows, key=lambda row: row.total_dps).name,
         best_effective_total_dps_scenario=max(
             rows, key=lambda row: row.effective_total_dps_with_cull
@@ -154,12 +164,16 @@ def target_action_rate(
     if metric not in TARGET_METRICS:
         raise ValueError(
             "metric 只支持 hit_dps、combined_dps、effective_dps_with_cull、"
-            "ailment_dps、total_dps、effective_total_dps_with_cull"
+            "ailment_dps、skill_dot_dps、total_dot_dps、total_dps、"
+            "effective_total_dps_with_cull"
         )
 
     values = _kwargs(inputs)
     values.pop("action_rate", None)
-    if metric in {"ailment_dps", "total_dps", "effective_total_dps_with_cull"}:
+    if metric in {
+        "ailment_dps", "total_dot_dps", "total_dps",
+        "effective_total_dps_with_cull",
+    }:
         if float(values.get("fist_of_war_more_damage_pct", 0.0)) > 0:
             raise ValueError(
                 "含异常指标在战争之拳覆盖随频率变化时可能非单调，不能可靠反解目标频率"
@@ -185,6 +199,10 @@ def target_action_rate(
                     "含异常指标的暴击源伤或暴击 DoT 加成低于非暴击时可能非单调，"
                     "不能可靠反解目标频率"
                 )
+    if metric == "skill_dot_dps":
+        raw_skill_dot = values.get("skill_dot")
+        if not isinstance(raw_skill_dot, Mapping) or not raw_skill_dot.get("can_stack", False):
+            raise ValueError("skill_dot_dps 目标频率只支持 can_stack=true 的技能 DoT")
     raw_cooldown = values.pop("cooldown_seconds", 0.0)
     if isinstance(raw_cooldown, bool) or not isinstance(raw_cooldown, (int, float)):
         raise ValueError("cooldown_seconds 必须是数字")
@@ -261,19 +279,36 @@ def target_action_rate(
             max_rate = 1e12
         maximum_result, maximum = calculate(max_rate)
         action_rate_cap = maximum_result.action_rate
-        if metric == "ailment_dps" and any(
-            item.capped for item in maximum_result.damaging_ailments
+        if (
+            metric == "ailment_dps"
+            and any(item.capped for item in maximum_result.damaging_ailments)
+        ) or (
+            metric == "skill_dot_dps"
+            and maximum_result.skill_dot is not None
+            and maximum_result.skill_dot.capped
+        ) or (
+            metric in {"total_dot_dps", "total_dps", "effective_total_dps_with_cull"}
+            and maximum_result.total_dot_dps_capped
         ):
             cap_sources.append("dot_cap")
     _upper_result, upper_value = calculate(upper)
     if upper_value < target and not math.isclose(upper_value, target, rel_tol=1e-12):
-        if metric == "ailment_dps" and any(
-            item.capped for item in _upper_result.damaging_ailments
-        ):
+        dot_capped = (
+            metric == "ailment_dps"
+            and any(item.capped for item in _upper_result.damaging_ailments)
+        ) or (
+            metric == "skill_dot_dps"
+            and _upper_result.skill_dot is not None
+            and _upper_result.skill_dot.capped
+        ) or (
+            metric in {"total_dot_dps", "total_dps", "effective_total_dps_with_cull"}
+            and _upper_result.total_dot_dps_capped
+        )
+        if dot_capped:
             if "dot_cap" not in cap_sources:
                 cap_sources.append("dot_cap")
             maximum = upper_value
-            reason = "每种伤害性异常的独立 DoT 上限使目标不可达"
+            reason = "持续伤害的 DoT 上限使目标不可达"
         elif tick_cap is not None and effective_cd > 0:
             reason = "服务器 tick 与冷却共同限制了最高有效频率"
         elif tick_cap is not None:

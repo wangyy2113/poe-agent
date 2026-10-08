@@ -1,7 +1,7 @@
-"""显式输入的单技能命中 DPS 链。
+"""显式输入的单技能 DPS 链。
 
 复算 PoB 的基础伤害、伤害转化、增伤/更多、抗性与穿透、暴击、命中、频率、战斗周期、
-稳态穿刺与终结等效输出主链。
+稳态穿刺、伤害性异常、非异常技能 DoT 与终结等效输出主链。
 输入必须由调用方明确提供；本模块不从不完整装备或描述中猜任何一项。
 """
 
@@ -40,6 +40,9 @@ AILMENT_DAMAGE_LINES = (4125, 4202)
 BLEED_DPS_LINES = (4204, 4475)
 POISON_DPS_LINES = (4477, 4780)
 IGNITE_DPS_LINES = (4782, 5110)
+SKILL_DOT_LINES = (5560, 5650)
+SKILL_DOT_STACK_LINES = (5653, 5705)
+TOTAL_DOT_LINES = (6042, 6054)
 MAX_VALUE = 1_000_000_000_000_000.0
 
 
@@ -115,6 +118,38 @@ class DamagingAilmentDps:
 
 
 @dataclass(frozen=True)
+class SkillDotType:
+    damage_type: str
+    base_dps: float
+    increased_pct: float
+    more_multiplier: float
+    dot_multiplier_pct: float
+    aura_effect_multiplier: float
+    mitigation_pct: float
+    damage_taken_multiplier: float
+    effective_multiplier: float
+    dps: float
+
+
+@dataclass(frozen=True)
+class SkillDotDps:
+    by_type: tuple[SkillDotType, ...]
+    per_instance_uncapped_dps: float
+    per_instance_dps: float
+    can_stack: bool
+    duration_seconds: float
+    application_rate: float
+    stack_potential: float
+    active_instances: float
+    stack_limit: float | None
+    instance_multiplier: float
+    uncapped_dps: float
+    dps: float
+    dps_cap: float
+    capped: bool
+
+
+@dataclass(frozen=True)
 class HitDpsResult:
     conversion: dict[str, dict[str, object]]
     by_type: tuple[TypeDamage, ...]
@@ -171,6 +206,12 @@ class HitDpsResult:
     effective_dps_with_cull: float
     damaging_ailments: tuple[DamagingAilmentDps, ...]
     ailment_dps: float
+    skill_dot: SkillDotDps | None
+    skill_dot_dps: float
+    total_dot_dps_uncapped: float
+    total_dot_dps: float
+    total_dot_dps_cap: float
+    total_dot_dps_capped: bool
     total_dps: float
     effective_total_dps_with_cull: float
 
@@ -586,6 +627,216 @@ def _calculate_damaging_ailments(
     return tuple(results)
 
 
+def _calculate_skill_dot(
+    raw: Mapping[str, object] | None,
+    *,
+    action_rate: float,
+    skill_dps_multiplier: float,
+    quantity_multiplier: float,
+    shared_taken_increased_pct: float,
+    shared_taken_increased_by_type: Mapping[str, float],
+    shared_taken_more_multiplier: float,
+    shared_taken_more_by_type: Mapping[str, float],
+    enemy_resistance: Mapping[str, float],
+    enemy_physical_reduction_pct: float,
+) -> SkillDotDps | None:
+    """计算技能自身的非异常 DoT，复刻 PoB 的逐类型与叠层顺序。
+
+    ``base_damage_per_second`` 必须已经是技能面板的每秒基础值；它不会从命中伤害
+    推导。穿透、命中率、暴击、双倍/三倍伤害均不会进入这条持续伤害链。
+    """
+    if raw is None:
+        return None
+    if not isinstance(raw, Mapping):
+        raise ValueError("skill_dot 必须是对象")
+    base_raw = raw.get("base_damage_per_second")
+    if not isinstance(base_raw, Mapping) or not base_raw:
+        raise ValueError("skill_dot.base_damage_per_second 必须提供至少一种伤害类型")
+    base = _type_numbers(base_raw, "skill_dot.base_damage_per_second")  # type: ignore[arg-type]
+    if not any(value > 0 for value in base.values()):
+        raise ValueError("skill_dot.base_damage_per_second 至少需要一个正数")
+
+    global_inc = _number(
+        raw.get("increased_damage_pct", 0.0),  # type: ignore[arg-type]
+        "skill_dot.increased_damage_pct", minimum=-100.0,
+    )
+    type_inc_raw = raw.get("increased_by_type")
+    if type_inc_raw is not None and not isinstance(type_inc_raw, Mapping):
+        raise ValueError("skill_dot.increased_by_type 必须是对象")
+    type_inc = _type_numbers(
+        type_inc_raw, "skill_dot.increased_by_type", minimum=-100.0  # type: ignore[arg-type]
+    )
+    global_more = 1.0
+    raw_more = raw.get("more_damage_multipliers", ())
+    if not isinstance(raw_more, (tuple, list)):
+        raise ValueError("skill_dot.more_damage_multipliers 必须是数组")
+    if len(raw_more) > 50:
+        raise ValueError("skill_dot.more_damage_multipliers 最多 50 项")
+    for value in raw_more:
+        global_more = _bounded(
+            global_more * _number(value, "skill_dot.more_damage_multipliers"),
+            "skill_dot.more_damage_multipliers 的乘积",
+        )
+    type_more_raw = raw.get("more_by_type")
+    if type_more_raw is not None and not isinstance(type_more_raw, Mapping):
+        raise ValueError("skill_dot.more_by_type 必须是对象")
+    type_more = _type_numbers(
+        type_more_raw, "skill_dot.more_by_type", minimum=0.0  # type: ignore[arg-type]
+    )
+    dot_multi = _number(
+        raw.get("dot_multiplier_pct", 0.0),  # type: ignore[arg-type]
+        "skill_dot.dot_multiplier_pct", minimum=-100.0,
+    )
+    dot_multi_type_raw = raw.get("dot_multiplier_by_type")
+    if dot_multi_type_raw is not None and not isinstance(dot_multi_type_raw, Mapping):
+        raise ValueError("skill_dot.dot_multiplier_by_type 必须是对象")
+    dot_multi_type = _type_numbers(
+        dot_multi_type_raw, "skill_dot.dot_multiplier_by_type", minimum=-100.0  # type: ignore[arg-type]
+    )
+    aura = _number(
+        raw.get("aura_effect_multiplier", 1.0),  # type: ignore[arg-type]
+        "skill_dot.aura_effect_multiplier",
+    )
+
+    mitigation_raw = raw.get("enemy_mitigation_pct_by_type")
+    if mitigation_raw is not None and not isinstance(mitigation_raw, Mapping):
+        raise ValueError("skill_dot.enemy_mitigation_pct_by_type 必须是对象")
+    mitigation_override = _type_numbers(
+        mitigation_raw, "skill_dot.enemy_mitigation_pct_by_type", minimum=-200.0  # type: ignore[arg-type]
+    )
+    dot_taken_inc = _number(
+        raw.get("enemy_damage_taken_increased_pct", 0.0),  # type: ignore[arg-type]
+        "skill_dot.enemy_damage_taken_increased_pct", minimum=-100.0,
+    )
+    dot_taken_inc_type_raw = raw.get("enemy_damage_taken_increased_by_type")
+    if dot_taken_inc_type_raw is not None and not isinstance(dot_taken_inc_type_raw, Mapping):
+        raise ValueError("skill_dot.enemy_damage_taken_increased_by_type 必须是对象")
+    dot_taken_inc_type = _type_numbers(
+        dot_taken_inc_type_raw,
+        "skill_dot.enemy_damage_taken_increased_by_type",
+        minimum=-100.0,  # type: ignore[arg-type]
+    )
+    dot_taken_more = _number(
+        raw.get("enemy_damage_taken_more_multiplier", 1.0),  # type: ignore[arg-type]
+        "skill_dot.enemy_damage_taken_more_multiplier",
+    )
+    dot_taken_more_type_raw = raw.get("enemy_damage_taken_more_by_type")
+    if dot_taken_more_type_raw is not None and not isinstance(dot_taken_more_type_raw, Mapping):
+        raise ValueError("skill_dot.enemy_damage_taken_more_by_type 必须是对象")
+    dot_taken_more_type = _type_numbers(
+        dot_taken_more_type_raw,
+        "skill_dot.enemy_damage_taken_more_by_type",
+        minimum=0.0,  # type: ignore[arg-type]
+    )
+
+    cap = constants.get(constants.DOT_DPS_CAP)
+    monster_phys_cap = constants.get(constants.MONSTER_MAX_PHYS_DR)
+    rows: list[SkillDotType] = []
+    per_instance_uncapped = 0.0
+    for kind in DAMAGE_TYPES:
+        base_dps = base.get(kind, 0.0)
+        if base_dps <= 0:
+            continue
+        inc = global_inc + type_inc.get(kind, 0.0)
+        more = _bounded(global_more * type_more.get(kind, 1.0), "技能 DoT 更多伤害乘积")
+        multi = dot_multi + dot_multi_type.get(kind, 0.0)
+        if kind in mitigation_override:
+            mitigation = mitigation_override[kind]
+        elif kind == "physical":
+            mitigation = min(max(enemy_physical_reduction_pct, 0.0), monster_phys_cap)
+        else:
+            mitigation = min(max(enemy_resistance.get(kind, 0.0), -200.0), 90.0)
+        if kind == "physical" and not 0 <= mitigation <= monster_phys_cap:
+            raise ValueError(
+                f"skill_dot.enemy_mitigation_pct_by_type.physical 必须在 0%..{monster_phys_cap:g}%"
+            )
+        if kind != "physical" and not -200 <= mitigation <= 90:
+            raise ValueError(
+                f"skill_dot.enemy_mitigation_pct_by_type.{kind} 必须在 -200%..90%"
+            )
+        taken_inc = (
+            shared_taken_increased_pct
+            + shared_taken_increased_by_type.get(kind, 0.0)
+            + dot_taken_inc
+            + dot_taken_inc_type.get(kind, 0.0)
+        )
+        taken_more = _bounded(
+            shared_taken_more_multiplier
+            * shared_taken_more_by_type.get(kind, 1.0)
+            * dot_taken_more
+            * dot_taken_more_type.get(kind, 1.0),
+            "技能 DoT 敌方承伤更多乘积",
+        )
+        damage_taken = max(0.0, 1 + taken_inc / 100) * taken_more
+        effective = _bounded((1 - mitigation / 100) * damage_taken, "技能 DoT 有效倍率")
+        dps = _bounded(
+            base_dps * max(0.0, 1 + inc / 100) * more
+            * max(0.0, 1 + multi / 100) * aura * effective,
+            f"{TYPE_ZH[kind]}技能 DoT",
+        )
+        rows.append(SkillDotType(
+            damage_type=kind, base_dps=base_dps, increased_pct=inc,
+            more_multiplier=more, dot_multiplier_pct=multi,
+            aura_effect_multiplier=aura, mitigation_pct=mitigation,
+            damage_taken_multiplier=damage_taken, effective_multiplier=effective,
+            dps=dps,
+        ))
+        per_instance_uncapped = _bounded(
+            per_instance_uncapped + dps, "技能 DoT 单实例合计"
+        )
+    per_instance = min(per_instance_uncapped, cap)
+    can_stack = bool(raw.get("can_stack", False))
+    duration = _number(
+        raw.get("duration_seconds", 0.0),  # type: ignore[arg-type]
+        "skill_dot.duration_seconds",
+    )
+    rate_multiplier = _number(
+        raw.get("application_rate_multiplier", 1.0),  # type: ignore[arg-type]
+        "skill_dot.application_rate_multiplier",
+    )
+    if rate_multiplier <= 0:
+        raise ValueError("skill_dot.application_rate_multiplier 必须大于 0")
+    instance_multiplier = _number(
+        raw.get("instance_multiplier", 1.0),  # type: ignore[arg-type]
+        "skill_dot.instance_multiplier",
+    )
+    if instance_multiplier <= 0:
+        raise ValueError("skill_dot.instance_multiplier 必须大于 0")
+    raw_limit = raw.get("stack_limit")
+    stack_limit = (
+        None if raw_limit is None
+        else _number(raw_limit, "skill_dot.stack_limit")  # type: ignore[arg-type]
+    )
+    if stack_limit is not None and stack_limit <= 0:
+        raise ValueError("skill_dot.stack_limit 必须大于 0")
+    if can_stack:
+        application_rate = _bounded(
+            action_rate * rate_multiplier * skill_dps_multiplier * quantity_multiplier,
+            "技能 DoT 施加率",
+        )
+        stack_potential = _bounded(application_rate * duration, "技能 DoT 潜在层数")
+        active_instances = (
+            min(stack_potential, stack_limit) if stack_limit is not None else stack_potential
+        )
+    else:
+        application_rate = 0.0
+        stack_potential = instance_multiplier
+        active_instances = (
+            min(instance_multiplier, stack_limit) if stack_limit is not None
+            else instance_multiplier
+        )
+    uncapped = _bounded(per_instance * active_instances, "技能 DoT 总 DPS")
+    return SkillDotDps(
+        by_type=tuple(rows), per_instance_uncapped_dps=per_instance_uncapped,
+        per_instance_dps=per_instance, can_stack=can_stack,
+        duration_seconds=duration, application_rate=application_rate,
+        stack_potential=stack_potential, active_instances=active_instances,
+        stack_limit=stack_limit, instance_multiplier=instance_multiplier,
+        uncapped_dps=uncapped, dps=min(uncapped, cap), dps_cap=cap,
+        capped=uncapped > cap or per_instance_uncapped > cap,
+    )
+
+
 def hit_dps(
     *,
     base_damage: Mapping[str, tuple[float, float] | list[float]],
@@ -651,12 +902,17 @@ def hit_dps(
     cull_percent: float = 0.0,
     critical_cull_percent: float = 0.0,
     damaging_ailments: Iterable[Mapping[str, object]] = (),
+    skill_dot: Mapping[str, object] | None = None,
 ) -> HitDpsResult:
-    """复算单技能 hit、稳态穿刺、伤害性异常、终结等效 DPS 与一次爆发。"""
+    """复算单技能 hit、穿刺、异常、技能 DoT、终结等效 DPS 与一次爆发。"""
     base = _ranges(base_damage, "base_damage")
     added = _ranges(added_damage, "added_damage")
-    if not any(item.maximum > 0 for item in base.values()) and not any(item.maximum > 0 for item in added.values()):
-        raise ValueError("至少需要一组非零基础伤害或附加伤害")
+    if (
+        not any(item.maximum > 0 for item in base.values())
+        and not any(item.maximum > 0 for item in added.values())
+        and skill_dot is None
+    ):
+        raise ValueError("至少需要一组非零基础/附加命中伤害或 skill_dot")
 
     base_mult = _number(base_multiplier, "base_multiplier")
     effectiveness = _number(damage_effectiveness, "damage_effectiveness")
@@ -979,7 +1235,30 @@ def hit_dps(
         enemy_physical_reduction_pct=physical_reduction,
     )
     ailment_dps = _bounded(sum(item.dps for item in ailment_results), "伤害性异常 DPS")
-    all_damage_dps = _bounded(combined_dps + ailment_dps, "命中、穿刺与异常总 DPS")
+    skill_dot_result = _calculate_skill_dot(
+        skill_dot,
+        action_rate=rate,
+        skill_dps_multiplier=dps_mult,
+        quantity_multiplier=quantity,
+        shared_taken_increased_pct=taken_inc,
+        shared_taken_increased_by_type=taken_inc_type,
+        shared_taken_more_multiplier=taken_more,
+        shared_taken_more_by_type=taken_more_type,
+        enemy_resistance=resist,
+        enemy_physical_reduction_pct=physical_reduction,
+    )
+    skill_dot_dps = skill_dot_result.dps if skill_dot_result is not None else 0.0
+    dot_cap = (
+        constants.get(constants.DOT_DPS_CAP)
+        if ailment_results or skill_dot_result is not None else 0.0
+    )
+    total_dot_uncapped = _bounded(
+        ailment_dps + skill_dot_dps, "技能与异常持续伤害合计"
+    )
+    total_dot_dps = min(total_dot_uncapped, dot_cap)
+    all_damage_dps = _bounded(
+        combined_dps + total_dot_dps, "命中、穿刺与持续伤害总 DPS"
+    )
     cull_hit_rate = hit_chance / 100 * rate * dps_mult
     effective_crit_cull = crit_cull * (
         1 - (1 - crit_chance / 100) ** cull_hit_rate
@@ -989,7 +1268,7 @@ def hit_dps(
     culling_dps = _bounded(combined_dps * (cull_multiplier - 1), "终结等效 DPS")
     effective_dps_with_cull = _bounded(combined_dps * cull_multiplier, "含终结等效 DPS")
     effective_total_dps_with_cull = _bounded(
-        all_damage_dps * cull_multiplier, "含异常与终结的总等效 DPS"
+        all_damage_dps * cull_multiplier, "含持续伤害与终结的总等效 DPS"
     )
     return HitDpsResult(
         conversion=table, by_type=tuple(breakdown), non_crit_hit=total_noncrit,
@@ -1022,6 +1301,9 @@ def hit_dps(
         cull_percent=effective_cull, cull_multiplier=cull_multiplier,
         culling_dps=culling_dps, effective_dps_with_cull=effective_dps_with_cull,
         damaging_ailments=ailment_results, ailment_dps=ailment_dps,
+        skill_dot=skill_dot_result, skill_dot_dps=skill_dot_dps,
+        total_dot_dps_uncapped=total_dot_uncapped, total_dot_dps=total_dot_dps,
+        total_dot_dps_cap=dot_cap, total_dot_dps_capped=total_dot_uncapped > dot_cap,
         total_dps=all_damage_dps,
         effective_total_dps_with_cull=effective_total_dps_with_cull,
     )

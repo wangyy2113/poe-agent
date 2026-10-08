@@ -1,4 +1,4 @@
-"""单技能命中 DPS 主链：公式、转化、边界、工具与 API。"""
+"""单技能 DPS 主链：命中、穿刺、异常、技能 DoT、分析、工具与 API。"""
 
 from __future__ import annotations
 
@@ -17,6 +17,7 @@ from api.calculator import (  # noqa: E402
     HitDpsScenarioRequest,
     HitDpsTargetRateInputs,
     HitDpsTargetRateRequest,
+    SkillDotRequest,
     calculate_hit_dps,
     calculate_hit_dps_target_rate,
     compare_hit_dps_scenarios,
@@ -460,6 +461,112 @@ class HitDpsCoreTest(unittest.TestCase):
         self.assertEqual(180, poison.dps)
 
     @patch("calc.dps.constants.get", side_effect=_ailment_constant)
+    def test_pure_skill_dot_supports_multiple_types_and_separate_modifiers(self, _get: object) -> None:
+        result = hit_dps(
+            base_damage={}, action_rate=1,
+            enemy_resistance={"fire": 75, "chaos": 20},
+            penetration={"fire": 75},
+            skill_dot={
+                "base_damage_per_second": {"fire": 100, "chaos": 50},
+                "increased_damage_pct": 100,
+                "increased_by_type": {"fire": 50},
+                "more_damage_multipliers": [1.2],
+                "more_by_type": {"chaos": 1.5},
+                "dot_multiplier_pct": 25,
+                "dot_multiplier_by_type": {"fire": 25},
+            },
+        )
+        self.assertEqual(0, result.dps)
+        self.assertIsNotNone(result.skill_dot)
+        assert result.skill_dot is not None
+        fire, chaos = result.skill_dot.by_type
+        # Fire: 100 * 2.5 * 1.2 * 1.5 * .25 = 112.5. Hit penetration is ignored.
+        self.assertEqual("fire", fire.damage_type)
+        self.assertAlmostEqual(112.5, fire.dps)
+        # Chaos: 50 * 2 * 1.2 * 1.5 * 1.25 * .8 = 180.
+        self.assertAlmostEqual(180, chaos.dps)
+        self.assertAlmostEqual(292.5, result.skill_dot_dps)
+        self.assertAlmostEqual(292.5, result.total_dps)
+
+    @patch("calc.dps.constants.get", side_effect=_ailment_constant)
+    def test_skill_dot_stacking_uses_rate_duration_skill_and_quantity(self, _get: object) -> None:
+        result = hit_dps(
+            base_damage={}, action_rate=2, skill_dps_multiplier=1.5,
+            quantity_multiplier=2,
+            skill_dot={
+                "base_damage_per_second": {"chaos": 100},
+                "can_stack": True, "duration_seconds": 3,
+                "application_rate_multiplier": 0.5, "stack_limit": 5,
+            },
+        )
+        assert result.skill_dot is not None
+        self.assertEqual(3, result.skill_dot.application_rate)
+        self.assertEqual(9, result.skill_dot.stack_potential)
+        self.assertEqual(5, result.skill_dot.active_instances)
+        self.assertEqual(500, result.skill_dot_dps)
+
+    @patch("calc.dps.constants.get", side_effect=_ailment_constant)
+    def test_nonstacking_skill_dot_uses_explicit_instance_multiplier(self, _get: object) -> None:
+        result = hit_dps(
+            base_damage={}, action_rate=20, skill_dps_multiplier=4,
+            quantity_multiplier=8,
+            skill_dot={
+                "base_damage_per_second": {"cold": 100},
+                "instance_multiplier": 2,
+            },
+        )
+        assert result.skill_dot is not None
+        self.assertFalse(result.skill_dot.can_stack)
+        self.assertEqual(0, result.skill_dot.application_rate)
+        self.assertEqual(2, result.skill_dot.active_instances)
+        self.assertEqual(200, result.skill_dot_dps)
+
+    @patch("calc.dps.constants.get", side_effect=_ailment_constant)
+    def test_skill_dot_physical_reduction_is_capped_and_hit_only_rules_do_not_apply(self, _get: object) -> None:
+        result = hit_dps(
+            base_damage={}, action_rate=1,
+            enemy_physical_reduction_pct=90,
+            overwhelm_physical_reduction_pct=90,
+            physical_reduction_ignore_chance_pct=100,
+            skill_dot={"base_damage_per_second": {"physical": 100}},
+        )
+        assert result.skill_dot is not None
+        self.assertEqual(75, result.skill_dot.by_type[0].mitigation_pct)
+        self.assertEqual(25, result.skill_dot_dps)
+
+    @patch("calc.dps.constants.get", side_effect=lambda key: {
+        **AILMENT_CONSTANT_VALUES, constants.DOT_DPS_CAP: 100.0,
+    }[key])
+    def test_global_dot_cap_applies_after_skill_and_ailment_sum(self, _get: object) -> None:
+        result = hit_dps(
+            base_damage={"fire": [1, 1]}, action_rate=1,
+            damaging_ailments=[{
+                "name": "ignite", "source_damage": [100, 100],
+                "chance_on_hit_pct": 100,
+            }],
+            skill_dot={"base_damage_per_second": {"chaos": 50}},
+        )
+        self.assertEqual(90, result.ailment_dps)
+        self.assertEqual(50, result.skill_dot_dps)
+        self.assertEqual(140, result.total_dot_dps_uncapped)
+        self.assertEqual(100, result.total_dot_dps)
+        self.assertTrue(result.total_dot_dps_capped)
+        self.assertEqual(101, result.total_dps)
+
+    @patch("calc.dps.constants.get", side_effect=_ailment_constant)
+    def test_skill_dot_inputs_fail_closed(self, _get: object) -> None:
+        with self.assertRaisesRegex(ValueError, "base_damage_per_second"):
+            hit_dps(base_damage={}, action_rate=1, skill_dot={})
+        with self.assertRaisesRegex(ValueError, "physical"):
+            hit_dps(
+                base_damage={}, action_rate=1,
+                skill_dot={
+                    "base_damage_per_second": {"physical": 100},
+                    "enemy_mitigation_pct_by_type": {"physical": -1},
+                },
+            )
+
+    @patch("calc.dps.constants.get", side_effect=_ailment_constant)
     def test_ailment_inputs_fail_closed(self, _get: object) -> None:
         with self.assertRaisesRegex(ValueError, "source_damage"):
             hit_dps(
@@ -586,6 +693,33 @@ class HitDpsAnalysisTest(unittest.TestCase):
         self.assertTrue(target.reachable)
         self.assertAlmostEqual(2, target.required_raw_action_rate or 0)
 
+    @patch("calc.dps.constants.get", side_effect=_ailment_constant)
+    def test_compare_and_target_support_skill_and_total_dot_metrics(self, _get: object) -> None:
+        dot = {
+            "base_damage_per_second": {"chaos": 100},
+            "can_stack": True, "duration_seconds": 2,
+        }
+        compared = compare_hit_dps([
+            ("慢速", {"base_damage": {}, "action_rate": 1, "skill_dot": dot}),
+            ("快速", {"base_damage": {}, "action_rate": 2, "skill_dot": dot}),
+        ])
+        self.assertEqual("快速", compared.best_skill_dot_dps_scenario)
+        self.assertEqual("快速", compared.best_total_dot_dps_scenario)
+        self.assertEqual(400, compared.scenarios[1].total_dot_dps)
+        target = target_action_rate(300, {
+            "base_damage": {}, "skill_dot": dot,
+        }, metric="skill_dot_dps")
+        self.assertTrue(target.reachable)
+        self.assertAlmostEqual(1.5, target.required_raw_action_rate or 0)
+
+    @patch("calc.dps.constants.get", side_effect=_ailment_constant)
+    def test_skill_dot_target_rate_rejects_nonstacking_dot(self, _get: object) -> None:
+        with self.assertRaisesRegex(ValueError, "can_stack=true"):
+            target_action_rate(100, {
+                "base_damage": {},
+                "skill_dot": {"base_damage_per_second": {"fire": 100}},
+            }, metric="skill_dot_dps")
+
     @patch("calc.dps.constants.get", side_effect=lambda key: {
         **AILMENT_CONSTANT_VALUES, constants.DOT_DPS_CAP: 100.0,
     }[key])
@@ -707,7 +841,7 @@ class HitDpsSurfaceTest(unittest.TestCase):
         ])
         self.assertTrue(comparison.ok)
         self.assertIsNone(comparison.data["scenarios"][1]["dps_delta_pct"])
-        self.assertIn("| 可命中 | 100 | 100 | 0 | 100 | 100 | 不可定义 |", comparison.data["answer"])
+        self.assertIn("| 可命中 | 100 | 100 | 0 | 0 | 0 | 100 | 100 | 不可定义 |", comparison.data["answer"])
 
     def test_http_endpoint_reuses_same_calculator(self) -> None:
         request = HitDpsRequest(base_damage={"fire": (50, 150)}, action_rate=3)
@@ -747,6 +881,26 @@ class HitDpsSurfaceTest(unittest.TestCase):
         ), _caller="test")
         self.assertEqual(320, response["total_dps"])
         self.assertEqual("中毒", response["damaging_ailments"][0]["name"])
+
+    @patch("calc.dps.constants.get", side_effect=_ailment_constant)
+    def test_tool_and_http_expose_pure_skill_dot(self, _get: object) -> None:
+        dot = {
+            "base_damage_per_second": {"fire": 1000},
+            "increased_damage_pct": 50,
+            "dot_multiplier_pct": 20,
+            "can_stack": True,
+            "duration_seconds": 2,
+        }
+        tool_result = hit_dps_calc(base_damage={}, action_rate=2, skill_dot=dot)
+        self.assertTrue(tool_result.ok)
+        self.assertEqual(7200, tool_result.data["skill_dot_dps"])
+        self.assertIn("技能 DoT：7200", tool_result.data["answer"])
+        response = calculate_hit_dps(HitDpsRequest(
+            action_rate=2,
+            skill_dot=SkillDotRequest(**dot),
+        ), _caller="test")
+        self.assertEqual(7200, response["total_dot_dps"])
+        self.assertEqual("fire", response["skill_dot"]["by_type"][0]["damage_type"])
 
     def test_compare_and_target_http_endpoints(self) -> None:
         comparison = compare_hit_dps_scenarios(HitDpsCompareRequest(scenarios=[
@@ -853,6 +1007,24 @@ class HitDpsSurfaceTest(unittest.TestCase):
         vague = _hit_dps_args("100-100 火焰伤害，每秒攻击2次，点燃几率100%，总 DPS 怎么算")
         self.assertNotIn("damaging_ailments", vague)
 
+    def test_natural_language_extracts_explicit_skill_dot(self) -> None:
+        from orchestrator.loop import _hit_dps_args, _preferred_tool_route
+
+        question = (
+            "火焰技能持续伤害基础每秒1000，技能持续伤害提高50%，"
+            "持续伤害加成20%，可叠层，技能持续2秒，每秒施法2次，DPS怎么算"
+        )
+        self.assertEqual("hit_dps_calc", _preferred_tool_route(question))
+        args = _hit_dps_args(question)
+        self.assertEqual(2, args["action_rate"])
+        self.assertEqual({
+            "base_damage_per_second": {"fire": 1000.0},
+            "increased_damage_pct": 50.0,
+            "dot_multiplier_pct": 20.0,
+            "can_stack": True,
+            "duration_seconds": 2.0,
+        }, args["skill_dot"])
+
     def test_vague_build_dps_question_is_not_silently_guessed(self) -> None:
         from orchestrator.loop import _hit_dps_args
 
@@ -897,6 +1069,17 @@ class FormulaPinnedToUpstream(unittest.TestCase):
         rate = "\n".join(self.source.splitlines()[2403:2418])
         self.assertIn("m_max(output.HitTime, output.Cooldown)", rate)
         self.assertIn("output.HitTime + output.Cooldown", rate)
+
+    def test_skill_dot_and_global_dot_cap_stay_pinned(self) -> None:
+        skill_dot = "\n".join(self.source.splitlines()[5559:5650])
+        self.assertIn("local total = baseVal * (1 + inc/100) * more", skill_dot)
+        self.assertIn("output.TotalDotInstance = m_min", skill_dot)
+        stacking = "\n".join(self.source.splitlines()[5652:5705])
+        self.assertIn("output.TotalDotInstance * speed * output.Duration", stacking)
+        self.assertIn("attachedBrandCount", stacking)
+        total_dot = "\n".join(self.source.splitlines()[6041:6054])
+        self.assertIn("output.TotalDotDPS = m_min(TotalDotDPS", total_dot)
+        self.assertIn("output.CombinedDPS = output.CombinedDPS + output.TotalDotDPS", total_dot)
 
     def test_combat_mechanics_cull_and_impale_stay_pinned(self) -> None:
         tick = "\n".join(self.source.splitlines()[273:285])

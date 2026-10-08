@@ -46,8 +46,29 @@ class DamagingAilmentRequest(BaseModel):
     )
 
 
+class SkillDotRequest(BaseModel):
+    base_damage_per_second: dict[str, float]
+    increased_damage_pct: float = Field(default=0, ge=-100, allow_inf_nan=False)
+    increased_by_type: dict[str, float] = Field(default_factory=dict)
+    more_damage_multipliers: list[float] = Field(default_factory=list, max_length=50)
+    more_by_type: dict[str, float] = Field(default_factory=dict)
+    dot_multiplier_pct: float = Field(default=0, ge=-100, allow_inf_nan=False)
+    dot_multiplier_by_type: dict[str, float] = Field(default_factory=dict)
+    aura_effect_multiplier: float = Field(default=1, ge=0, allow_inf_nan=False)
+    enemy_mitigation_pct_by_type: dict[str, float] = Field(default_factory=dict)
+    enemy_damage_taken_increased_pct: float = Field(default=0, ge=-100, allow_inf_nan=False)
+    enemy_damage_taken_increased_by_type: dict[str, float] = Field(default_factory=dict)
+    enemy_damage_taken_more_multiplier: float = Field(default=1, ge=0, allow_inf_nan=False)
+    enemy_damage_taken_more_by_type: dict[str, float] = Field(default_factory=dict)
+    can_stack: bool = False
+    duration_seconds: float = Field(default=0, ge=0, allow_inf_nan=False)
+    application_rate_multiplier: float = Field(default=1, gt=0, allow_inf_nan=False)
+    instance_multiplier: float = Field(default=1, gt=0, allow_inf_nan=False)
+    stack_limit: float | None = Field(default=None, gt=0, allow_inf_nan=False)
+
+
 class HitDpsRequest(BaseModel):
-    base_damage: dict[str, tuple[float, float]]
+    base_damage: dict[str, tuple[float, float]] = Field(default_factory=dict)
     added_damage: dict[str, tuple[float, float]] = Field(default_factory=dict)
     base_multiplier: float = Field(default=1, ge=0, allow_inf_nan=False)
     damage_effectiveness: float = Field(default=1, ge=0, allow_inf_nan=False)
@@ -116,6 +137,7 @@ class HitDpsRequest(BaseModel):
     cull_percent: float = Field(default=0, ge=0, lt=100, allow_inf_nan=False)
     critical_cull_percent: float = Field(default=0, ge=0, lt=100, allow_inf_nan=False)
     damaging_ailments: list[DamagingAilmentRequest] = Field(default_factory=list, max_length=3)
+    skill_dot: SkillDotRequest | None = None
 
 
 class HitDpsScenarioRequest(BaseModel):
@@ -136,7 +158,8 @@ class HitDpsTargetRateRequest(BaseModel):
     metric: str = Field(
         default="hit_dps",
         pattern=(
-            "^(hit_dps|combined_dps|effective_dps_with_cull|ailment_dps|total_dps|"
+            "^(hit_dps|combined_dps|effective_dps_with_cull|ailment_dps|skill_dot_dps|"
+            "total_dot_dps|total_dps|"
             "effective_total_dps_with_cull)$"
         ),
     )
