@@ -822,12 +822,25 @@ _YIELDS_TO_ENUMERATION = frozenset(
         "resistance_calc", "mitigation_calc", "recovery_calc", "reservation_calc",
         "ailment_dot_calc", "ailment_threshold_calc", "max_hit_calc", "crit_calc",
         "accuracy_calc", "attack_speed_calc", "hit_dps_calc", "hit_dps_compare",
-        "hit_dps_target_rate",
+        "hit_dps_target_rate", "rotation_dps_calc", "rotation_dps_compare",
+        "rotation_dps_target_multiplier",
     }
 )
 
 
 _PREFERRED_TOOL_INTENTS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("rotation_dps_compare", (
+        "多技能DPS方案对比", "多技能 DPS 方案对比", "技能循环DPS对比", "技能循环 DPS 对比",
+        "轮转DPS对比", "轮转 DPS 对比",
+    )),
+    ("rotation_dps_target_multiplier", (
+        "多技能目标DPS需要", "多技能目标 DPS 需要", "轮转目标DPS", "轮转目标 DPS",
+        "整套循环要提速多少", "技能循环要提速多少",
+    )),
+    ("rotation_dps_calc", (
+        "多技能总DPS", "多技能总 DPS", "技能循环DPS", "技能循环 DPS",
+        "轮转DPS", "轮转 DPS", "组合DPS", "组合 DPS", "并行技能DPS", "并行技能 DPS",
+    )),
     ("hit_dps_compare", (
         "DPS方案对比", "DPS 方案对比", "DPS对比", "DPS 对比", "比较两套DPS", "比较两套 DPS",
     )),

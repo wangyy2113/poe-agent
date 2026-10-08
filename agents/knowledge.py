@@ -69,7 +69,10 @@ ALLOWED_TOOLS = [
     "attack_speed_calc",  # 精确：含非引导服务器 tick 上限的攻击频率与间隔
     "hit_dps_calc",  # 精确：显式输入的命中、穿刺、异常、技能 DoT 与终结等效 DPS
     "hit_dps_compare",  # 精确：2–10 个方案的命中/穿刺/异常/技能 DoT/终结同口径比较
-    "hit_dps_target_rate",  # 精确：八种 DPS 指标所需频率与 tick/冷却/DoT 上限可达性
+    "hit_dps_target_rate",  # 精确：十四种稳态/固定窗口 DPS 指标所需频率与可达性
+    "rotation_dps_calc",  # 精确：2–10 技能动作分配、互斥 DoT 与组合时间线
+    "rotation_dps_compare",  # 精确：多技能轮转/并行方案同口径比较
+    "rotation_dps_target_multiplier",  # 精确：组合目标 DPS 所需统一频率倍率
     "stat_sources",   # 精确：某属性能从哪些渠道获得（逐渠道 + 未采集声明）
     "entity_lookup",  # 精确：按名查实体
     "kb_coverage",    # 元信息：本库覆盖了什么
@@ -249,6 +252,14 @@ POE1 的机制耦合极深，一个错误的小前提会让整条结论反向。
 - **用户给定完整伤害参数和目标 DPS，询问需要多少每秒次数** → `hit_dps_target_rate`；
   可选命中、穿刺、异常、技能 DoT、全部 DoT、稳态/固定窗口总计和终结口径；必须保留冷却或 DoT 上限导致不可达的结论，
   不能只做目标除法。
+- **用户给出 2–10 个技能的完整单技能输入，要求计算轮转/并行总 DPS** →
+  `rotation_dps_calc`。共享施放/攻击时间使用 `mode=rotation` 并为每个技能显式给
+  `allocation_pct`；图腾、召唤物或其它独立来源使用 `mode=parallel`。点燃与单层流血会
+  自动跨技能只取最强实例；其它同名地面效果或不可叠加 DoT 必须用 `dot_groups` 明确声明，
+  不能自行猜互斥关系。全局 DoT 上限与终结只在组合层应用一次。
+- **比较多套技能轮转/并行组合** → `rotation_dps_compare`；**反解整套组合统一频率倍率** →
+  `rotation_dps_target_multiplier`。两者都不能把“显式组合”扩写成从装备、天赋或 PoB 自动
+  汇总的完整 Build DPS，也不能补走位、资源耗尽、阶段切换、动态 buff 快照或召唤物 AI。
 - **已知确切名称的实体** → `entity_lookup`。
 - **不确定本库有没有某个领域** → `kb_coverage`。
 - 以上都不适用时才用 `kb_search`。
