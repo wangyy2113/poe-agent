@@ -1708,6 +1708,22 @@ cases:
       只在用户逐字给出至少两种已知 Boss 技能、顺序、等级和防御池时直达序列工具；
       每种伤害分别使用对应抗性或护甲，不把用户假设的序列称为真实 Boss 连招
 
+  - id: route_boss_timed_sequence
+    query: 84级 Shaper Ball 第0秒吃一发，第2秒再吃一发，15000血、75冰抗，期间每秒恢复6000能不能扛
+    kind: tool_route
+    expect_tool: boss_timed_sequence_check
+    note: >-
+      用户显式给出每次命中的时间与固定恢复后，先复用逐击伤害/减伤链，再分别推进低高掷骰
+      防御池；恢复只发生在相邻事件之间，恰好降到 0 仍算耗尽，不能把序列称为真实连招。
+
+  - id: route_boss_timed_sequence_compare
+    query: 两套 Boss 恢复方案对比，命中时间轴一样但每秒回复不同
+    kind: tool_route
+    expect_tool: boss_timed_sequence_compare
+    note: >-
+      比较完整的显式时间轴、防御与恢复配置，按存活档位、最坏余量、最低池和恢复门槛排序；
+      不扩写成装备、药剂或打法推荐。
+
   - id: route_boss_risk_audit
     query: 84级，10000血、75冰抗、0混抗、10000护甲，所有 Boss 技能哪个最危险
     kind: tool_route

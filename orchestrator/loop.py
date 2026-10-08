@@ -1916,6 +1916,16 @@ def _preferred_tool_route(question: str) -> str:
     harvest_args = _harvest_reforge_args(question)
     if harvest_args is not None:
         return "harvest_reforge_state"
+    if any(term in question for term in (
+        "定时命中恢复方案对比", "时间轴恢复方案对比", "Boss恢复方案对比",
+        "Boss 恢复方案对比",
+    )):
+        return "boss_timed_sequence_compare"
+    if any(term in question for term in (
+        "命中时间轴", "受击时间轴", "秒后再吃", "期间每秒恢复", "受击后恢复延迟",
+        "每秒回复能不能扛", "每秒恢复能不能扛",
+    )):
+        return "boss_timed_sequence_check"
     if _boss_risk_audit_args(question) is not None:
         return "boss_risk_audit"
     if any(marker in question for marker in ("然后", "再接", "接着", "连招", "组合", "再吃")):

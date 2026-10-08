@@ -14,6 +14,10 @@ from tools.impl.boss import (
     boss_sequence_check,
     boss_survival_check,
 )
+from tools.impl.boss_timeline import (
+    boss_timed_sequence_check,
+    boss_timed_sequence_compare,
+)
 
 router = APIRouter(tags=["Boss"])
 
@@ -191,6 +195,108 @@ class BossSequenceResponse(BaseModel):
     answer: str
 
 
+class BossTimedEvent(BaseModel):
+    skill: str = Field(min_length=2, max_length=120)
+    at_seconds: float = Field(ge=0, le=3600, allow_inf_nan=False)
+
+
+class BossTimedSequenceRequest(BaseModel):
+    events: list[BossTimedEvent] = Field(min_length=1, max_length=100)
+    level: int = Field(ge=1, le=100)
+    pool: float = Field(gt=0, le=1_000_000_000, allow_inf_nan=False)
+    uber: bool = False
+    roll_range: float | None = Field(default=None, ge=0, le=100, allow_inf_nan=False)
+    fire_resist_pct: float | None = Field(default=None, ge=-200, le=90, allow_inf_nan=False)
+    cold_resist_pct: float | None = Field(default=None, ge=-200, le=90, allow_inf_nan=False)
+    lightning_resist_pct: float | None = Field(default=None, ge=-200, le=90, allow_inf_nan=False)
+    chaos_resist_pct: float | None = Field(default=None, ge=-200, le=90, allow_inf_nan=False)
+    armour: float = Field(default=0, ge=0, le=10_000_000_000, allow_inf_nan=False)
+    flat_physical_reduction_pct: float = Field(
+        default=0, ge=0, le=90, allow_inf_nan=False
+    )
+    taken_mult: float = Field(default=1, gt=0, allow_inf_nan=False)
+    overwhelm_pct: float = Field(default=0, ge=0, le=100, allow_inf_nan=False)
+    recovery_per_second: float = Field(
+        default=0, ge=0, le=1_000_000_000, allow_inf_nan=False
+    )
+    recovery_delay_seconds: float = Field(
+        default=0, ge=0, le=3600, allow_inf_nan=False
+    )
+
+
+class BossTimedSequenceStepResponse(BaseModel):
+    hit_index: int
+    at_seconds: float
+    elapsed_since_previous_hit: float
+    recovery_eligible_seconds: float
+    skill: str
+    damage_type: str
+    raw_low: float
+    raw_high: float
+    taken_low: float
+    taken_high: float
+    best_case_recovered: float
+    worst_case_recovered: float
+    best_case_pool_before_hit: float
+    worst_case_pool_before_hit: float
+    best_case_remaining: float
+    worst_case_remaining: float
+    best_case_depleted: bool
+    worst_case_depleted: bool
+
+
+class BossTimedSequenceResponse(BaseModel):
+    found: bool
+    assessable: bool
+    verdict: str | None = None
+    level: int
+    uber: bool
+    roll_range: float | None = None
+    requested_events: list[BossTimedEvent]
+    pool: float | None = None
+    recovery_per_second: float = 0
+    recovery_delay_seconds: float = 0
+    duration_seconds: float | None = None
+    hit_count: int = 0
+    total_taken_low: float | None = None
+    total_taken_high: float | None = None
+    total_recovered_best_case: float | None = None
+    total_recovered_worst_case: float | None = None
+    ending_remaining_best_case: float | None = None
+    ending_remaining_worst_case: float | None = None
+    lowest_remaining_best_case: float | None = None
+    lowest_remaining_worst_case: float | None = None
+    lowest_remaining_best_case_hit: int | None = None
+    lowest_remaining_worst_case_hit: int | None = None
+    earliest_possible_depletion_hit: int | None = None
+    guaranteed_depletion_hit: int | None = None
+    minimum_pool_for_any_roll: int | None = None
+    minimum_pool_for_full_range: int | None = None
+    required_recovery_for_any_roll: float | None = None
+    required_recovery_for_full_range: float | None = None
+    required_recovery_for_any_roll_exclusive: bool = False
+    required_recovery_for_full_range_exclusive: bool = False
+    required_recovery_for_any_roll_status: str | None = None
+    required_recovery_for_full_range_status: str | None = None
+    outcome: str | None = None
+    steps: list[BossTimedSequenceStepResponse] = Field(default_factory=list)
+    failed_sequence_index: int | None = None
+    reason: str | None = None
+    candidates: list[str] = Field(default_factory=list)
+    missing_inputs: list[str] = Field(default_factory=list)
+    boundary: str
+    answer: str
+
+
+class BossTimedScenarioRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+    inputs: BossTimedSequenceRequest
+
+
+class BossTimedCompareRequest(BaseModel):
+    scenarios: list[BossTimedScenarioRequest] = Field(min_length=2, max_length=10)
+
+
 class BossRiskAuditRequest(BaseModel):
     level: int = Field(ge=1, le=100)
     pool: float = Field(gt=0, le=1_000_000_000, allow_inf_nan=False)
@@ -309,6 +415,33 @@ def sequence(
             "error": "invalid_boss_sequence_query", "reason": result.error,
         })
     return BossSequenceResponse(**(result.data or {}))
+
+
+@router.post("/boss/timed-sequence", response_model=BossTimedSequenceResponse)
+def timed_sequence(
+    req: BossTimedSequenceRequest, _caller: str = Depends(require_user)
+) -> BossTimedSequenceResponse:
+    result = boss_timed_sequence_check(**req.model_dump())
+    if not result.ok:
+        raise HTTPException(status_code=422, detail={
+            "error": "invalid_boss_timed_sequence_query", "reason": result.error,
+        })
+    return BossTimedSequenceResponse(**(result.data or {}))
+
+
+@router.post("/boss/timed-sequence/compare", response_model=None)
+def compare_timed_sequences(
+    req: BossTimedCompareRequest, _caller: str = Depends(require_user)
+) -> dict[str, Any]:
+    result = boss_timed_sequence_compare(scenarios=[
+        {"name": scenario.name, "inputs": scenario.inputs.model_dump()}
+        for scenario in req.scenarios
+    ])
+    if not result.ok:
+        raise HTTPException(status_code=422, detail={
+            "error": "invalid_boss_timed_sequence_comparison", "reason": result.error,
+        })
+    return dict(result.data or {})
 
 
 @router.post("/boss/audit", response_model=BossRiskAuditResponse)
