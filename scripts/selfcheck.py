@@ -34,6 +34,7 @@ def main() -> int:
     print("\n[配置]")
     print(f"  监听        : {cfg.get('server.host')}:{cfg.get('server.port')}")
     print(f"  DB          : {cfg.db_path}")
+    print(f"  备份目录    : {cfg.backup_dir}")
     print(f"  缓存        : {cfg.cache_dir}")
     print(f"  日志        : {cfg.logs_dir}")
     print(f"  向量启用    : {cfg.get('retrieval.vector.enabled')}")
@@ -169,6 +170,20 @@ def main() -> int:
     dbmod.close_db()
     wal = cfg.db_path.with_suffix(cfg.db_path.suffix + "-wal")
     print(f"  关闭后 WAL 残留: {'有' if wal.exists() and wal.stat().st_size > 0 else '无'}")
+
+    # ── 备份恢复前置条件 ──
+    print("\n[备份恢复]")
+    try:
+        cfg.backup_dir.mkdir(parents=True, exist_ok=True)
+        probe = cfg.backup_dir / ".write-probe.tmp"
+        probe.write_text("ok", encoding="utf-8")
+        probe.unlink()
+        print(f"  备份目录可写: {cfg.backup_dir}")
+        print("  一致性快照  : python scripts/db_backup.py create")
+        print("  恢复边界    : 仅离线 CLI，默认只预检，--apply 才替换")
+    except OSError as exc:
+        print(f"  !! 备份目录不可写: {type(exc).__name__}: {exc}")
+        ok = False
 
     print("\n" + "=" * 68)
     print("自检结果：" + ("全部通过" if ok else "存在问题，见上面 !! 标记"))

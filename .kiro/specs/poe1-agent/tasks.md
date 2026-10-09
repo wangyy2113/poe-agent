@@ -695,7 +695,12 @@ V1 完成的判定标准（逐条实测，不以「无报错」代替验证）�
 - [ ] 全新机器上 `python scripts/setup.py` 后启动即可跑通，**全程只有一个进程、无需启动任何外部服务**
 - [x] 关闭向量与重排（`vector.enabled: false`）后仍能正常问答，检索元数据标注为降级通道
       （黄金集 124/124 全程使用 alias / FTS / mod_intent，录制回答统一带确定性降级附注）
-- [ ] 全部状态集中在 `data/poe.db` 单文件，复制该文件即完成备份
+- [x] 全部持久状态集中在 `data/poe.db` 单文件，并完成 WAL 安全备份/恢复闭环
+      —— **2026-10-09 第一百二十六轮**：运行中使用 SQLite Backup API 生成一致快照，清单固定
+      SHA-256、schema 指纹、关键表行数、页信息和版本；CLI 覆盖 create/list/verify/restore，
+      restore 默认只预检，拒绝 WAL/SHM/journal、路径逃逸、符号链接与完整性不符，`--apply`
+      前自动备份当前库并原子替换。管理端只开放创建/列表/校验，不开放远程恢复；CI 在
+      Linux/Windows × Python 3.10/3.12 运行全量单测、跨平台/spec 检查和干净安装冒烟
 - [ ] **在 Windows 上完成一次实际迁移验证**：装 python.org 3.12 → `python scripts\setup.py` → 拷 `.env` 与 `data\poe.db` → 启动成功 → 中文问答无编码问题，且**未修改任何应用代码**
 - [x] 在扩展加载不可用的环境（如 macOS 系统自带 Python）启动时自动禁用向量通道并记录原因，服务仍可用
       （2026-09-21：配置启用只是请求值；运行时统一检查扩展、`chunk_vec` 与查询适配器，失败后健康检查、

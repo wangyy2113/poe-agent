@@ -66,6 +66,7 @@ POE1 的机制耦合极深，一个错误的小前提会让整条结论反向。
 | **用户长期记忆** | Web 顶栏或 `POST/GET/PATCH/DELETE /memories` 可显式管理偏好、目标、约束与备注，支持编辑、停用、恢复和删除；按 API Key 的不可逆摘要隔离，**不自动从聊天抽取、不成为知识库证据** |
 | **MCP stdio** | `mcp_server.py`：按 MCP `2025-06-18` 向 Codex、Claude Desktop 等客户端暴露 Knowledge Agent 的 75 个只读工具；支持 `--tools` 白名单，工具结果保留结构化数据、引用、unknown/boundary 与耗时 |
 | **知识库自动同步与版本 diff** | `scripts/sync_knowledge.py`：按最后成功采集时间自动选择过期分类，复用现有结构断言与快照数量护栏；同步前后按稳定主键报告逐表新增/删除/修改与版本字段变化，历史可从 `/admin/sync/*` 查询。默认只预览，记录删除时整轮标记 `attention` |
+| **一致性备份与离线恢复** | `scripts/db_backup.py` 使用 SQLite Backup API 从活跃 WAL 连接创建快照，清单固定 SHA-256、schema 指纹、关键表行数与 `quick_check`；恢复默认只预检，拒绝存在 WAL/SHM 的目标，`--apply` 前自动留存当前库。管理端只开放创建、列表和校验，远程恢复刻意不提供 |
 | **鉴权与限流** | 普通接口使用 `API_KEYS` 并按 Key 令牌桶限流；管理接口独立使用 `ADMIN_TOKEN`，可叠加 IP/CIDR 白名单 |
 | **出口闸门** | 逐句校验事实断言与计算派生是否绑定有效证据，未通过由代码拦截；47 项单测覆盖 |
 | **聊天界面** | `static/` 单页前端，无构建步骤、无 Node、无第三方 JS；可配置标签页级 API Key，并直接管理会话与显式长期记忆 |
@@ -103,7 +104,7 @@ python scripts/setup.py          # Windows: python scripts\setup.py
 #    POE_OAUTH_TOKEN=<可选；角色导入需要 account:characters scope>
 #    POE_OAUTH_USER_AGENT=<OAuth clientId/version (contact: 联系方式)>
 
-# 3) 自检：确认运行环境就绪，并检查跨平台代码约束
+# 3) 自检：确认运行环境、备份目录就绪，并检查跨平台代码约束
 .venv/bin/python scripts/selfcheck.py
 .venv/bin/python scripts/check_portability.py
 
@@ -1673,6 +1674,8 @@ PoB 排 P2 而不是 P1：它在数值上更接近一手，但不含中文名与
 | --- | --- |
 | `scripts/setup.py` | 环境初始化（跨平台唯一真源） |
 | `scripts/selfcheck.py` | 配置 / 数据库 / FTS5 / 向量扩展 / 凭证 体检 |
+| `scripts/db_backup.py` | WAL 安全的一致性快照、清单列表、深度校验与显式离线恢复 |
+| `scripts/ci_smoke.py` | 无密钥/无真实库的全新 SQLite → 备份 → 恢复 → OpenAPI 发布冒烟 |
 | `scripts/test_search.py` | 检索链路验证 |
 | `scripts/verify_mods.py` | POEDB 词缀自检：模板往返命中率、T 级不变量 |
 | `scripts/verify_uniques.py` | 唯一装备抽取抽样核对 |
@@ -1726,7 +1729,7 @@ PoB 排 P2 而不是 P1：它在数值上更接近一手，但不含中文名与
 .venv/bin/python -m unittest discover -s tests -t .
 ```
 
-目前 2237 项，其中与「无据不答」直接相关的：
+目前 2275 项，其中与「无据不答」直接相关的：
 
 | 组 | 项数 | 重点 |
 | --- | --- | --- |
@@ -1810,7 +1813,31 @@ data/                   SQLite 单文件 + HTTP 缓存（不入版本库）
 logs/                   按日期命名的日志（不入版本库）
 ```
 
-全部状态集中在 `data/poe.db` 一个文件里，复制该文件即完成备份。
+持久状态集中在 `data/poe.db`；运行中不要直接复制 WAL 主文件。使用 SQLite Backup API
+生成一致性单文件快照，恢复前再校验清单和数据库完整性：
+
+```bash
+# macOS / Linux；Windows 把解释器换成 .venv\Scripts\python.exe
+.venv/bin/python scripts/db_backup.py create
+.venv/bin/python scripts/db_backup.py list
+.venv/bin/python scripts/db_backup.py verify <list 返回的完整 .db 文件名>
+
+# 默认只显示计划，不改文件
+.venv/bin/python scripts/db_backup.py restore <备份名>
+# 停止服务、确认计划无误后才显式执行；当前库会先自动备份
+.venv/bin/python scripts/db_backup.py restore <备份名> --apply
+```
+
+快照与 `.manifest.json` 清单保存在 `paths.backups`（默认 `data/backups/`）。清单记录数据库
+SHA-256、大小、schema SHA-256、SQLite/app 版本、页信息和关键表行数；`verify` 还会实时运行
+`PRAGMA quick_check`。恢复拒绝路径逃逸、符号链接、哈希/schema/行数不符的快照，也拒绝目标旁
+存在 `-wal`、`-shm` 或 `-journal`——这通常说明应用未完成优雅关停。恢复用目标目录临时文件
+和 `os.replace` 原子替换；若当前库存在，替换前必先创建 `pre-restore` 安全快照。
+
+带 `ADMIN_TOKEN` 的管理端提供 `GET /admin/backups`、`POST /admin/backups` 和
+`POST /admin/backups/{backup_name}/verify`。管理 API **不提供 restore**：远程请求不能安全证明
+当前进程已经停止。定时备份可调用创建端点或离线 CLI，但应同时把 `data/backups/` 复制到
+另一块磁盘/对象存储；本机快照不能替代异地备份。
 
 ---
 

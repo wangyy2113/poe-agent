@@ -146,7 +146,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 2237 项，秒级
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 2275 项，秒级
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选
@@ -380,7 +380,9 @@ Craft of Exile 矩阵证据支撑；两条 Citation 不得互相夹带正文。�
 
 ## 数据层
 
-全部状态在 `data/poe.db` 一个文件（WAL），复制该文件即完成备份。表分工见 `core/db.py` 的
+全部持久状态在 `data/poe.db` 一个文件（WAL）。运行中备份必须走 `scripts/db_backup.py create`
+的 SQLite Backup API，不能直接复制可能遗漏 WAL 事务的主文件；恢复默认只预检，停服后显式
+`--apply`，并会先留存当前库。表分工见 `core/db.py` 的
 `SCHEMA` 注释，三条容易踩的建模决定：
 
 - `mod_affix` 按「词缀 × 底材类别」一行（同一词缀在弓上 T5、法杖上 T4 是两行），主键是实质
@@ -1533,3 +1535,32 @@ confirmed/review、active/resolved、kind、来源对与 review cause；不再�
 只从唯一一段引号原文抽取，避免猜错实体边界。旧黄金用例
 `cross_no_confirmed_conflict` 的事实前提已经失效：库里现有 8 条 `spectre` confirmed，
 所以它翻为正向用户出口哨兵，并另加 lookup/summary 两条工具路由哨兵。
+
+## 第一百二十六轮：WAL 数据库不能靠复制主文件备份，恢复也不能是远程按钮
+
+`core/backup.py` 使用 SQLite Backup API 从活跃连接生成一致快照，不要求为了备份先停止服务，
+也不会漏掉尚未 checkpoint 的 WAL 事务。每个 `.db` 都伴随严格版本化清单，固定数据库
+SHA-256、schema SHA-256、大小、页信息、关键表行数与应用/SQLite 版本；`verify` 重新计算全部
+字段并执行 `PRAGMA quick_check`，清单多字段、少字段、类型错误和未来版本均失败关闭。
+
+`scripts/db_backup.py` 统一 create/list/verify/restore。所有不可信文件名只能解析到配置备份目录
+的直属文件，路径逃逸与符号链接一律拒绝。restore 默认仅输出计划，目标旁存在 WAL、SHM 或
+journal 就视为服务尚未完成关停；显式 `--apply` 时先用相同一致性流程留存当前库，再把已校验
+快照复制到目标同目录临时文件、复核哈希并原子替换。否决了“先 checkpoint 再直接复制”的
+旧文档口径：checkpoint 是关停优化，不是在线备份协议；也否决管理端 restore，远程请求无法
+证明当前进程已经停服。管理端只提供创建、清单和深度校验。
+
+`.github/workflows/ci.yml` 首次建立 Linux/Windows × Python 3.10/3.12 四格矩阵，执行全量单测、
+平台中立/spec 检查与 `scripts/ci_smoke.py`。冒烟不依赖真实库、密钥或网络，覆盖全新 schema、
+WAL 写入、在线快照、校验、离线恢复与 OpenAPI 端点；它不能替代待办中的 Windows 实机中文
+问答迁移验收。新增 36 项单测覆盖清单篡改、损坏库、路径逃逸、sidecar、原子替换、安全快照、
+CLI 预检和管理接口边界；补充备份名碰撞与恢复目标符号链接回归后，全量 2,275 项通过。
+
+矩阵首跑否决了“`requirements.txt` 宽范围就是干净安装”的假设：它会拿到已经删除旧 parser
+后端的 `selectolax 1.0`，与真实 `setup.py` 优先安装 lock 的行为分叉。改用 lock 后又发现其中
+NumPy 2.5.1 只支持 Python 3.12，与最低 3.10 声明冲突，回钉 2.2.6。依赖修正后还剩 3 项测试
+依赖开发机真实 `data/poe.db`；改成内存常量库或显式 mock 非被测覆盖层，生产逻辑未改。
+第三轮 3.12 双平台全绿后，3.10 继续抓出 `enum.StrEnum` 是 3.11 才新增的事实；现在两处枚举
+统一从 `core.compat` 导入，3.11+ 使用标准库、3.10 用显式字符串值等价回退。
+最终 GitHub Actions 四格 **4/4 全绿**；Windows CI 已证明干净 runner 的代码/依赖/中文路径，
+但仍不冒充带真实库与中文客户端装备文本的 Windows 人工迁移验收。

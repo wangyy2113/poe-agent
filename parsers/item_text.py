@@ -38,7 +38,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from enum import StrEnum
+from core.compat import StrEnum
 
 from entities.taxonomy import ModKind
 

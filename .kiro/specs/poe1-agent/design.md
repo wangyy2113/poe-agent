@@ -732,7 +732,13 @@ start "" .venv\Scripts\pythonw.exe main.py                :: 后台
 
 **优雅关停**：收到 SIGTERM/SIGINT（Windows 上还包括 `KeyboardInterrupt` 与 uvicorn lifespan 关停）后停止接受新请求、等待进行中的请求完成（上限可配置）、`db` 连接 checkpoint 后退出，避免 WAL 残留。注册信号前对平台不存在的信号做存在性判断（`SIGHUP` 在 Windows 上没有）。
 
-**备份**：备份就是复制 `data/poe.db`（WAL 模式下先 `PRAGMA wal_checkpoint(TRUNCATE)`）。这是单文件存储带来的直接好处，也是跨平台迁移只需拷一个文件的原因。注意 `data/` 必须位于**本地磁盘**，SQLite WAL 在网络共享盘上锁不可靠。
+**备份**：运行中不直接复制 `data/poe.db`，而由 `core/backup.py` 使用 SQLite Backup API
+从活跃 WAL 连接创建一致性单文件快照。伴随清单固定数据库 SHA-256、schema 指纹、关键表
+行数、页信息与应用/SQLite 版本，校验时重跑 `PRAGMA quick_check`。恢复只允许离线 CLI：
+默认预检，目标存在 WAL/SHM/journal 就拒绝；显式 `--apply` 后先备份当前库，再用同目录临时
+文件与原子替换恢复。管理 API 只开放创建/列表/校验，不开放远程恢复。跨平台迁移仍只需
+已校验的 `.db` 快照（清单随附）；`data/` 必须位于**本地磁盘**，SQLite WAL 在网络共享盘上
+锁不可靠。
 
 ## 13.2 跨平台可移植性（Windows / macOS / Linux）
 

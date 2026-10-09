@@ -39,6 +39,7 @@ from core import db as dbmod
 from core.config import REPO_ROOT, get_config, get_secrets
 from core.llm import LLMError, get_llm_client
 from core.logging_setup import setup_logging
+from core.version import APP_VERSION
 
 # 导入即注册工具（kb_search / entity_lookup）
 import tools.impl  # noqa: F401
@@ -154,7 +155,7 @@ def create_app() -> FastAPI:
     base = BASE_PATH
     app = FastAPI(
         title="POE1-Agent",
-        version="0.2.0",
+        version=APP_VERSION,
         description=(
             "面向《流放之路 1》的领域 AI Agent。核心原则：无据不答。\n\n"
             f"所有路由挂在 `{base or '/'}` 下。"

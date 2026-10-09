@@ -11,7 +11,7 @@ httpx==0.28.1
 idna==3.18
 jieba==0.42.1
 jiter==0.16.0
-numpy==2.5.1
+numpy==2.2.6
 openai==2.53.0
 pydantic==2.13.4
 pydantic-settings==2.14.2
