@@ -20,7 +20,8 @@
 它反映用户自己那份 PoB 的版本与配置。字段名与 `source_note` 都写清这一点，
 免得下游把它与本库计算结果混为同一来源。只有显式请求 `boss_survival`、`boss_sequence`、
 `boss_timed_sequence`、`boss_probabilistic_sequence`、`boss_layered_sequence`、
-`boss_recovery_sequence`、`boss_dot_sequence`、`boss_mitigation_sequence` 或 `boss_risk_audit` 时，本库才把白名单字段当作已标注来源的输入送入
+`boss_recovery_sequence`、`boss_dot_sequence`、`boss_mitigation_sequence`、
+`boss_ward_sequence` 或 `boss_risk_audit` 时，本库才把白名单字段当作已标注来源的输入送入
 对应的单击、用户显式时间轴或横向风险审计计算器，并逐字段回传实际采用值。
 混合序列始终使用基础防御字段，不会把 PoB 的单击 ``*MaximumHitTaken`` 拆开复用。
 """
@@ -40,6 +41,8 @@ from api.boss import (
     BossDotWindow,
     BossMitigationSequenceResponse,
     BossMitigationWindow,
+    BossWardConfig,
+    BossWardSequenceResponse,
     BossLayeredEvent,
     BossLayeredSequenceResponse,
     BossRecoveryEvent,
@@ -92,6 +95,7 @@ from tools.impl.boss_layered import boss_layered_sequence_from_build
 from tools.impl.boss_recovery import boss_recovery_sequence_from_build
 from tools.impl.boss_dot import boss_dot_sequence_from_build
 from tools.impl.boss_mitigation import boss_mitigation_sequence_from_build
+from tools.impl.boss_ward import boss_ward_sequence_from_build
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["Build"])
@@ -259,6 +263,15 @@ class BuildBossMitigationSequenceRequest(BuildBossDotSequenceRequest):
     mitigation_windows: list[BossMitigationWindow] = Field(
         min_length=1, max_length=100
     )
+
+
+class BuildBossWardSequenceRequest(BuildBossDotSequenceRequest):
+    """用 Build 基础防御与显式 Ward 状态推进混合时间轴。"""
+
+    mitigation_windows: list[BossMitigationWindow] = Field(
+        default_factory=list, max_length=100
+    )
+    ward: BossWardConfig
 
 
 class BuildBossRiskAuditRequest(BaseModel):
@@ -436,6 +449,13 @@ class BuildRequest(BaseModel):
         description=(
             "可选的 Boss 临时减伤/Guard 混合时间轴。Build 提供基础防御；临时窗口的"
             "启停、适用范围、承伤乘数、Guard 容量与优先级必须显式提供。"
+        ),
+    )
+    boss_ward_sequence: BuildBossWardSequenceRequest | None = Field(
+        default=None,
+        description=(
+            "可选的 Boss Ward 破裂/恢复混合时间轴。Build 提供基础防御；Ward 容量、"
+            "当前状态、恢复时点、破裂与 broken 命中计时口径必须显式提供。"
         ),
     )
     boss_risk_audit: BuildBossRiskAuditRequest | None = Field(
@@ -674,6 +694,15 @@ class BuildBossMitigationSequenceOut(BossMitigationSequenceResponse):
     citations: list[BuildBossCitationOut] = []
 
 
+class BuildBossWardSequenceOut(BossWardSequenceResponse):
+    input_source: str = "pob_player_stat_and_explicit_ward_state"
+    source_fields: dict[str, float] = {}
+    source_config: dict[str, str] = {}
+    calculation_mode: str | None = None
+    fallback_reason: str = ""
+    citations: list[BuildBossCitationOut] = []
+
+
 class BuildBossRiskAuditOut(BossRiskAuditResponse):
     pool_mode: Literal["life", "life_and_energy_shield"]
     input_source: str = "pob_player_stat"
@@ -808,6 +837,8 @@ class BuildResponse(BaseModel):
     boss_dot_sequence: BuildBossDotSequenceOut | None = None
     #: 可选：在混合时间轴前应用显式临时承伤乘数与 Guard 容量
     boss_mitigation_sequence: BuildBossMitigationSequenceOut | None = None
+    #: 可选：在 Guard 后、分层池前推进显式 Ward 破裂与恢复
+    boss_ward_sequence: BuildBossWardSequenceOut | None = None
     #: 可选：按当前 Build 基础防御快照横向审计已收录的 Boss 单击
     boss_risk_audit: BuildBossRiskAuditOut | None = None
     #: 可选：用户显式目标与当前 PlayerStat 之间的确定性成长里程碑
@@ -1001,6 +1032,7 @@ def analyze_build(req: BuildRequest, caller: str = Depends(require_user)) -> Bui
         boss_recovery_sequence_query=req.boss_recovery_sequence,
         boss_dot_sequence_query=req.boss_dot_sequence,
         boss_mitigation_sequence_query=req.boss_mitigation_sequence,
+        boss_ward_sequence_query=req.boss_ward_sequence,
         boss_risk_audit_query=req.boss_risk_audit,
         growth_plan_query=req.growth_plan,
     )
@@ -1107,6 +1139,7 @@ def _build_response(
     boss_recovery_sequence_query: BuildBossRecoverySequenceRequest | None = None,
     boss_dot_sequence_query: BuildBossDotSequenceRequest | None = None,
     boss_mitigation_sequence_query: BuildBossMitigationSequenceRequest | None = None,
+    boss_ward_sequence_query: BuildBossWardSequenceRequest | None = None,
     boss_risk_audit_query: BuildBossRiskAuditRequest | None = None,
     growth_plan_query: BuildGrowthPlanRequest | None = None,
 ) -> BuildResponse:  # noqa: ANN001
@@ -1123,6 +1156,7 @@ def _build_response(
     boss_recovery_sequence_result = None
     boss_dot_sequence_result = None
     boss_mitigation_sequence_result = None
+    boss_ward_sequence_result = None
     boss_risk_audit_result = None
     growth_plan_result: BuildGrowthPlan | None = None
     if boss_query is not None:
@@ -1357,6 +1391,49 @@ def _build_response(
             **(checked_mitigation.data or {}),
             citations=checked_mitigation.citations,
         )
+    if boss_ward_sequence_query is not None:
+        ward_query = boss_ward_sequence_query
+        checked_ward = boss_ward_sequence_from_build(
+            build,
+            events=[item.model_dump() for item in ward_query.events],
+            dot_windows=[item.model_dump() for item in ward_query.dot_windows],
+            recovery_events=[item.model_dump() for item in ward_query.recovery_events],
+            mitigation_windows=[
+                item.model_dump() for item in ward_query.mitigation_windows
+            ],
+            ward=ward_query.ward.model_dump(),
+            level=ward_query.level, uber=ward_query.uber,
+            roll_range=ward_query.roll_range,
+            mana_before_life_pct=ward_query.mana_before_life_pct,
+            life_recovery_per_second=ward_query.life_recovery_per_second,
+            energy_shield_recovery_per_second=(
+                ward_query.energy_shield_recovery_per_second
+            ),
+            mana_recovery_per_second=ward_query.mana_recovery_per_second,
+            energy_shield_recharge_per_second=(
+                ward_query.energy_shield_recharge_per_second
+            ),
+            energy_shield_recharge_delay_seconds=(
+                ward_query.energy_shield_recharge_delay_seconds
+            ),
+            energy_shield_recharge_interrupt_mode=(
+                ward_query.energy_shield_recharge_interrupt_mode
+            ),
+            dot_recharge_interrupt_mode=ward_query.dot_recharge_interrupt_mode,
+            life_leech_rate_cap_pct=ward_query.life_leech_rate_cap_pct,
+            energy_shield_leech_rate_cap_pct=(
+                ward_query.energy_shield_leech_rate_cap_pct
+            ),
+            mana_leech_rate_cap_pct=ward_query.mana_leech_rate_cap_pct,
+        )
+        if not checked_ward.ok:
+            raise HTTPException(status_code=422, detail={
+                "error": "invalid_build_boss_ward_sequence_query",
+                "reason": checked_ward.error,
+            })
+        boss_ward_sequence_result = BuildBossWardSequenceOut(
+            **(checked_ward.data or {}), citations=checked_ward.citations,
+        )
     if boss_risk_audit_query is not None:
         checked_audit = boss_risk_audit_from_build(
             build,
@@ -1441,6 +1518,7 @@ def _build_response(
         boss_recovery_sequence=boss_recovery_sequence_result,
         boss_dot_sequence=boss_dot_sequence_result,
         boss_mitigation_sequence=boss_mitigation_sequence_result,
+        boss_ward_sequence=boss_ward_sequence_result,
         boss_risk_audit=boss_risk_audit_result,
         growth_plan=(
             BuildGrowthPlanOut.model_validate(growth_plan_result, from_attributes=True)

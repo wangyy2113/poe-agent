@@ -29,7 +29,7 @@ POE1 的机制耦合极深，一个错误的小前提会让整条结论反向。
 | 通货 | 113 条（中英文名、堆叠上限、效果原文）；工艺台费用引用的 18 个通货全部能对上；**获取途径与兑换比例未采集**；市场价格以 poe.watch 为主、GGG Trade API 在线挂单为备用 |
 | 圣甲虫 | 118 个（效果、堆叠上限、地图装置放置上限）；**掉落来源未采集**；市场价格以 poe.watch 为主、GGG Trade API 在线挂单为备用 |
 | 实时经济价格、趋势、成本与双边价差 | `POST /economy/price` 查询当前快照；`POST /economy/trend` 查询历史；`POST /economy/material-cost` 汇总明确清单；`POST /economy/rare-comparables` 查询稀有装可比挂单；`POST /economy/flip-analysis` 对标准 exchange 条目核验买卖两侧、整单深度、时效与显式费用后计算净利润。SQLite 价格缓存 TTL 30 分钟、历史保留 90 天；主源无缓存时标准条目与唯一装备可显式降级官方 Trade API。**不足两个趋势点不判趋势；单侧过滤后不足 5 条不报代表价；任一侧或费用不完整时利润与 Flip 判断保持 unknown；所有结果都不是成交或收益保证** |
-| Boss 技能伤害、生存校验与防御门槛 | 10 条 Boss 技能的伤害建模 + 22 个 Boss 的护甲/闪避倍率；`boss_survival_check` 校验同一命中连续 1–100 次，`boss_defence_threshold` 反解最低防御池、抗性/护甲门槛，`boss_sequence_check` 按用户明确顺序逐击累计；`boss_timed_sequence_*` 结算显式时间轴、固定恢复与门槛；`boss_probabilistic_sequence_*` 计算闪避/格挡/压制后的低/高伤害生存分布与风险分位；`boss_layered_sequence_*` 分别推进生命、能量护盾、MoM 式魔力分流、各池回复和护盾回充中断；`boss_recovery_sequence_*` 再结算命中前后瞬回、定时恢复、偷取实例限速与满池溢出；`boss_dot_sequence_*` 用边界解析连续流统一结算显式 DoT 暴露、命中和恢复；`boss_mitigation_sequence_*` 在分层路由前结算显式临时承伤乘数、Guard 容量与精确耗尽；`boss_risk_audit` 批量排列已收录技能风险。`POST /build` 可直接消费 PoB 基础防御、分池回复及适用概率字段快照。**序列不是真实连招，概率不是保证，审计不是 Boss 难度排行，不给打法**；不自动推断 DoT/连招/恢复事件、Guard/Ward、熵式闪避相关性、幸运/不幸、CI/EB 等池替换、阶段与应对；数字是 PoB 建模值，GGG 未公布 |
+| Boss 技能伤害、生存校验与防御门槛 | 10 条 Boss 技能的伤害建模 + 22 个 Boss 的护甲/闪避倍率；`boss_survival_check` 校验同一命中连续 1–100 次，`boss_defence_threshold` 反解最低防御池、抗性/护甲门槛，`boss_sequence_check` 按用户明确顺序逐击累计；`boss_timed_sequence_*` 结算显式时间轴、固定恢复与门槛；`boss_probabilistic_sequence_*` 计算闪避/格挡/压制后的低/高伤害生存分布与风险分位；`boss_layered_sequence_*` 分别推进生命、能量护盾、MoM 式魔力分流、各池回复和护盾回充中断；`boss_recovery_sequence_*` 再结算命中前后瞬回、定时恢复、偷取实例限速与满池溢出；`boss_dot_sequence_*` 用边界解析连续流统一结算显式 DoT 暴露、命中和恢复；`boss_mitigation_sequence_*` 在分层路由前结算显式临时承伤乘数、Guard 容量与精确耗尽；`boss_ward_sequence_*` 再逐击推进 Ward 破裂、恢复和吸收；`boss_risk_audit` 批量排列已收录技能风险。`POST /build` 可直接消费 PoB 基础防御、分池回复及适用概率字段快照。**序列不是真实连招，概率不是保证，审计不是 Boss 难度排行，不给打法**；不自动推断 DoT/连招/恢复事件、Guard/Ward 当前状态、熵式闪避相关性、幸运/不幸、CI/EB 等池替换、阶段与应对；数字是 PoB 建模值，GGG 未公布 |
 | 制作规则（名额与影响力） | 7 条前后缀名额规则（魔法 1+1、稀有 3+3、传奇不受限制、药剂随魔法，另有 PoB 独有的珠宝/Graft 2+2 与「已腐化深渊珠宝回到 3+3」）；`base_influence_profile` 可查 1,022 条具体底材的六类传统影响 `influenceTags`，`check_mod_combination` 在给定具体底材、单一影响与可选物等时，会用 PoB 底材标签和 POEDB 词缀 `spawn_tags` 验证影响词缀适用性。`possible` 只表示词缀能共存，不表示能制作；古灵基底由独立状态机处理。**影响底材获得方式、多影响词缀池组合与完整元词缀状态机仍未采集** |
 | 觉醒者之石状态机 | `awakener_orb_state` / `POST /craft/awakener`：接受供体与目标的两段装备复制文本，或显式物品类别与传统影响；逐字绑定 POEDB 效果，检查同类物品、双方唯一且不同的传统影响，输出供体销毁、目标重铸为稀有并兼有两种影响的条件后状态。**不声称各保留一条影响词缀，不生成重铸后的具体词缀、数量、数值、概率、成本或路线** |
 | 收获（古灵庄园） | 74 条定向工艺 + 98 条命能费用，且 **74/74 条均有结构化语义**：20 条装备重铸、23 条元素转换与新增/移除、14 条品质附魔、14 条材料随机转换、3 条地图/技能石/命运卡牺牲；另有 **51 个种子怪物**按颜色对应四种命能中的三种。随机类型与概率、堆叠输出数量、费用缩放基准和市场成本未采集时保持未知 |
@@ -64,7 +64,7 @@ POE1 的机制耦合极深，一个错误的小前提会让整条结论反向。
 | **流式问答** | `POST /chat/stream`：SSE，**按句**校验通过才下发，未校验内容不外发 |
 | **OpenAI 兼容** | `POST /v1/chat/completions`：支持文本消息、非流式与标准 SSE `[DONE]`；内部仍强制检索与出口校验 |
 | **用户长期记忆** | Web 顶栏或 `POST/GET/PATCH/DELETE /memories` 可显式管理偏好、目标、约束与备注，支持编辑、停用、恢复和删除；按 API Key 的不可逆摘要隔离，**不自动从聊天抽取、不成为知识库证据** |
-| **MCP stdio** | `mcp_server.py`：按 MCP `2025-06-18` 向 Codex、Claude Desktop 等客户端暴露 Knowledge Agent 的 71 个只读工具；支持 `--tools` 白名单，工具结果保留结构化数据、引用、unknown/boundary 与耗时 |
+| **MCP stdio** | `mcp_server.py`：按 MCP `2025-06-18` 向 Codex、Claude Desktop 等客户端暴露 Knowledge Agent 的 73 个只读工具；支持 `--tools` 白名单，工具结果保留结构化数据、引用、unknown/boundary 与耗时 |
 | **知识库自动同步与版本 diff** | `scripts/sync_knowledge.py`：按最后成功采集时间自动选择过期分类，复用现有结构断言与快照数量护栏；同步前后按稳定主键报告逐表新增/删除/修改与版本字段变化，历史可从 `/admin/sync/*` 查询。默认只预览，记录删除时整轮标记 `attention` |
 | **鉴权与限流** | 普通接口使用 `API_KEYS` 并按 Key 令牌桶限流；管理接口独立使用 `ADMIN_TOKEN`，可叠加 IP/CIDR 白名单 |
 | **出口闸门** | 逐句校验事实断言与计算派生是否绑定有效证据，未通过由代码拦截；47 项单测覆盖 |
@@ -139,7 +139,7 @@ Windows 把 `.venv/bin/python` 换成 `.venv\Scripts\python.exe`。
 ### 作为 MCP 工具服务器使用
 
 `mcp_server.py` 是本地 stdio 服务，不需要先启动 Web 服务，也不监听端口。默认暴露
-Knowledge Agent 的 71 个只读工具；需要缩小能力面时传入逗号分隔的白名单：
+Knowledge Agent 的 73 个只读工具；需要缩小能力面时传入逗号分隔的白名单：
 
 ```bash
 .venv/bin/python mcp_server.py --tools kb_coverage,entity_lookup
@@ -1321,6 +1321,39 @@ curl -s -X POST http://127.0.0.1:8787/poe_agent/build \
     }
   }'
 
+# 在 Guard 后逐击推进 Ward ready/broken、破裂与恢复
+curl -s -X POST http://127.0.0.1:8787/poe_agent/build \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "code": "https://pobb.in/你的分享ID",
+    "boss_ward_sequence": {
+      "events": [
+        {"skill": "Shaper Ball", "at_seconds": 0},
+        {"skill": "Shaper Ball", "at_seconds": 1},
+        {"skill": "Shaper Ball", "at_seconds": 2}
+      ],
+      "dot_windows": [{
+        "name": "用户假设的燃烧地面暴露",
+        "start_seconds": 0,
+        "duration_seconds": 3,
+        "damage_type": "Fire",
+        "damage_basis": "raw",
+        "dps_low": 3000,
+        "dps_high": 3600
+      }],
+      "recovery_events": [],
+      "mitigation_windows": [],
+      "ward": {
+        "capacity": 1200,
+        "restore_delay_seconds": 2,
+        "initial_state": "ready",
+        "break_mode": "break",
+        "broken_hit_timer_mode": "preserve"
+      },
+      "level": 84
+    }
+  }'
+
 # 以“当前”为基线比较两个 PoB 方案；可省略 metrics 以检查全部受支持指标
 curl -s -X POST http://127.0.0.1:8787/poe_agent/build/compare \
   -H 'Content-Type: application/json' \
@@ -1446,6 +1479,19 @@ PlayerStat 读取基础池、抗性、净回复、护盾回充和命中链所需
 守护技能或 Ward：系统不读取装备词缀生成窗口，不模拟施法动作、冷却、Buff 移除、Ward
 破裂/复原或阶段循环。`POST /build.boss_mitigation_sequence` 仍只从 PlayerStat 提供基础池、
 抗性、回复、回充和命中护甲，全部临时防御参数由请求逐项冻结。
+
+可选的 `boss_ward_sequence` 再把命中残余交给独立 Ward 状态机。Ward 只吸收命中，不处理
+DoT；每次请求必须显式给容量与恢复延迟，并选择初始 `ready|broken`。初始 broken 还要提供
+绝对 `initial_restore_at_seconds`，避免把“恢复需要多久”和“当前还剩多久”混成一个字段。
+`break` 模式的首个正残余命中吸收最多一个 Ward 容量后立即 broken，即使本击没有用完整容量
+也不会把余额带到下一击；`unbreakable` 模式则每次命中重新使用完整容量。
+
+broken 期间继续受击可显式选择 `preserve` 原恢复时点，或 `reset` 为本击时间加恢复延迟。
+同刻命中按请求顺序结算，恢复延迟为 0 时可在下一次同刻命中前重新 ready。低/高伤轨各自
+推进，因此前置 Guard 把低伤残余完全吸收、却给高伤留下残余时，两条 Ward 状态会分叉。
+响应逐击披露命中前状态、是否刚恢复、吸收、破裂、计时重置和下次恢复点，同时给出移除
+Ward 后的高伤基线。Build 入口不会读取 PoB `Ward` 面板值：静态容量无法证明当前 ready、
+Buff 正在生效或恢复计时为何值，全部 Ward 状态字段仍由请求冻结。
 
 可选的 `boss_risk_audit` 使用相同的基础字段，对本地全部 Boss 技能预设按 `hit_count`
 逐条累计。它会返回已知项风险排序、`assessment_status=complete|partial|none`、覆盖计数、
@@ -1622,7 +1668,7 @@ PoB 排 P2 而不是 P1：它在数值上更接近一手，但不含中文名与
 ### 评测：四项指标与黄金问答集
 
 `config.yaml` 里的阈值与 `orchestrator/binding.py` 的闸门规则都需要判据，否则改动之后
-无法判断是变好还是变坏。判据来自 `tests/golden/questions.yaml`（190 条，六类样本：
+无法判断是变好还是变坏。判据来自 `tests/golden/questions.yaml`（192 条，六类样本：
 专名 / 描述性 / 数值 / 跨来源 / **确定不覆盖** / 工具路由），基线与结论记在
 `tests/golden/BASELINE.md`。
 
@@ -1653,7 +1699,7 @@ PoB 排 P2 而不是 P1：它在数值上更接近一手，但不含中文名与
 .venv/bin/python -m unittest discover -s tests -t .
 ```
 
-目前 2180 项，其中与「无据不答」直接相关的：
+目前 2210 项，其中与「无据不答」直接相关的：
 
 | 组 | 项数 | 重点 |
 | --- | --- | --- |

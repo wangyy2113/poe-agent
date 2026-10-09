@@ -1831,6 +1831,23 @@ cases:
       partial_note 与 missing_dimension_hints 必须把「打法仍未采集」写死，
       否则「已采集」会替打法那一维背书。
 
+  - id: route_boss_ward_sequence
+    query: Ward 破裂时间轴和恢复怎么结算
+    kind: tool_route
+    expect_tool: boss_ward_sequence_check
+    note: >-
+      显式 Ward 容量、ready/broken、恢复延迟、破裂与 broken 计时口径进入独立状态机；
+      顺序固定为临时乘数→Guard→Ward→分层池，DoT 跳过 Ward。不得从 PoB Ward 面板、
+      装备、药剂或技能推断当前状态与恢复时点
+
+  - id: route_boss_ward_compare
+    query: 两套 Ward 状态机方案对比
+    kind: tool_route
+    expect_tool: boss_ward_sequence_compare
+    note: >-
+      比较 2–10 套显式 Ward 时间轴，分别排列存活、生命余量、Ward 吸收、受保护命中数、
+      耗尽时间与最低生命；吸收量最高不能被改写成整体存活一定最佳
+
   # ── 制作规则：觉醒者之石双物品状态机（2026-09-22）──────────────
   - id: route_awakener_orb_state
     query: 觉醒者之石如何约束制作操作

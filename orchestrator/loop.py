@@ -1932,6 +1932,17 @@ def _preferred_tool_route(question: str) -> str:
     )):
         return "boss_dot_sequence_compare"
     if any(term in question for term in (
+        "Ward状态机方案对比", "Ward 状态机方案对比", "Ward恢复方案对比",
+        "Ward 恢复方案对比", "Ward破裂方案对比", "Ward 破裂方案对比",
+    )):
+        return "boss_ward_sequence_compare"
+    if any(term in question for term in (
+        "Ward破裂时间轴", "Ward 破裂时间轴", "Ward恢复时间轴",
+        "Ward 恢复时间轴", "Ward状态机", "Ward 状态机",
+        "Ward就绪", "Ward 就绪", "Ward不破裂", "Ward 不破裂",
+    )):
+        return "boss_ward_sequence_check"
+    if any(term in question for term in (
         "Guard临时防御方案对比", "Guard 临时防御方案对比",
         "临时减伤窗口方案对比", "Guard吸收方案对比", "Guard 吸收方案对比",
     )):

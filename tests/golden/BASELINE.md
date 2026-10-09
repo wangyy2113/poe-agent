@@ -6537,3 +6537,31 @@ DoT 分层状态机，保留恢复、护盾回充、MoM 路由和三池门槛。
 | 检索评测 | 121/121 | **121/121**（确定性工具扩展不改变检索题集；`test_search.py` 69/69） |
 | 出口闸门回放 | 142/143 | **142/143**（既有 `desc_cluster_jewel_not_on_tree` 录制差异；本轮未改该工具或录制） |
 | LLM token | 0 | **0**（窗口预处理、Guard 切段、比较与 Build 映射均为确定性代码） |
+
+---
+
+## 2026-10-09（第一百二十四轮）· Boss Ward 破裂与恢复状态机
+
+新增 `calc/boss_ward.py`，在临时承伤乘数/Guard 之后、护盾/魔力/生命之前推进显式 Ward
+状态。Ward 只吸收命中残余，DoT 直接跳过。调用方冻结容量、恢复延迟、初始 ready/broken、
+初始 broken 的绝对恢复时点、break/unbreakable，以及 broken 期间命中 preserve/reset 计时。
+
+同刻命中按请求顺序处理。break 模式的首个正残余命中最多吸收一次完整容量后立即破裂；
+零延迟可在下一次同刻命中前恢复。unbreakable 每击重新使用完整容量。低/高伤轨独立维护
+ready/broken，因此前置 Guard 是否完全吸收残余可以让两轨状态分叉。响应逐击审计恢复、
+吸收、破裂、计时重置与下次恢复点，并重跑保留其它层、只移除 Ward 的高伤基线。
+
+新增 `boss_ward_sequence_check`、方案比较工具、两个 HTTP 端点和
+`POST /build.boss_ward_sequence`。Build 只读取既有基础池、抗性、回复、回充与命中护甲，
+刻意不采用 PoB `Ward` 静态值：容量快照不能证明当前 ready、Buff 启停或恢复计时。
+
+### 指标
+
+| | 上一轮 | 本轮 |
+| --- | --- | --- |
+| 单测 | 2,180 | **2,210**（+30 破裂/恢复、同刻顺序、零延迟、preserve/reset、初始 broken、unbreakable、Guard 前置、双轨、分层路由、比较、工具/API/Build/路由与 unknown） |
+| Knowledge/MCP 工具 | 71 | **73**（新增 Ward 状态机计算与方案比较） |
+| 黄金用例 | 190 | **192**（新增 Ward 计算与方案比较两条路由哨兵） |
+| 检索评测 | 121/121 | **121/121**（确定性工具扩展不改变检索题集；`test_search.py` 69/69） |
+| 出口闸门回放 | 142/143 | **142/143**（既有 `desc_cluster_jewel_not_on_tree` 录制差异；本轮未改该工具或录制） |
+| LLM token | 0 | **0**（Ward 状态推进、比较、门槛反解与 Build 映射均为确定性代码） |

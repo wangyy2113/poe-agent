@@ -57,6 +57,8 @@ ALLOWED_TOOLS = [
     "boss_dot_sequence_compare",  # 精确：比较多套 DoT 暴露混合时间轴
     "boss_mitigation_sequence_check",  # 精确：临时减伤窗口与 Guard 吸收池
     "boss_mitigation_sequence_compare",  # 精确：比较多套临时防御混合时间轴
+    "boss_ward_sequence_check",  # 精确：Ward 破裂、恢复与命中吸收状态机
+    "boss_ward_sequence_compare",  # 精确：比较多套 Ward 混合时间轴
     "boss_recovery_sequence_check",  # 精确：分层池上的瞬回/持续恢复/偷取事件
     "boss_recovery_sequence_compare",  # 精确：比较多套主动恢复事件时间轴
     "boss_probabilistic_sequence_check",  # 精确：显式攻/法命中上的概率防御生存分布
@@ -270,6 +272,12 @@ POE1 的机制耦合极深，一个错误的小前提会让整条结论反向。
   不得从守护技能、Ward、装备、职业或阶段推断窗口、容量、冷却、刷新或复原。
 - **比较多套临时减伤/Guard 时间轴** → `boss_mitigation_sequence_compare`。分别比较存活、
   高伤生命余量、总阻止伤害、耗尽时间和最低生命；阻止量最高不等于整体存活一定最佳。
+- **用户明确给出 Ward 容量、初始 ready/broken、恢复延迟与破裂规则** →
+  `boss_ward_sequence_check`。必须按临时乘数→Guard→Ward→护盾/魔力/生命复述；Ward 只吸收
+  命中残余，DoT 跳过。逐击披露破裂、恢复、broken 命中是否重置计时和无 Ward 基线。
+  不得从装备、药剂、技能、PoB Ward 面板或阶段推断当前状态、恢复时点或无法破裂效果。
+- **比较多套 Ward 状态机时间轴** → `boss_ward_sequence_compare`。分别比较存活、高伤生命
+  余量、Ward 吸收、受保护命中数、耗尽时间和最低生命；吸收量不能代替存活结论。
 - **给出等级、防御池与若干防御，问当前收录的哪些 Boss 技能最危险、连续多次要补多少防御** → `boss_risk_audit`。
   只把已安全计算的单击按最坏承伤排序；必须同时复述总预设数、可评估数、未知数与缺失字段。
   未知项不能当成低风险，也不能把技能单击排行改写成 Boss 难度、击杀风险或真实战斗排行。
