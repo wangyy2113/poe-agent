@@ -985,6 +985,17 @@ V1 完成的判定标准（逐条实测，不以「无报错」代替验证）�
     `NetLifeRegen` / `LifeRegenRecovery` / `LifeRegen` 优先级采用并披露净回复；生命+护盾
     分池不自动合并，除非调用方显式提供共享恢复值。时间轴仍完全来自用户，不推断真实连招，
     不纳入 DoT、概率防御、偷取实例、药剂、Ward、MoM、阶段或打法。
+  - [x] Boss 概率防御与生存分布（2026-10-09 第一百一十九轮）：新增
+    `calc/boss_probability.py`、`boss_probabilistic_sequence_check` 与比较工具。调用方必须为
+    每次显式定时命中标注 `attack` / `spell`；攻击按未命中→格挡→完整承伤，法术按格挡→
+    压制→完整承伤建立互斥概率分支，不把概率防御折算为固定减伤。低/高伤害轨分别用有界
+    离散动态规划输出逐击存活与耗尽概率、期望池、P50/P90/P95 损失、最终池分布和最可能
+    耗尽点，同时始终保留全命中、未格挡、未压制、高伤的确定性最坏轨。响应披露桶宽、桶数
+    与累计量化误差，概率不冒充保证。新增两个 HTTP 端点、2–10 方案比较、知识工具边界与
+    中文路由。`POST /build.boss_probabilistic_sequence` 按实际事件类型读取并披露 PoB
+    `EvadeChance`/`EvasionChance`、攻击/法术格挡与法术压制 PlayerStat，缺任一相关字段时
+    整条 unknown，调用方可显式覆盖。仍不推断技能是攻击还是法术，不模拟熵式闪避相关性、
+    幸运/不幸、不可闪避/不可格挡、分支级恢复延迟重置、DoT、分池、药剂、阶段或打法。
 - [x] 官方角色 API 导入 v1（2026-09-08）：接入 OAuth `account:characters` 的当前
   `GET /character[/<realm>]/<name>` 契约；支持列出账号角色，并将 PoE1 PC 角色的已装备物品、
   插槽连接组、珠宝、天赋、大师选择、盗贼、万神殿、升华/Bloodline 与版本送入现有 Build

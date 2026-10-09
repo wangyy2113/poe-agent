@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -17,6 +17,10 @@ from tools.impl.boss import (
 from tools.impl.boss_timeline import (
     boss_timed_sequence_check,
     boss_timed_sequence_compare,
+)
+from tools.impl.boss_probability import (
+    boss_probabilistic_sequence_check,
+    boss_probabilistic_sequence_compare,
 )
 
 router = APIRouter(tags=["Boss"])
@@ -297,6 +301,143 @@ class BossTimedCompareRequest(BaseModel):
     scenarios: list[BossTimedScenarioRequest] = Field(min_length=2, max_length=10)
 
 
+class BossProbabilisticEvent(BossTimedEvent):
+    hit_type: Literal["attack", "spell"]
+
+
+class BossProbabilityProfileResponse(BaseModel):
+    attack_hit_chance_pct: float
+    attack_block_chance_pct: float
+    spell_block_chance_pct: float
+    spell_suppression_chance_pct: float
+    blocked_damage_taken_pct: float
+    suppressed_damage_taken_pct: float
+
+
+class BossProbabilityDistributionBinResponse(BaseModel):
+    remaining_pool: float
+    probability_pct: float
+    depleted: bool = False
+
+
+class BossProbabilityStepResponse(BaseModel):
+    hit_index: int
+    at_seconds: float
+    skill: str
+    hit_type: Literal["attack", "spell"]
+    damage_type: str
+    damage: float
+    recovery_eligible_seconds: float
+    avoid_probability_pct: float
+    partial_damage_probability_pct: float
+    full_damage_probability_pct: float
+    survival_probability_pct: float
+    depletion_probability_on_hit_pct: float
+    cumulative_depletion_probability_pct: float
+    expected_remaining_pool: float
+    remaining_pool_p10: float
+    alive_state_count: int
+
+
+class BossRollDistributionResponse(BaseModel):
+    damage_basis: Literal["low_roll", "high_roll"]
+    survival_probability_pct: float
+    depletion_probability_pct: float
+    expected_attempted_damage: float
+    expected_applied_damage_before_depletion: float
+    expected_remaining_pool: float
+    expected_remaining_pool_if_alive: float | None = None
+    remaining_pool_p05: float
+    remaining_pool_p10: float
+    remaining_pool_p50: float
+    loss_from_full_pool_p50: float
+    loss_from_full_pool_p90: float
+    loss_from_full_pool_p95: float
+    most_likely_depletion_hit: int | None = None
+    most_likely_depletion_hit_probability_pct: float
+    reported_distribution_probability_pct: float
+    distribution_truncated: bool
+    final_distribution: list[BossProbabilityDistributionBinResponse]
+    steps: list[BossProbabilityStepResponse]
+
+
+class BossProbabilisticSequenceRequest(BaseModel):
+    events: list[BossProbabilisticEvent] = Field(min_length=1, max_length=100)
+    level: int = Field(ge=1, le=100)
+    pool: float = Field(gt=0, le=1_000_000_000, allow_inf_nan=False)
+    uber: bool = False
+    roll_range: float | None = Field(default=None, ge=0, le=100, allow_inf_nan=False)
+    fire_resist_pct: float | None = Field(default=None, ge=-200, le=90, allow_inf_nan=False)
+    cold_resist_pct: float | None = Field(default=None, ge=-200, le=90, allow_inf_nan=False)
+    lightning_resist_pct: float | None = Field(default=None, ge=-200, le=90, allow_inf_nan=False)
+    chaos_resist_pct: float | None = Field(default=None, ge=-200, le=90, allow_inf_nan=False)
+    armour: float = Field(default=0, ge=0, le=10_000_000_000, allow_inf_nan=False)
+    flat_physical_reduction_pct: float = Field(
+        default=0, ge=0, le=90, allow_inf_nan=False
+    )
+    taken_mult: float = Field(default=1, gt=0, allow_inf_nan=False)
+    overwhelm_pct: float = Field(default=0, ge=0, le=100, allow_inf_nan=False)
+    recovery_per_second: float = Field(
+        default=0, ge=0, le=1_000_000_000, allow_inf_nan=False
+    )
+    recovery_delay_seconds: float = Field(
+        default=0, ge=0, le=3600, allow_inf_nan=False
+    )
+    attack_hit_chance_pct: float = Field(default=100, ge=0, le=100, allow_inf_nan=False)
+    attack_block_chance_pct: float = Field(default=0, ge=0, le=100, allow_inf_nan=False)
+    spell_block_chance_pct: float = Field(default=0, ge=0, le=100, allow_inf_nan=False)
+    spell_suppression_chance_pct: float = Field(
+        default=0, ge=0, le=100, allow_inf_nan=False
+    )
+    blocked_damage_taken_pct: float = Field(default=0, ge=0, le=100, allow_inf_nan=False)
+    suppressed_damage_taken_pct: float = Field(
+        default=60, ge=0, le=100, allow_inf_nan=False,
+        description="当前默认按阻挡 40% 伤害，即承受 60%；特殊效果应显式覆盖。",
+    )
+    bucket_size: float | None = Field(
+        default=None, gt=0, le=1_000_000_000, allow_inf_nan=False,
+        description="省略时取 max(pool/2000, 0.01)，最多 5000 个离散池桶。",
+    )
+
+
+class BossProbabilisticSequenceResponse(BaseModel):
+    found: bool
+    assessable: bool
+    verdict: str | None = None
+    level: int
+    uber: bool
+    roll_range: float | None = None
+    requested_events: list[BossProbabilisticEvent]
+    pool: float | None = None
+    recovery_per_second: float = 0
+    recovery_delay_seconds: float = 0
+    bucket_size: float | None = None
+    bucket_count: int | None = None
+    quantization_error_bound: float | None = None
+    hit_count: int = 0
+    duration_seconds: float | None = None
+    profile: BossProbabilityProfileResponse | None = None
+    low_roll: BossRollDistributionResponse | None = None
+    high_roll: BossRollDistributionResponse | None = None
+    deterministic_worst_case_survives: bool | None = None
+    deterministic_worst_case_ending_pool: float | None = None
+    probability_model: str = ""
+    reason: str | None = None
+    missing_inputs: list[str] = Field(default_factory=list)
+    candidates: list[str] = Field(default_factory=list)
+    boundary: str
+    answer: str
+
+
+class BossProbabilisticScenarioRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+    inputs: BossProbabilisticSequenceRequest
+
+
+class BossProbabilisticCompareRequest(BaseModel):
+    scenarios: list[BossProbabilisticScenarioRequest] = Field(min_length=2, max_length=10)
+
+
 class BossRiskAuditRequest(BaseModel):
     level: int = Field(ge=1, le=100)
     pool: float = Field(gt=0, le=1_000_000_000, allow_inf_nan=False)
@@ -440,6 +581,40 @@ def compare_timed_sequences(
     if not result.ok:
         raise HTTPException(status_code=422, detail={
             "error": "invalid_boss_timed_sequence_comparison", "reason": result.error,
+        })
+    return dict(result.data or {})
+
+
+@router.post(
+    "/boss/probabilistic-sequence",
+    response_model=BossProbabilisticSequenceResponse,
+)
+def probabilistic_sequence(
+    req: BossProbabilisticSequenceRequest,
+    _caller: str = Depends(require_user),
+) -> BossProbabilisticSequenceResponse:
+    result = boss_probabilistic_sequence_check(**req.model_dump())
+    if not result.ok:
+        raise HTTPException(status_code=422, detail={
+            "error": "invalid_boss_probabilistic_sequence_query",
+            "reason": result.error,
+        })
+    return BossProbabilisticSequenceResponse(**(result.data or {}))
+
+
+@router.post("/boss/probabilistic-sequence/compare", response_model=None)
+def compare_probabilistic_sequences(
+    req: BossProbabilisticCompareRequest,
+    _caller: str = Depends(require_user),
+) -> dict[str, Any]:
+    result = boss_probabilistic_sequence_compare(scenarios=[
+        {"name": scenario.name, "inputs": scenario.inputs.model_dump()}
+        for scenario in req.scenarios
+    ])
+    if not result.ok:
+        raise HTTPException(status_code=422, detail={
+            "error": "invalid_boss_probabilistic_sequence_comparison",
+            "reason": result.error,
         })
     return dict(result.data or {})
 

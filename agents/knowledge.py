@@ -51,6 +51,8 @@ ALLOWED_TOOLS = [
     "skill_gem_levels",  # 精确：宝石逐级字面值（等级需求 / 消耗 / 冷却 / 暴击率）
     "spectre_stats",  # 精确：某怪物作为幽魂的伤害% / 生命% / 抗性 / 排名
     "boss_risk_audit",  # 精确：当前收录 Boss 技能的累计承伤、门槛与缺口审计
+    "boss_probabilistic_sequence_check",  # 精确：显式攻/法命中上的概率防御生存分布
+    "boss_probabilistic_sequence_compare",  # 精确：比较多套概率防御时间轴
     "boss_timed_sequence_check",  # 精确：显式命中时间轴、固定恢复与恢复延迟
     "boss_timed_sequence_compare",  # 精确：比较多套 Boss 时间轴/恢复方案
     "boss_sequence_check",  # 精确：用户显式给出的多种 Boss 命中按顺序累计
@@ -228,6 +230,12 @@ POE1 的机制耦合极深，一个错误的小前提会让整条结论反向。
 - **比较多套显式 Boss 命中时间轴或恢复配置** → `boss_timed_sequence_compare`。只比较工具
   返回的存活档位、最坏最低余量、最低完整区间初始池和恢复门槛；不同方案仍各自保留伤害
   与防御输入，不能把数学比较扩写成药剂、打法或 Build 推荐。
+- **用户给每次定时命中明确标注 attack/spell，并问闪避、格挡、压制后的存活概率或风险分位** →
+  `boss_probabilistic_sequence_check`。低/高伤害轨必须分开复述，不得替用户假设区间内的
+  伤害掷骰概率。概率来自独立事件的离散动态规划，必须同时披露桶宽、量化误差和全命中、
+  未格挡、未压制的确定性最坏情况；概率不能改写成保证，时间轴不能称为真实 Boss 连招。
+- **比较多套 Boss 概率防御时间轴** → `boss_probabilistic_sequence_compare`。按高伤轨存活概率、
+  P05 末尾池、期望末尾池和确定性最坏存活分别比较，不能只凭期望值宣称某方案必然更安全。
 - **给出等级、防御池与若干防御，问当前收录的哪些 Boss 技能最危险、连续多次要补多少防御** → `boss_risk_audit`。
   只把已安全计算的单击按最坏承伤排序；必须同时复述总预设数、可评估数、未知数与缺失字段。
   未知项不能当成低风险，也不能把技能单击排行改写成 Boss 难度、击杀风险或真实战斗排行。
