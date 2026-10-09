@@ -3,16 +3,57 @@
 from __future__ import annotations
 
 import json
+from dataclasses import asdict
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from api.deps import require_admin
 from core import db as dbmod
+from core.backup import BackupError, create_backup, list_backups, verify_backup
 from core.config import get_config
 from kb.sync import CATEGORY_SPECS, build_plan, load_sync_run, validate_categories
 
 router = APIRouter(prefix="/admin", tags=["管理"], dependencies=[Depends(require_admin)])
+
+
+@router.get("/backups")
+def backups() -> dict[str, Any]:
+    """备份目录摘要。快速列表不重新读取整个数据库或计算哈希。"""
+    cfg = get_config()
+    return {
+        "items": list_backups(cfg.backup_dir),
+        "boundary": "list_reads_manifests_only_use_verify_for_integrity",
+    }
+
+
+@router.post("/backups")
+def create_database_backup() -> dict[str, Any]:
+    """从活跃连接创建 SQLite Backup API 一致性快照。"""
+    cfg = get_config()
+    try:
+        manifest = create_backup(
+            cfg.db_path,
+            cfg.backup_dir,
+            connection=dbmod.get_conn(),
+        )
+    except BackupError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return {"created": True, "manifest": asdict(manifest)}
+
+
+@router.post("/backups/{backup_name}/verify")
+def verify_database_backup(backup_name: str) -> dict[str, Any]:
+    """深度校验一个快照；不修改数据库。恢复刻意只允许离线 CLI。"""
+    cfg = get_config()
+    try:
+        report = verify_backup(cfg.backup_dir, backup_name)
+    except BackupError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {
+        **report.as_dict(),
+        "restore_boundary": "offline_cli_only_scripts_db_backup_py_restore",
+    }
 
 
 @router.get("/sync/plan")

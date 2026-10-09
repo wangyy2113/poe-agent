@@ -24,6 +24,7 @@ server:
 
 paths:
   db: "data/poe.db"
+  backups: "data/backups"
   http_cache: "data/http_cache"
   logs: "logs"
 

@@ -100,6 +100,11 @@ class Config:
         return self.path_of("db", "data/poe.db")
 
     @property
+    def backup_dir(self) -> Path:
+        """SQLite 一致性快照目录；与 HTTP 缓存一样属于可重建外的运行时数据。"""
+        return self.path_of("backups", "data/backups")
+
+    @property
     def cache_dir(self) -> Path:
         return self.path_of("http_cache", "data/http_cache")
 

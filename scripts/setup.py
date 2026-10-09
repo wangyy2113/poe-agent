@@ -107,7 +107,7 @@ def install_deps(py: Path) -> bool:
 
 def make_dirs() -> None:
     step("创建运行时目录")
-    for name in ("data", "logs", "data/http_cache"):
+    for name in ("data", "logs", "data/http_cache", "data/backups"):
         p = REPO_ROOT / name
         p.mkdir(parents=True, exist_ok=True)
         print(f"    {p}")
