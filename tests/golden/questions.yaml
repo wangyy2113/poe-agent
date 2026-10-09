@@ -1740,6 +1740,22 @@ cases:
       分别比较高伤轨存活率、P05 末尾池、期望末尾池与确定性最坏存活；这些口径不能互相
       替代，也不能扩写成真实 Boss 打法或装备推荐。
 
+  - id: route_boss_layered_sequence
+    query: Boss 分层防御池里，25% 绕过护盾、30% 伤害由魔力承担，护盾回充中断后还能扛吗
+    kind: tool_route
+    expect_tool: boss_layered_sequence_check
+    note: >-
+      逐击绕过、MoM 比例、池与回复都明确后，分别推进生命/护盾/魔力；护盾固定回复与回充
+      必须分列，单轴最低池必须注明其它层固定，不从伤害类型或职业补写 CI、EB、Ward。
+
+  - id: route_boss_layered_sequence_compare
+    query: 两套生命护盾魔力方案对比，哪个高伤生命余量更好
+    kind: tool_route
+    expect_tool: boss_layered_sequence_compare
+    note: >-
+      分别比较存活档位、高伤生命余量、高伤生命实际承伤和最低初始生命，不把不同池直接相加
+      成总体分数，也不扩写成真实 Boss 打法或 Build 推荐。
+
   - id: route_boss_risk_audit
     query: 84级，10000血、75冰抗、0混抗、10000护甲，所有 Boss 技能哪个最危险
     kind: tool_route

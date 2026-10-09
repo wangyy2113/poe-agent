@@ -36,6 +36,8 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from api.deps import require_user
 from api.boss import (
+    BossLayeredEvent,
+    BossLayeredSequenceResponse,
     BossProbabilisticEvent,
     BossProbabilisticSequenceResponse,
     BossRiskAuditResponse,
@@ -80,6 +82,7 @@ from tools.impl.boss import (
 )
 from tools.impl.boss_timeline import boss_timed_sequence_from_build
 from tools.impl.boss_probability import boss_probabilistic_sequence_from_build
+from tools.impl.boss_layered import boss_layered_sequence_from_build
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["Build"])
@@ -184,6 +187,37 @@ class BuildBossProbabilisticSequenceRequest(BaseModel):
     bucket_size: float | None = Field(
         default=None, gt=0, le=1_000_000_000, allow_inf_nan=False
     )
+
+
+class BuildBossLayeredSequenceRequest(BaseModel):
+    """从 Build PlayerStat 推进生命、护盾与可选魔力分层时间轴。"""
+
+    events: list[BossLayeredEvent] = Field(min_length=1, max_length=100)
+    level: int = Field(ge=1, le=100)
+    uber: bool = False
+    roll_range: float | None = Field(default=None, ge=0, le=100, allow_inf_nan=False)
+    mana_before_life_pct: float = Field(
+        default=0, ge=0, le=100, allow_inf_nan=False,
+        description="必须显式提供；不从职业、天赋或其它 PlayerStat 猜 MoM 比例。",
+    )
+    life_recovery_per_second: float | None = Field(
+        default=None, ge=0, le=1_000_000_000, allow_inf_nan=False
+    )
+    energy_shield_recovery_per_second: float | None = Field(
+        default=None, ge=0, le=1_000_000_000, allow_inf_nan=False
+    )
+    mana_recovery_per_second: float | None = Field(
+        default=None, ge=0, le=1_000_000_000, allow_inf_nan=False
+    )
+    energy_shield_recharge_per_second: float | None = Field(
+        default=None, ge=0, le=1_000_000_000, allow_inf_nan=False
+    )
+    energy_shield_recharge_delay_seconds: float = Field(
+        default=2, ge=0, le=3600, allow_inf_nan=False
+    )
+    energy_shield_recharge_interrupt_mode: Literal[
+        "energy_shield_damage", "any_hit"
+    ] = "energy_shield_damage"
 
 
 class BuildBossRiskAuditRequest(BaseModel):
@@ -333,6 +367,13 @@ class BuildRequest(BaseModel):
         description=(
             "可选的显式 attack/spell Boss 时间轴概率分布。从 PlayerStat 读取适用的闪避、"
             "格挡和压制字段，或采用请求中的显式覆盖；同时保留确定性最坏轨迹。"
+        ),
+    )
+    boss_layered_sequence: BuildBossLayeredSequenceRequest | None = Field(
+        default=None,
+        description=(
+            "可选的生命/能量护盾/魔力分层 Boss 时间轴。逐击护盾绕过和 MoM 比例必须"
+            "显式提供；池与回复优先取 PlayerStat，缺字段时返回 unknown。"
         ),
     )
     boss_risk_audit: BuildBossRiskAuditRequest | None = Field(
@@ -535,6 +576,15 @@ class BuildBossProbabilisticSequenceOut(BossProbabilisticSequenceResponse):
     citations: list[BuildBossCitationOut] = []
 
 
+class BuildBossLayeredSequenceOut(BossLayeredSequenceResponse):
+    input_source: str = "pob_player_stat"
+    source_fields: dict[str, float] = {}
+    source_config: dict[str, str] = {}
+    calculation_mode: str | None = None
+    fallback_reason: str = ""
+    citations: list[BuildBossCitationOut] = []
+
+
 class BuildBossRiskAuditOut(BossRiskAuditResponse):
     pool_mode: Literal["life", "life_and_energy_shield"]
     input_source: str = "pob_player_stat"
@@ -661,6 +711,8 @@ class BuildResponse(BaseModel):
     boss_timed_sequence: BuildBossTimedSequenceOut | None = None
     #: 可选：用当前 Build 概率防御字段计算显式 attack/spell 时间轴生存分布
     boss_probabilistic_sequence: BuildBossProbabilisticSequenceOut | None = None
+    #: 可选：分别推进生命、能量护盾、魔力与护盾回充
+    boss_layered_sequence: BuildBossLayeredSequenceOut | None = None
     #: 可选：按当前 Build 基础防御快照横向审计已收录的 Boss 单击
     boss_risk_audit: BuildBossRiskAuditOut | None = None
     #: 可选：用户显式目标与当前 PlayerStat 之间的确定性成长里程碑
@@ -850,6 +902,7 @@ def analyze_build(req: BuildRequest, caller: str = Depends(require_user)) -> Bui
         boss_sequence_query=req.boss_sequence,
         boss_timed_sequence_query=req.boss_timed_sequence,
         boss_probabilistic_sequence_query=req.boss_probabilistic_sequence,
+        boss_layered_sequence_query=req.boss_layered_sequence,
         boss_risk_audit_query=req.boss_risk_audit,
         growth_plan_query=req.growth_plan,
     )
@@ -952,6 +1005,7 @@ def _build_response(
     boss_sequence_query: BuildBossSequenceRequest | None = None,
     boss_timed_sequence_query: BuildBossTimedSequenceRequest | None = None,
     boss_probabilistic_sequence_query: BuildBossProbabilisticSequenceRequest | None = None,
+    boss_layered_sequence_query: BuildBossLayeredSequenceRequest | None = None,
     boss_risk_audit_query: BuildBossRiskAuditRequest | None = None,
     growth_plan_query: BuildGrowthPlanRequest | None = None,
 ) -> BuildResponse:  # noqa: ANN001
@@ -964,6 +1018,7 @@ def _build_response(
     boss_sequence_result = None
     boss_timed_sequence_result = None
     boss_probabilistic_sequence_result = None
+    boss_layered_sequence_result = None
     boss_risk_audit_result = None
     growth_plan_result: BuildGrowthPlan | None = None
     if boss_query is not None:
@@ -1052,6 +1107,38 @@ def _build_response(
             **(checked_probability.data or {}),
             citations=checked_probability.citations,
         )
+    if boss_layered_sequence_query is not None:
+        layered_query = boss_layered_sequence_query
+        checked_layered = boss_layered_sequence_from_build(
+            build,
+            events=[item.model_dump() for item in layered_query.events],
+            level=layered_query.level,
+            uber=layered_query.uber,
+            roll_range=layered_query.roll_range,
+            mana_before_life_pct=layered_query.mana_before_life_pct,
+            life_recovery_per_second=layered_query.life_recovery_per_second,
+            energy_shield_recovery_per_second=(
+                layered_query.energy_shield_recovery_per_second
+            ),
+            mana_recovery_per_second=layered_query.mana_recovery_per_second,
+            energy_shield_recharge_per_second=(
+                layered_query.energy_shield_recharge_per_second
+            ),
+            energy_shield_recharge_delay_seconds=(
+                layered_query.energy_shield_recharge_delay_seconds
+            ),
+            energy_shield_recharge_interrupt_mode=(
+                layered_query.energy_shield_recharge_interrupt_mode
+            ),
+        )
+        if not checked_layered.ok:
+            raise HTTPException(status_code=422, detail={
+                "error": "invalid_build_boss_layered_sequence_query",
+                "reason": checked_layered.error,
+            })
+        boss_layered_sequence_result = BuildBossLayeredSequenceOut(
+            **(checked_layered.data or {}), citations=checked_layered.citations,
+        )
     if boss_risk_audit_query is not None:
         checked_audit = boss_risk_audit_from_build(
             build,
@@ -1132,6 +1219,7 @@ def _build_response(
         boss_sequence=boss_sequence_result,
         boss_timed_sequence=boss_timed_sequence_result,
         boss_probabilistic_sequence=boss_probabilistic_sequence_result,
+        boss_layered_sequence=boss_layered_sequence_result,
         boss_risk_audit=boss_risk_audit_result,
         growth_plan=(
             BuildGrowthPlanOut.model_validate(growth_plan_result, from_attributes=True)

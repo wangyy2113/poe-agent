@@ -22,6 +22,10 @@ from tools.impl.boss_probability import (
     boss_probabilistic_sequence_check,
     boss_probabilistic_sequence_compare,
 )
+from tools.impl.boss_layered import (
+    boss_layered_sequence_check,
+    boss_layered_sequence_compare,
+)
 
 router = APIRouter(tags=["Boss"])
 
@@ -299,6 +303,164 @@ class BossTimedScenarioRequest(BaseModel):
 
 class BossTimedCompareRequest(BaseModel):
     scenarios: list[BossTimedScenarioRequest] = Field(min_length=2, max_length=10)
+
+
+class BossLayeredEvent(BossTimedEvent):
+    energy_shield_bypass_pct: float = Field(
+        default=0, ge=0, le=100, allow_inf_nan=False,
+        description="该击最终承伤中明确绕过能量护盾的比例；不按伤害类型自动猜测。",
+    )
+
+
+class BossLayeredPoolConfigResponse(BaseModel):
+    life: float
+    energy_shield: float
+    mana: float
+    mana_before_life_pct: float
+    life_recovery_per_second: float
+    energy_shield_recovery_per_second: float
+    mana_recovery_per_second: float
+    energy_shield_recharge_per_second: float
+    energy_shield_recharge_delay_seconds: float
+    energy_shield_recharge_interrupt_mode: Literal["energy_shield_damage", "any_hit"]
+
+
+class BossLayeredStepResponse(BaseModel):
+    hit_index: int
+    at_seconds: float
+    elapsed_since_previous_hit: float
+    skill: str
+    damage_type: str
+    raw_damage: float
+    taken_damage: float
+    energy_shield_bypass_pct: float
+    life_before_recovery: float
+    energy_shield_before_recovery: float
+    mana_before_recovery: float
+    life_recovered: float
+    energy_shield_recovered: float
+    energy_shield_recharged: float
+    mana_recovered: float
+    recharge_eligible_seconds: float
+    life_before_hit: float
+    energy_shield_before_hit: float
+    mana_before_hit: float
+    energy_shield_absorbed: float
+    energy_shield_bypassed: float
+    mana_target_damage: float
+    mana_absorbed: float
+    mana_shortfall_to_life: float
+    life_damage: float
+    life_after_hit: float
+    energy_shield_after_hit: float
+    mana_after_hit: float
+    recharge_interrupted: bool
+    depleted: bool
+
+
+class BossLayeredRollResponse(BaseModel):
+    damage_basis: Literal["low_roll", "high_roll"]
+    survived: bool
+    depletion_hit: int | None = None
+    ending_life: float
+    ending_energy_shield: float
+    ending_mana: float
+    lowest_life: float
+    lowest_life_hit: int
+    total_taken_damage: float
+    total_energy_shield_absorbed: float
+    total_energy_shield_bypassed: float
+    total_mana_absorbed: float
+    total_life_damage: float
+    total_life_recovered: float
+    total_energy_shield_recovered: float
+    total_energy_shield_recharged: float
+    total_mana_recovered: float
+    recharge_interruption_count: int
+    recharge_active_seconds: float
+    steps: list[BossLayeredStepResponse]
+
+
+class BossLayerThresholdResponse(BaseModel):
+    status: Literal["not_applicable", "reachable", "unreachable"]
+    value: int | None = None
+    current: float
+    shortfall: float | None = None
+    keeps_other_layers_fixed: bool = True
+
+
+class BossLayeredSequenceRequest(BaseModel):
+    events: list[BossLayeredEvent] = Field(min_length=1, max_length=100)
+    level: int = Field(ge=1, le=100)
+    life: float = Field(gt=0, le=1_000_000_000, allow_inf_nan=False)
+    energy_shield: float = Field(default=0, ge=0, le=1_000_000_000, allow_inf_nan=False)
+    mana: float = Field(default=0, ge=0, le=1_000_000_000, allow_inf_nan=False)
+    mana_before_life_pct: float = Field(default=0, ge=0, le=100, allow_inf_nan=False)
+    uber: bool = False
+    roll_range: float | None = Field(default=None, ge=0, le=100, allow_inf_nan=False)
+    fire_resist_pct: float | None = Field(default=None, ge=-200, le=90, allow_inf_nan=False)
+    cold_resist_pct: float | None = Field(default=None, ge=-200, le=90, allow_inf_nan=False)
+    lightning_resist_pct: float | None = Field(default=None, ge=-200, le=90, allow_inf_nan=False)
+    chaos_resist_pct: float | None = Field(default=None, ge=-200, le=90, allow_inf_nan=False)
+    armour: float = Field(default=0, ge=0, le=10_000_000_000, allow_inf_nan=False)
+    flat_physical_reduction_pct: float = Field(
+        default=0, ge=0, le=90, allow_inf_nan=False
+    )
+    taken_mult: float = Field(default=1, gt=0, allow_inf_nan=False)
+    overwhelm_pct: float = Field(default=0, ge=0, le=100, allow_inf_nan=False)
+    life_recovery_per_second: float = Field(
+        default=0, ge=0, le=1_000_000_000, allow_inf_nan=False
+    )
+    energy_shield_recovery_per_second: float = Field(
+        default=0, ge=0, le=1_000_000_000, allow_inf_nan=False
+    )
+    mana_recovery_per_second: float = Field(
+        default=0, ge=0, le=1_000_000_000, allow_inf_nan=False
+    )
+    energy_shield_recharge_per_second: float = Field(
+        default=0, ge=0, le=1_000_000_000, allow_inf_nan=False
+    )
+    energy_shield_recharge_delay_seconds: float = Field(
+        default=2, ge=0, le=3600, allow_inf_nan=False
+    )
+    energy_shield_recharge_interrupt_mode: Literal[
+        "energy_shield_damage", "any_hit"
+    ] = "energy_shield_damage"
+
+
+class BossLayeredSequenceResponse(BaseModel):
+    found: bool
+    assessable: bool
+    verdict: str | None = None
+    level: int
+    uber: bool
+    roll_range: float | None = None
+    requested_events: list[BossLayeredEvent]
+    config: BossLayeredPoolConfigResponse | None = None
+    hit_count: int = 0
+    duration_seconds: float | None = None
+    outcome: str | None = None
+    low_roll: BossLayeredRollResponse | None = None
+    high_roll: BossLayeredRollResponse | None = None
+    minimum_life_for_any_roll: BossLayerThresholdResponse | None = None
+    minimum_life_for_full_range: BossLayerThresholdResponse | None = None
+    minimum_energy_shield_for_full_range: BossLayerThresholdResponse | None = None
+    minimum_mana_for_full_range: BossLayerThresholdResponse | None = None
+    routing_model: str = ""
+    reason: str | None = None
+    missing_inputs: list[str] = Field(default_factory=list)
+    candidates: list[str] = Field(default_factory=list)
+    boundary: str
+    answer: str
+
+
+class BossLayeredScenarioRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+    inputs: BossLayeredSequenceRequest
+
+
+class BossLayeredCompareRequest(BaseModel):
+    scenarios: list[BossLayeredScenarioRequest] = Field(min_length=2, max_length=10)
 
 
 class BossProbabilisticEvent(BossTimedEvent):
@@ -600,6 +762,40 @@ def probabilistic_sequence(
             "reason": result.error,
         })
     return BossProbabilisticSequenceResponse(**(result.data or {}))
+
+
+@router.post(
+    "/boss/layered-sequence",
+    response_model=BossLayeredSequenceResponse,
+)
+def layered_sequence(
+    req: BossLayeredSequenceRequest,
+    _caller: str = Depends(require_user),
+) -> BossLayeredSequenceResponse:
+    result = boss_layered_sequence_check(**req.model_dump())
+    if not result.ok:
+        raise HTTPException(status_code=422, detail={
+            "error": "invalid_boss_layered_sequence_query",
+            "reason": result.error,
+        })
+    return BossLayeredSequenceResponse(**(result.data or {}))
+
+
+@router.post("/boss/layered-sequence/compare", response_model=None)
+def compare_layered_sequences(
+    req: BossLayeredCompareRequest,
+    _caller: str = Depends(require_user),
+) -> dict[str, Any]:
+    result = boss_layered_sequence_compare(scenarios=[
+        {"name": scenario.name, "inputs": scenario.inputs.model_dump()}
+        for scenario in req.scenarios
+    ])
+    if not result.ok:
+        raise HTTPException(status_code=422, detail={
+            "error": "invalid_boss_layered_sequence_comparison",
+            "reason": result.error,
+        })
+    return dict(result.data or {})
 
 
 @router.post("/boss/probabilistic-sequence/compare", response_model=None)

@@ -29,7 +29,7 @@ POE1 的机制耦合极深，一个错误的小前提会让整条结论反向。
 | 通货 | 113 条（中英文名、堆叠上限、效果原文）；工艺台费用引用的 18 个通货全部能对上；**获取途径与兑换比例未采集**；市场价格以 poe.watch 为主、GGG Trade API 在线挂单为备用 |
 | 圣甲虫 | 118 个（效果、堆叠上限、地图装置放置上限）；**掉落来源未采集**；市场价格以 poe.watch 为主、GGG Trade API 在线挂单为备用 |
 | 实时经济价格、趋势、成本与双边价差 | `POST /economy/price` 查询当前快照；`POST /economy/trend` 查询历史；`POST /economy/material-cost` 汇总明确清单；`POST /economy/rare-comparables` 查询稀有装可比挂单；`POST /economy/flip-analysis` 对标准 exchange 条目核验买卖两侧、整单深度、时效与显式费用后计算净利润。SQLite 价格缓存 TTL 30 分钟、历史保留 90 天；主源无缓存时标准条目与唯一装备可显式降级官方 Trade API。**不足两个趋势点不判趋势；单侧过滤后不足 5 条不报代表价；任一侧或费用不完整时利润与 Flip 判断保持 unknown；所有结果都不是成交或收益保证** |
-| Boss 技能伤害、生存校验与防御门槛 | 10 条 Boss 技能的伤害建模 + 22 个 Boss 的护甲/闪避倍率；`boss_survival_check` 校验同一命中连续 1–100 次，`boss_defence_threshold` 反解最低防御池、抗性/护甲门槛，`boss_sequence_check` 按用户明确顺序逐击累计；`boss_timed_sequence_*` 结算显式时间轴、固定恢复与门槛；`boss_probabilistic_sequence_*` 在逐击明确标注 attack/spell 后，计算命中/闪避、攻击/法术格挡与法术压制的低/高伤害生存分布、风险分位和确定性最坏轨；`boss_risk_audit` 批量排列已收录技能风险。`POST /build` 可直接消费 PoB 基础防御、纯生命净回复和适用概率字段快照。**序列不是游戏真实连招，概率不是保证，审计不是 Boss 难度排行，不给打法**；DoT、自动推断连招、熵式闪避相关性、幸运/不幸、生命/护盾分池细节、阶段与应对未覆盖；数字是 PoB 建模值，GGG 未公布 |
+| Boss 技能伤害、生存校验与防御门槛 | 10 条 Boss 技能的伤害建模 + 22 个 Boss 的护甲/闪避倍率；`boss_survival_check` 校验同一命中连续 1–100 次，`boss_defence_threshold` 反解最低防御池、抗性/护甲门槛，`boss_sequence_check` 按用户明确顺序逐击累计；`boss_timed_sequence_*` 结算显式时间轴、固定恢复与门槛；`boss_probabilistic_sequence_*` 计算闪避/格挡/压制后的低/高伤害生存分布与风险分位；`boss_layered_sequence_*` 分别推进生命、能量护盾、MoM 式魔力分流、各池回复和护盾回充中断；`boss_risk_audit` 批量排列已收录技能风险。`POST /build` 可直接消费 PoB 基础防御、分池回复及适用概率字段快照。**序列不是真实连招，概率不是保证，审计不是 Boss 难度排行，不给打法**；DoT、自动推断连招、熵式闪避相关性、幸运/不幸、Ward/CI/EB 等池替换、阶段与应对未覆盖；数字是 PoB 建模值，GGG 未公布 |
 | 制作规则（名额与影响力） | 7 条前后缀名额规则（魔法 1+1、稀有 3+3、传奇不受限制、药剂随魔法，另有 PoB 独有的珠宝/Graft 2+2 与「已腐化深渊珠宝回到 3+3」）；`base_influence_profile` 可查 1,022 条具体底材的六类传统影响 `influenceTags`，`check_mod_combination` 在给定具体底材、单一影响与可选物等时，会用 PoB 底材标签和 POEDB 词缀 `spawn_tags` 验证影响词缀适用性。`possible` 只表示词缀能共存，不表示能制作；古灵基底由独立状态机处理。**影响底材获得方式、多影响词缀池组合与完整元词缀状态机仍未采集** |
 | 觉醒者之石状态机 | `awakener_orb_state` / `POST /craft/awakener`：接受供体与目标的两段装备复制文本，或显式物品类别与传统影响；逐字绑定 POEDB 效果，检查同类物品、双方唯一且不同的传统影响，输出供体销毁、目标重铸为稀有并兼有两种影响的条件后状态。**不声称各保留一条影响词缀，不生成重铸后的具体词缀、数量、数值、概率、成本或路线** |
 | 收获（古灵庄园） | 74 条定向工艺 + 98 条命能费用，且 **74/74 条均有结构化语义**：20 条装备重铸、23 条元素转换与新增/移除、14 条品质附魔、14 条材料随机转换、3 条地图/技能石/命运卡牺牲；另有 **51 个种子怪物**按颜色对应四种命能中的三种。随机类型与概率、堆叠输出数量、费用缩放基准和市场成本未采集时保持未知 |
@@ -842,6 +842,47 @@ curl -s -X POST http://127.0.0.1:8787/poe_agent/boss/probabilistic-sequence \
 最高 P05 末尾池、最高期望末尾池和确定性最坏仍能存活的方案。四个口径独立展示，不用期望
 值替代尾部风险或确定性保证。
 
+**Boss 分层防御池时间轴** —— `POST /boss/layered-sequence`。它不再把生命、能量护盾和
+魔力合成一个共享数值。每次事件可用 `energy_shield_bypass_pct` 明确该击最终承伤中绕过
+护盾的比例；未绕过部分先由护盾吸收，溢出与绕过部分再按全局 `mana_before_life_pct` 由
+魔力承担，魔力不足的目标份额回落到生命。生命降到 0 即耗尽，护盾或魔力降到 0 本身不算死亡。
+
+```bash
+curl -s -X POST http://127.0.0.1:8787/poe_agent/boss/layered-sequence \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "events":[
+      {"skill":"Shaper Ball","at_seconds":0,"energy_shield_bypass_pct":0},
+      {"skill":"Shaper Ball","at_seconds":3,"energy_shield_bypass_pct":25}
+    ],
+    "level":84,
+    "life":6000,
+    "energy_shield":2500,
+    "mana":1200,
+    "mana_before_life_pct":30,
+    "cold_resist_pct":75,
+    "life_recovery_per_second":300,
+    "energy_shield_recovery_per_second":100,
+    "mana_recovery_per_second":180,
+    "energy_shield_recharge_per_second":825,
+    "energy_shield_recharge_delay_seconds":2,
+    "energy_shield_recharge_interrupt_mode":"energy_shield_damage"
+  }'
+```
+
+三个固定回复分别按自己的最大池封顶。护盾固定回复与护盾回充是两条独立路径：回充只有在
+上次中断加延迟之后的时间窗生效；`energy_shield_damage` 只在该击实际由护盾吸收时中断，
+`any_hit` 则让每个显式事件中断。结果为低/高伤害轨逐击列出回复前池、实际回复、回充窗口、
+受击前池、护盾吸收/绕过、魔力目标/实付/短缺回落、生命承伤和受击后各池。
+
+汇总同时给出各池实际吸收与回复、末尾/最低生命、回充中断次数和耗尽击，并在其它层保持
+不变时分别反解最低生命、能量护盾与魔力。单轴门槛不能相加；如果所有伤害都绕过护盾，
+单独提高护盾会明确返回 `unreachable`。`POST /boss/layered-sequence/compare` 可比较 2–10 套
+完整分层方案，分别排序存活结论、高伤生命余量、高伤生命承伤和最低可达初始生命。
+
+工具不会因为伤害是混沌就自动填护盾绕过，也不会从职业或装备猜 MoM、CI、EB、Ward；这些
+都可能改变分池顺序。Ward、守护技能、偷取实例、击中回复、药剂和阶段机制仍保持在边界外。
+
 **Boss 命中风险与防御缺口审计** —— `POST /boss/audit`。它横向检查本地当前收录的全部
 Boss 技能预设，按指定 `hit_count`（1–100，默认 1）的最坏累计承伤排序；同时返回总预设数、
 可评估数、未知数、三态计数、最危险已知项与每条未知原因。每个可评估项还会返回覆盖完整
@@ -1142,6 +1183,21 @@ curl -s -X POST http://127.0.0.1:8787/poe_agent/build \
     }
   }'
 
+# 从 PlayerStat 分别读取生命、护盾、魔力与回复，推进显式分层时间轴
+curl -s -X POST http://127.0.0.1:8787/poe_agent/build \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "code": "https://pobb.in/你的分享ID",
+    "boss_layered_sequence": {
+      "events": [
+        {"skill": "Shaper Ball", "at_seconds": 0},
+        {"skill": "Shaper Ball", "at_seconds": 3, "energy_shield_bypass_pct": 25}
+      ],
+      "level": 84,
+      "mana_before_life_pct": 30
+    }
+  }'
+
 # 以“当前”为基线比较两个 PoB 方案；可省略 metrics 以检查全部受支持指标
 curl -s -X POST http://127.0.0.1:8787/poe_agent/build/compare \
   -H 'Content-Type: application/json' \
@@ -1228,6 +1284,14 @@ PoB 在三种元素 Max Hit 相等时只导出 `LightningMaximumHitTaken`，该�
 `source_config`。任一相关字段缺失时整条分布返回 `unknown`，不会把缺失格挡或压制静默当成
 0%；调用方可以用同名请求字段显式覆盖。概率结果仍同时返回无概率防御的确定性最坏轨迹，
 并披露离散桶宽与误差；PoB 单击 `*MaximumHitTaken` 同样不会拆入多击分布。
+
+可选的 `boss_layered_sequence` 从 PlayerStat 分别读取 `LifeUnreserved` / `Life`、
+`EnergyShield` 和启用魔力承伤时的 `ManaUnreserved` / `Mana`。回复按池分别选择
+`Net*Regen` → `*RegenRecovery` → `*Regen`，护盾回充单独读取 `EnergyShieldRecharge`；
+实际采用字段与显式覆盖都写入 `source_fields` / `source_config`。能量护盾为 0 时不要求护盾
+回复和回充，`mana_before_life_pct=0` 时不要求魔力与魔力回复；反之缺任一实际使用字段时整条
+返回 `unknown`。每击的 `energy_shield_bypass_pct` 和全局魔力承伤比例始终由请求提供，系统
+不按伤害类型、职业、天赋或装备反推。多池逐击同样不拆用 PoB 单击 `*MaximumHitTaken`。
 
 可选的 `boss_risk_audit` 使用相同的基础字段，对本地全部 Boss 技能预设按 `hit_count`
 逐条累计。它会返回已知项风险排序、`assessment_status=complete|partial|none`、覆盖计数、
@@ -1404,7 +1468,7 @@ PoB 排 P2 而不是 P1：它在数值上更接近一手，但不含中文名与
 ### 评测：四项指标与黄金问答集
 
 `config.yaml` 里的阈值与 `orchestrator/binding.py` 的闸门规则都需要判据，否则改动之后
-无法判断是变好还是变坏。判据来自 `tests/golden/questions.yaml`（182 条，六类样本：
+无法判断是变好还是变坏。判据来自 `tests/golden/questions.yaml`（184 条，六类样本：
 专名 / 描述性 / 数值 / 跨来源 / **确定不覆盖** / 工具路由），基线与结论记在
 `tests/golden/BASELINE.md`。
 
@@ -1435,7 +1499,7 @@ PoB 排 P2 而不是 P1：它在数值上更接近一手，但不含中文名与
 .venv/bin/python -m unittest discover -s tests -t .
 ```
 
-目前 2084 项，其中与「无据不答」直接相关的：
+目前 2108 项，其中与「无据不答」直接相关的：
 
 | 组 | 项数 | 重点 |
 | --- | --- | --- |
