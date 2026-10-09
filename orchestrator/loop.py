@@ -1927,6 +1927,16 @@ def _preferred_tool_route(question: str) -> str:
     )):
         return "boss_probabilistic_sequence_compare"
     if any(term in question for term in (
+        "分层防御池方案对比", "生命护盾魔力方案对比", "MoM方案对比",
+        "MoM 方案对比", "护盾回充方案对比",
+    )):
+        return "boss_layered_sequence_compare"
+    if any(term in question for term in (
+        "分层防御池", "生命护盾魔力", "魔力承伤", "伤害由魔力承担",
+        "MoM时间轴", "MoM 时间轴", "护盾回充中断", "护盾绕过",
+    )):
+        return "boss_layered_sequence_check"
+    if any(term in question for term in (
         "生存概率", "耗尽概率", "格挡后存活", "压制后存活", "闪避后存活",
         "概率防御时间轴", "P95风险", "P95 风险",
     )):

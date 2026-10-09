@@ -146,7 +146,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 2084 项，秒级
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 2108 项，秒级
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选
@@ -163,7 +163,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 .venv/bin/python scripts/eval_run.py --record        # 重录真实响应（**要凭证、烧 token**）
 ```
 
-黄金问答集是 `tests/golden/questions.yaml`（182 条，六类），基线与全部结论在
+黄金问答集是 `tests/golden/questions.yaml`（184 条，六类），基线与全部结论在
 `tests/golden/BASELINE.md`——**动闸门前先读它**，里面记了多个已修缺陷与三条已知未修边界，
 以及两次「测量本身写错」的教训。
 
@@ -271,6 +271,9 @@ POE1/POE2 边界顺带落在同一张表上：poe.ninja 两款游戏都服务，
 `boss_probabilistic_sequence` 再要求每击显式标注 attack/spell，并按实际类型读取闪避率、
 攻击/法术格挡与法术压制；缺相关字段整条 unknown，绝不能静默补零。概率结果必须分列低/高
 伤害轨、桶宽与误差，并保留全命中、未格挡、未压制、高伤的确定性最坏轨。
+可选 `boss_layered_sequence` 则分别推进生命、能量护盾和启用 MoM 式分流后的魔力；逐击护盾
+绕过与 MoM 比例只能来自请求。三池固定回复和护盾回充分别读取/披露 PlayerStat，缺实际启用
+层的任一字段整条 unknown；无护盾或 MoM=0 时不索要无关回复。单击 Max Hit 仍不能拆用。
 可选 `boss_risk_audit` 进一步横向检查当前收录的全部 Boss 技能，支持 1–100 次同技能连续
 命中，按最坏累计承伤排列已知项；同时返回逐技能和全体已评估项的池子门槛、当前缺口、
 抗性/护甲单轴目标，以及完整/部分/无覆盖状态和逐项 unknown 原因。它不把未知项当低风险，
@@ -333,6 +336,7 @@ Craft of Exile 矩阵证据支撑；两条 Citation 不得互相夹带正文。�
 `boss_sequence_check`（用户显式指定的多技能命中序列与逐击耗尽位置）→
 `boss_timed_sequence_check`（显式命中时间、固定恢复、最低池与恢复门槛）→
 `boss_probabilistic_sequence_check`（显式 attack/spell 时间轴的生存分布与最坏轨）→
+`boss_layered_sequence_check`（生命/护盾/魔力路由、独立回复与护盾回充中断）→
 `boss_defence_threshold`（Boss 同一命中所需防御池、抗性 / 护甲门槛）→
 `boss_survival_check`（Boss 同一命中重复 1–100 次 × 明确防御池的三态校验）→
 `passive_path`（点到某天赋要几点 + 逐节点路径）→
@@ -789,6 +793,11 @@ POEDB 页面仍是旧版」：`号召` PoB 侧是 `ConvocationNew`（各级需�
 减伤，而是在逐击 attack/spell 明确后做有界离散动态规划；低/高伤害轨分别输出存活/耗尽
 概率、P50/P90/P95 风险与池分布，同时单列无概率防御的确定性最坏路径。独立事件假设、桶宽、
 量化误差和不模拟熵式闪避/幸运/不幸的边界必须随结果披露，概率不得改写为保证。
+`boss_layered_sequence_check` 进一步移除共享池近似：每击最终承伤按显式比例绕过护盾，未绕过
+部分由护盾吸收，溢出与绕过部分再按显式比例由魔力承担，魔力短缺回落生命。生命/护盾/魔力
+固定回复独立封顶，护盾回充另算延迟、中断与实际窗口。最低生命、护盾、魔力都是“其它层
+固定”的单轴门槛，不得相加；所有伤害绕盾时只补护盾必须返回不可达。不从混沌、职业或装备
+猜 CI、EB、MoM、Ward，池替换和 Ward 仍保持 unknown。
 `boss_risk_audit` / `POST /boss/audit` 则对当前收录技能做 1–100 次同技能连续命中审计：
 已知项按最坏累计承伤排序，复用同一闭式给出最低池子、当前缺口和对应抗性/护甲目标；
 顶层汇总覆盖全部已评估项的统一池子门槛与单轴不可达计数。缺某类抗性/护甲、DoT、
