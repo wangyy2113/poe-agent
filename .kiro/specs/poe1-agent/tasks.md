@@ -1030,6 +1030,15 @@ V1 完成的判定标准（逐条实测，不以「无报错」代替验证）�
     游戏机制。新增两个 HTTP 端点、2–10 方案比较、知识边界和中文路由。
     `POST /build.boss_dot_sequence` 读取既有分层池、抗性、净回复、回充和命中护甲字段，窗口
     仍全部来自请求；不推断异常施加/刷新/叠层、Boss 阶段、地面覆盖、走位或打法。
+  - [x] Boss 临时减伤窗口与 Guard 吸收池（2026-10-09 第一百二十三轮）：新增
+    `calc/boss_mitigation.py`、`boss_mitigation_sequence_check` 与比较工具，在命中/DoT/恢复
+    进入护盾→魔力→生命之前应用 1–100 个显式临时防御窗口。窗口明确 `[start,end)`、
+    hit/dot/both 范围、可选伤害类型、承伤乘数、一次性 Guard 容量和优先级；重叠窗口按
+    priority→开始→名称先乘数后 Guard，前序 Guard 独占吸收残余。DoT 在 Guard 精确耗尽点
+    切段，低/高轨独立耗尽；逐击/逐段披露输入、乘数减免、Guard 吸收、未使用容量和耗尽
+    时刻，并重跑移除临时防御的高伤基线。新增两个 HTTP 端点、2–10 方案比较、知识边界、
+    中文路由和 `POST /build.boss_mitigation_sequence`。Build 只提供既有基础防御字段，窗口
+    始终来自请求；不从守护技能、Ward、装备、职业或阶段推断启停、容量、冷却、刷新/复原。
 - [x] 官方角色 API 导入 v1（2026-09-08）：接入 OAuth `account:characters` 的当前
   `GET /character[/<realm>]/<name>` 契约；支持列出账号角色，并将 PoE1 PC 角色的已装备物品、
   插槽连接组、珠宝、天赋、大师选择、盗贼、万神殿、升华/Bloodline 与版本送入现有 Build

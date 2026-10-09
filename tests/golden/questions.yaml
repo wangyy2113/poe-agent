@@ -1787,6 +1787,21 @@ cases:
     note: >-
       分别比较存活档位、高伤生命余量、耗尽时间、DoT 总承伤和最低生命，不扩写成走位打法。
 
+  - id: route_boss_mitigation_sequence
+    query: Boss 临时减伤窗口和 Guard 吸收池怎么放进命中与 DoT 时间轴
+    kind: tool_route
+    expect_tool: boss_mitigation_sequence_check
+    note: >-
+      窗口启停、范围、类型、乘数、容量和优先级必须显式；先乘数后 Guard，再进分层池，
+      披露逐击/逐段阻止量和精确耗尽，不从技能、Ward、装备或阶段推断窗口。
+
+  - id: route_boss_mitigation_sequence_compare
+    query: 两套 Guard 临时防御方案对比，哪套阻止伤害和高伤生命余量更好
+    kind: tool_route
+    expect_tool: boss_mitigation_sequence_compare
+    note: >-
+      分别比较存活、生命余量、总阻止、耗尽时间和最低生命，不用单一阻止量替代存活结论。
+
   - id: route_boss_risk_audit
     query: 84级，10000血、75冰抗、0混抗、10000护甲，所有 Boss 技能哪个最危险
     kind: tool_route

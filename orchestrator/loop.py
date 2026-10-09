@@ -1932,6 +1932,16 @@ def _preferred_tool_route(question: str) -> str:
     )):
         return "boss_dot_sequence_compare"
     if any(term in question for term in (
+        "Guard临时防御方案对比", "Guard 临时防御方案对比",
+        "临时减伤窗口方案对比", "Guard吸收方案对比", "Guard 吸收方案对比",
+    )):
+        return "boss_mitigation_sequence_compare"
+    if any(term in question for term in (
+        "临时减伤窗口", "Guard吸收池", "Guard 吸收池", "Guard容量时间轴",
+        "Guard 容量时间轴", "临时承伤乘数", "临时防御时间轴",
+    )):
+        return "boss_mitigation_sequence_check"
+    if any(term in question for term in (
         "DoT暴露窗口", "DoT 暴露窗口", "持续伤害窗口", "地面持续伤害时间轴",
         "DOT暴露窗口", "持续伤害和恢复", "持续伤害混合时间轴",
     )):
