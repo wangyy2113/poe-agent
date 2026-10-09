@@ -1049,6 +1049,19 @@ V1 完成的判定标准（逐条实测，不以「无报错」代替验证）�
     2–10 方案比较、知识边界、中文路由和 `POST /build.boss_ward_sequence`。Build 只提供既有
     基础防御字段，刻意不读取 PoB `Ward` 静态值生成当前状态；不推断装备、药剂、技能、
     Buff 启停、充能、无法破裂效果或真实服务器事件顺序。
+  - [x] 跨来源差异普通用户查询闭环（2026-10-09 第一百二十五轮）：新增
+    `kb/conflicts.py` 作为 `source_conflict` 的统一只读领域层，按唯一规则将所有 `*_review`
+    分类为待核对、其它 kind 分类为 confirmed。支持对象/字段/两侧原值字面搜索，status、
+    active/resolved、kind、来源过滤，稳定降序游标和过滤条件指纹；`%` / `_` 不作为通配符，
+    所有集合过滤参数化。默认只返回 active confirmed，review 必须显式请求，跨过滤器游标
+    复用直接拒绝。
+    新增 `source_conflict_lookup` / `source_conflict_summary` 两个 Knowledge/MCP 工具和
+    `POST /conflicts/lookup` / `GET /conflicts/summary` 两个普通鉴权 HTTP 端点。逐条响应保留
+    confirmed/review 分区、本页/全量计数和后续游标；汇总拆分 confirmed/review、
+    active/resolved、kind、来源对与 review cause。只有 confirmed 可进入 `conflict_block`
+    并支撑事实；review 引用明确 `can_support_facts=false`，不得把台账总数称为冲突数。
+    聊天意图由代码直接调用并返回确定性答案，避免模型转述 review 后被出口闸门拦截；新增
+    27 项领域、工具、API、分页、转义、引用资格和路由单测，以及两条黄金工具路由哨兵。
 - [x] 官方角色 API 导入 v1（2026-09-08）：接入 OAuth `account:characters` 的当前
   `GET /character[/<realm>]/<name>` 契约；支持列出账号角色，并将 PoE1 PC 角色的已装备物品、
   插槽连接组、珠宝、天赋、大师选择、盗贼、万神殿、升华/Bloodline 与版本送入现有 Build

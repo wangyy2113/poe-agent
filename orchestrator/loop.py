@@ -828,6 +828,16 @@ _YIELDS_TO_ENUMERATION = frozenset(
 )
 
 
+_SOURCE_CONFLICT_SUMMARY_INTENTS = (
+    "跨来源冲突有多少", "来源冲突有多少", "冲突台账概览", "冲突台账统计",
+    "跨来源差异统计", "待核对差异有多少", "冲突按kind", "冲突按 kind",
+)
+_SOURCE_CONFLICT_LOOKUP_INTENTS = (
+    "跨来源数据冲突", "跨来源冲突", "来源数据冲突", "来源冲突",
+    "待核对差异", "差异台账查询", "冲突台账查询", "两源对不上",
+)
+
+
 _PREFERRED_TOOL_INTENTS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("rotation_dps_compare", (
         "多技能DPS方案对比", "多技能 DPS 方案对比", "技能循环DPS对比", "技能循环 DPS 对比",
@@ -1113,6 +1123,10 @@ _PREFERRED_TOOL_INTENTS: tuple[tuple[str, tuple[str, ...]], ...] = (
     )),
     # 「某属性能从哪来」是枚举问题：不完整的枚举被当成完整的呈现就是错误答案
     ("stat_sources", _STAT_SOURCE_INTENTS),
+    # 跨来源台账是结构化数据，不进 chunk 索引。概览和逐条查询必须分开：
+    # “有多少/统计/分布”走 summary，其余已确认冲突或待核对差异走 lookup。
+    ("source_conflict_summary", _SOURCE_CONFLICT_SUMMARY_INTENTS),
+    ("source_conflict_lookup", _SOURCE_CONFLICT_LOOKUP_INTENTS),
     # 关于知识库**覆盖范围**自身的元问题，答案不在 chunk 里。
     # 意图词必须专指「覆盖」这件事：单独的「知识库」「你的库」太宽——
     # 「知识库里有哪些已确认的跨来源数据冲突」问的是冲突不是覆盖，
@@ -2785,6 +2799,50 @@ def _resistance_args(question: str) -> dict[str, Any] | None:
     return {} if not _RESIST_NUMBER_RE.search(question) else None
 
 
+_CONFLICT_REVIEW_MARKERS = ("待核对", "_review", "review")
+_CONFLICT_CONFIRMED_MARKERS = ("已确认", "confirmed", "真实冲突")
+_CONFLICT_QUOTED_RE = re.compile(r"[\"“「『]([^\"”」』]{1,160})[\"”」』]")
+_CONFLICT_KIND_RE = re.compile(r"\bkind\s*(?:=|为|是|：|:)?\s*([a-z][a-z0-9_]{0,79})\b", re.I)
+
+
+def _source_conflict_lookup_args(question: str) -> dict[str, Any]:
+    """把冲突台账问法收敛成只读、安全默认值。
+
+    默认仍是 active confirmed；只有问题逐字出现 review/待核对才开放 review。
+    对象查询只认引号内的原文，避免从自然语言里猜实体边界后查错对象。
+    """
+    normalized = _normalized(question)
+    asks_review = any(marker in normalized for marker in _CONFLICT_REVIEW_MARKERS)
+    asks_confirmed = any(marker in normalized for marker in _CONFLICT_CONFIRMED_MARKERS)
+    if asks_review and asks_confirmed:
+        status = "all"
+    elif asks_review:
+        status = "review"
+    else:
+        status = "confirmed"
+
+    resolution = "active"
+    if any(marker in normalized for marker in ("仅已解决", "只看已解决", "已经解决的")):
+        resolution = "resolved"
+    elif any(marker in normalized for marker in (
+        "包括已解决", "包含已解决", "无论是否解决", "全部解决状态",
+    )):
+        resolution = "all"
+
+    args: dict[str, Any] = {"status": status, "resolution": resolution}
+    quoted = _CONFLICT_QUOTED_RE.findall(question)
+    if len(quoted) == 1:
+        args["query"] = quoted[0].strip()
+    kinds = []
+    for match in _CONFLICT_KIND_RE.finditer(question):
+        kind = match.group(1).lower()
+        if kind not in kinds:
+            kinds.append(kind)
+    if kinds:
+        args["kinds"] = kinds
+    return args
+
+
 #: 参数解析器。返回 None 表示抽不出唯一解 → 不代码调用，退回 schema 裁剪。
 #:
 #: **为什么计算器也要进这张表**（第二十一轮实测）：schema 裁剪只能让模型「只有这一个
@@ -2817,6 +2875,8 @@ _CODE_INVOKED_TOOLS: dict[str, Any] = {
     "entity_lookup": lambda question: {"name": question},
     # 无参数
     "kb_coverage": lambda question: {},
+    "source_conflict_lookup": _source_conflict_lookup_args,
+    "source_conflict_summary": lambda question: {},
     # 参数需要从领域词表里抽，可能抽不出来
     "mod_tiers": _mod_tiers_args,
     # 计算器：没有数字就是讲规则（无参数），有数字则只认单位词紧邻的那些
@@ -2851,6 +2911,8 @@ _DETERMINISTIC_DIRECT_TOOLS = frozenset({
     "harvest_modifier_state",
     "harvest_quality_enchant_state",
     "harvest_exchange_state",
+    "source_conflict_lookup",
+    "source_conflict_summary",
     "hit_dps_calc",
 })
 
@@ -2916,6 +2978,12 @@ def _first_round_tools(
 
 def _precision_tool_route(question: str) -> str:
     """只为参数可从问题逐字冻结的结构化能力放行精确工具。"""
+    # 「跨来源冲突」里的“冲突”不是“两个装备词缀互斥”。精确制作路由优先级更高，
+    # 若不先让路，会把普通冲突台账查询裁成 check_mod_combination 并进入模型循环。
+    if any(intent in question for intent in (
+        *_SOURCE_CONFLICT_SUMMARY_INTENTS, *_SOURCE_CONFLICT_LOOKUP_INTENTS,
+    )):
+        return ""
     if _positive_craft_clause(question):
         return "check_mod_combination"
     metamod_query = _metamod_precision_query(question)

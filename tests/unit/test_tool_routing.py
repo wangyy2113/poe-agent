@@ -169,12 +169,27 @@ class PreferredRouteTest(unittest.TestCase):
             with self.subTest(q=q):
                 self.assertEqual("kb_coverage", loop._preferred_tool_route(q))
 
-    def test_conflict_question_is_not_a_coverage_question(self) -> None:
+    def test_conflict_question_routes_to_structured_conflict_lookup(self) -> None:
         """「知识库」曾是过宽的意图词：问冲突被路由到覆盖清单，
         把一个正确的缺据声明换成了答非所问的回答。与 boss 领域曾把「怪物」
         当意图词是同一种错——意图词必须专指。"""
         self.assertEqual(
-            "", loop._preferred_tool_route("知识库里有哪些已确认的跨来源数据冲突")
+            "source_conflict_lookup",
+            loop._preferred_tool_route("知识库里有哪些已确认的跨来源数据冲突")
+        )
+        self.assertEqual(
+            "",
+            loop._precision_tool_route("知识库里有哪些已确认的跨来源数据冲突"),
+        )
+
+    def test_conflict_summary_question_routes_to_summary_not_lookup(self) -> None:
+        self.assertEqual(
+            "source_conflict_summary",
+            loop._preferred_tool_route("跨来源冲突有多少，按 kind 怎么分布"),
+        )
+        self.assertEqual(
+            "",
+            loop._precision_tool_route("跨来源冲突有多少，按 kind 怎么分布"),
         )
 
     def test_price_question_routes_to_live_economy(self) -> None:

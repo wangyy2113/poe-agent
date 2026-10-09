@@ -27,6 +27,7 @@ from api.admin import router as admin_router
 from api.boss import router as boss_router
 from api.chat import router as chat_router
 from api.craft import router as craft_router
+from api.conflicts import router as conflicts_router
 from api.economy import router as economy_router
 from api.build import router as build_router
 from api.calculator import router as calculator_router
@@ -171,6 +172,7 @@ def create_app() -> FastAPI:
     api.include_router(chat_router)
     api.include_router(economy_router)
     api.include_router(craft_router)
+    api.include_router(conflicts_router)
     api.include_router(boss_router)
     api.include_router(item_router)
     api.include_router(memory_router)

@@ -39,7 +39,7 @@ POE1 的机制耦合极深，一个错误的小前提会让整条结论反向。
 | 星团珠宝 | 3 个尺寸（小 2–3 / 中 4–6 / 大 8–12 个小天赋）+ 55 条小天赋类型 + 308 条核心天赋与基石清单；`cluster_jewel_info` 将同 commit 的类型 tag 与核心天赋词缀正权重连接，当前覆盖 52 个类型、568 条类型—核心关系，并支持物等过滤与双向反查。基础生成权重不冒充单次概率；**掉落与价格未采集** |
 | 天赋树路径 | 连线 3382 条 + 7 个职业起点入库；`passive_path` 按职业算「点到某节点要几点」并给出逐节点路径（总点数 123） |
 | 怪物数据 | 怪物词缀 183 条（有中文文本的）+ 可作幽魂怪物 1948 个与其伤害% / 生命%，其中 268 个另有 PoB 的四抗性与建模系数；倍率排名在这 268 个里做；**Boss 技能机制与打法、掉落、普通怪物技能说明未采集** |
-| 跨来源冲突 | 幽魂对账给出 8 条已确认分歧 → 答案里并列双方并推荐 POEDB（需求 15.5 首次可验收）；43 条粒度差异单列，不当冲突呈现 |
+| 跨来源冲突与待核对差异 | `source_conflict_lookup` / `POST /conflicts/lookup` 默认只返回 8 条 active confirmed 幽魂分歧；`source_conflict_summary` / `GET /conflicts/summary` 将 547 条台账拆成 8 条 confirmed 与 539 条 review，并按 kind、来源对和 review cause 聚合。所有 `*_review` 必须显式请求，只能称“待核对差异”，引用不能支撑游戏事实，也绝不进入冲突并列块；游标绑定完整过滤条件，不能跨查询复用 |
 | 元词缀矩阵 | 页面矩阵 134 条（operation × guard，5 个小节）；空白格只进审计、不成为证据 |
 | 基础通货状态机 | `craft_operation_state` / `POST /craft/operation`：按 POEDB 效果原文模拟增幅、崇高、重铸、神圣、剥离、改造、混沌、富豪、机会、点金 10 种基础通货；检查稀有度与前后缀名额，输出三态结论和条件后状态。可选 `metamod_guard` 会把对应 Craft of Exile 矩阵原值作为独立证据并列披露；空白/缺失仍为 unknown，**不解释 YES/NO，不生成结果词缀、成功率、步骤、成本或路线** |
 | 古灵通货状态机 | `eldritch_operation_state` / `POST /craft/eldritch`：逐字覆盖四档余烬、四档溶液、古灵混沌/崇高/剥离石与冲突石共 12 种；检查装备部位、首要影响、前后缀名额和双基底词缀状态，并列披露已有元词缀矩阵原值。随机结果、概率、未给出的档级推进与特殊状态保持未知 |
@@ -64,7 +64,7 @@ POE1 的机制耦合极深，一个错误的小前提会让整条结论反向。
 | **流式问答** | `POST /chat/stream`：SSE，**按句**校验通过才下发，未校验内容不外发 |
 | **OpenAI 兼容** | `POST /v1/chat/completions`：支持文本消息、非流式与标准 SSE `[DONE]`；内部仍强制检索与出口校验 |
 | **用户长期记忆** | Web 顶栏或 `POST/GET/PATCH/DELETE /memories` 可显式管理偏好、目标、约束与备注，支持编辑、停用、恢复和删除；按 API Key 的不可逆摘要隔离，**不自动从聊天抽取、不成为知识库证据** |
-| **MCP stdio** | `mcp_server.py`：按 MCP `2025-06-18` 向 Codex、Claude Desktop 等客户端暴露 Knowledge Agent 的 73 个只读工具；支持 `--tools` 白名单，工具结果保留结构化数据、引用、unknown/boundary 与耗时 |
+| **MCP stdio** | `mcp_server.py`：按 MCP `2025-06-18` 向 Codex、Claude Desktop 等客户端暴露 Knowledge Agent 的 75 个只读工具；支持 `--tools` 白名单，工具结果保留结构化数据、引用、unknown/boundary 与耗时 |
 | **知识库自动同步与版本 diff** | `scripts/sync_knowledge.py`：按最后成功采集时间自动选择过期分类，复用现有结构断言与快照数量护栏；同步前后按稳定主键报告逐表新增/删除/修改与版本字段变化，历史可从 `/admin/sync/*` 查询。默认只预览，记录删除时整轮标记 `attention` |
 | **鉴权与限流** | 普通接口使用 `API_KEYS` 并按 Key 令牌桶限流；管理接口独立使用 `ADMIN_TOKEN`，可叠加 IP/CIDR 白名单 |
 | **出口闸门** | 逐句校验事实断言与计算派生是否绑定有效证据，未通过由代码拦截；47 项单测覆盖 |
@@ -139,7 +139,7 @@ Windows 把 `.venv/bin/python` 换成 `.venv\Scripts\python.exe`。
 ### 作为 MCP 工具服务器使用
 
 `mcp_server.py` 是本地 stdio 服务，不需要先启动 Web 服务，也不监听端口。默认暴露
-Knowledge Agent 的 73 个只读工具；需要缩小能力面时传入逗号分隔的白名单：
+Knowledge Agent 的 75 个只读工具；需要缩小能力面时传入逗号分隔的白名单：
 
 ```bash
 .venv/bin/python mcp_server.py --tools kb_coverage,entity_lookup
@@ -1564,6 +1564,32 @@ curl -s -X POST http://127.0.0.1:8787/poe_agent/search \
 
 可选参数：`top_k`（1–50）、`category`（按一级分类过滤）。
 
+**查询跨来源冲突与待核对差异** —— 普通用户只读接口与聊天/MCP 工具共用同一套分类和
+过滤实现。默认值是 `status=confirmed`、`resolution=active`；只有明确传
+`status=review` 或 `all` 才会看到 `kind` 以 `_review` 结尾的待核对记录：
+
+```bash
+curl -s -X POST http://127.0.0.1:8787/poe_agent/conflicts/lookup \
+  -H "Authorization: Bearer $POE_AGENT_API_KEY" \
+  -H 'Content-Type: application/json' \
+  -d '{"status":"confirmed","resolution":"active","limit":20}'
+
+curl -s 'http://127.0.0.1:8787/poe_agent/conflicts/summary' \
+  -H "Authorization: Bearer $POE_AGENT_API_KEY"
+```
+
+逐条查询还支持 `query`（对象、字段或两侧原值的字面搜索）、`kinds`、`sources`、
+`resolution=active|resolved|all` 与 `cursor`。`query` 中的 `%`、`_` 按普通字符处理，
+不会变成 SQL 通配符。响应同时返回本页 confirmed/review/resolved 计数、总匹配数、
+`has_more` 和 `next_cursor`；后续页必须保持完全相同的过滤条件，改变任一条件都会得到 422，
+避免把不同查询的页面拼成一份清单。
+
+`GET /conflicts/summary` 分开报告 confirmed/review、active/resolved、kind、来源对和 review
+成因。**台账总数不等于已确认冲突数**：当前 `spectre` 8 条属于 confirmed；
+`mod_review`、`unique_review`、`spectre_review`、`gem_review`、`tree_review` 和
+`essence_review` 合计 539 条都只是待核对差异。查询只复述双方原值与审计状态，不裁决
+哪一侧正确；已确认项的并列块仍按来源优先级推荐 POEDB，review 不获得这个出口。
+
 **健康检查** —— 反映 SQLite、向量扩展、已注册工具、LLM 凭证池状态。
 
 ```bash
@@ -1601,8 +1627,9 @@ curl -s http://127.0.0.1:8787/poe_agent/admin/conflicts -H "Authorization: Beare
 ASGI 服务器看到的 TCP peer，刻意不信任 `X-Forwarded-For`。如果前面有反向代理，应把
 代理 peer 加入白名单，并在代理层另外限制 `/admin/*`，不要把用户可写的转发头当来源证明。
 
-注意 `/admin/conflicts` 里 `kind` 的区别：`mod` 是**已确认冲突**，会按需求 15.5
-并列展示给用户；`mod_review` 只是「两源对不上，待人工核对」，不得当作冲突呈现。
+注意 `/admin/conflicts` 与普通查询共用同一条分类边界：任意 `kind` 只要以 `_review`
+结尾，就只是「两源对不上，待人工或确定性规则核对」，不得当作冲突呈现；其它 `kind`
+才属于 confirmed。这个后缀规则不因两侧原值看起来不同而改变。
 
 ### 检索结果里的 `degraded=true` 是什么意思
 
@@ -1668,7 +1695,7 @@ PoB 排 P2 而不是 P1：它在数值上更接近一手，但不含中文名与
 ### 评测：四项指标与黄金问答集
 
 `config.yaml` 里的阈值与 `orchestrator/binding.py` 的闸门规则都需要判据，否则改动之后
-无法判断是变好还是变坏。判据来自 `tests/golden/questions.yaml`（192 条，六类样本：
+无法判断是变好还是变坏。判据来自 `tests/golden/questions.yaml`（194 条，六类样本：
 专名 / 描述性 / 数值 / 跨来源 / **确定不覆盖** / 工具路由），基线与结论记在
 `tests/golden/BASELINE.md`。
 
@@ -1699,7 +1726,7 @@ PoB 排 P2 而不是 P1：它在数值上更接近一手，但不含中文名与
 .venv/bin/python -m unittest discover -s tests -t .
 ```
 
-目前 2210 项，其中与「无据不答」直接相关的：
+目前 2237 项，其中与「无据不答」直接相关的：
 
 | 组 | 项数 | 重点 |
 | --- | --- | --- |
