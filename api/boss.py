@@ -30,6 +30,10 @@ from tools.impl.boss_recovery import (
     boss_recovery_sequence_check,
     boss_recovery_sequence_compare,
 )
+from tools.impl.boss_dot import (
+    boss_dot_sequence_check,
+    boss_dot_sequence_compare,
+)
 
 router = APIRouter(tags=["Boss"])
 
@@ -532,6 +536,70 @@ class BossRecoveryCompareRequest(BaseModel):
     scenarios: list[BossRecoveryScenarioRequest] = Field(min_length=2, max_length=10)
 
 
+class BossDotWindow(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+    start_seconds: float = Field(ge=0, le=3600, allow_inf_nan=False)
+    duration_seconds: float = Field(gt=0, le=3600, allow_inf_nan=False)
+    damage_type: Literal["Physical", "Fire", "Cold", "Lightning", "Chaos"]
+    damage_basis: Literal["raw", "taken"]
+    dps_low: float = Field(ge=0, le=1_000_000_000, allow_inf_nan=False)
+    dps_high: float = Field(ge=0, le=1_000_000_000, allow_inf_nan=False)
+    energy_shield_bypass_pct: float = Field(
+        default=0, ge=0, le=100, allow_inf_nan=False
+    )
+
+
+class BossDotSequenceRequest(BossRecoverySequenceRequest):
+    events: list[BossLayeredEvent] = Field(min_length=0, max_length=100)
+    dot_windows: list[BossDotWindow] = Field(min_length=1, max_length=100)
+    dot_recharge_interrupt_mode: Literal[
+        "energy_shield_damage", "any_damage", "does_not_interrupt"
+    ] = "energy_shield_damage"
+
+
+class BossDotSequenceResponse(BaseModel):
+    found: bool
+    assessable: bool
+    verdict: str | None = None
+    level: int
+    uber: bool
+    roll_range: float | None = None
+    requested_events: list[BossLayeredEvent] = Field(default_factory=list)
+    requested_dot_windows: list[BossDotWindow] = Field(default_factory=list)
+    resolved_dot_windows: list[dict[str, Any]] = Field(default_factory=list)
+    requested_recovery_events: list[BossRecoveryEvent] = Field(default_factory=list)
+    config: dict[str, Any] | None = None
+    dot_windows: list[dict[str, Any]] = Field(default_factory=list)
+    recovery_events: list[dict[str, Any]] = Field(default_factory=list)
+    hit_count: int = 0
+    dot_window_count: int = 0
+    duration_seconds: float | None = None
+    outcome: str | None = None
+    low_roll: dict[str, Any] | None = None
+    high_roll: dict[str, Any] | None = None
+    dot_impact: dict[str, Any] | None = None
+    minimum_life_for_full_range: BossLayerThresholdResponse | None = None
+    minimum_energy_shield_for_full_range: BossLayerThresholdResponse | None = None
+    minimum_mana_for_full_range: BossLayerThresholdResponse | None = None
+    event_ordering: str = ""
+    continuous_flow_model: str = ""
+    routing_model: str = ""
+    reason: str | None = None
+    missing_inputs: list[str] = Field(default_factory=list)
+    candidates: list[str] = Field(default_factory=list)
+    boundary: str
+    answer: str
+
+
+class BossDotScenarioRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+    inputs: BossDotSequenceRequest
+
+
+class BossDotCompareRequest(BaseModel):
+    scenarios: list[BossDotScenarioRequest] = Field(min_length=2, max_length=10)
+
+
 class BossProbabilisticEvent(BossTimedEvent):
     hit_type: Literal["attack", "spell"]
 
@@ -897,6 +965,35 @@ def compare_recovery_sequences(
         raise HTTPException(status_code=422, detail={
             "error": "invalid_boss_recovery_sequence_comparison",
             "reason": result.error,
+        })
+    return dict(result.data or {})
+
+
+@router.post("/boss/dot-sequence", response_model=BossDotSequenceResponse)
+def dot_sequence(
+    req: BossDotSequenceRequest,
+    _caller: str = Depends(require_user),
+) -> BossDotSequenceResponse:
+    result = boss_dot_sequence_check(**req.model_dump())
+    if not result.ok:
+        raise HTTPException(status_code=422, detail={
+            "error": "invalid_boss_dot_sequence_query", "reason": result.error,
+        })
+    return BossDotSequenceResponse(**(result.data or {}))
+
+
+@router.post("/boss/dot-sequence/compare", response_model=None)
+def compare_dot_sequences(
+    req: BossDotCompareRequest,
+    _caller: str = Depends(require_user),
+) -> dict[str, Any]:
+    result = boss_dot_sequence_compare(scenarios=[
+        {"name": scenario.name, "inputs": scenario.inputs.model_dump()}
+        for scenario in req.scenarios
+    ])
+    if not result.ok:
+        raise HTTPException(status_code=422, detail={
+            "error": "invalid_boss_dot_sequence_comparison", "reason": result.error,
         })
     return dict(result.data or {})
 

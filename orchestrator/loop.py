@@ -1927,6 +1927,16 @@ def _preferred_tool_route(question: str) -> str:
     )):
         return "boss_probabilistic_sequence_compare"
     if any(term in question for term in (
+        "DoT暴露方案对比", "DoT 暴露方案对比", "持续伤害窗口方案对比",
+        "地面持续伤害方案对比", "DOT暴露方案对比",
+    )):
+        return "boss_dot_sequence_compare"
+    if any(term in question for term in (
+        "DoT暴露窗口", "DoT 暴露窗口", "持续伤害窗口", "地面持续伤害时间轴",
+        "DOT暴露窗口", "持续伤害和恢复", "持续伤害混合时间轴",
+    )):
+        return "boss_dot_sequence_check"
+    if any(term in question for term in (
         "主动恢复方案对比", "瞬回方案对比", "偷取时间轴方案对比",
         "药剂恢复方案对比", "击中回复方案对比",
     )):
