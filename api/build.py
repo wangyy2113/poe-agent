@@ -36,6 +36,8 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from api.deps import require_user
 from api.boss import (
+    BossProbabilisticEvent,
+    BossProbabilisticSequenceResponse,
     BossRiskAuditResponse,
     BossSequenceEntry,
     BossSequenceResponse,
@@ -77,6 +79,7 @@ from tools.impl.boss import (
     boss_survival_from_build,
 )
 from tools.impl.boss_timeline import boss_timed_sequence_from_build
+from tools.impl.boss_probability import boss_probabilistic_sequence_from_build
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["Build"])
@@ -139,6 +142,47 @@ class BuildBossTimedSequenceRequest(BaseModel):
     )
     recovery_delay_seconds: float = Field(
         default=0, ge=0, le=3600, allow_inf_nan=False
+    )
+
+
+class BuildBossProbabilisticSequenceRequest(BaseModel):
+    """用 Build 基础防御与概率字段推进显式 attack/spell 时间轴。"""
+
+    events: list[BossProbabilisticEvent] = Field(min_length=1, max_length=100)
+    level: int = Field(ge=1, le=100)
+    uber: bool = False
+    roll_range: float | None = Field(default=None, ge=0, le=100, allow_inf_nan=False)
+    pool_mode: Literal["life", "life_and_energy_shield"] = Field(
+        default="life",
+        description="默认只用未保留生命；组合池仍要求显式共享恢复。",
+    )
+    recovery_per_second: float | None = Field(
+        default=None, ge=0, le=1_000_000_000, allow_inf_nan=False
+    )
+    recovery_delay_seconds: float = Field(
+        default=0, ge=0, le=3600, allow_inf_nan=False
+    )
+    attack_hit_chance_pct: float | None = Field(
+        default=None, ge=0, le=100, allow_inf_nan=False,
+        description="省略时尝试从 EvadeChance/EvasionChance 取 100%-闪避率。",
+    )
+    attack_block_chance_pct: float | None = Field(
+        default=None, ge=0, le=100, allow_inf_nan=False
+    )
+    spell_block_chance_pct: float | None = Field(
+        default=None, ge=0, le=100, allow_inf_nan=False
+    )
+    spell_suppression_chance_pct: float | None = Field(
+        default=None, ge=0, le=100, allow_inf_nan=False
+    )
+    blocked_damage_taken_pct: float = Field(
+        default=0, ge=0, le=100, allow_inf_nan=False
+    )
+    suppressed_damage_taken_pct: float = Field(
+        default=60, ge=0, le=100, allow_inf_nan=False
+    )
+    bucket_size: float | None = Field(
+        default=None, gt=0, le=1_000_000_000, allow_inf_nan=False
     )
 
 
@@ -282,6 +326,13 @@ class BuildRequest(BaseModel):
         description=(
             "可选的用户指定 Boss 命中时间轴。从 PlayerStat 读取基础防御；life 模式可读取"
             "净生命回复，或由调用方显式给共享恢复速率。不会使用 PoB 单击 Max Hit。"
+        ),
+    )
+    boss_probabilistic_sequence: BuildBossProbabilisticSequenceRequest | None = Field(
+        default=None,
+        description=(
+            "可选的显式 attack/spell Boss 时间轴概率分布。从 PlayerStat 读取适用的闪避、"
+            "格挡和压制字段，或采用请求中的显式覆盖；同时保留确定性最坏轨迹。"
         ),
     )
     boss_risk_audit: BuildBossRiskAuditRequest | None = Field(
@@ -474,6 +525,16 @@ class BuildBossTimedSequenceOut(BossTimedSequenceResponse):
     citations: list[BuildBossCitationOut] = []
 
 
+class BuildBossProbabilisticSequenceOut(BossProbabilisticSequenceResponse):
+    pool_mode: Literal["life", "life_and_energy_shield"]
+    input_source: str = "pob_player_stat"
+    source_fields: dict[str, float] = {}
+    source_config: dict[str, str] = {}
+    calculation_mode: str | None = None
+    fallback_reason: str = ""
+    citations: list[BuildBossCitationOut] = []
+
+
 class BuildBossRiskAuditOut(BossRiskAuditResponse):
     pool_mode: Literal["life", "life_and_energy_shield"]
     input_source: str = "pob_player_stat"
@@ -598,6 +659,8 @@ class BuildResponse(BaseModel):
     boss_sequence: BuildBossSequenceOut | None = None
     #: 可选：用当前 Build 基础防御与净回复推进显式标时的 Boss 命中
     boss_timed_sequence: BuildBossTimedSequenceOut | None = None
+    #: 可选：用当前 Build 概率防御字段计算显式 attack/spell 时间轴生存分布
+    boss_probabilistic_sequence: BuildBossProbabilisticSequenceOut | None = None
     #: 可选：按当前 Build 基础防御快照横向审计已收录的 Boss 单击
     boss_risk_audit: BuildBossRiskAuditOut | None = None
     #: 可选：用户显式目标与当前 PlayerStat 之间的确定性成长里程碑
@@ -786,6 +849,7 @@ def analyze_build(req: BuildRequest, caller: str = Depends(require_user)) -> Bui
         boss_query=req.boss_survival,
         boss_sequence_query=req.boss_sequence,
         boss_timed_sequence_query=req.boss_timed_sequence,
+        boss_probabilistic_sequence_query=req.boss_probabilistic_sequence,
         boss_risk_audit_query=req.boss_risk_audit,
         growth_plan_query=req.growth_plan,
     )
@@ -887,6 +951,7 @@ def _build_response(
     boss_query: BuildBossSurvivalRequest | None = None,
     boss_sequence_query: BuildBossSequenceRequest | None = None,
     boss_timed_sequence_query: BuildBossTimedSequenceRequest | None = None,
+    boss_probabilistic_sequence_query: BuildBossProbabilisticSequenceRequest | None = None,
     boss_risk_audit_query: BuildBossRiskAuditRequest | None = None,
     growth_plan_query: BuildGrowthPlanRequest | None = None,
 ) -> BuildResponse:  # noqa: ANN001
@@ -898,6 +963,7 @@ def _build_response(
     boss_result = None
     boss_sequence_result = None
     boss_timed_sequence_result = None
+    boss_probabilistic_sequence_result = None
     boss_risk_audit_result = None
     growth_plan_result: BuildGrowthPlan | None = None
     if boss_query is not None:
@@ -953,6 +1019,38 @@ def _build_response(
             })
         boss_timed_sequence_result = BuildBossTimedSequenceOut(
             **(checked_timeline.data or {}), citations=checked_timeline.citations
+        )
+    if boss_probabilistic_sequence_query is not None:
+        probability_query = boss_probabilistic_sequence_query
+        checked_probability = boss_probabilistic_sequence_from_build(
+            build,
+            events=[item.model_dump() for item in probability_query.events],
+            level=probability_query.level,
+            uber=probability_query.uber,
+            roll_range=probability_query.roll_range,
+            pool_mode=probability_query.pool_mode,
+            recovery_per_second=probability_query.recovery_per_second,
+            recovery_delay_seconds=probability_query.recovery_delay_seconds,
+            attack_hit_chance_pct=probability_query.attack_hit_chance_pct,
+            attack_block_chance_pct=probability_query.attack_block_chance_pct,
+            spell_block_chance_pct=probability_query.spell_block_chance_pct,
+            spell_suppression_chance_pct=(
+                probability_query.spell_suppression_chance_pct
+            ),
+            blocked_damage_taken_pct=probability_query.blocked_damage_taken_pct,
+            suppressed_damage_taken_pct=(
+                probability_query.suppressed_damage_taken_pct
+            ),
+            bucket_size=probability_query.bucket_size,
+        )
+        if not checked_probability.ok:
+            raise HTTPException(status_code=422, detail={
+                "error": "invalid_build_boss_probabilistic_sequence_query",
+                "reason": checked_probability.error,
+            })
+        boss_probabilistic_sequence_result = BuildBossProbabilisticSequenceOut(
+            **(checked_probability.data or {}),
+            citations=checked_probability.citations,
         )
     if boss_risk_audit_query is not None:
         checked_audit = boss_risk_audit_from_build(
@@ -1033,6 +1131,7 @@ def _build_response(
         boss_survival=boss_result,
         boss_sequence=boss_sequence_result,
         boss_timed_sequence=boss_timed_sequence_result,
+        boss_probabilistic_sequence=boss_probabilistic_sequence_result,
         boss_risk_audit=boss_risk_audit_result,
         growth_plan=(
             BuildGrowthPlanOut.model_validate(growth_plan_result, from_attributes=True)

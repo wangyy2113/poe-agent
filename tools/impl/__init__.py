@@ -6,6 +6,7 @@ from tools.impl import awakener_operation as _awakener_operation  # noqa: F401  
 from tools.impl import attack as _attack  # noqa: F401  注册副作用
 from tools.impl import bench as _bench  # noqa: F401  注册副作用
 from tools.impl import boss as _boss  # noqa: F401  注册副作用
+from tools.impl import boss_probability as _boss_probability  # noqa: F401  注册副作用
 from tools.impl import boss_timeline as _boss_timeline  # noqa: F401  注册副作用
 from tools.impl import harvest as _harvest  # noqa: F401  注册副作用
 from tools.impl import harvest_enchant_operation as _harvest_enchant_operation  # noqa: F401  注册副作用
@@ -38,4 +39,4 @@ from tools.impl import veiled_operation as _veiled_operation  # noqa: F401  注�
 from tools.impl import recovery as _recovery  # noqa: F401  注册副作用
 from tools.impl import reservation as _reservation  # noqa: F401  注册副作用
 
-__all__ = ["_ailments", "_awakener_operation", "_bench", "_boss", "_boss_timeline", "_craft", "_craft_operation", "_crit", "_craft_pool", "_defence", "_dps", "_dps_rotation", "_economy", "_eldritch_operation", "_essence", "_essence_operation", "_fossil_operation", "_gems", "_harvest", "_harvest_enchant_operation", "_harvest_exchange_operation", "_harvest_modifier_operation", "_harvest_operation", "_influence", "_kb_search", "_maxhit", "_cluster", "_metamods", "_monsters", "_mods", "_passives", "_recovery", "_reservation", "_thresholds", "_veiled_operation"]
+__all__ = ["_ailments", "_awakener_operation", "_bench", "_boss", "_boss_probability", "_boss_timeline", "_craft", "_craft_operation", "_crit", "_craft_pool", "_defence", "_dps", "_dps_rotation", "_economy", "_eldritch_operation", "_essence", "_essence_operation", "_fossil_operation", "_gems", "_harvest", "_harvest_enchant_operation", "_harvest_exchange_operation", "_harvest_modifier_operation", "_harvest_operation", "_influence", "_kb_search", "_maxhit", "_cluster", "_metamods", "_monsters", "_mods", "_passives", "_recovery", "_reservation", "_thresholds", "_veiled_operation"]

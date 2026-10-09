@@ -1724,6 +1724,22 @@ cases:
       比较完整的显式时间轴、防御与恢复配置，按存活档位、最坏余量、最低池和恢复门槛排序；
       不扩写成装备、药剂或打法推荐。
 
+  - id: route_boss_probabilistic_sequence
+    query: 这组 Boss 命中的生存概率和 P95 风险是多少，攻击和法术类型我会逐击标明
+    kind: tool_route
+    expect_tool: boss_probabilistic_sequence_check
+    note: >-
+      逐击 attack/spell 类型明确后，概率防御走离散动态规划并分列低/高伤害轨；必须同步披露
+      桶宽、量化误差与全命中未格挡未压制的确定性最坏情况，不把期望值或概率写成保证。
+
+  - id: route_boss_probabilistic_sequence_compare
+    query: 两套格挡压制方案对比，哪套高伤轨生存概率和 P95 余量更好
+    kind: tool_route
+    expect_tool: boss_probabilistic_sequence_compare
+    note: >-
+      分别比较高伤轨存活率、P05 末尾池、期望末尾池与确定性最坏存活；这些口径不能互相
+      替代，也不能扩写成真实 Boss 打法或装备推荐。
+
   - id: route_boss_risk_audit
     query: 84级，10000血、75冰抗、0混抗、10000护甲，所有 Boss 技能哪个最危险
     kind: tool_route

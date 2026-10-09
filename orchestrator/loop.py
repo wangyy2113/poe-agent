@@ -1922,6 +1922,16 @@ def _preferred_tool_route(question: str) -> str:
     )):
         return "boss_timed_sequence_compare"
     if any(term in question for term in (
+        "概率防御方案对比", "生存概率方案对比", "格挡压制方案对比",
+        "闪避格挡方案对比",
+    )):
+        return "boss_probabilistic_sequence_compare"
+    if any(term in question for term in (
+        "生存概率", "耗尽概率", "格挡后存活", "压制后存活", "闪避后存活",
+        "概率防御时间轴", "P95风险", "P95 风险",
+    )):
+        return "boss_probabilistic_sequence_check"
+    if any(term in question for term in (
         "命中时间轴", "受击时间轴", "秒后再吃", "期间每秒恢复", "受击后恢复延迟",
         "每秒回复能不能扛", "每秒恢复能不能扛",
     )):

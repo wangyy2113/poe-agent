@@ -29,7 +29,7 @@ POE1 的机制耦合极深，一个错误的小前提会让整条结论反向。
 | 通货 | 113 条（中英文名、堆叠上限、效果原文）；工艺台费用引用的 18 个通货全部能对上；**获取途径与兑换比例未采集**；市场价格以 poe.watch 为主、GGG Trade API 在线挂单为备用 |
 | 圣甲虫 | 118 个（效果、堆叠上限、地图装置放置上限）；**掉落来源未采集**；市场价格以 poe.watch 为主、GGG Trade API 在线挂单为备用 |
 | 实时经济价格、趋势、成本与双边价差 | `POST /economy/price` 查询当前快照；`POST /economy/trend` 查询历史；`POST /economy/material-cost` 汇总明确清单；`POST /economy/rare-comparables` 查询稀有装可比挂单；`POST /economy/flip-analysis` 对标准 exchange 条目核验买卖两侧、整单深度、时效与显式费用后计算净利润。SQLite 价格缓存 TTL 30 分钟、历史保留 90 天；主源无缓存时标准条目与唯一装备可显式降级官方 Trade API。**不足两个趋势点不判趋势；单侧过滤后不足 5 条不报代表价；任一侧或费用不完整时利润与 Flip 判断保持 unknown；所有结果都不是成交或收益保证** |
-| Boss 技能伤害、生存校验与防御门槛 | 10 条 Boss 技能的伤害建模 + 22 个 Boss 的护甲/闪避倍率；`boss_survival_check` 校验同一命中连续 1–100 次，`boss_defence_threshold` 反解最低防御池、抗性/护甲门槛，`boss_sequence_check` 按用户明确顺序逐击累计；`boss_timed_sequence_*` 在显式命中时间轴上结算固定持续恢复、受击后恢复延迟、最低初始池与恢复门槛；`boss_risk_audit` 批量排列已收录技能风险。`POST /build` 可直接消费 PoB 基础防御与纯生命净回复快照。**序列不是游戏真实连招，审计不是 Boss 难度排行，不给打法**；DoT、自动推断连招、概率防御、生命/护盾分池细节、阶段与应对未覆盖；数字是 PoB 建模值，GGG 未公布 |
+| Boss 技能伤害、生存校验与防御门槛 | 10 条 Boss 技能的伤害建模 + 22 个 Boss 的护甲/闪避倍率；`boss_survival_check` 校验同一命中连续 1–100 次，`boss_defence_threshold` 反解最低防御池、抗性/护甲门槛，`boss_sequence_check` 按用户明确顺序逐击累计；`boss_timed_sequence_*` 结算显式时间轴、固定恢复与门槛；`boss_probabilistic_sequence_*` 在逐击明确标注 attack/spell 后，计算命中/闪避、攻击/法术格挡与法术压制的低/高伤害生存分布、风险分位和确定性最坏轨；`boss_risk_audit` 批量排列已收录技能风险。`POST /build` 可直接消费 PoB 基础防御、纯生命净回复和适用概率字段快照。**序列不是游戏真实连招，概率不是保证，审计不是 Boss 难度排行，不给打法**；DoT、自动推断连招、熵式闪避相关性、幸运/不幸、生命/护盾分池细节、阶段与应对未覆盖；数字是 PoB 建模值，GGG 未公布 |
 | 制作规则（名额与影响力） | 7 条前后缀名额规则（魔法 1+1、稀有 3+3、传奇不受限制、药剂随魔法，另有 PoB 独有的珠宝/Graft 2+2 与「已腐化深渊珠宝回到 3+3」）；`base_influence_profile` 可查 1,022 条具体底材的六类传统影响 `influenceTags`，`check_mod_combination` 在给定具体底材、单一影响与可选物等时，会用 PoB 底材标签和 POEDB 词缀 `spawn_tags` 验证影响词缀适用性。`possible` 只表示词缀能共存，不表示能制作；古灵基底由独立状态机处理。**影响底材获得方式、多影响词缀池组合与完整元词缀状态机仍未采集** |
 | 觉醒者之石状态机 | `awakener_orb_state` / `POST /craft/awakener`：接受供体与目标的两段装备复制文本，或显式物品类别与传统影响；逐字绑定 POEDB 效果，检查同类物品、双方唯一且不同的传统影响，输出供体销毁、目标重铸为稀有并兼有两种影响的条件后状态。**不声称各保留一条影响词缀，不生成重铸后的具体词缀、数量、数值、概率、成本或路线** |
 | 收获（古灵庄园） | 74 条定向工艺 + 98 条命能费用，且 **74/74 条均有结构化语义**：20 条装备重铸、23 条元素转换与新增/移除、14 条品质附魔、14 条材料随机转换、3 条地图/技能石/命运卡牺牲；另有 **51 个种子怪物**按颜色对应四种命能中的三种。随机类型与概率、堆叠输出数量、费用缩放基准和市场成本未采集时保持未知 |
@@ -801,6 +801,47 @@ curl -s -X POST http://127.0.0.1:8787/poe_agent/boss/timed-sequence \
 药剂与击中回复的完整组合；也不含格挡、闪避、法压概率、Ward、MoM、DoT 或阶段机制。
 事件顺序和时间完全来自调用方，系统不会声称它是游戏里的真实 Boss 连招。
 
+**Boss 概率防御与生存分布** —— `POST /boss/probabilistic-sequence`。每个事件除技能与绝对
+时间外，还必须明确标注 `hit_type=attack|spell`；系统不会从技能名猜攻击或法术。攻击事件
+依次分为未命中、格挡、完整承伤，法术事件依次分为格挡、压制、完整承伤；格挡与压制是
+互斥分支，不把两个概率乘成额外固定减伤。
+
+```bash
+curl -s -X POST http://127.0.0.1:8787/poe_agent/boss/probabilistic-sequence \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "events":[
+      {"skill":"Shaper Ball","at_seconds":0,"hit_type":"spell"},
+      {"skill":"Shaper Ball","at_seconds":1.5,"hit_type":"spell"},
+      {"skill":"Shaper Slam","at_seconds":4,"hit_type":"attack"}
+    ],
+    "level":84,
+    "pool":25000,
+    "cold_resist_pct":75,
+    "armour":10000,
+    "recovery_per_second":2200,
+    "spell_block_chance_pct":30,
+    "spell_suppression_chance_pct":80,
+    "attack_hit_chance_pct":75,
+    "attack_block_chance_pct":40
+  }'
+```
+
+结果不为伤害区间编造分布，而是分别返回 `low_roll` 与 `high_roll` 两条离散动态规划：每击
+存活率、当击/累计耗尽率、期望末尾池、存活条件期望、P50/P10/P05 末尾池、P50/P90/P95
+池损失，以及有界的最终池分布。默认桶宽为 `max(pool/2000, 0.01)`，响应同时披露桶数和
+累计量化误差上界；也可显式调大 `bucket_size`。此外始终单列“每击都命中、未格挡、未压制、
+全为高伤”的确定性最坏轨迹，防止高期望值被误读成保证。
+
+`blocked_damage_taken_pct` 默认 0；`suppressed_damage_taken_pct` 默认 60，即当前基础法术压制
+阻挡 40% 伤害。特殊格挡/压制效果必须由调用方覆盖。模型把各事件视为独立，不模拟游戏的
+熵式闪避序列、幸运/不幸、不可闪避/不可格挡旗标，也不会在“该分支没有实际受击”时重排
+恢复延迟；这些限制与事件不是实际 Boss 连招的边界都会原样返回。
+
+`POST /boss/probabilistic-sequence/compare` 比较 2–10 套完整输入，分别给出最高高伤轨存活率、
+最高 P05 末尾池、最高期望末尾池和确定性最坏仍能存活的方案。四个口径独立展示，不用期望
+值替代尾部风险或确定性保证。
+
 **Boss 命中风险与防御缺口审计** —— `POST /boss/audit`。它横向检查本地当前收录的全部
 Boss 技能预设，按指定 `hit_count`（1–100，默认 1）的最坏累计承伤排序；同时返回总预设数、
 可评估数、未知数、三态计数、最危险已知项与每条未知原因。每个可评估项还会返回覆盖完整
@@ -1086,6 +1127,21 @@ curl -s -X POST http://127.0.0.1:8787/poe_agent/build \
     }
   }'
 
+# 从 PlayerStat 读取法术格挡/压制，计算显式法术时间轴的生存分布
+curl -s -X POST http://127.0.0.1:8787/poe_agent/build \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "code": "https://pobb.in/你的分享ID",
+    "boss_probabilistic_sequence": {
+      "events": [
+        {"skill": "Shaper Ball", "at_seconds": 0, "hit_type": "spell"},
+        {"skill": "Shaper Ball", "at_seconds": 2, "hit_type": "spell"}
+      ],
+      "level": 84,
+      "pool_mode": "life"
+    }
+  }'
+
 # 以“当前”为基线比较两个 PoB 方案；可省略 metrics 以检查全部受支持指标
 curl -s -X POST http://127.0.0.1:8787/poe_agent/build/compare \
   -H 'Content-Type: application/json' \
@@ -1163,6 +1219,15 @@ PoB 在三种元素 Max Hit 相等时只导出 `LightningMaximumHitTaken`，该�
 不会擅自把生命再生、护盾再生或护盾回充相加成共享恢复；除非调用方明确给出共享恢复速率，
 否则返回 `unknown`。混合时间轴同样不使用 PoB 单击 `*MaximumHitTaken`，原因会保留在
 `fallback_reason` 中。
+
+可选的 `boss_probabilistic_sequence` 继续复用上述逐击伤害与恢复链，但要求每个事件显式标注
+`attack` 或 `spell`。攻击事件默认从 `EvadeChance` / `EvasionChance` 读取玩家闪避率并转换为
+敌方命中率，再读取 `EffectiveBlockChance` / `BlockChance`；法术事件读取
+`EffectiveSpellBlockChance` / `SpellBlockChance` 与 `EffectiveSpellSuppressionChance` /
+`SpellSuppressionChance`。只读取本序列实际涉及的类别，来源和 `100%-闪避率` 转换都会写入
+`source_config`。任一相关字段缺失时整条分布返回 `unknown`，不会把缺失格挡或压制静默当成
+0%；调用方可以用同名请求字段显式覆盖。概率结果仍同时返回无概率防御的确定性最坏轨迹，
+并披露离散桶宽与误差；PoB 单击 `*MaximumHitTaken` 同样不会拆入多击分布。
 
 可选的 `boss_risk_audit` 使用相同的基础字段，对本地全部 Boss 技能预设按 `hit_count`
 逐条累计。它会返回已知项风险排序、`assessment_status=complete|partial|none`、覆盖计数、
@@ -1339,7 +1404,7 @@ PoB 排 P2 而不是 P1：它在数值上更接近一手，但不含中文名与
 ### 评测：四项指标与黄金问答集
 
 `config.yaml` 里的阈值与 `orchestrator/binding.py` 的闸门规则都需要判据，否则改动之后
-无法判断是变好还是变坏。判据来自 `tests/golden/questions.yaml`（180 条，六类样本：
+无法判断是变好还是变坏。判据来自 `tests/golden/questions.yaml`（182 条，六类样本：
 专名 / 描述性 / 数值 / 跨来源 / **确定不覆盖** / 工具路由），基线与结论记在
 `tests/golden/BASELINE.md`。
 
@@ -1370,7 +1435,7 @@ PoB 排 P2 而不是 P1：它在数值上更接近一手，但不含中文名与
 .venv/bin/python -m unittest discover -s tests -t .
 ```
 
-目前 2063 项，其中与「无据不答」直接相关的：
+目前 2084 项，其中与「无据不答」直接相关的：
 
 | 组 | 项数 | 重点 |
 | --- | --- | --- |
