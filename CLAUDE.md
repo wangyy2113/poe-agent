@@ -146,7 +146,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 2108 项，秒级
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 2132 项，秒级
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选
@@ -163,7 +163,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 .venv/bin/python scripts/eval_run.py --record        # 重录真实响应（**要凭证、烧 token**）
 ```
 
-黄金问答集是 `tests/golden/questions.yaml`（184 条，六类），基线与全部结论在
+黄金问答集是 `tests/golden/questions.yaml`（186 条，六类），基线与全部结论在
 `tests/golden/BASELINE.md`——**动闸门前先读它**，里面记了多个已修缺陷与三条已知未修边界，
 以及两次「测量本身写错」的教训。
 
@@ -304,7 +304,7 @@ Craft of Exile 矩阵证据支撑；两条 Citation 不得互相夹带正文。�
 | `orchestrator/` | `loop.py` 主循环与轨迹（批量与流式**共用** `_prepare_turn` / `_handle_tool_call` / `_terminal_gap`，只在「怎么把文本交给用户」上不同——不要在任一侧重新写判据，`tests/unit/test_turn_parity.py` 会挡）、`binding.py` 出口闸门（1400+ 行，改动前先读它的模块 docstring）、`citation.py` 引用装配 |
 | `agents/` | `knowledge.py`：系统提示词 + `ALLOWED_TOOLS` + 缺据声明模板。提示词是第一道约束不是唯一约束 |
 | `tools/` | `registry.py` 注册与 schema 导出，`impl/` 各工具；返回值统一 `ToolResult`，`citations` 是结构化引用而非拼进正文的字符串（要参与出口校验） |
-| `core/mcp_protocol.py` / `mcp_server.py` | MCP `2025-06-18` stdio 协议层与入口；默认复用 Knowledge Agent 的 56 个只读工具，`--tools` 可收窄暴露面。stdout 只能写逐行 JSON-RPC，日志必须走 stderr；EOF 必须关闭 SQLite |
+| `core/mcp_protocol.py` / `mcp_server.py` | MCP `2025-06-18` stdio 协议层与入口；默认复用 Knowledge Agent 的 67 个只读工具，`--tools` 可收窄暴露面。stdout 只能写逐行 JSON-RPC，日志必须走 stderr；EOF 必须关闭 SQLite |
 | `kb/sync.py` / `scripts/sync_knowledge.py` | 过期分类计划、现有采集器编排、事实行快照与版本 diff。默认 CLI 只预览，`--apply` 才执行；记录删除提升为 `attention`。唯一装备不得加入自动集合，直到主列表 + 1,342 页详情补全可原子执行 |
 | `retrieval/` | FTS5、别名、RRF 融合、jieba 分词、领域词表 |
 | `kb/` | `pipeline.py` 采集管线、`sources/` 各来源抽取器、`coverage.py` 知识库自描述层、`stat_channels.py` 属性来源渠道注册表、`render*.py` 卡片切片 |
@@ -1444,3 +1444,20 @@ Lua 后者覆盖前者，解析器同样取后者——**行号锚点也因此�
 - `README.md` 与 `tasks.md` 已在 2026-08-17 同步过一轮（单测数、`craft/`、新采集类别与工具、
   评测体系、V1 验收清单的实测结论）。再改这些区域时顺手更新，别让文档重新落后于代码——
   上一次落后的代价是「140 项单测」这类数字误导了对现状的判断。
+
+## 第一百二十一轮：主动恢复事件必须有时间，不能把面板速率冒充过程
+
+`calc/boss_recovery.py` 在分层承伤状态机上新增显式主动恢复事件。瞬回区分
+`before_hit` / `after_hit`；同刻的全部伤害事件夹在两者之间，生命耗尽后不能靠命中后
+瞬回或未来事件复活。`timed_rate` 只在给定窗口内积分，多个 `leech` 实例先合计，再按生命
+20%、能量护盾 10%、魔力 20% 最大池每秒的基础上限裁剪。响应同时保留请求量、限速后量、
+实际生效、满池溢出和限速抑制，不能只报一个“总回复”。
+
+本轮刻意没有把 Build 的 `*LeechGainRate` 自动接成偷取事件。PoB 这组字段按现有报告契约是
+Leech 与 On Hit 的合计速率，没有两者拆分，也没有开始时间和持续时间；直接接入会把一个
+静态面板值伪造成全过程。`POST /build.boss_recovery_sequence` 只读取已审计的分层池、固定净
+回复与护盾回充，主动事件仍全部来自请求并在 `source_config` 单列。
+
+新增两个 Knowledge/MCP 工具、两个 HTTP 端点、Build 入口与两条黄金路由哨兵。低/高伤轨
+除逐击状态外，还重跑“去掉主动恢复但保留固定回复/回充”的高伤基线，直接回答恢复是否改变
+存活结论；三池门槛继续保持其它层和恢复事件固定，不把单轴结果相加。

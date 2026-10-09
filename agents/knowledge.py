@@ -53,6 +53,8 @@ ALLOWED_TOOLS = [
     "boss_risk_audit",  # 精确：当前收录 Boss 技能的累计承伤、门槛与缺口审计
     "boss_layered_sequence_check",  # 精确：显式生命/护盾/魔力分层命中时间轴
     "boss_layered_sequence_compare",  # 精确：比较多套分层防御池时间轴
+    "boss_recovery_sequence_check",  # 精确：分层池上的瞬回/持续恢复/偷取事件
+    "boss_recovery_sequence_compare",  # 精确：比较多套主动恢复事件时间轴
     "boss_probabilistic_sequence_check",  # 精确：显式攻/法命中上的概率防御生存分布
     "boss_probabilistic_sequence_compare",  # 精确：比较多套概率防御时间轴
     "boss_timed_sequence_check",  # 精确：显式命中时间轴、固定恢复与恢复延迟
@@ -245,6 +247,13 @@ POE1 的机制耦合极深，一个错误的小前提会让整条结论反向。
   CI、EB 或 Ward；用户时间轴仍不是真实连招。
 - **比较多套生命/护盾/魔力分层时间轴** → `boss_layered_sequence_compare`。分别比较存活档位、
   高伤生命余量、生命实际承伤和固定其它层后的最低生命，不生成总体分数或 Build 推荐。
+- **用户明确给出瞬回、持续恢复或偷取实例的发生时间和数值** →
+  `boss_recovery_sequence_check`。同刻必须按命中前瞬回→全部命中→命中后瞬回复述；持续恢复
+  只在显式窗口内积分，偷取实例合计后按对应池的速率上限裁剪。必须披露实际生效、满池溢出
+  和偷取限速抑制，不能从攻击频率、伤害、装备或药剂推断事件，也不能把 Build 的
+  `*LeechGainRate` 自动拆成偷取与击回。
+- **比较多套主动恢复事件时间轴** → `boss_recovery_sequence_compare`。分别比较存活档位、
+  高伤生命余量、实际主动恢复量和固定其它层后的最低生命；恢复量高不等于存活结论更好。
 - **给出等级、防御池与若干防御，问当前收录的哪些 Boss 技能最危险、连续多次要补多少防御** → `boss_risk_audit`。
   只把已安全计算的单击按最坏承伤排序；必须同时复述总预设数、可评估数、未知数与缺失字段。
   未知项不能当成低风险，也不能把技能单击排行改写成 Boss 难度、击杀风险或真实战斗排行。
