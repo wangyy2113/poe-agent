@@ -53,6 +53,8 @@ ALLOWED_TOOLS = [
     "boss_risk_audit",  # 精确：当前收录 Boss 技能的累计承伤、门槛与缺口审计
     "boss_layered_sequence_check",  # 精确：显式生命/护盾/魔力分层命中时间轴
     "boss_layered_sequence_compare",  # 精确：比较多套分层防御池时间轴
+    "boss_dot_sequence_check",  # 精确：显式 DoT 暴露、命中与恢复混合时间轴
+    "boss_dot_sequence_compare",  # 精确：比较多套 DoT 暴露混合时间轴
     "boss_recovery_sequence_check",  # 精确：分层池上的瞬回/持续恢复/偷取事件
     "boss_recovery_sequence_compare",  # 精确：比较多套主动恢复事件时间轴
     "boss_probabilistic_sequence_check",  # 精确：显式攻/法命中上的概率防御生存分布
@@ -254,6 +256,12 @@ POE1 的机制耦合极深，一个错误的小前提会让整条结论反向。
   `*LeechGainRate` 自动拆成偷取与击回。
 - **比较多套主动恢复事件时间轴** → `boss_recovery_sequence_compare`。分别比较存活档位、
   高伤生命余量、实际主动恢复量和固定其它层后的最低生命；恢复量高不等于存活结论更好。
+- **用户明确给出 DoT 来源、起止时间、DPS 口径与护盾绕过，并要求和命中/恢复一起结算** →
+  `boss_dot_sequence_check`。raw DPS 只应用显式抗性、固定物理减伤和承伤倍率；物理 DoT
+  不吃护甲，DoT 不套命中穿透或压倒。必须分别复述低/高轨、首次耗尽时间、各来源计划/实际
+  推进伤害、恢复抵消和无 DoT 基线；不得从异常、技能、装备、Boss 阶段推断窗口或叠层。
+- **比较多套显式 DoT 暴露混合时间轴** → `boss_dot_sequence_compare`。分别比较存活档位、
+  高伤生命余量、耗尽时间、DoT 总承伤和固定其它层后的最低生命，不扩写成走位或打法推荐。
 - **给出等级、防御池与若干防御，问当前收录的哪些 Boss 技能最危险、连续多次要补多少防御** → `boss_risk_audit`。
   只把已安全计算的单击按最坏承伤排序；必须同时复述总预设数、可评估数、未知数与缺失字段。
   未知项不能当成低风险，也不能把技能单击排行改写成 Boss 难度、击杀风险或真实战斗排行。

@@ -146,7 +146,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 2132 项，秒级
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 2157 项，秒级
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选
@@ -163,7 +163,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 .venv/bin/python scripts/eval_run.py --record        # 重录真实响应（**要凭证、烧 token**）
 ```
 
-黄金问答集是 `tests/golden/questions.yaml`（186 条，六类），基线与全部结论在
+黄金问答集是 `tests/golden/questions.yaml`（188 条，六类），基线与全部结论在
 `tests/golden/BASELINE.md`——**动闸门前先读它**，里面记了多个已修缺陷与三条已知未修边界，
 以及两次「测量本身写错」的教训。
 
@@ -304,7 +304,7 @@ Craft of Exile 矩阵证据支撑；两条 Citation 不得互相夹带正文。�
 | `orchestrator/` | `loop.py` 主循环与轨迹（批量与流式**共用** `_prepare_turn` / `_handle_tool_call` / `_terminal_gap`，只在「怎么把文本交给用户」上不同——不要在任一侧重新写判据，`tests/unit/test_turn_parity.py` 会挡）、`binding.py` 出口闸门（1400+ 行，改动前先读它的模块 docstring）、`citation.py` 引用装配 |
 | `agents/` | `knowledge.py`：系统提示词 + `ALLOWED_TOOLS` + 缺据声明模板。提示词是第一道约束不是唯一约束 |
 | `tools/` | `registry.py` 注册与 schema 导出，`impl/` 各工具；返回值统一 `ToolResult`，`citations` 是结构化引用而非拼进正文的字符串（要参与出口校验） |
-| `core/mcp_protocol.py` / `mcp_server.py` | MCP `2025-06-18` stdio 协议层与入口；默认复用 Knowledge Agent 的 67 个只读工具，`--tools` 可收窄暴露面。stdout 只能写逐行 JSON-RPC，日志必须走 stderr；EOF 必须关闭 SQLite |
+| `core/mcp_protocol.py` / `mcp_server.py` | MCP `2025-06-18` stdio 协议层与入口；默认复用 Knowledge Agent 的 69 个只读工具，`--tools` 可收窄暴露面。stdout 只能写逐行 JSON-RPC，日志必须走 stderr；EOF 必须关闭 SQLite |
 | `kb/sync.py` / `scripts/sync_knowledge.py` | 过期分类计划、现有采集器编排、事实行快照与版本 diff。默认 CLI 只预览，`--apply` 才执行；记录删除提升为 `attention`。唯一装备不得加入自动集合，直到主列表 + 1,342 页详情补全可原子执行 |
 | `retrieval/` | FTS5、别名、RRF 融合、jieba 分词、领域词表 |
 | `kb/` | `pipeline.py` 采集管线、`sources/` 各来源抽取器、`coverage.py` 知识库自描述层、`stat_channels.py` 属性来源渠道注册表、`render*.py` 卡片切片 |
@@ -337,6 +337,7 @@ Craft of Exile 矩阵证据支撑；两条 Citation 不得互相夹带正文。�
 `boss_timed_sequence_check`（显式命中时间、固定恢复、最低池与恢复门槛）→
 `boss_probabilistic_sequence_check`（显式 attack/spell 时间轴的生存分布与最坏轨）→
 `boss_layered_sequence_check`（生命/护盾/魔力路由、独立回复与护盾回充中断）→
+`boss_dot_sequence_check`（显式 DoT 暴露、命中/恢复连续流与精确耗尽时间）→
 `boss_defence_threshold`（Boss 同一命中所需防御池、抗性 / 护甲门槛）→
 `boss_survival_check`（Boss 同一命中重复 1–100 次 × 明确防御池的三态校验）→
 `passive_path`（点到某天赋要几点 + 逐节点路径）→
@@ -1461,3 +1462,19 @@ Leech 与 On Hit 的合计速率，没有两者拆分，也没有开始时间和
 新增两个 Knowledge/MCP 工具、两个 HTTP 端点、Build 入口与两条黄金路由哨兵。低/高伤轨
 除逐击状态外，还重跑“去掉主动恢复但保留固定回复/回充”的高伤基线，直接回答恢复是否改变
 存活结论；三池门槛继续保持其它层和恢复事件固定，不把单轴结果相加。
+
+## 第一百二十二轮：DoT 必须是显式暴露窗口，连续流不能靠固定步长伪精确
+
+`calc/boss_dot.py` 把已结算命中、显式 DoT 窗口和主动恢复统一到生命/护盾/魔力时间轴。
+每个窗口必须给唯一来源、开始、持续、伤害类型、低/高 DPS、`raw|taken` 口径与护盾绕过。
+raw DoT 只应用显式抗性、固定物理减伤和 taken multiplier：护甲、命中穿透、压倒以及 Uber
+DoT 倍率都不自动套用。taken 口径视为调用方已经完成减伤，不再反向猜原始伤害。
+
+连续区间按 DoT/恢复窗口边界、命中时点和池触边时点解析守恒流；护盾或魔力耗尽后立即重新
+路由，生命耗尽时间由解析式边界给出，不用固定采样步长。输出保留逐段池流量、各来源计划与
+耗尽前伤害、恢复实际抵消、无 DoT 高伤基线、低/高轨和三池单轴门槛。同刻顺序继续固定为
+区间流→命中前瞬回→全部命中→命中后瞬回。
+
+护盾回充对 DoT 的中断不能从技能名猜，调用方必须选择“护盾路径受损”“任意 DoT”或“不打断”。
+`POST /build.boss_dot_sequence` 只读取已审计的基础池、抗性、净回复、回充与命中护甲；窗口、
+叠层、刷新和阶段始终显式。新增两个工具、两个 HTTP 端点、Build 入口与两条黄金路由哨兵。

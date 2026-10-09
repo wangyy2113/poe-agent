@@ -1772,6 +1772,21 @@ cases:
       分别比较存活档位、高伤生命余量、实际主动恢复和最低生命；恢复总量高不等于存活更好，
       也不能扩写成自动喝药、装备或实战打法建议。
 
+  - id: route_boss_dot_sequence
+    query: Boss DoT 暴露窗口和命中恢复放在一条时间轴怎么算
+    kind: tool_route
+    expect_tool: boss_dot_sequence_check
+    note: >-
+      DoT 来源、起止、DPS 口径和护盾绕过必须显式；分别报告低/高轨、首次耗尽、来源伤害、
+      恢复抵消和无 DoT 基线，不从异常、阶段或地面效果推断窗口与叠层。
+
+  - id: route_boss_dot_sequence_compare
+    query: 帮我对比两套 DoT 暴露方案
+    kind: tool_route
+    expect_tool: boss_dot_sequence_compare
+    note: >-
+      分别比较存活档位、高伤生命余量、耗尽时间、DoT 总承伤和最低生命，不扩写成走位打法。
+
   - id: route_boss_risk_audit
     query: 84级，10000血、75冰抗、0混抗、10000护甲，所有 Boss 技能哪个最危险
     kind: tool_route
