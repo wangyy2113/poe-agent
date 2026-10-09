@@ -111,6 +111,9 @@ class PreferredToolWithoutEvidenceTest(unittest.TestCase):
             patch.object(loop, "get_config", lambda: _FakeConfig()),
             patch.object(loop, "_persist", lambda *a, **k: None),
             patch.object(loop, "_record_gaps", lambda *a, **k: None),
+            # 本用例只钉 preferred-tool 零证据兜底；覆盖层由自己的测试负责。
+            # 不打桩会隐式依赖开发机 data/poe.db，在干净 CI 上先被 inventory 拦截。
+            patch.object(loop, "_dimension_verdict", lambda *_a, **_k: None),
             patch.object(loop, "_precision_tool_route", lambda _q: ""),
             patch.object(loop, "_preferred_tool_route", lambda _q: "stat_sources"),
             patch.object(loop, "_invoke_preferred_tool", lambda *a, **k: empty),

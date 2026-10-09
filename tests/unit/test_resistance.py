@@ -447,16 +447,20 @@ class ResistanceGateTest(unittest.TestCase):
     """抗性问法不得被维度闸门拦掉——常量域已入库，且现在有工具。"""
 
     def test_抗性结算问法不被判成缺口(self) -> None:
-        from core import db as dbmod
-        from core.config import get_config
         from kb.coverage import dimension_gap
 
-        dbmod.init_db(get_config().db_path, vector_dim=0)
-        conn = dbmod.get_conn()
-        for question in ("抗性上限是多少", "超抗有什么用", "火抗 120 是不是浪费了"):
-            with self.subTest(question=question):
-                verdict = dimension_gap(conn, question)
-                self.assertFalse(verdict is not None and verdict.is_gap)
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        conn.execute("CREATE TABLE game_constant(group_name TEXT)")
+        conn.execute("INSERT INTO game_constant VALUES ('resistance')")
+        conn.execute("CREATE TABLE chunk(entity_id TEXT)")
+        try:
+            for question in ("抗性上限是多少", "超抗有什么用", "火抗 120 是不是浪费了"):
+                with self.subTest(question=question):
+                    verdict = dimension_gap(conn, question)
+                    self.assertFalse(verdict is not None and verdict.is_gap)
+        finally:
+            conn.close()
 
 
 if __name__ == "__main__":
