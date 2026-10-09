@@ -1,0 +1,23 @@
+{
+  "format_version": 1,
+  "case_id": "route_source_conflict_summary",
+  "query": "跨来源冲突有多少，按 kind 和 review cause 怎么分布",
+  "recorded_at": "2026-10-09T16:37:23+08:00",
+  "model": "",
+  "tokens": {},
+  "tool_calls": [
+    "kb_search",
+    "source_conflict_summary"
+  ],
+  "evidence_gap": false,
+  "out_of_scope": false,
+  "precision_route": "",
+  "gap_answer": "",
+  "final_answer": "### 跨来源差异台账概览\n\n- 总记录：547；active 547；resolved 0\n- 已确认冲突：8（active 8）\n- 待核对差异：539（active 539）\n\n#### 按 kind\n| kind | 分类 | active | resolved | 总数 |\n| --- | --- | ---: | ---: | ---: |\n| mod_review | 待核对 | 254 | 0 | 254 |\n| unique_review | 待核对 | 229 | 0 | 229 |\n| spectre_review | 待核对 | 43 | 0 | 43 |\n| gem_review | 待核对 | 9 | 0 | 9 |\n| spectre | 已确认 | 8 | 0 | 8 |\n| tree_review | 待核对 | 3 | 0 | 3 |\n| essence_review | 待核对 | 1 | 0 | 1 |\n\n#### 按来源对\n| 来源 A | 来源 B | 已确认 | 待核对 | 总数 |\n| --- | --- | ---: | ---: | ---: |\n| POEDB | Path of Building | 8 | 516 | 524 |\n| POEDB 列表页 | POEDB 详情页 | 0 | 22 | 22 |\n| POEDB | PoB | 0 | 1 | 1 |\n\n#### Review 成因\n| cause | 条数 |\n| --- | ---: |\n| ladder_ambiguous | 222 |\n| 未标注 | 219 |\n| granularity | 43 |\n| ladder_partial | 32 |\n| detail_page_mismatch | 22 |\n| tier_mismatch | 1 |\n\n> 分类：kind 以 _review 结尾的行仅为待核对差异；其它 kind 才属于已确认冲突。\n> 用户出口：默认用户查询只返回 active confirmed；review 必须显式请求并始终标注未确认。\n> 边界：kind 以 _review 结尾的记录只是待核对差异，不是已确认冲突；默认仅返回未解决的 confirmed。查询结果只复述台账两侧原值、来源和审计状态，不自行裁决正确值，也不把 review 数量当作数据错误数量。",
+  "blocked_claims": 0,
+  "elapsed_ms": 57,
+  "evidence_fingerprint": "sha256:e3b0c44298fc1c149afbf4c8996fb924",
+  "_warning": "raw_answer 是未过出口闸门的模型原文，含可能无据的断言，不得当作事实引用",
+  "raw_answer": "",
+  "evidence": []
+}

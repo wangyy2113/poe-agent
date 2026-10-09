@@ -6565,3 +6565,41 @@ ready/broken，因此前置 Guard 是否完全吸收残余可以让两轨状态�
 | 检索评测 | 121/121 | **121/121**（确定性工具扩展不改变检索题集；`test_search.py` 69/69） |
 | 出口闸门回放 | 142/143 | **142/143**（既有 `desc_cluster_jewel_not_on_tree` 录制差异；本轮未改该工具或录制） |
 | LLM token | 0 | **0**（Ward 状态推进、比较、门槛反解与 Build 映射均为确定性代码） |
+
+---
+
+## 2026-10-09（第一百二十五轮）· 跨来源差异普通用户查询闭环
+
+新增 `kb/conflicts.py`，统一处理 `source_conflict` 的 confirmed/review 分类、过滤、分页和
+聚合。分类只认 `kind` 后缀：所有 `*_review` 都是待核对，其它 kind 才是 confirmed；默认
+只返回 active confirmed。查询中的 LIKE 通配符按字面转义，集合过滤参数化；kind/source
+数组按集合语义排序，游标用严格 URL-safe Base64，并绑定 query、status、resolution、kinds、
+sources 指纹。空表、非法过滤器、损坏/跨过滤器游标和稳定降序翻页都有单测。
+
+新增 `source_conflict_lookup` / `source_conflict_summary` 两个 Knowledge/MCP 工具，以及
+`POST /conflicts/lookup` / `GET /conflicts/summary` 两个普通鉴权端点。当前真实库 547 条拆为
+8 条 confirmed 与 539 条 review；概览继续拆 active/resolved、kind、来源对和 review cause。
+confirmed 与 review 分区渲染，只有 confirmed 可生成 `conflict_block` 与可支撑事实引用；
+review 引用明确不可支撑游戏事实。
+
+本轮真实链路抓出一个仅测 `_preferred_tool_route()` 看不到的分叉：制作精确路由把
+“跨来源数据冲突”里的“冲突”误判成词缀组合互斥，优先裁成 `check_mod_combination`，随后
+进入模型重试。修复后 `_precision_tool_route()` 对两个来源台账路由显式让路；批量准备阶段
+抽验确认 lookup/summary 都调用 `kb_search → source_conflict_*` 后直接结束。三条受影响录制
+重跑均为 0 token，工具路由 2/2，流式/批量回放 3/3 一致。
+
+否决了两种做法：一是让模型转述 review——其引用按设计 `can_support_facts=false`，出口闸门
+会正确拦截，用户反而看不到清单；二是把 review 引用改成可支撑事实——这会让“存在待核对
+记录”被扩写成“游戏数据确有冲突”。最终由代码直接返回工具渲染答案，既保留边界又不放宽
+事实资格。具体对象只从唯一一段引号抽取，不从自然语言猜实体边界。
+
+### 指标
+
+| | 上一轮 | 本轮 |
+| --- | --- | --- |
+| 单测 | 2,210 | **2,237**（+27 分类、过滤、转义、分页、游标、空表、聚合、渲染、引用资格、工具/API 与完整路由分叉） |
+| Knowledge/MCP 工具 | 73 | **75**（新增差异逐条查询与台账聚合） |
+| 黄金用例 | 192 | **194**（新增 lookup/summary 两条工具路由哨兵；旧负向用例翻为 8 条 confirmed 的正向出口哨兵） |
+| 检索评测 | 121/121 | **120/120**（旧“无 confirmed”检索拒答翻为结构化工具答案后不再伪装成检索题，分母 −1；`test_search.py` 69/69） |
+| 出口闸门回放 | 142/143 | **144/145**（新增两条路由录制均通过；仍只有既有 `desc_cluster_jewel_not_on_tree` 录制差异） |
+| 本轮受影响录制 LLM token | 0 | **0**（三条均由代码直接生成；首次发现路由冲突时的失败重试不计入成功录制） |

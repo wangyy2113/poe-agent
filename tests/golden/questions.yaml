@@ -1152,11 +1152,9 @@ cases:
       于是「法术压制能从哪些渠道获得」被从 stat_sources 抢走（现有单测当场拦下）。
       现在两个计算器遇到枚举意图词一律让路——枚举问句永远不是计算题。
 
-  # ══ 跨来源：本轮只能测负向 ═════════════════════════════════════════════
-  # 库里 kind='mod' 的**已确认冲突是 0 条**，只有 mod_review 2729 条
-  # （两源对不上、待人工核对）。按需求 15.5 与 /admin/conflicts 的约定，
-  # mod_review 不得当作冲突呈现，所以这一类只能验证「不要谎报冲突」。
-  # 等人工核对把某条改成 kind='mod' 之后，再补正向用例（并列展示 + 推荐 POEDB）。
+  # ══ 跨来源：confirmed 与 review 必须分区 ══════════════════════════════════
+  # 当前 8 条 kind='spectre' 是已确认冲突；所有 *_review 都只是待核对差异。
+  # 默认用户查询只列 active confirmed，review 必须显式请求，且不得进入 conflict_block。
 
   - id: cross_lifeleech_amulet
     query: 护身符上的生命偷取词缀有几档
@@ -1168,11 +1166,27 @@ cases:
   - id: cross_no_confirmed_conflict
     query: 知识库里有哪些已确认的跨来源数据冲突
     kind: cross_source
-    expect_gap: true
-    forbid_in_answer: ["待核对", "mod_review"]
+    expect_in_answer: ["已确认冲突", "Cursed Mariner"]
+    forbid_in_answer: ["mod_review"]
     note: >-
-      已确认冲突为 0 条，且 source_conflict 表不进 chunk 索引（只由 /admin/conflicts
-      暴露），所以普通问答确实无依据 → 应走缺据声明，且不得把待核对项列为冲突
+      source_conflict 不进 chunk 索引，但已由只读结构化工具接入普通问答；默认只返回
+      active confirmed。ID 沿用旧录制名，语义已从“没有 confirmed”翻为正向查询哨兵。
+
+  - id: route_source_conflict_lookup
+    query: 知识库里有哪些已确认的跨来源数据冲突
+    kind: tool_route
+    expect_tool: source_conflict_lookup
+    note: >-
+      台账不进 chunk 索引；必须走 source_conflict_lookup，默认 active confirmed，
+      不能退回 kb_coverage 或把 *_review 当成冲突。
+
+  - id: route_source_conflict_summary
+    query: 跨来源冲突有多少，按 kind 和 review cause 怎么分布
+    kind: tool_route
+    expect_tool: source_conflict_summary
+    note: >-
+      总量问题走聚合工具；表总行数必须拆成 confirmed/review 与 active/resolved，
+      不能把 547 条台账记录统称为冲突。
 
   - id: cross_pob_priority
     query: 词缀数值以 POEDB 还是 Path of Building 为准

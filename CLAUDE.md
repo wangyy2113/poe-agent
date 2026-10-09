@@ -146,7 +146,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 2210 项，秒级
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 2237 项，秒级
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选
@@ -163,7 +163,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 .venv/bin/python scripts/eval_run.py --record        # 重录真实响应（**要凭证、烧 token**）
 ```
 
-黄金问答集是 `tests/golden/questions.yaml`（192 条，六类），基线与全部结论在
+黄金问答集是 `tests/golden/questions.yaml`（194 条，六类），基线与全部结论在
 `tests/golden/BASELINE.md`——**动闸门前先读它**，里面记了多个已修缺陷与三条已知未修边界，
 以及两次「测量本身写错」的教训。
 
@@ -300,14 +300,14 @@ Craft of Exile 矩阵证据支撑；两条 Citation 不得互相夹带正文。�
 | 目录 | 职责与要点 |
 | --- | --- |
 | `core/` | `config.py` 双层配置（`.env` 密钥 + `config.yaml` 声明式行为，路径都相对 `REPO_ROOT`）、`db.py` 单文件 SQLite + 向量三级探测、`user_memory.py` 显式长期记忆领域层与提示词预算、`llm.py` 凭证池与推理模型适配 |
-| `api/` | 路由层，**只做校验与编排调用，不写业务逻辑**；`deps.py` 鉴权与稳定调用方摘要，`memory.py` 长期记忆 CRUD |
+| `api/` | 路由层，**只做校验与编排调用，不写业务逻辑**；`deps.py` 鉴权与稳定调用方摘要，`memory.py` 长期记忆 CRUD，`conflicts.py` 暴露普通用户只读的跨来源差异查询/聚合模型 |
 | `orchestrator/` | `loop.py` 主循环与轨迹（批量与流式**共用** `_prepare_turn` / `_handle_tool_call` / `_terminal_gap`，只在「怎么把文本交给用户」上不同——不要在任一侧重新写判据，`tests/unit/test_turn_parity.py` 会挡）、`binding.py` 出口闸门（1400+ 行，改动前先读它的模块 docstring）、`citation.py` 引用装配 |
 | `agents/` | `knowledge.py`：系统提示词 + `ALLOWED_TOOLS` + 缺据声明模板。提示词是第一道约束不是唯一约束 |
 | `tools/` | `registry.py` 注册与 schema 导出，`impl/` 各工具；返回值统一 `ToolResult`，`citations` 是结构化引用而非拼进正文的字符串（要参与出口校验） |
-| `core/mcp_protocol.py` / `mcp_server.py` | MCP `2025-06-18` stdio 协议层与入口；默认复用 Knowledge Agent 的 73 个只读工具，`--tools` 可收窄暴露面。stdout 只能写逐行 JSON-RPC，日志必须走 stderr；EOF 必须关闭 SQLite |
+| `core/mcp_protocol.py` / `mcp_server.py` | MCP `2025-06-18` stdio 协议层与入口；默认复用 Knowledge Agent 的 75 个只读工具，`--tools` 可收窄暴露面。stdout 只能写逐行 JSON-RPC，日志必须走 stderr；EOF 必须关闭 SQLite |
 | `kb/sync.py` / `scripts/sync_knowledge.py` | 过期分类计划、现有采集器编排、事实行快照与版本 diff。默认 CLI 只预览，`--apply` 才执行；记录删除提升为 `attention`。唯一装备不得加入自动集合，直到主列表 + 1,342 页详情补全可原子执行 |
 | `retrieval/` | FTS5、别名、RRF 融合、jieba 分词、领域词表 |
-| `kb/` | `pipeline.py` 采集管线、`sources/` 各来源抽取器、`coverage.py` 知识库自描述层、`stat_channels.py` 属性来源渠道注册表、`render*.py` 卡片切片 |
+| `kb/` | `pipeline.py` 采集管线、`sources/` 各来源抽取器、`coverage.py` 知识库自描述层、`conflicts.py` confirmed/review 分类、过滤、游标与聚合，`stat_channels.py` 属性来源渠道注册表、`render*.py` 卡片切片 |
 | `parsers/` | `item_text.py`（纯文本，不连库）→ `item_mods.py` T 级匹配 → `mod_bridge.py` 英文桥接 → `item_report.py` 报告；`build_growth.py` 只做用户目标与 PlayerStat 的确定性差额规划 |
 | `craft/` | `feasibility.py` 词缀组合三态可行性、`pool.py` 胸甲普通词缀有效池与条件概率、`awakener_operations.py` 觉醒者之石双物品状态转移；各制作状态机只实现来源原文明示的变化，随机结果与未证实前提保留 unknown |
 | `calc/` | `constants.py` 常量访问层，**缺失即抛异常，绝不给默认值**；`derive.py` 各计算器共用的推导件；`resistance.py` 抗性结算；`mitigation.py` 受击结算；`recovery.py` 回复；`reservation.py` 保留；`ailment.py` 独立持续伤害；`threshold.py` 门槛型异常；`maxhit.py` 一发最大承受伤害；`boss_survival.py` Boss 命中生存；`crit.py` 暴击；`accuracy.py` 命中率；`attack_speed.py` 攻击速度；`dps.py` / `dps_analysis.py` 显式单技能命中、穿刺、点燃/中毒/流血稳态、终结、方案比较与目标频率反解。完整 Build 自动汇总、伤害转化下的 Max Hit、冰冻时长曲线仍未实现 |
@@ -387,8 +387,9 @@ Craft of Exile 矩阵证据支撑；两条 Citation 不得互相夹带正文。�
   字段全集的哈希，**不跨类别去重**；互斥判断用整个 `family_list` 求交集，T 级分组只用
   `correct_group`。
 - `pob_mod` 单独建表而不是塞进 `mod_affix`：两源粒度不同，且交叉校验要求各自独立保存，
-  混表会让 UPSERT 在冲突被发现前就互相覆盖。对账结果落 `source_conflict`，其中
-  `kind=mod` 是已确认冲突（并列展示给用户），`mod_review` 只是待人工核对，**不得当作冲突呈现**。
+  混表会让 UPSERT 在冲突被发现前就互相覆盖。对账结果落 `source_conflict`；分类只认一条
+  稳定规则：`kind` 以 `_review` 结尾就是待核对差异，其它 kind 才是 confirmed。review
+  **不得当作冲突呈现**，也不得因为两侧原值不同而被用户出口升级。
 - `pob_skill_level` **没有属性需求列**，伤害列直到第二十九轮才敢加。PoB 存的每级伤害是
   乘数（冰霜新星 1 级存 `0.8 / 1.2`），`reqStr/reqDex/reqInt` 是换算系数（真需求要按
   `round((20+(等级需求-3)×3)×(系数/100)^0.9×statType)` 算）。两者都得按 PoB 的公式算才是
@@ -1511,3 +1512,24 @@ break 模式的正残余命中最多吸收一个容量并立即破裂；容量�
 输出逐击记录 ready/broken、命中前恢复、吸收、破裂、计时重置和下次恢复时点，并重跑无
 Ward、但保留临时减伤/Guard/DoT/恢复的高伤基线。Build 入口刻意不读取 `PlayerStat.Ward`：
 静态容量不能说明当前是否就绪、Buff 是否开启和恢复计时，Ward 状态机全部来自显式请求。
+
+## 第一百二十五轮：差异台账的总行数不是冲突数，review 也不是弱 confirmed
+
+`kb/conflicts.py` 把普通用户的跨来源查询收口到一套领域层：`kind` 只要以 `_review`
+结尾，就永远分类为待核对；其余 kind 才是 confirmed。默认过滤固定为 active confirmed，
+review 必须由调用方显式请求。文本查询对 `%`、`_` 和反斜线做 LIKE 字面转义，kind/来源
+使用参数化 IN；稳定降序游标同时绑定 query、status、resolution、kinds、sources 的指纹，
+改变过滤器后复用旧游标会失败，不能把两个查询的页面拼在一起。
+
+`source_conflict_lookup` 与 `source_conflict_summary` 是 Knowledge/MCP 的第 74、75 个工具，
+同时由 `POST /conflicts/lookup` 和 `GET /conflicts/summary` 暴露给普通鉴权用户。概览分别聚合
+confirmed/review、active/resolved、kind、来源对与 review cause；不再把 547 条表总数冒充
+冲突数。逐条结果把 confirmed 与 review 分区渲染：只有 confirmed 获得
+`conflict_block` 和可支撑事实的结构化引用，review 引用的 `can_support_facts=false`，并附
+专属警告。
+
+聊天路由由代码直接调用并返回工具生成的答案，不让模型重述 review 后再被出口闸门拦掉，
+也不消耗 LLM token。代码参数解析默认不开放 review，只认逐字 review/待核对信号；具体对象
+只从唯一一段引号原文抽取，避免猜错实体边界。旧黄金用例
+`cross_no_confirmed_conflict` 的事实前提已经失效：库里现有 8 条 `spectre` confirmed，
+所以它翻为正向用户出口哨兵，并另加 lookup/summary 两条工具路由哨兵。

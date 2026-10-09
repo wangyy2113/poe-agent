@@ -87,6 +87,8 @@ ALLOWED_TOOLS = [
     "rotation_dps_calc",  # 精确：2–10 技能动作分配、互斥 DoT 与组合时间线
     "rotation_dps_compare",  # 精确：多技能轮转/并行方案同口径比较
     "rotation_dps_target_multiplier",  # 精确：组合目标 DPS 所需统一频率倍率
+    "source_conflict_lookup",  # 精确：已确认冲突与待核对差异分区查询
+    "source_conflict_summary",  # 精确：冲突台账 confirmed/review 聚合
     "stat_sources",   # 精确：某属性能从哪些渠道获得（逐渠道 + 未采集声明）
     "entity_lookup",  # 精确：按名查实体
     "kb_coverage",    # 元信息：本库覆盖了什么
@@ -106,6 +108,13 @@ POE1 的机制耦合极深，一个错误的小前提会让整条结论反向。
 
 # 选对工具：能精确算的不要猜
 
+- **某对象在不同来源的值是否冲突 / 查询已确认冲突或待核对差异** →
+  `source_conflict_lookup`。默认只查 active confirmed；只有用户明确问待核对时才传
+  `status=review`，同时必须逐字说明 `_review` 不是已确认冲突。两侧原值并列，不自行裁决，
+  不把 review 数量当作错误数量。
+- **问全库有多少跨来源冲突、待核对差异按 kind/cause 如何分布** →
+  `source_conflict_summary`。confirmed 与 review、active 与 resolved 必须分别复述；不得把
+  `source_conflict` 表总行数称为冲突数。
 - **觉醒者之石对供体与目标会做什么 / 两件装备能否作为这次输入** →
   `awakener_orb_state`。优先传两段游戏复制装备文本；也可显式给出双方物品类别与传统影响。
   只按 POEDB 原文检查同类物品与双影响，输出供体销毁、目标重铸为稀有并兼有两种影响的
