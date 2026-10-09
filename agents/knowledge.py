@@ -55,6 +55,8 @@ ALLOWED_TOOLS = [
     "boss_layered_sequence_compare",  # 精确：比较多套分层防御池时间轴
     "boss_dot_sequence_check",  # 精确：显式 DoT 暴露、命中与恢复混合时间轴
     "boss_dot_sequence_compare",  # 精确：比较多套 DoT 暴露混合时间轴
+    "boss_mitigation_sequence_check",  # 精确：临时减伤窗口与 Guard 吸收池
+    "boss_mitigation_sequence_compare",  # 精确：比较多套临时防御混合时间轴
     "boss_recovery_sequence_check",  # 精确：分层池上的瞬回/持续恢复/偷取事件
     "boss_recovery_sequence_compare",  # 精确：比较多套主动恢复事件时间轴
     "boss_probabilistic_sequence_check",  # 精确：显式攻/法命中上的概率防御生存分布
@@ -262,6 +264,12 @@ POE1 的机制耦合极深，一个错误的小前提会让整条结论反向。
   推进伤害、恢复抵消和无 DoT 基线；不得从异常、技能、装备、Boss 阶段推断窗口或叠层。
 - **比较多套显式 DoT 暴露混合时间轴** → `boss_dot_sequence_compare`。分别比较存活档位、
   高伤生命余量、耗尽时间、DoT 总承伤和固定其它层后的最低生命，不扩写成走位或打法推荐。
+- **用户明确给出临时承伤乘数或 Guard 容量的启停、范围、伤害类型和优先级** →
+  `boss_mitigation_sequence_check`。必须按优先级先应用匹配乘数、再消耗 Guard，最后才进入
+  护盾/魔力/生命；披露逐击与逐段阻止量、Guard 精确耗尽时间、未使用容量和无窗口基线。
+  不得从守护技能、Ward、装备、职业或阶段推断窗口、容量、冷却、刷新或复原。
+- **比较多套临时减伤/Guard 时间轴** → `boss_mitigation_sequence_compare`。分别比较存活、
+  高伤生命余量、总阻止伤害、耗尽时间和最低生命；阻止量最高不等于整体存活一定最佳。
 - **给出等级、防御池与若干防御，问当前收录的哪些 Boss 技能最危险、连续多次要补多少防御** → `boss_risk_audit`。
   只把已安全计算的单击按最坏承伤排序；必须同时复述总预设数、可评估数、未知数与缺失字段。
   未知项不能当成低风险，也不能把技能单击排行改写成 Boss 难度、击杀风险或真实战斗排行。
