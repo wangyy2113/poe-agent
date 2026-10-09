@@ -502,6 +502,33 @@ def render_flip_analysis(result: FlipAnalysis) -> str:
     return "\n".join(lines)
 
 
+def material_cost_citations(
+    result: MaterialCostEstimate, rendered: str
+) -> list[dict[str, object]]:
+    """把逐项价格来源折叠成按来源去重的实时经济证据。"""
+    identity = "|".join(
+        f"{item.resolved_name}:{item.quantity}:{item.fetched_at}"
+        for item in result.materials
+    )
+    digest = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:16]
+    source_urls = {
+        item.source: item.source_url
+        for item in result.materials
+        if item.unit_price is not None
+    }
+    return [{
+        "chunk_id": f"economy-cost:{result.league}:{digest}:{source}",
+        "entity_id": None,
+        "title": f"{result.league} 材料清单成本快照",
+        "url": _citation_url(source, source_url),
+        "source": source,
+        "source_priority": _source_priority(source),
+        "can_support_facts": True,
+        "text": rendered,
+        "channel": "live_economy",
+    } for source, source_url in sorted(source_urls.items())]
+
+
 @REGISTRY.register(
     name="economy_flip_analysis",
     description=(
@@ -880,27 +907,7 @@ def economy_material_cost(
         return ToolResult(ok=False, error=str(exc), meta={"source": "poe.watch"})
 
     rendered = render_material_cost(result)
-    identity = "|".join(
-        f"{item.resolved_name}:{item.quantity}:{item.fetched_at}"
-        for item in result.materials
-    )
-    digest = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:16]
-    source_urls = {
-        item.source: item.source_url
-        for item in result.materials
-        if item.unit_price is not None
-    }
-    citations = [{
-        "chunk_id": f"economy-cost:{result.league}:{digest}:{source}",
-        "entity_id": None,
-        "title": f"{result.league} 材料清单成本快照",
-        "url": _citation_url(source, source_url),
-        "source": source,
-        "source_priority": _source_priority(source),
-        "can_support_facts": True,
-        "text": rendered,
-        "channel": "live_economy",
-    } for source, source_url in sorted(source_urls.items())]
+    citations = material_cost_citations(result, rendered)
     return ToolResult(
         ok=True,
         data={**result.as_dict(), "answer": rendered},

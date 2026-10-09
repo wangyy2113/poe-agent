@@ -1295,6 +1295,28 @@ cases:
     expect_tool: economy_material_cost
     note: 明确名称与数量的清单必须走确定性成本工具；不能只查其中一个单价或交给模型心算
 
+  - id: route_craft_attempt_plan_material_budget
+    query: >-
+      独立尝试计划：底材“铁制背心”，物品等级 50，前缀侧，目标“最大生命”；
+      每次完整重置并只做一次普通同侧选择；每次消耗 1 个混沌石；最多尝试 100 次；
+      计算 P90 和材料预算。
+    kind: tool_route
+    expect_tool: craft_attempt_plan
+    note: >-
+      只有逐字给全底材、物等、单侧目标、完整重置、单次选择、每次材料与尝试上限时，
+      才能把已验证普通池提升为几何分布；不请求市场价时只输出材料数量。
+
+  - id: route_craft_attempt_plan_market_cost
+    query: >-
+      独立尝试计划：底材“铁制背心”，物品等级 50，前缀侧，目标“最大生命”；
+      每次完整重置并只做一次普通同侧选择；每次消耗 1 个混沌石和 2 个增幅石；
+      最多尝试 20 次；计算成功率、材料预算和市场成本。
+    kind: tool_route
+    expect_tool: craft_attempt_plan
+    note: >-
+      市场成本仍只对用户显式清单计价；任一单价缺失、联盟/来源/时间口径不一致时，
+      必须保留尝试分布和材料数量，但不得输出部分总成本或补完整制作路线。
+
   - id: gap_cluster_jewel_notables
     query: 大型星团珠宝能开出哪些大点
     kind: gap

@@ -146,7 +146,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 2275 项，秒级
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 2301 项，秒级
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选
@@ -163,7 +163,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 .venv/bin/python scripts/eval_run.py --record        # 重录真实响应（**要凭证、烧 token**）
 ```
 
-黄金问答集是 `tests/golden/questions.yaml`（194 条，六类），基线与全部结论在
+黄金问答集是 `tests/golden/questions.yaml`（196 条，六类），基线与全部结论在
 `tests/golden/BASELINE.md`——**动闸门前先读它**，里面记了多个已修缺陷与三条已知未修边界，
 以及两次「测量本身写错」的教训。
 
@@ -304,12 +304,12 @@ Craft of Exile 矩阵证据支撑；两条 Citation 不得互相夹带正文。�
 | `orchestrator/` | `loop.py` 主循环与轨迹（批量与流式**共用** `_prepare_turn` / `_handle_tool_call` / `_terminal_gap`，只在「怎么把文本交给用户」上不同——不要在任一侧重新写判据，`tests/unit/test_turn_parity.py` 会挡）、`binding.py` 出口闸门（1400+ 行，改动前先读它的模块 docstring）、`citation.py` 引用装配 |
 | `agents/` | `knowledge.py`：系统提示词 + `ALLOWED_TOOLS` + 缺据声明模板。提示词是第一道约束不是唯一约束 |
 | `tools/` | `registry.py` 注册与 schema 导出，`impl/` 各工具；返回值统一 `ToolResult`，`citations` 是结构化引用而非拼进正文的字符串（要参与出口校验） |
-| `core/mcp_protocol.py` / `mcp_server.py` | MCP `2025-06-18` stdio 协议层与入口；默认复用 Knowledge Agent 的 75 个只读工具，`--tools` 可收窄暴露面。stdout 只能写逐行 JSON-RPC，日志必须走 stderr；EOF 必须关闭 SQLite |
+| `core/mcp_protocol.py` / `mcp_server.py` | MCP `2025-06-18` stdio 协议层与入口；默认复用 Knowledge Agent 的 76 个只读工具，`--tools` 可收窄暴露面。stdout 只能写逐行 JSON-RPC，日志必须走 stderr；EOF 必须关闭 SQLite |
 | `kb/sync.py` / `scripts/sync_knowledge.py` | 过期分类计划、现有采集器编排、事实行快照与版本 diff。默认 CLI 只预览，`--apply` 才执行；记录删除提升为 `attention`。唯一装备不得加入自动集合，直到主列表 + 1,342 页详情补全可原子执行 |
 | `retrieval/` | FTS5、别名、RRF 融合、jieba 分词、领域词表 |
 | `kb/` | `pipeline.py` 采集管线、`sources/` 各来源抽取器、`coverage.py` 知识库自描述层、`conflicts.py` confirmed/review 分类、过滤、游标与聚合，`stat_channels.py` 属性来源渠道注册表、`render*.py` 卡片切片 |
 | `parsers/` | `item_text.py`（纯文本，不连库）→ `item_mods.py` T 级匹配 → `mod_bridge.py` 英文桥接 → `item_report.py` 报告；`build_growth.py` 只做用户目标与 PlayerStat 的确定性差额规划 |
-| `craft/` | `feasibility.py` 词缀组合三态可行性、`pool.py` 胸甲普通词缀有效池与条件概率、`awakener_operations.py` 觉醒者之石双物品状态转移；各制作状态机只实现来源原文明示的变化，随机结果与未证实前提保留 unknown |
+| `craft/` | `feasibility.py` 词缀组合三态可行性、`pool.py` 胸甲普通词缀有效池与条件概率、`attempt_plan.py` 严格独立单次选择的几何分布/材料预算/价格快照一致性、`awakener_operations.py` 觉醒者之石双物品状态转移；各制作状态机只实现来源原文明示的变化，随机结果与未证实前提保留 unknown |
 | `calc/` | `constants.py` 常量访问层，**缺失即抛异常，绝不给默认值**；`derive.py` 各计算器共用的推导件；`resistance.py` 抗性结算；`mitigation.py` 受击结算；`recovery.py` 回复；`reservation.py` 保留；`ailment.py` 独立持续伤害；`threshold.py` 门槛型异常；`maxhit.py` 一发最大承受伤害；`boss_survival.py` Boss 命中生存；`crit.py` 暴击；`accuracy.py` 命中率；`attack_speed.py` 攻击速度；`dps.py` / `dps_analysis.py` 显式单技能命中、穿刺、点燃/中毒/流血稳态、终结、方案比较与目标频率反解。完整 Build 自动汇总、伤害转化下的 Max Hit、冰冻时长曲线仍未实现 |
 | `static/` | 单页前端三个文件，无构建步骤、无 Node、无第三方 JS（Markdown 渲染器自写，为了强制先转义再解析） |
 | `tests/golden/` | 评测资产：`questions.yaml` 黄金问答集、`loader.py` 严格校验、`recording.py` 录制回放、`recordings/` 真实响应、`audit.yaml` 人工结论、`BASELINE.md` 指标基线 |
@@ -319,6 +319,7 @@ Craft of Exile 矩阵证据支撑；两条 Citation 不得互相夹带正文。�
 `agents/knowledge.ALLOWED_TOOLS` 的**顺序即推荐优先级**，注册在 `tools/impl/`（导入
 `tools.impl` 即完成注册）：
 
+`craft_attempt_plan`（已验证普通池上的独立尝试分布、材料与可选成本）→
 `affix_pool_odds`（胸甲同侧普通词缀条件概率）→ `check_mod_combination`（三态可行性）→
 `bench_recipe_catalog`（工艺台目录）→ `harvest_craft_catalog`（收获定向工艺目录与命能费用）→
 `awakener_orb_state`（觉醒者之石双物品状态）→

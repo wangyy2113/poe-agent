@@ -8,7 +8,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, model_validator
 
 from api.deps import require_user
+from economy.service import PUBLIC_CATEGORIES
 from tools.impl.awakener_operation import awakener_orb_state
+from tools.impl.craft_attempt_plan import craft_attempt_plan as build_craft_attempt_plan
 from tools.impl.craft_operation import craft_operation_state
 from tools.impl.eldritch_operation import eldritch_operation_state
 from tools.impl.essence_operation import essence_operation_state
@@ -20,6 +22,44 @@ from tools.impl.harvest_operation import harvest_reforge_state
 from tools.impl.veiled_operation import veiled_operation_state
 
 router = APIRouter(tags=["制作"])
+
+
+class AttemptMaterialRequest(BaseModel):
+    query: str = Field(min_length=1, max_length=200)
+    quantity_per_attempt: float = Field(gt=0, le=1_000_000_000)
+    category: str = Field(default="auto", max_length=80)
+
+    @model_validator(mode="after")
+    def known_category(self) -> "AttemptMaterialRequest":
+        if self.category not in PUBLIC_CATEGORIES:
+            raise ValueError(f"category 必须是：{', '.join(PUBLIC_CATEGORIES)}")
+        return self
+
+
+class CraftAttemptPlanRequest(BaseModel):
+    base_type: str = Field(min_length=1, max_length=80)
+    item_level: int = Field(ge=1, le=100)
+    generation_side: Literal["prefix", "suffix"]
+    target_query: str = Field(min_length=1, max_length=100)
+    materials: list[AttemptMaterialRequest] = Field(min_length=1, max_length=20)
+    max_attempts: int = Field(ge=1, le=1_000_000)
+    include_market_prices: bool = False
+    league: str | None = Field(default=None, max_length=100)
+
+
+class CraftAttemptPlanResponse(BaseModel):
+    status: Literal["exact", "unknown"]
+    pool: dict[str, Any]
+    max_attempts: int
+    materials_per_attempt: list[dict[str, Any]]
+    distribution: dict[str, Any] | None
+    material_budget: list[dict[str, Any]]
+    pricing: dict[str, Any]
+    cost_budget: dict[str, Any] | None
+    assumptions: list[str]
+    exclusions: list[str]
+    gaps: list[dict[str, str]]
+    answer: str
 
 
 class CraftOperationRequest(BaseModel):
@@ -702,3 +742,25 @@ def harvest_exchange_operation_state(
             "supported_operations": (result.data or {}).get("supported_operations", []),
         })
     return HarvestExchangeResponse(**result.data)
+
+
+@router.post("/craft/attempt-plan", response_model=CraftAttemptPlanResponse)
+def independent_attempt_plan(
+    req: CraftAttemptPlanRequest, _caller: str = Depends(require_user)
+) -> CraftAttemptPlanResponse:
+    """计算严格独立单次选择模型；不会从目标反推实际制作步骤。"""
+    result = build_craft_attempt_plan(
+        base_type=req.base_type,
+        item_level=req.item_level,
+        generation_side=req.generation_side,
+        target_query=req.target_query,
+        materials=[item.model_dump() for item in req.materials],
+        max_attempts=req.max_attempts,
+        include_market_prices=req.include_market_prices,
+        league=req.league,
+    )
+    if not result.ok:
+        raise HTTPException(status_code=422, detail={
+            "error": "invalid_craft_attempt_plan", "reason": result.error,
+        })
+    return CraftAttemptPlanResponse(**result.data)
