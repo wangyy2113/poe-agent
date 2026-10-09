@@ -18,10 +18,10 @@
 
 `player_stats` 那一段**是 PoB 自己算的快照**，不是本库算的，也不是知识库证据——
 它反映用户自己那份 PoB 的版本与配置。字段名与 `source_note` 都写清这一点，
-免得下游把它与本库计算结果混为同一来源。只有显式请求 `boss_survival`、
-`boss_sequence`、`boss_timed_sequence` 或 `boss_risk_audit` 时，本库才把白名单字段当作
-已标注来源的输入送入单击、用户显式混合序列、带恢复时间轴或横向风险审计计算器，并逐字段
-回传实际采用值。
+免得下游把它与本库计算结果混为同一来源。只有显式请求 `boss_survival`、`boss_sequence`、
+`boss_timed_sequence`、`boss_probabilistic_sequence`、`boss_layered_sequence`、
+`boss_recovery_sequence` 或 `boss_risk_audit` 时，本库才把白名单字段当作已标注来源的输入送入
+对应的单击、用户显式时间轴或横向风险审计计算器，并逐字段回传实际采用值。
 混合序列始终使用基础防御字段，不会把 PoB 的单击 ``*MaximumHitTaken`` 拆开复用。
 """
 
@@ -38,6 +38,8 @@ from api.deps import require_user
 from api.boss import (
     BossLayeredEvent,
     BossLayeredSequenceResponse,
+    BossRecoveryEvent,
+    BossRecoverySequenceResponse,
     BossProbabilisticEvent,
     BossProbabilisticSequenceResponse,
     BossRiskAuditResponse,
@@ -83,6 +85,7 @@ from tools.impl.boss import (
 from tools.impl.boss_timeline import boss_timed_sequence_from_build
 from tools.impl.boss_probability import boss_probabilistic_sequence_from_build
 from tools.impl.boss_layered import boss_layered_sequence_from_build
+from tools.impl.boss_recovery import boss_recovery_sequence_from_build
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["Build"])
@@ -218,6 +221,21 @@ class BuildBossLayeredSequenceRequest(BaseModel):
     energy_shield_recharge_interrupt_mode: Literal[
         "energy_shield_damage", "any_hit"
     ] = "energy_shield_damage"
+
+
+class BuildBossRecoverySequenceRequest(BuildBossLayeredSequenceRequest):
+    """用 Build 分层池快照与显式主动恢复事件推进 Boss 时间轴。"""
+
+    recovery_events: list[BossRecoveryEvent] = Field(min_length=0, max_length=100)
+    life_leech_rate_cap_pct: float = Field(
+        default=20, ge=0, le=1000, allow_inf_nan=False
+    )
+    energy_shield_leech_rate_cap_pct: float = Field(
+        default=10, ge=0, le=1000, allow_inf_nan=False
+    )
+    mana_leech_rate_cap_pct: float = Field(
+        default=20, ge=0, le=1000, allow_inf_nan=False
+    )
 
 
 class BuildBossRiskAuditRequest(BaseModel):
@@ -374,6 +392,13 @@ class BuildRequest(BaseModel):
         description=(
             "可选的生命/能量护盾/魔力分层 Boss 时间轴。逐击护盾绕过和 MoM 比例必须"
             "显式提供；池与回复优先取 PlayerStat，缺字段时返回 unknown。"
+        ),
+    )
+    boss_recovery_sequence: BuildBossRecoverySequenceRequest | None = Field(
+        default=None,
+        description=(
+            "可选的 Boss 主动恢复事件时间轴。基础池、固定净回复与护盾回充读取 PlayerStat；"
+            "药剂式持续恢复、瞬回和偷取实例的时间与数值必须显式提供。"
         ),
     )
     boss_risk_audit: BuildBossRiskAuditRequest | None = Field(
@@ -585,6 +610,15 @@ class BuildBossLayeredSequenceOut(BossLayeredSequenceResponse):
     citations: list[BuildBossCitationOut] = []
 
 
+class BuildBossRecoverySequenceOut(BossRecoverySequenceResponse):
+    input_source: str = "pob_player_stat_and_explicit_recovery_events"
+    source_fields: dict[str, float] = {}
+    source_config: dict[str, str] = {}
+    calculation_mode: str | None = None
+    fallback_reason: str = ""
+    citations: list[BuildBossCitationOut] = []
+
+
 class BuildBossRiskAuditOut(BossRiskAuditResponse):
     pool_mode: Literal["life", "life_and_energy_shield"]
     input_source: str = "pob_player_stat"
@@ -713,6 +747,8 @@ class BuildResponse(BaseModel):
     boss_probabilistic_sequence: BuildBossProbabilisticSequenceOut | None = None
     #: 可选：分别推进生命、能量护盾、魔力与护盾回充
     boss_layered_sequence: BuildBossLayeredSequenceOut | None = None
+    #: 可选：在分层池上结算显式瞬回、持续恢复与偷取实例
+    boss_recovery_sequence: BuildBossRecoverySequenceOut | None = None
     #: 可选：按当前 Build 基础防御快照横向审计已收录的 Boss 单击
     boss_risk_audit: BuildBossRiskAuditOut | None = None
     #: 可选：用户显式目标与当前 PlayerStat 之间的确定性成长里程碑
@@ -903,6 +939,7 @@ def analyze_build(req: BuildRequest, caller: str = Depends(require_user)) -> Bui
         boss_timed_sequence_query=req.boss_timed_sequence,
         boss_probabilistic_sequence_query=req.boss_probabilistic_sequence,
         boss_layered_sequence_query=req.boss_layered_sequence,
+        boss_recovery_sequence_query=req.boss_recovery_sequence,
         boss_risk_audit_query=req.boss_risk_audit,
         growth_plan_query=req.growth_plan,
     )
@@ -1006,6 +1043,7 @@ def _build_response(
     boss_timed_sequence_query: BuildBossTimedSequenceRequest | None = None,
     boss_probabilistic_sequence_query: BuildBossProbabilisticSequenceRequest | None = None,
     boss_layered_sequence_query: BuildBossLayeredSequenceRequest | None = None,
+    boss_recovery_sequence_query: BuildBossRecoverySequenceRequest | None = None,
     boss_risk_audit_query: BuildBossRiskAuditRequest | None = None,
     growth_plan_query: BuildGrowthPlanRequest | None = None,
 ) -> BuildResponse:  # noqa: ANN001
@@ -1019,6 +1057,7 @@ def _build_response(
     boss_timed_sequence_result = None
     boss_probabilistic_sequence_result = None
     boss_layered_sequence_result = None
+    boss_recovery_sequence_result = None
     boss_risk_audit_result = None
     growth_plan_result: BuildGrowthPlan | None = None
     if boss_query is not None:
@@ -1139,6 +1178,46 @@ def _build_response(
         boss_layered_sequence_result = BuildBossLayeredSequenceOut(
             **(checked_layered.data or {}), citations=checked_layered.citations,
         )
+    if boss_recovery_sequence_query is not None:
+        recovery_query = boss_recovery_sequence_query
+        checked_recovery = boss_recovery_sequence_from_build(
+            build,
+            events=[item.model_dump() for item in recovery_query.events],
+            recovery_events=[
+                item.model_dump() for item in recovery_query.recovery_events
+            ],
+            level=recovery_query.level,
+            uber=recovery_query.uber,
+            roll_range=recovery_query.roll_range,
+            mana_before_life_pct=recovery_query.mana_before_life_pct,
+            life_recovery_per_second=recovery_query.life_recovery_per_second,
+            energy_shield_recovery_per_second=(
+                recovery_query.energy_shield_recovery_per_second
+            ),
+            mana_recovery_per_second=recovery_query.mana_recovery_per_second,
+            energy_shield_recharge_per_second=(
+                recovery_query.energy_shield_recharge_per_second
+            ),
+            energy_shield_recharge_delay_seconds=(
+                recovery_query.energy_shield_recharge_delay_seconds
+            ),
+            energy_shield_recharge_interrupt_mode=(
+                recovery_query.energy_shield_recharge_interrupt_mode
+            ),
+            life_leech_rate_cap_pct=recovery_query.life_leech_rate_cap_pct,
+            energy_shield_leech_rate_cap_pct=(
+                recovery_query.energy_shield_leech_rate_cap_pct
+            ),
+            mana_leech_rate_cap_pct=recovery_query.mana_leech_rate_cap_pct,
+        )
+        if not checked_recovery.ok:
+            raise HTTPException(status_code=422, detail={
+                "error": "invalid_build_boss_recovery_sequence_query",
+                "reason": checked_recovery.error,
+            })
+        boss_recovery_sequence_result = BuildBossRecoverySequenceOut(
+            **(checked_recovery.data or {}), citations=checked_recovery.citations,
+        )
     if boss_risk_audit_query is not None:
         checked_audit = boss_risk_audit_from_build(
             build,
@@ -1220,6 +1299,7 @@ def _build_response(
         boss_timed_sequence=boss_timed_sequence_result,
         boss_probabilistic_sequence=boss_probabilistic_sequence_result,
         boss_layered_sequence=boss_layered_sequence_result,
+        boss_recovery_sequence=boss_recovery_sequence_result,
         boss_risk_audit=boss_risk_audit_result,
         growth_plan=(
             BuildGrowthPlanOut.model_validate(growth_plan_result, from_attributes=True)

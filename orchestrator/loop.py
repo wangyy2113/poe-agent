@@ -1927,6 +1927,16 @@ def _preferred_tool_route(question: str) -> str:
     )):
         return "boss_probabilistic_sequence_compare"
     if any(term in question for term in (
+        "主动恢复方案对比", "瞬回方案对比", "偷取时间轴方案对比",
+        "药剂恢复方案对比", "击中回复方案对比",
+    )):
+        return "boss_recovery_sequence_compare"
+    if any(term in question for term in (
+        "主动恢复事件", "瞬回时间轴", "偷取实例时间轴", "药剂恢复时间轴",
+        "命中前瞬回", "命中后瞬回", "击中回复时间轴", "偷取限速",
+    )):
+        return "boss_recovery_sequence_check"
+    if any(term in question for term in (
         "分层防御池方案对比", "生命护盾魔力方案对比", "MoM方案对比",
         "MoM 方案对比", "护盾回充方案对比",
     )):

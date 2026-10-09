@@ -1756,6 +1756,22 @@ cases:
       分别比较存活档位、高伤生命余量、高伤生命实际承伤和最低初始生命，不把不同池直接相加
       成总体分数，也不扩写成真实 Boss 打法或 Build 推荐。
 
+  - id: route_boss_recovery_sequence
+    query: Boss 主动恢复事件时间轴里，命中前瞬回、生命药剂持续恢复和两个偷取实例怎么结算
+    kind: tool_route
+    expect_tool: boss_recovery_sequence_check
+    note: >-
+      瞬回必须区分命中前后；持续恢复只在显式窗口积分，偷取实例先合计再按池速率上限裁剪。
+      工具披露实际生效、满池溢出和限速抑制，不从攻击频率、伤害或药剂充能生成事件。
+
+  - id: route_boss_recovery_sequence_compare
+    query: 两套药剂恢复方案对比，哪套高伤生命余量和实际主动恢复更好
+    kind: tool_route
+    expect_tool: boss_recovery_sequence_compare
+    note: >-
+      分别比较存活档位、高伤生命余量、实际主动恢复和最低生命；恢复总量高不等于存活更好，
+      也不能扩写成自动喝药、装备或实战打法建议。
+
   - id: route_boss_risk_audit
     query: 84级，10000血、75冰抗、0混抗、10000护甲，所有 Boss 技能哪个最危险
     kind: tool_route

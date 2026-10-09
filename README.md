@@ -29,7 +29,7 @@ POE1 的机制耦合极深，一个错误的小前提会让整条结论反向。
 | 通货 | 113 条（中英文名、堆叠上限、效果原文）；工艺台费用引用的 18 个通货全部能对上；**获取途径与兑换比例未采集**；市场价格以 poe.watch 为主、GGG Trade API 在线挂单为备用 |
 | 圣甲虫 | 118 个（效果、堆叠上限、地图装置放置上限）；**掉落来源未采集**；市场价格以 poe.watch 为主、GGG Trade API 在线挂单为备用 |
 | 实时经济价格、趋势、成本与双边价差 | `POST /economy/price` 查询当前快照；`POST /economy/trend` 查询历史；`POST /economy/material-cost` 汇总明确清单；`POST /economy/rare-comparables` 查询稀有装可比挂单；`POST /economy/flip-analysis` 对标准 exchange 条目核验买卖两侧、整单深度、时效与显式费用后计算净利润。SQLite 价格缓存 TTL 30 分钟、历史保留 90 天；主源无缓存时标准条目与唯一装备可显式降级官方 Trade API。**不足两个趋势点不判趋势；单侧过滤后不足 5 条不报代表价；任一侧或费用不完整时利润与 Flip 判断保持 unknown；所有结果都不是成交或收益保证** |
-| Boss 技能伤害、生存校验与防御门槛 | 10 条 Boss 技能的伤害建模 + 22 个 Boss 的护甲/闪避倍率；`boss_survival_check` 校验同一命中连续 1–100 次，`boss_defence_threshold` 反解最低防御池、抗性/护甲门槛，`boss_sequence_check` 按用户明确顺序逐击累计；`boss_timed_sequence_*` 结算显式时间轴、固定恢复与门槛；`boss_probabilistic_sequence_*` 计算闪避/格挡/压制后的低/高伤害生存分布与风险分位；`boss_layered_sequence_*` 分别推进生命、能量护盾、MoM 式魔力分流、各池回复和护盾回充中断；`boss_risk_audit` 批量排列已收录技能风险。`POST /build` 可直接消费 PoB 基础防御、分池回复及适用概率字段快照。**序列不是真实连招，概率不是保证，审计不是 Boss 难度排行，不给打法**；DoT、自动推断连招、熵式闪避相关性、幸运/不幸、Ward/CI/EB 等池替换、阶段与应对未覆盖；数字是 PoB 建模值，GGG 未公布 |
+| Boss 技能伤害、生存校验与防御门槛 | 10 条 Boss 技能的伤害建模 + 22 个 Boss 的护甲/闪避倍率；`boss_survival_check` 校验同一命中连续 1–100 次，`boss_defence_threshold` 反解最低防御池、抗性/护甲门槛，`boss_sequence_check` 按用户明确顺序逐击累计；`boss_timed_sequence_*` 结算显式时间轴、固定恢复与门槛；`boss_probabilistic_sequence_*` 计算闪避/格挡/压制后的低/高伤害生存分布与风险分位；`boss_layered_sequence_*` 分别推进生命、能量护盾、MoM 式魔力分流、各池回复和护盾回充中断；`boss_recovery_sequence_*` 再结算命中前后瞬回、定时恢复、偷取实例限速与满池溢出；`boss_risk_audit` 批量排列已收录技能风险。`POST /build` 可直接消费 PoB 基础防御、分池回复及适用概率字段快照。**序列不是真实连招，概率不是保证，审计不是 Boss 难度排行，不给打法**；DoT、自动推断连招/恢复事件、熵式闪避相关性、幸运/不幸、Ward/CI/EB 等池替换、阶段与应对未覆盖；数字是 PoB 建模值，GGG 未公布 |
 | 制作规则（名额与影响力） | 7 条前后缀名额规则（魔法 1+1、稀有 3+3、传奇不受限制、药剂随魔法，另有 PoB 独有的珠宝/Graft 2+2 与「已腐化深渊珠宝回到 3+3」）；`base_influence_profile` 可查 1,022 条具体底材的六类传统影响 `influenceTags`，`check_mod_combination` 在给定具体底材、单一影响与可选物等时，会用 PoB 底材标签和 POEDB 词缀 `spawn_tags` 验证影响词缀适用性。`possible` 只表示词缀能共存，不表示能制作；古灵基底由独立状态机处理。**影响底材获得方式、多影响词缀池组合与完整元词缀状态机仍未采集** |
 | 觉醒者之石状态机 | `awakener_orb_state` / `POST /craft/awakener`：接受供体与目标的两段装备复制文本，或显式物品类别与传统影响；逐字绑定 POEDB 效果，检查同类物品、双方唯一且不同的传统影响，输出供体销毁、目标重铸为稀有并兼有两种影响的条件后状态。**不声称各保留一条影响词缀，不生成重铸后的具体词缀、数量、数值、概率、成本或路线** |
 | 收获（古灵庄园） | 74 条定向工艺 + 98 条命能费用，且 **74/74 条均有结构化语义**：20 条装备重铸、23 条元素转换与新增/移除、14 条品质附魔、14 条材料随机转换、3 条地图/技能石/命运卡牺牲；另有 **51 个种子怪物**按颜色对应四种命能中的三种。随机类型与概率、堆叠输出数量、费用缩放基准和市场成本未采集时保持未知 |
@@ -56,7 +56,7 @@ POE1 的机制耦合极深，一个错误的小前提会让整条结论反向。
 | 门槛型异常 | `calc/threshold.py` + `ailment_threshold_calc` 工具：感电 / 冰缓 / 焦灼 / 脆弱 / 干枯的强度 = 基数 ×(伤害 ÷ 异常门槛)^0.4；门槛按等级表 × 头目 7.68 × 地图倍率算（83 级小怪 32,017、头目 1,086,003）。也能反问「要感电到 X% 需要多大伤害」。**冰冻只给门槛判据、不算时长曲线** |
 | 持续伤害 | `calc/ailment.py` + `ailment_dot_calc` 工具：点燃 / 中毒 / 流血的**每秒**伤害、持续与总伤害（点燃每秒 90%×4 秒 = 总共 360%），含叠加规则（中毒无上限）与减伤口径（**流血不吃护甲**）。**感电与冰冻是门槛型异常、不算** |
 | 保留计算 | `calc/reservation.py` + `reservation_calc` 工具：按名字查库取每个光环的基础保留（**含定值保留**，第二十四轮补上的 400 行），套 PoB 的取整规则（各自 round 2 位 → 求和 → 只向上取整一次）与保留效率（除法），给出合计与剩余。**不含血魔法** |
-| 回复计算 | `calc/recovery.py` + `recovery_calc` 工具：护盾回充（每秒量、**2 秒延迟**、多久回满）、偷取（单次量、持续时间、速率上限与**单次实例上限**两层）、魔力再生（基数每分钟 105%）。**不含击中回复 / 药剂 / Mind over Matter** |
+| 回复计算 | `calc/recovery.py` + `recovery_calc` 工具：护盾回充（每秒量、**2 秒延迟**、多久回满）、偷取（单次量、持续时间、速率上限与**单次实例上限**两层）、魔力再生（基数每分钟 105%）。独立公式工具不读取 Build；显式击回/药剂/偷取窗口由 `boss_recovery_sequence_*` 结算，仍不自动生成事件 |
 | 抗性计算 | `calc/resistance.py` + `resistance_calc` 工具：按 PoB 原式复算（加总 → 截断小数 → 夹在 −200% 与最大抗性之间），给出**逐步推导**、超出上限的部分、距上限差多少与承受倍率；与 PoB 自己的测试期望值对账，公式原文钉住上游行号。**图腾抗性与持续伤害抗性未实现**，也不读取角色档案 |
 | 混合检索 | 实体精确匹配 + BM25（FTS5 + jieba）+ 词缀意图通道，RRF 融合 + 来源优先级加权 |
 | 充分依据判定 | 依据不足时返回 `sufficient=false` 与缺失信息点，**不**进入生成 |
@@ -64,7 +64,7 @@ POE1 的机制耦合极深，一个错误的小前提会让整条结论反向。
 | **流式问答** | `POST /chat/stream`：SSE，**按句**校验通过才下发，未校验内容不外发 |
 | **OpenAI 兼容** | `POST /v1/chat/completions`：支持文本消息、非流式与标准 SSE `[DONE]`；内部仍强制检索与出口校验 |
 | **用户长期记忆** | Web 顶栏或 `POST/GET/PATCH/DELETE /memories` 可显式管理偏好、目标、约束与备注，支持编辑、停用、恢复和删除；按 API Key 的不可逆摘要隔离，**不自动从聊天抽取、不成为知识库证据** |
-| **MCP stdio** | `mcp_server.py`：按 MCP `2025-06-18` 向 Codex、Claude Desktop 等客户端暴露 Knowledge Agent 的 56 个只读工具；支持 `--tools` 白名单，工具结果保留结构化数据、引用、unknown/boundary 与耗时 |
+| **MCP stdio** | `mcp_server.py`：按 MCP `2025-06-18` 向 Codex、Claude Desktop 等客户端暴露 Knowledge Agent 的 67 个只读工具；支持 `--tools` 白名单，工具结果保留结构化数据、引用、unknown/boundary 与耗时 |
 | **知识库自动同步与版本 diff** | `scripts/sync_knowledge.py`：按最后成功采集时间自动选择过期分类，复用现有结构断言与快照数量护栏；同步前后按稳定主键报告逐表新增/删除/修改与版本字段变化，历史可从 `/admin/sync/*` 查询。默认只预览，记录删除时整轮标记 `attention` |
 | **鉴权与限流** | 普通接口使用 `API_KEYS` 并按 Key 令牌桶限流；管理接口独立使用 `ADMIN_TOKEN`，可叠加 IP/CIDR 白名单 |
 | **出口闸门** | 逐句校验事实断言与计算派生是否绑定有效证据，未通过由代码拦截；47 项单测覆盖 |
@@ -139,7 +139,7 @@ Windows 把 `.venv/bin/python` 换成 `.venv\Scripts\python.exe`。
 ### 作为 MCP 工具服务器使用
 
 `mcp_server.py` 是本地 stdio 服务，不需要先启动 Web 服务，也不监听端口。默认暴露
-Knowledge Agent 的 56 个只读工具；需要缩小能力面时传入逗号分隔的白名单：
+Knowledge Agent 的 67 个只读工具；需要缩小能力面时传入逗号分隔的白名单：
 
 ```bash
 .venv/bin/python mcp_server.py --tools kb_coverage,entity_lookup
@@ -881,7 +881,48 @@ curl -s -X POST http://127.0.0.1:8787/poe_agent/boss/layered-sequence \
 完整分层方案，分别排序存活结论、高伤生命余量、高伤生命承伤和最低可达初始生命。
 
 工具不会因为伤害是混沌就自动填护盾绕过，也不会从职业或装备猜 MoM、CI、EB、Ward；这些
-都可能改变分池顺序。Ward、守护技能、偷取实例、击中回复、药剂和阶段机制仍保持在边界外。
+都可能改变分池顺序。该分层工具本身不接偷取实例、击中回复和药剂；需要显式主动恢复事件时
+使用下一节的恢复时间轴。Ward、守护技能和阶段机制仍保持在边界外。
+
+**Boss 主动恢复事件时间轴** —— `POST /boss/recovery-sequence`。它在上述分层池和伤害路由
+之上，接收三类显式恢复事件：
+
+- `instant`：已经换算成池数值的瞬回，可指定 `before_hit` 或 `after_hit`；
+- `timed_rate`：明确开始时间、每秒速率和持续时间的药剂式或其它持续恢复；
+- `leech`：明确速率与持续时间的偷取实例。多个实例并行时先合计，再按生命 20%、能量护盾
+  10%、魔力 20% 最大池每秒的基础上限裁剪；三项上限百分比都可显式覆盖。
+
+```bash
+curl -s -X POST http://127.0.0.1:8787/poe_agent/boss/recovery-sequence \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "events":[
+      {"skill":"Shaper Ball","at_seconds":0},
+      {"skill":"Shaper Ball","at_seconds":3,"energy_shield_bypass_pct":25}
+    ],
+    "recovery_events":[
+      {"name":"生命药剂瞬回","at_seconds":1,"pool":"life","kind":"instant","amount":1200},
+      {"name":"生命药剂持续段","at_seconds":1,"pool":"life","kind":"timed_rate","rate_per_second":400,"duration_seconds":2},
+      {"name":"生命偷取实例","at_seconds":0,"pool":"life","kind":"leech","rate_per_second":600,"duration_seconds":3}
+    ],
+    "level":84,"life":5000,"energy_shield":1000,"mana":800,
+    "mana_before_life_pct":30,"cold_resist_pct":75
+  }'
+```
+
+同一时间点固定按“命中前瞬回 → 请求顺序中的全部同刻命中 → 命中后瞬回”结算。生命在命中
+阶段恰好或低于 0 后，命中后与未来恢复都不能复活。每个池逐段披露固定回复、定时恢复、偷取
+请求量/限速后量、护盾回充、实际生效与满池溢出；汇总另列偷取因速率上限被抑制的量。
+同一积分段多个连续来源共同触及池上限时，各来源的“实际生效”按潜在恢复量等比例归属；总生效
+与总溢出是精确值，来源归属只用于审计，不表示游戏内存在恢复优先级。
+
+结果同时重跑一条“移除主动恢复、保留固定回复和护盾回充”的高伤基线，说明主动恢复带来的
+末尾生命差以及是否真的改变存活结论。在其它池和恢复事件固定时仍分别反解生命、护盾与魔力
+门槛。`POST /boss/recovery-sequence/compare` 比较 2–10 套完整方案，独立排列存活、高伤生命
+余量、实际主动恢复量和最低初始生命；恢复总量最高不等于生存最好。
+
+系统不会从攻击频率、输出伤害、装备词缀或药剂栏生成事件，也不推断充能、自动喝药、偷取
+生成/移除、过量偷取保留、击回触发条件或恢复阻止。用户时间轴仍是假设，不是真实 Boss 连招。
 
 **Boss 命中风险与防御缺口审计** —— `POST /boss/audit`。它横向检查本地当前收录的全部
 Boss 技能预设，按指定 `hit_count`（1–100，默认 1）的最坏累计承伤排序；同时返回总预设数、
@@ -1198,6 +1239,24 @@ curl -s -X POST http://127.0.0.1:8787/poe_agent/build \
     }
   }'
 
+# 从 PlayerStat 取分层池与固定回复，主动药剂/击回/偷取事件仍逐项显式提供
+curl -s -X POST http://127.0.0.1:8787/poe_agent/build \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "code": "https://pobb.in/你的分享ID",
+    "boss_recovery_sequence": {
+      "events": [
+        {"skill": "Shaper Ball", "at_seconds": 0},
+        {"skill": "Shaper Ball", "at_seconds": 3}
+      ],
+      "recovery_events": [
+        {"name": "生命药剂", "at_seconds": 1, "pool": "life", "kind": "instant", "amount": 1200},
+        {"name": "生命偷取", "at_seconds": 0, "pool": "life", "kind": "leech", "rate_per_second": 600, "duration_seconds": 3}
+      ],
+      "level": 84
+    }
+  }'
+
 # 以“当前”为基线比较两个 PoB 方案；可省略 metrics 以检查全部受支持指标
 curl -s -X POST http://127.0.0.1:8787/poe_agent/build/compare \
   -H 'Content-Type: application/json' \
@@ -1291,7 +1350,13 @@ PoB 在三种元素 Max Hit 相等时只导出 `LightningMaximumHitTaken`，该�
 实际采用字段与显式覆盖都写入 `source_fields` / `source_config`。能量护盾为 0 时不要求护盾
 回复和回充，`mana_before_life_pct=0` 时不要求魔力与魔力回复；反之缺任一实际使用字段时整条
 返回 `unknown`。每击的 `energy_shield_bypass_pct` 和全局魔力承伤比例始终由请求提供，系统
-不按伤害类型、职业、天赋或装备反推。多池逐击同样不拆用 PoB 单击 `*MaximumHitTaken`。
+不会从职业、天赋、装备或伤害类型猜测。
+
+可选的 `boss_recovery_sequence` 复用同一套分层池、净回复和护盾回充取值，再叠加请求中的
+`recovery_events`。Build 不会把 `LifeLeechGainRate` 等快照自动变成恢复事件：这些字段按 PoB
+口径可能混合 Leech 与 On Hit，且不包含事件发生时间。调用方必须明确瞬回阶段，或持续/偷取
+事件的开始、速率和持续时间；返回的 `source_config` 会把池字段与显式事件来源分开披露。
+主动恢复时间轴同样不拆用 PoB 单击 `*MaximumHitTaken`。
 
 可选的 `boss_risk_audit` 使用相同的基础字段，对本地全部 Boss 技能预设按 `hit_count`
 逐条累计。它会返回已知项风险排序、`assessment_status=complete|partial|none`、覆盖计数、
@@ -1468,7 +1533,7 @@ PoB 排 P2 而不是 P1：它在数值上更接近一手，但不含中文名与
 ### 评测：四项指标与黄金问答集
 
 `config.yaml` 里的阈值与 `orchestrator/binding.py` 的闸门规则都需要判据，否则改动之后
-无法判断是变好还是变坏。判据来自 `tests/golden/questions.yaml`（184 条，六类样本：
+无法判断是变好还是变坏。判据来自 `tests/golden/questions.yaml`（186 条，六类样本：
 专名 / 描述性 / 数值 / 跨来源 / **确定不覆盖** / 工具路由），基线与结论记在
 `tests/golden/BASELINE.md`。
 
@@ -1499,7 +1564,7 @@ PoB 排 P2 而不是 P1：它在数值上更接近一手，但不含中文名与
 .venv/bin/python -m unittest discover -s tests -t .
 ```
 
-目前 2108 项，其中与「无据不答」直接相关的：
+目前 2132 项，其中与「无据不答」直接相关的：
 
 | 组 | 项数 | 重点 |
 | --- | --- | --- |

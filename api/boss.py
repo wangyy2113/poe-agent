@@ -26,6 +26,10 @@ from tools.impl.boss_layered import (
     boss_layered_sequence_check,
     boss_layered_sequence_compare,
 )
+from tools.impl.boss_recovery import (
+    boss_recovery_sequence_check,
+    boss_recovery_sequence_compare,
+)
 
 router = APIRouter(tags=["Boss"])
 
@@ -463,6 +467,71 @@ class BossLayeredCompareRequest(BaseModel):
     scenarios: list[BossLayeredScenarioRequest] = Field(min_length=2, max_length=10)
 
 
+class BossRecoveryEvent(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+    at_seconds: float = Field(ge=0, le=3600, allow_inf_nan=False)
+    pool: Literal["life", "energy_shield", "mana"]
+    kind: Literal["instant", "timed_rate", "leech"]
+    amount: float = Field(default=0, ge=0, le=1_000_000_000, allow_inf_nan=False)
+    rate_per_second: float = Field(
+        default=0, ge=0, le=1_000_000_000, allow_inf_nan=False
+    )
+    duration_seconds: float = Field(default=0, ge=0, le=3600, allow_inf_nan=False)
+    phase: Literal["before_hit", "after_hit"] = "before_hit"
+
+
+class BossRecoverySequenceRequest(BossLayeredSequenceRequest):
+    recovery_events: list[BossRecoveryEvent] = Field(min_length=0, max_length=100)
+    life_leech_rate_cap_pct: float = Field(
+        default=20, ge=0, le=1000, allow_inf_nan=False
+    )
+    energy_shield_leech_rate_cap_pct: float = Field(
+        default=10, ge=0, le=1000, allow_inf_nan=False
+    )
+    mana_leech_rate_cap_pct: float = Field(
+        default=20, ge=0, le=1000, allow_inf_nan=False
+    )
+
+
+class BossRecoverySequenceResponse(BaseModel):
+    found: bool
+    assessable: bool
+    verdict: str | None = None
+    level: int
+    uber: bool
+    roll_range: float | None = None
+    requested_events: list[BossLayeredEvent]
+    requested_recovery_events: list[BossRecoveryEvent] = Field(default_factory=list)
+    config: dict[str, Any] | None = None
+    recovery_events: list[dict[str, Any]] = Field(default_factory=list)
+    hit_count: int = 0
+    duration_seconds: float | None = None
+    outcome: str | None = None
+    low_roll: dict[str, Any] | None = None
+    high_roll: dict[str, Any] | None = None
+    active_recovery_impact: dict[str, Any] | None = None
+    minimum_life_for_full_range: BossLayerThresholdResponse | None = None
+    minimum_energy_shield_for_full_range: BossLayerThresholdResponse | None = None
+    minimum_mana_for_full_range: BossLayerThresholdResponse | None = None
+    event_ordering: str = ""
+    recovery_attribution_model: str = ""
+    routing_model: str = ""
+    reason: str | None = None
+    missing_inputs: list[str] = Field(default_factory=list)
+    candidates: list[str] = Field(default_factory=list)
+    boundary: str
+    answer: str
+
+
+class BossRecoveryScenarioRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+    inputs: BossRecoverySequenceRequest
+
+
+class BossRecoveryCompareRequest(BaseModel):
+    scenarios: list[BossRecoveryScenarioRequest] = Field(min_length=2, max_length=10)
+
+
 class BossProbabilisticEvent(BossTimedEvent):
     hit_type: Literal["attack", "spell"]
 
@@ -793,6 +862,40 @@ def compare_layered_sequences(
     if not result.ok:
         raise HTTPException(status_code=422, detail={
             "error": "invalid_boss_layered_sequence_comparison",
+            "reason": result.error,
+        })
+    return dict(result.data or {})
+
+
+@router.post(
+    "/boss/recovery-sequence",
+    response_model=BossRecoverySequenceResponse,
+)
+def recovery_sequence(
+    req: BossRecoverySequenceRequest,
+    _caller: str = Depends(require_user),
+) -> BossRecoverySequenceResponse:
+    result = boss_recovery_sequence_check(**req.model_dump())
+    if not result.ok:
+        raise HTTPException(status_code=422, detail={
+            "error": "invalid_boss_recovery_sequence_query",
+            "reason": result.error,
+        })
+    return BossRecoverySequenceResponse(**(result.data or {}))
+
+
+@router.post("/boss/recovery-sequence/compare", response_model=None)
+def compare_recovery_sequences(
+    req: BossRecoveryCompareRequest,
+    _caller: str = Depends(require_user),
+) -> dict[str, Any]:
+    result = boss_recovery_sequence_compare(scenarios=[
+        {"name": scenario.name, "inputs": scenario.inputs.model_dump()}
+        for scenario in req.scenarios
+    ])
+    if not result.ok:
+        raise HTTPException(status_code=422, detail={
+            "error": "invalid_boss_recovery_sequence_comparison",
             "reason": result.error,
         })
     return dict(result.data or {})
