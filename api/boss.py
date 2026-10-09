@@ -38,6 +38,10 @@ from tools.impl.boss_mitigation import (
     boss_mitigation_sequence_check,
     boss_mitigation_sequence_compare,
 )
+from tools.impl.boss_ward import (
+    boss_ward_sequence_check,
+    boss_ward_sequence_compare,
+)
 
 router = APIRouter(tags=["Boss"])
 
@@ -669,6 +673,73 @@ class BossMitigationCompareRequest(BaseModel):
     scenarios: list[BossMitigationScenarioRequest] = Field(min_length=2, max_length=10)
 
 
+class BossWardConfig(BaseModel):
+    capacity: float = Field(gt=0, le=1_000_000_000, allow_inf_nan=False)
+    restore_delay_seconds: float = Field(ge=0, le=3600, allow_inf_nan=False)
+    initial_state: Literal["ready", "broken"] = "ready"
+    initial_restore_at_seconds: float | None = Field(
+        default=None, ge=0, le=3600, allow_inf_nan=False
+    )
+    break_mode: Literal["break", "unbreakable"] = "break"
+    broken_hit_timer_mode: Literal["preserve", "reset"] = "preserve"
+
+
+class BossWardSequenceRequest(BossDotSequenceRequest):
+    events: list[BossLayeredEvent] = Field(min_length=1, max_length=100)
+    mitigation_windows: list[BossMitigationWindow] = Field(
+        default_factory=list, max_length=100
+    )
+    ward: BossWardConfig
+
+
+class BossWardSequenceResponse(BaseModel):
+    found: bool
+    assessable: bool
+    verdict: str | None = None
+    level: int
+    uber: bool
+    roll_range: float | None = None
+    requested_events: list[BossLayeredEvent] = Field(default_factory=list)
+    requested_dot_windows: list[BossDotWindow] = Field(default_factory=list)
+    resolved_dot_windows: list[dict[str, Any]] = Field(default_factory=list)
+    requested_recovery_events: list[BossRecoveryEvent] = Field(default_factory=list)
+    requested_mitigation_windows: list[BossMitigationWindow] = Field(default_factory=list)
+    requested_ward: BossWardConfig | None = None
+    config: dict[str, Any] | None = None
+    ward: dict[str, Any] | None = None
+    mitigation_windows: list[dict[str, Any]] = Field(default_factory=list)
+    dot_windows: list[dict[str, Any]] = Field(default_factory=list)
+    recovery_events: list[dict[str, Any]] = Field(default_factory=list)
+    hit_count: int = 0
+    dot_window_count: int = 0
+    mitigation_window_count: int = 0
+    duration_seconds: float | None = None
+    outcome: str | None = None
+    low_roll: dict[str, Any] | None = None
+    high_roll: dict[str, Any] | None = None
+    ward_impact: dict[str, Any] | None = None
+    minimum_life_for_full_range: BossLayerThresholdResponse | None = None
+    minimum_energy_shield_for_full_range: BossLayerThresholdResponse | None = None
+    minimum_mana_for_full_range: BossLayerThresholdResponse | None = None
+    ordering_model: str = ""
+    simultaneous_hit_model: str = ""
+    restoration_model: str = ""
+    reason: str | None = None
+    missing_inputs: list[str] = Field(default_factory=list)
+    candidates: list[str] = Field(default_factory=list)
+    boundary: str
+    answer: str
+
+
+class BossWardScenarioRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+    inputs: BossWardSequenceRequest
+
+
+class BossWardCompareRequest(BaseModel):
+    scenarios: list[BossWardScenarioRequest] = Field(min_length=2, max_length=10)
+
+
 class BossProbabilisticEvent(BossTimedEvent):
     hit_type: Literal["attack", "spell"]
 
@@ -1095,6 +1166,35 @@ def compare_mitigation_sequences(
         raise HTTPException(status_code=422, detail={
             "error": "invalid_boss_mitigation_sequence_comparison",
             "reason": result.error,
+        })
+    return dict(result.data or {})
+
+
+@router.post("/boss/ward-sequence", response_model=BossWardSequenceResponse)
+def ward_sequence(
+    req: BossWardSequenceRequest,
+    _caller: str = Depends(require_user),
+) -> BossWardSequenceResponse:
+    result = boss_ward_sequence_check(**req.model_dump())
+    if not result.ok:
+        raise HTTPException(status_code=422, detail={
+            "error": "invalid_boss_ward_sequence_query", "reason": result.error,
+        })
+    return BossWardSequenceResponse(**(result.data or {}))
+
+
+@router.post("/boss/ward-sequence/compare", response_model=None)
+def compare_ward_sequences(
+    req: BossWardCompareRequest,
+    _caller: str = Depends(require_user),
+) -> dict[str, Any]:
+    result = boss_ward_sequence_compare(scenarios=[
+        {"name": scenario.name, "inputs": scenario.inputs.model_dump()}
+        for scenario in req.scenarios
+    ])
+    if not result.ok:
+        raise HTTPException(status_code=422, detail={
+            "error": "invalid_boss_ward_sequence_comparison", "reason": result.error,
         })
     return dict(result.data or {})
 

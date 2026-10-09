@@ -81,9 +81,12 @@ def _finite(
     return result
 
 
-def _validate_mitigation_requests(windows: object) -> list[dict[str, Any]]:
-    if not isinstance(windows, list) or not 1 <= len(windows) <= 100:
-        raise ValueError("mitigation_windows 必须包含 1..100 个窗口")
+def _validate_mitigation_requests(
+    windows: object, *, allow_empty: bool = False,
+) -> list[dict[str, Any]]:
+    minimum = 0 if allow_empty else 1
+    if not isinstance(windows, list) or not minimum <= len(windows) <= 100:
+        raise ValueError(f"mitigation_windows 必须包含 {minimum}..100 个窗口")
     allowed = {
         "name", "start_seconds", "duration_seconds", "scope", "damage_types",
         "taken_multiplier", "guard_capacity", "priority",
