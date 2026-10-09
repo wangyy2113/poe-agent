@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from enum import StrEnum
+from core.compat import StrEnum
 
 
 class Category(StrEnum):
