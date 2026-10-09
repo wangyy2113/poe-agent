@@ -31,6 +31,7 @@ POE1 的机制耦合极深，一个错误的小前提会让整条结论反向。
 | 实时经济价格、趋势、成本与双边价差 | `POST /economy/price` 查询当前快照；`POST /economy/trend` 查询历史；`POST /economy/material-cost` 汇总明确清单；`POST /economy/rare-comparables` 查询稀有装可比挂单；`POST /economy/flip-analysis` 对标准 exchange 条目核验买卖两侧、整单深度、时效与显式费用后计算净利润。SQLite 价格缓存 TTL 30 分钟、历史保留 90 天；主源无缓存时标准条目与唯一装备可显式降级官方 Trade API。**不足两个趋势点不判趋势；单侧过滤后不足 5 条不报代表价；任一侧或费用不完整时利润与 Flip 判断保持 unknown；所有结果都不是成交或收益保证** |
 | Boss 技能伤害、生存校验与防御门槛 | 10 条 Boss 技能的伤害建模 + 22 个 Boss 的护甲/闪避倍率；`boss_survival_check` 校验同一命中连续 1–100 次，`boss_defence_threshold` 反解最低防御池、抗性/护甲门槛，`boss_sequence_check` 按用户明确顺序逐击累计；`boss_timed_sequence_*` 结算显式时间轴、固定恢复与门槛；`boss_probabilistic_sequence_*` 计算闪避/格挡/压制后的低/高伤害生存分布与风险分位；`boss_layered_sequence_*` 分别推进生命、能量护盾、MoM 式魔力分流、各池回复和护盾回充中断；`boss_recovery_sequence_*` 再结算命中前后瞬回、定时恢复、偷取实例限速与满池溢出；`boss_dot_sequence_*` 用边界解析连续流统一结算显式 DoT 暴露、命中和恢复；`boss_mitigation_sequence_*` 在分层路由前结算显式临时承伤乘数、Guard 容量与精确耗尽；`boss_ward_sequence_*` 再逐击推进 Ward 破裂、恢复和吸收；`boss_risk_audit` 批量排列已收录技能风险。`POST /build` 可直接消费 PoB 基础防御、分池回复及适用概率字段快照。**序列不是真实连招，概率不是保证，审计不是 Boss 难度排行，不给打法**；不自动推断 DoT/连招/恢复事件、Guard/Ward 当前状态、熵式闪避相关性、幸运/不幸、CI/EB 等池替换、阶段与应对；数字是 PoB 建模值，GGG 未公布 |
 | 制作规则（名额与影响力） | 7 条前后缀名额规则（魔法 1+1、稀有 3+3、传奇不受限制、药剂随魔法，另有 PoB 独有的珠宝/Graft 2+2 与「已腐化深渊珠宝回到 3+3」）；`base_influence_profile` 可查 1,022 条具体底材的六类传统影响 `influenceTags`，`check_mod_combination` 在给定具体底材、单一影响与可选物等时，会用 PoB 底材标签和 POEDB 词缀 `spawn_tags` 验证影响词缀适用性。`possible` 只表示词缀能共存，不表示能制作；古灵基底由独立状态机处理。**影响底材获得方式、多影响词缀池组合与完整元词缀状态机仍未采集** |
+| 独立尝试分布与材料预算 | `craft_attempt_plan` / `POST /craft/attempt-plan`：在完整、新鲜的胸甲 `normal` 同侧词缀池上，接受逐字底材、物等、唯一目标、每次材料清单与尝试上限，计算几何分布的单次条件概率、首次成功期望、P50/P90/P95、上限内成功/耗尽概率、提前停止后的期望消耗与最坏材料预算；可选对整张每次清单实时计价。**只适用于每次完整重置、独立同分布且每次恰好一次同侧加权选择；不是任何真实通货/工艺的一次成功率，不推断步骤或完整路线；任一材料缺价或联盟/来源/时间口径不一致时不输出部分总成本** |
 | 觉醒者之石状态机 | `awakener_orb_state` / `POST /craft/awakener`：接受供体与目标的两段装备复制文本，或显式物品类别与传统影响；逐字绑定 POEDB 效果，检查同类物品、双方唯一且不同的传统影响，输出供体销毁、目标重铸为稀有并兼有两种影响的条件后状态。**不声称各保留一条影响词缀，不生成重铸后的具体词缀、数量、数值、概率、成本或路线** |
 | 收获（古灵庄园） | 74 条定向工艺 + 98 条命能费用，且 **74/74 条均有结构化语义**：20 条装备重铸、23 条元素转换与新增/移除、14 条品质附魔、14 条材料随机转换、3 条地图/技能石/命运卡牺牲；另有 **51 个种子怪物**按颜色对应四种命能中的三种。随机类型与概率、堆叠输出数量、费用缩放基准和市场成本未采集时保持未知 |
 | 精华 | 精华**赋予的词缀** 5985 条（在 `mod_affix`，已渲染进词缀组卡）+ **精华物品本身** 105 件（等阶 / 堆叠上限 / 等级上限 / 基础效果 / 632 行逐装备类别的保底词缀），与 PoB `Data/Essence.lua` 逐项对账（条数 105/105、装备类别数两侧均 22、tier 104/105，唯一分歧登记为 `essence_review`）；`essence_operation_state` / `POST /craft/essence` 按原文判断普通升级、稀有重置、物等上限与类别保底词缀；**掉落来源与兑换成本未采集** |
@@ -64,7 +65,7 @@ POE1 的机制耦合极深，一个错误的小前提会让整条结论反向。
 | **流式问答** | `POST /chat/stream`：SSE，**按句**校验通过才下发，未校验内容不外发 |
 | **OpenAI 兼容** | `POST /v1/chat/completions`：支持文本消息、非流式与标准 SSE `[DONE]`；内部仍强制检索与出口校验 |
 | **用户长期记忆** | Web 顶栏或 `POST/GET/PATCH/DELETE /memories` 可显式管理偏好、目标、约束与备注，支持编辑、停用、恢复和删除；按 API Key 的不可逆摘要隔离，**不自动从聊天抽取、不成为知识库证据** |
-| **MCP stdio** | `mcp_server.py`：按 MCP `2025-06-18` 向 Codex、Claude Desktop 等客户端暴露 Knowledge Agent 的 75 个只读工具；支持 `--tools` 白名单，工具结果保留结构化数据、引用、unknown/boundary 与耗时 |
+| **MCP stdio** | `mcp_server.py`：按 MCP `2025-06-18` 向 Codex、Claude Desktop 等客户端暴露 Knowledge Agent 的 76 个只读工具；支持 `--tools` 白名单，工具结果保留结构化数据、引用、unknown/boundary 与耗时 |
 | **知识库自动同步与版本 diff** | `scripts/sync_knowledge.py`：按最后成功采集时间自动选择过期分类，复用现有结构断言与快照数量护栏；同步前后按稳定主键报告逐表新增/删除/修改与版本字段变化，历史可从 `/admin/sync/*` 查询。默认只预览，记录删除时整轮标记 `attention` |
 | **一致性备份与离线恢复** | `scripts/db_backup.py` 使用 SQLite Backup API 从活跃 WAL 连接创建快照，清单固定 SHA-256、schema 指纹、关键表行数与 `quick_check`；恢复默认只预检，拒绝存在 WAL/SHM 的目标，`--apply` 前自动留存当前库。管理端只开放创建、列表和校验，远程恢复刻意不提供 |
 | **鉴权与限流** | 普通接口使用 `API_KEYS` 并按 Key 令牌桶限流；管理接口独立使用 `ADMIN_TOKEN`，可叠加 IP/CIDR 白名单 |
@@ -140,7 +141,7 @@ Windows 把 `.venv/bin/python` 换成 `.venv\Scripts\python.exe`。
 ### 作为 MCP 工具服务器使用
 
 `mcp_server.py` 是本地 stdio 服务，不需要先启动 Web 服务，也不监听端口。默认暴露
-Knowledge Agent 的 75 个只读工具；需要缩小能力面时传入逗号分隔的白名单：
+Knowledge Agent 的 76 个只读工具；需要缩小能力面时传入逗号分隔的白名单：
 
 ```bash
 .venv/bin/python mcp_server.py --tools kb_coverage,entity_lookup
@@ -963,6 +964,24 @@ Craft of Exile 矩阵的 `YES / NO / N/A / YES & NO` 原值作为两条独立证
 和未知版本范围。矩阵空白或没有记录时总 `verdict` 不会冒充完整结论。矩阵值不用于改写
 状态转移，也不证明当前版本可执行。
 
+**独立尝试分布与材料预算** —— `POST /craft/attempt-plan`。这个端点不是通用 Craft
+Planner；它只在 `affix_pool_odds` 已证明完整的胸甲普通同侧池上套用几何分布，并要求
+调用方显式声明每次材料与停止上限。`include_market_prices=true` 时，只有整张清单都取得同
+联盟、同来源、五分钟内的唯一代表价才输出成本：
+
+```bash
+curl -s -X POST http://127.0.0.1:8787/poe_agent/craft/attempt-plan \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "base_type":"铁制背心","item_level":50,"generation_side":"prefix",
+    "target_query":"最大生命","max_attempts":100,"include_market_prices":true,
+    "materials":[{"query":"混沌石","quantity_per_attempt":1,"category":"currency"}]
+  }'
+```
+
+响应同时区分无限重试期望、在上限内提前成功停止的期望、P50/P90/P95 预算和最坏上限；
+不会把任一项改写成混沌石等真实工艺的一次成功率，也不会补制作步骤。
+
 **精华状态转移** —— `POST /craft/essence`。逐字使用精华页的基础效果、等级上限和
 逐装备类别保底词缀，不按精华等阶推断规则。
 
@@ -1698,7 +1717,7 @@ PoB 排 P2 而不是 P1：它在数值上更接近一手，但不含中文名与
 ### 评测：四项指标与黄金问答集
 
 `config.yaml` 里的阈值与 `orchestrator/binding.py` 的闸门规则都需要判据，否则改动之后
-无法判断是变好还是变坏。判据来自 `tests/golden/questions.yaml`（194 条，六类样本：
+无法判断是变好还是变坏。判据来自 `tests/golden/questions.yaml`（196 条，六类样本：
 专名 / 描述性 / 数值 / 跨来源 / **确定不覆盖** / 工具路由），基线与结论记在
 `tests/golden/BASELINE.md`。
 
@@ -1729,7 +1748,7 @@ PoB 排 P2 而不是 P1：它在数值上更接近一手，但不含中文名与
 .venv/bin/python -m unittest discover -s tests -t .
 ```
 
-目前 2275 项，其中与「无据不答」直接相关的：
+目前 2301 项，其中与「无据不答」直接相关的：
 
 | 组 | 项数 | 重点 |
 | --- | --- | --- |
@@ -1767,7 +1786,7 @@ agents/                 领域 Agent：提示词 + 允许工具集 + 输出契�
 tools/                  工具注册与实现。顺序即推荐优先级：
                           economy_flip_analysis / economy_price_lookup / economy_price_trend
                           / economy_material_cost
-                          / affix_pool_odds / check_mod_combination
+                          / craft_attempt_plan / affix_pool_odds / check_mod_combination
                           / craft_operation_state / essence_operation_state / eldritch_operation_state
                           / veiled_operation_state / fossil_operation_state / harvest_reforge_state
                           / harvest_modifier_state
@@ -1781,6 +1800,7 @@ tools/                  工具注册与实现。顺序即推荐优先级：
                           / stat_sources
                           / entity_lookup / kb_coverage / kb_search（兜底）
 craft/                  制作分析：feasibility.py 组合三态可行性 / pool.py 胸甲条件权重概率
+                          / attempt_plan.py 独立选择几何分布、材料预算与价格快照一致性
                           / operations.py 基础通货保守状态转移
                           / essence_operations.py 精华原文约束与保底词缀状态转移
                           / fossil_operations.py 化石标签权重变换与地渊来源词缀目录

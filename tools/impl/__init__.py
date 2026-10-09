@@ -25,6 +25,7 @@ from tools.impl import craft_operation as _craft_operation  # noqa: F401  注册
 from tools.impl import crit as _crit  # noqa: F401  注册副作用
 from tools.impl import cluster as _cluster  # noqa: F401  注册副作用
 from tools.impl import craft_pool as _craft_pool  # noqa: F401  注册副作用
+from tools.impl import craft_attempt_plan as _craft_attempt_plan  # noqa: F401  注册副作用
 from tools.impl import defence as _defence  # noqa: F401  注册副作用
 from tools.impl import dps as _dps  # noqa: F401  注册副作用
 from tools.impl import dps_rotation as _dps_rotation  # noqa: F401  注册副作用
@@ -45,4 +46,4 @@ from tools.impl import veiled_operation as _veiled_operation  # noqa: F401  注�
 from tools.impl import recovery as _recovery  # noqa: F401  注册副作用
 from tools.impl import reservation as _reservation  # noqa: F401  注册副作用
 
-__all__ = ["_ailments", "_awakener_operation", "_bench", "_boss", "_boss_dot", "_boss_layered", "_boss_mitigation", "_boss_probability", "_boss_recovery", "_boss_timeline", "_boss_ward", "_conflicts", "_craft", "_craft_operation", "_crit", "_craft_pool", "_defence", "_dps", "_dps_rotation", "_economy", "_eldritch_operation", "_essence", "_essence_operation", "_fossil_operation", "_gems", "_harvest", "_harvest_enchant_operation", "_harvest_exchange_operation", "_harvest_modifier_operation", "_harvest_operation", "_influence", "_kb_search", "_maxhit", "_cluster", "_metamods", "_monsters", "_mods", "_passives", "_recovery", "_reservation", "_thresholds", "_veiled_operation"]
+__all__ = ["_ailments", "_awakener_operation", "_bench", "_boss", "_boss_dot", "_boss_layered", "_boss_mitigation", "_boss_probability", "_boss_recovery", "_boss_timeline", "_boss_ward", "_conflicts", "_craft", "_craft_attempt_plan", "_craft_operation", "_crit", "_craft_pool", "_defence", "_dps", "_dps_rotation", "_economy", "_eldritch_operation", "_essence", "_essence_operation", "_fossil_operation", "_gems", "_harvest", "_harvest_enchant_operation", "_harvest_exchange_operation", "_harvest_modifier_operation", "_harvest_operation", "_influence", "_kb_search", "_maxhit", "_cluster", "_metamods", "_monsters", "_mods", "_passives", "_recovery", "_reservation", "_thresholds", "_veiled_operation"]

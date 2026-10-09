@@ -104,6 +104,7 @@ def _tools_for_question(question: str) -> list[dict[str, Any]]:
     """按本轮精确来源授权裁剪 schema；执行层仍会做第二次检查。"""
     tools = _prepare_tools()
     affix_authorized = bool(_affix_pool_precision_query(question)[0])
+    attempt_plan_authorized = _craft_attempt_plan_args(question) is not None
     metamod_excluded = _metamod_source_policy(question) == "excluded"
     return [
         schema
@@ -117,6 +118,11 @@ def _tools_for_question(question: str) -> list[dict[str, Any]]:
             str((schema.get("function") or {}).get("name") or "")
             == "affix_pool_odds"
             and not affix_authorized
+        )
+        and not (
+            str((schema.get("function") or {}).get("name") or "")
+            == "craft_attempt_plan"
+            and not attempt_plan_authorized
         )
     ]
 
@@ -1253,6 +1259,59 @@ def _material_cost_args(question: str) -> dict[str, Any] | None:
     return {"materials": materials}
 
 
+_ATTEMPT_PLAN_QUOTED_RE = re.compile(r"[“\"]([^”\"]+)[”\"]")
+_ATTEMPT_PLAN_LEVEL_RE = re.compile(r"物品等级\s*(\d{1,3})")
+_ATTEMPT_PLAN_SIDE_RE = re.compile(r"(前缀|后缀)侧")
+_ATTEMPT_PLAN_CAP_RE = re.compile(r"最多(?:尝试)?\s*(\d{1,7})\s*次")
+_ATTEMPT_PLAN_MATERIALS_RE = re.compile(
+    r"每次消耗\s*(.+?)(?=[；;,，]\s*最多(?:尝试)?\s*\d+\s*次)"
+)
+
+
+def _craft_attempt_plan_args(question: str) -> dict[str, Any] | None:
+    """冻结独立尝试模型的全部事实输入；缺一项就不路由。
+
+    这里故意要求“完整重置 + 一次普通同侧选择”逐字出现。没有这两个前提，真实通货的一次
+    使用通常会同时生成多个词缀或继承装备状态，不能合法套用几何分布。
+    """
+    if not all(signal in question for signal in ("独立", "每次完整重置")):
+        return None
+    if not any(signal in question for signal in (
+        "一次普通同侧选择", "一次同侧普通加权选择", "一次普通同侧加权选择",
+    )):
+        return None
+    quoted = [item.strip() for item in _ATTEMPT_PLAN_QUOTED_RE.findall(question)]
+    level = _ATTEMPT_PLAN_LEVEL_RE.search(question)
+    side = _ATTEMPT_PLAN_SIDE_RE.search(question)
+    cap = _ATTEMPT_PLAN_CAP_RE.search(question)
+    material_segment = _ATTEMPT_PLAN_MATERIALS_RE.search(question)
+    if len(quoted) != 2 or not level or not side or not cap or not material_segment:
+        return None
+    item_level = int(level.group(1))
+    max_attempts = int(cap.group(1))
+    if not 1 <= item_level <= 100 or not 1 <= max_attempts <= 1_000_000:
+        return None
+    parsed_cost = _material_cost_args(material_segment.group(1) + "一共多少钱")
+    if parsed_cost is None:
+        return None
+    materials = [{
+        "query": item["query"],
+        "quantity_per_attempt": item["quantity"],
+        "category": item.get("category", "auto"),
+    } for item in parsed_cost["materials"]]
+    return {
+        "base_type": quoted[0],
+        "item_level": item_level,
+        "generation_side": "prefix" if side.group(1) == "前缀" else "suffix",
+        "target_query": quoted[1],
+        "materials": materials,
+        "max_attempts": max_attempts,
+        "include_market_prices": any(signal in question for signal in (
+            "市场成本", "实时成本", "当前成本", "市场价",
+        )),
+    }
+
+
 def _economy_trend_args(question: str) -> dict[str, Any]:
     """保留原问句做精确实体解析，并提取显式历史窗口。"""
     args: dict[str, Any] = {"query": question, "category": "auto"}
@@ -1892,6 +1951,8 @@ def _preferred_tool_route(question: str) -> str:
     """
     if _rare_comparable_args(question) is not None:
         return "economy_rare_comparables"
+    if _craft_attempt_plan_args(question) is not None:
+        return "craft_attempt_plan"
     if any(term in question for term in (
         "价格趋势", "行情趋势", "价格走势", "行情走势", "涨跌", "涨了多少",
         "跌了多少", "最近在涨", "最近在跌", "过去一周", "过去一个月",
@@ -2867,6 +2928,7 @@ _CODE_INVOKED_TOOLS: dict[str, Any] = {
     "harvest_modifier_state": _harvest_modifier_args,
     "harvest_quality_enchant_state": _harvest_quality_enchant_args,
     "harvest_exchange_state": _harvest_exchange_args,
+    "craft_attempt_plan": _craft_attempt_plan_args,
     "economy_material_cost": _material_cost_args,
     "economy_price_trend": _economy_trend_args,
     "economy_price_lookup": lambda question: {"query": question, "category": "auto"},
@@ -2897,7 +2959,7 @@ _CODE_INVOKED_TOOLS: dict[str, Any] = {
 #: 「一条证据都没拿到就走缺据」的兜底要放过它们，否则它们永远进不了生成。
 _TOOLS_WITHOUT_CITATIONS = frozenset({"kb_coverage"})
 _DETERMINISTIC_DIRECT_TOOLS = frozenset({
-    "economy_flip_analysis", "economy_price_lookup", "economy_price_trend", "economy_material_cost",
+    "craft_attempt_plan", "economy_flip_analysis", "economy_price_lookup", "economy_price_trend", "economy_material_cost",
     "economy_rare_comparables", "boss_risk_audit", "boss_sequence_check", "boss_defence_threshold",
     "boss_survival_check",
     "awakener_orb_state",
@@ -3353,6 +3415,14 @@ def _call_tool(
             error=(
                 "当前问题未形成可逐字冻结的普通词缀条件池查询，"
                 "拒绝执行 affix_pool_odds"
+            ),
+        ), False
+    if name == "craft_attempt_plan" and _craft_attempt_plan_args(question) is None:
+        return ToolResult(
+            ok=False,
+            error=(
+                "当前问题没有逐字给全独立尝试模型所需的底材、物等、单侧目标、"
+                "完整重置前提、每次材料与尝试上限，拒绝执行 craft_attempt_plan"
             ),
         ), False
     parsed = _safe_json(raw_arguments)

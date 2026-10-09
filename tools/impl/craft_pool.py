@@ -187,6 +187,17 @@ def _pool_citation(report: PoolOddsReport) -> dict[str, Any]:
     }
 
 
+def affix_pool_citations(report: PoolOddsReport) -> list[dict[str, Any]]:
+    """返回三项相互核对的底材、跨源映射与完整池证据。"""
+    if report.status != "exact":
+        return []
+    return [
+        _pob_base_citation(report),
+        _base_mapping_citation(report),
+        _pool_citation(report),
+    ]
+
+
 @REGISTRY.register(
     name="affix_pool_odds",
     description=(
@@ -259,10 +270,6 @@ def affix_pool_odds(
     return ToolResult(
         ok=True,
         data=data,
-        citations=[
-            _pob_base_citation(report),
-            _base_mapping_citation(report),
-            _pool_citation(report),
-        ],
+        citations=affix_pool_citations(report),
         meta={"channel": "derived", "table": "pob_base_item+mod_affix"},
     )
