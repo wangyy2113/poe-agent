@@ -974,13 +974,33 @@ curl -s -X POST http://127.0.0.1:8787/poe_agent/craft/attempt-plan \
   -H 'Content-Type: application/json' \
   -d '{
     "base_type":"铁制背心","item_level":50,"generation_side":"prefix",
-    "target_query":"最大生命","max_attempts":100,"include_market_prices":true,
+    "target_query":"IncreasedLife","max_attempts":100,"include_market_prices":true,
     "materials":[{"query":"混沌石","quantity_per_attempt":1,"category":"currency"}]
   }'
 ```
 
 响应同时区分无限重试期望、在上限内提前成功停止的期望、P50/P90/P95 预算和最坏上限；
 不会把任一项改写成混沌石等真实工艺的一次成功率，也不会补制作步骤。
+
+**刷新胸甲普通词缀概率池** —— 概率和独立尝试计划要求 POEDB 来源快照在七天内。
+运行环境可用下面三个命令检查、预检和发布；`preview` 与 `apply` 均重新抓取七张
+胸甲属性词缀页，遵守项目抓取器的 robots 与限速配置：
+
+```bash
+python scripts/refresh_craft_pool.py status
+python scripts/refresh_craft_pool.py preview
+python scripts/refresh_craft_pool.py apply
+```
+
+`preview` 展示 `normal` 行增删、正权重前后缀数量及旧内部 ID 的延续情况，不改数据库。
+`apply` 先用 SQLite Backup API 创建一致性备份，再把七页的 `normal` 行、来源审计和
+词缀检索卡片作为一个事务发布。任何页面身份、完整行账、摘要或发布后来源证明失败，
+整批回滚；预检后有人改动词缀页也会拒绝发布。`status` 可逐页看到是否仍可用于精确概率。
+
+POEDB 当前把 `hover` 内部 ID 换成了哈希。刷新只对旧库里能按生成侧、词缀组、物等、
+T 级、权重、名称和标签**唯一对账**的 `normal` 行沿用原 ID；新词缀使用来源的不透明 ID，
+歧义对账则拒绝发布。精华、影响、地渊等其它类别继续保留旧行，不会因本次概率池刷新
+失去既有 PoB 交叉来源关联。来源证明明确标记为 `normal` 范围，不把它说成其它类别也已刷新。
 
 **精华状态转移** —— `POST /craft/essence`。逐字使用精华页的基础效果、等级上限和
 逐装备类别保底词缀，不按精华等阶推断规则。
@@ -1748,7 +1768,7 @@ PoB 排 P2 而不是 P1：它在数值上更接近一手，但不含中文名与
 .venv/bin/python -m unittest discover -s tests -t .
 ```
 
-目前 2301 项，其中与「无据不答」直接相关的：
+目前 2313 项，其中与「无据不答」直接相关的：
 
 | 组 | 项数 | 重点 |
 | --- | --- | --- |

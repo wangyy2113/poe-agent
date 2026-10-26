@@ -27,6 +27,7 @@ from economy.models import (
 )
 from economy.service import EconomyUnavailable
 from orchestrator import loop
+from orchestrator.binding import number_evidence, verify
 from tests.unit.test_craft_pool import TOOL_ARGS, _populated_conn, _write_page_audit
 from tools.impl.craft_attempt_plan import craft_attempt_plan, render_attempt_plan
 from tools.registry import REGISTRY, ToolResult
@@ -331,11 +332,13 @@ class ToolApiAndRenderTest(unittest.TestCase):
         )
         self.assertFalse(spec.parameters["properties"]["materials"]["items"]["additionalProperties"])
 
-    def test_tool_returns_plan_three_pool_citations_and_boundary_answer(self) -> None:
+    def test_tool_returns_pool_and_calculation_citations_with_boundary_answer(self) -> None:
         result = self.call_tool()
         self.assertTrue(result.ok)
         self.assertEqual(result.data["status"], "exact")
-        self.assertEqual(len(result.citations), 3)
+        self.assertEqual(len(result.citations), 4)
+        self.assertEqual(result.citations[-1]["claim_scope"], "calculation")
+        self.assertEqual(result.citations[-1]["text"], result.data["answer"])
         self.assertIn("P50 / P90 / P95", result.data["answer"])
         self.assertIn("不是任何混沌石", result.data["answer"])
         self.assertIn("系统没有从目标反推步骤", result.data["answer"])
@@ -348,7 +351,7 @@ class ToolApiAndRenderTest(unittest.TestCase):
             exact = self.call_tool(include_market_prices=True, league="Standard")
         self.assertEqual(exact.data["pricing"]["status"], "complete")
         self.assertEqual(exact.data["cost_budget"]["per_attempt_chaos"], "2")
-        self.assertEqual(len(exact.citations), 4)
+        self.assertEqual(len(exact.citations), 5)
         service.material_cost.assert_called_once()
 
         service.reset_mock()
@@ -359,6 +362,17 @@ class ToolApiAndRenderTest(unittest.TestCase):
         self.assertEqual(unknown.data["status"], "unknown")
         self.assertEqual(unknown.data["pricing"]["status"], "incomplete")
         service.material_cost.assert_not_called()
+
+    def test_code_direct_exact_plan_binds_pool_bridge_and_calculation(self) -> None:
+        result = self.call_tool()
+        evidence = number_evidence(result.citations)
+        answer = loop._direct_tool_answer(  # noqa: SLF001 - 直接出口契约
+            result, tool_name="craft_attempt_plan", evidence=evidence
+        )
+        checked = verify(answer, evidence)
+        self.assertEqual(checked.blocked, 0)
+        self.assertEqual(set(checked.used_labels), {"E1", "E2", "E3", "E4"})
+        self.assertIn("[[E4]]", answer)
 
     def test_economy_outage_keeps_quantity_plan_but_not_partial_cost(self) -> None:
         service = Mock()

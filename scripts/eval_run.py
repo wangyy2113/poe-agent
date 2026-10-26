@@ -499,8 +499,16 @@ def replay_case(conn, case: Case, rec: Recording, params: dict) -> GateOutcome:
             if "poedb.tw" not in rec.gap_answer and "poewiki" not in rec.gap_answer:
                 out.gap_contract.append("缺据声明没有给出查证途径")
     else:
+        # 代码直出的精确池计划没有模型原文，raw_answer 为空；此前回放把空串
+        # 送进绑定闸门，产生“缺少全部三类证据”的假失败，也完全没测到实际答案。
+        # 只对带条件池专属证据的直出路径使用用户实际看到的 final_answer。
+        verify_text = rec.raw_answer
+        if not verify_text and any(
+            evidence.claim_scope == "affix_pool_odds" for evidence in rec.evidence
+        ):
+            verify_text = rec.final_answer
         out.binding = verify(
-            rec.raw_answer, rec.evidence,
+            verify_text, rec.evidence,
             factual_terms=factual_terms, domain_terms=domain_terms,
         )
         # 确定误拦：排版元素被当成事实句拦掉。这一类有确定判据，应为 0
@@ -515,30 +523,31 @@ def replay_case(conn, case: Case, rec: Recording, params: dict) -> GateOutcome:
         # 非流式得到不同拦截结果，严重）；后者只是分句时换行的归属不同，用户看到的
         # 内容一样。混成一个指标会让真问题被空白噪声盖住。
         batch_calls = [(v.kind, v.ok) for v in out.binding.verdicts]
-        for size in (1, 7, 40):
-            gate = StreamingGate(
-                rec.evidence, factual_terms=factual_terms, domain_terms=domain_terms
-            )
-            for i in range(0, len(rec.raw_answer), size):
-                gate.feed(rec.raw_answer[i:i + size])
-            gate.flush()
-            streamed = gate.result()
-            stream_calls = [(v.kind, v.ok) for v in streamed.verdicts if v.text.strip()]
-            if (
-                streamed.blocked != out.binding.blocked
-                or stream_calls != [c for c, v in zip(batch_calls, out.binding.verdicts)
-                                    if v.text.strip()]
-            ):
-                out.stream_mismatch = (
-                    f"切片 {size} 字时**判定**与批量不一致："
-                    f"拦截 {streamed.blocked} vs {out.binding.blocked}"
+        if rec.raw_answer:
+            for size in (1, 7, 40):
+                gate = StreamingGate(
+                    rec.evidence, factual_terms=factual_terms, domain_terms=domain_terms
                 )
-                break
-            if streamed.text != out.binding.text:
-                out.stream_whitespace_diff = (
-                    f"切片 {size} 字时输出差 {abs(len(streamed.text) - len(out.binding.text))} "
-                    "个空白字符（判定一致）"
-                )
+                for i in range(0, len(verify_text), size):
+                    gate.feed(verify_text[i:i + size])
+                gate.flush()
+                streamed = gate.result()
+                stream_calls = [(v.kind, v.ok) for v in streamed.verdicts if v.text.strip()]
+                if (
+                    streamed.blocked != out.binding.blocked
+                    or stream_calls != [c for c, v in zip(batch_calls, out.binding.verdicts)
+                                        if v.text.strip()]
+                ):
+                    out.stream_mismatch = (
+                        f"切片 {size} 字时**判定**与批量不一致："
+                        f"拦截 {streamed.blocked} vs {out.binding.blocked}"
+                    )
+                    break
+                if streamed.text != out.binding.text:
+                    out.stream_whitespace_diff = (
+                        f"切片 {size} 字时输出差 {abs(len(streamed.text) - len(out.binding.text))} "
+                        "个空白字符（判定一致）"
+                    )
 
     text = out.answer_text
     # 数值契约要**忽略千分位**：模型写「20,000」而用例写「20000」时，
@@ -565,6 +574,7 @@ def _strip_thousands(text: str) -> str:
 
 def summarize_gate(outs: list[GateOutcome]) -> dict:
     generated = [o for o in outs if not o.rec.evidence_gap]
+    streamed = [o for o in generated if o.rec.raw_answer]
     gaps = [o for o in outs if o.rec.evidence_gap]
     factual = [v for o in generated for v in o.factual]
     blocked = [v for o in generated for v in o.blocked]
@@ -573,6 +583,7 @@ def summarize_gate(outs: list[GateOutcome]) -> dict:
         "recordings": {
             "total": len(outs),
             "generated": len(generated),
+            "code_direct": len(generated) - len(streamed),
             "gap_path": len(gaps),
             "passed": sum(1 for o in outs if o.passed),
             "stale": [o.case.id for o in outs if o.stale],
@@ -588,11 +599,11 @@ def summarize_gate(outs: list[GateOutcome]) -> dict:
             "reasons": sorted({v.reason[:60] for v in blocked}),
         },
         "stream_parity": {
-            "consistent": sum(1 for o in generated if not o.stream_mismatch),
-            "total": len(generated),
-            "failed_ids": [o.case.id for o in generated if o.stream_mismatch],
+            "consistent": sum(1 for o in streamed if not o.stream_mismatch),
+            "total": len(streamed),
+            "failed_ids": [o.case.id for o in streamed if o.stream_mismatch],
             "whitespace_only_ids": [
-                o.case.id for o in generated if o.stream_whitespace_diff
+                o.case.id for o in streamed if o.stream_whitespace_diff
             ],
         },
         "answer_assertions": {
@@ -655,7 +666,8 @@ def print_gate_report(outs: list[GateOutcome], s: dict, *, verbose: bool) -> Non
         print(f"  工具路由命中         {tr['ok']}/{tr['total']}（附加观测，不设门槛）")
     r = s["recordings"]
     print(f"  录制                 {r['passed']}/{r['total']} 通过"
-          f"（{r['generated']} 条经模型 / {r['gap_path']} 条走缺据路径）")
+          f"（{sp['total']} 条流式模型输出 / {r['code_direct']} 条代码直出 / "
+          f"{r['gap_path']} 条走缺据路径）")
     print(f"  模型                 {', '.join(s['models']) or '—'}"
           f"   录制期间累计 {s['tokens']} token")
     if b["reasons"]:

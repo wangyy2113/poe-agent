@@ -105,6 +105,8 @@ def _pool_citation(report: PoolOddsReport) -> dict[str, Any]:
     assert report.page_snapshot is not None
     base = report.base
     proof = report.page_snapshot
+    scope_label = "normal 词缀行集" if proof.scope == "normal" else "整页行集"
+    stored_label = "normal 词缀" if proof.scope == "normal" else "整页"
     side_zh = _SIDE_ZH[report.generation_side]
     rows = "\n".join(
         f"| {row.tier if row.tier is not None else '-'} | {row.required_item_level} | "
@@ -128,10 +130,11 @@ def _pool_citation(report: PoolOddsReport) -> dict[str, Any]:
         f"- 条件概率小数：{report.probability_decimal}\n"
         f"- 独立同分布选择的数学期望次数：{report.expected_independent_selections}\n"
         f"- 条件池摘要：{report.pool_digest}\n"
-        f"- 整页行集摘要：{proof.row_digest}\n"
+        f"- {scope_label}摘要：{proof.row_digest}\n"
         f"- 来源 HTML 摘要：{proof.source_content_hash}\n"
         f"- 来源抓取时间：{proof.source_fetched_at}\n"
-        f"- 来源原始行/存储行：{proof.source_total_rows}/{proof.row_count}\n\n"
+        f"- 来源原始行（全页）/已验证 {stored_label}存储行："
+        f"{proof.source_total_rows}/{proof.row_count}\n\n"
         "| T 级 | 最低物品等级 | 权重 | 目标组词缀原文 |\n"
         "|---:|---:|---:|---|\n"
         f"{rows}\n\n"
@@ -164,6 +167,7 @@ def _pool_citation(report: PoolOddsReport) -> dict[str, Any]:
         "pool_digest": report.pool_digest,
         "page_row_count": proof.row_count,
         "page_row_digest": proof.row_digest,
+        "snapshot_scope": proof.scope,
         "source_content_hash": proof.source_content_hash,
         "source_fetched_at": proof.source_fetched_at,
         "source_total_rows": proof.source_total_rows,
