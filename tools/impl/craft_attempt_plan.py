@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from typing import Any
 
 from core import db as dbmod
@@ -254,6 +256,30 @@ def craft_attempt_plan(
     data = report.to_dict()
     answer = render_attempt_plan(data)
     citations = affix_pool_citations(pool)
+    if report.status == "exact":
+        # 分布和预算是本工具从已验证池及显式材料算出的新数值。必须把全部输出
+        # 作为确定性计算证据登记，不能只给底材/池三张引用却让派生数字无处回填。
+        digest = hashlib.sha256(
+            json.dumps(data, ensure_ascii=False, sort_keys=True).encode("utf-8")
+        ).hexdigest()
+        citations.append({
+            "chunk_id": f"craft_attempt_plan:{digest}",
+            "entity_id": None,
+            "title": "独立尝试分布与材料预算的确定性计算",
+            "url": f"https://poedb.tw/cn/{pool.base.modifier_page}" if pool.base else "",
+            "source": "POE1-Agent",
+            "source_priority": 1,
+            "can_support_facts": True,
+            "text": answer,
+            "channel": "derived",
+            "claim_scope": "calculation",
+            "claim_data": {
+                "kind": "craft_attempt_plan",
+                "model": "geometric_iid_single_weighted_selection_v1",
+                "pool_digest": pool.pool_digest,
+                "max_attempts": max_attempts,
+            },
+        })
     if market_cost is not None:
         citations.extend(material_cost_citations(market_cost, render_material_cost(market_cost)))
     return ToolResult(

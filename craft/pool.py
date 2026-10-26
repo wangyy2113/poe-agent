@@ -108,6 +108,7 @@ class EligibleAffix:
 
 @dataclass(frozen=True)
 class PageSnapshotProof:
+    scope: str
     modifier_page: str
     row_count: int
     row_digest: str
@@ -120,6 +121,7 @@ class PageSnapshotProof:
 
     def to_dict(self) -> dict[str, Any]:
         return {
+            "scope": self.scope,
             "modifier_page": self.modifier_page,
             "row_count": self.row_count,
             "row_digest": self.row_digest,
@@ -183,6 +185,7 @@ class PoolOddsReport:
 
 
 POOL_SNAPSHOT_MODE = "replace_by_page_v2_source_provenance"
+NORMAL_POOL_SNAPSHOT_MODE = "replace_normal_by_page_v1_source_provenance"
 POOL_SNAPSHOT_MAX_AGE = timedelta(days=7)
 _POOL_PAGE_COLUMNS = (
     "uid", "mod_code", "item_class_page", "item_class_code", "item_class_zh",
@@ -193,11 +196,14 @@ _POOL_PAGE_COLUMNS = (
 )
 
 
-def affix_page_digest(conn: sqlite3.Connection, modifier_page: str) -> tuple[int, str]:
+def affix_page_digest(
+    conn: sqlite3.Connection, modifier_page: str, *, normal_only: bool = False
+) -> tuple[int, str]:
     """返回词缀页当前完整行集的数量与稳定摘要，供导入审计和查询端双向核对。"""
+    predicate = " AND category='normal'" if normal_only else ""
     rows = conn.execute(
         f"SELECT {','.join(_POOL_PAGE_COLUMNS)} FROM mod_affix "
-        "WHERE item_class_page=? ORDER BY uid",
+        f"WHERE item_class_page=?{predicate} ORDER BY uid",
         (modifier_page,),
     ).fetchall()
     payload = [
@@ -236,19 +242,23 @@ def verify_affix_page_snapshot(
         "AND finished_at IS NOT NULL ORDER BY run_id DESC LIMIT 1"
     ).fetchone()
     if not row or not row[1]:
-        return None, "没有可审计的 mod_affix 整页替换记录"
+        return None, "没有可审计的 mod_affix 页级替换记录"
     if str(row[0] or "") != "POEDB":
         return None, "最近的 mod_affix 导入不是 POEDB 来源"
     try:
         note = json.loads(row[1])
     except (TypeError, ValueError, json.JSONDecodeError):
         return None, "最近的 mod_affix 导入审计损坏"
-    if not isinstance(note, dict) or note.get("snapshot_mode") != POOL_SNAPSHOT_MODE:
-        return None, "最近的 mod_affix 导入没有来源级整页替换证明"
+    mode = note.get("snapshot_mode") if isinstance(note, dict) else None
+    if mode not in (POOL_SNAPSHOT_MODE, NORMAL_POOL_SNAPSHOT_MODE):
+        return None, "最近的 mod_affix 导入没有来源级页范围替换证明"
+    normal_only = mode == NORMAL_POOL_SNAPSHOT_MODE
     pages = note.get("pages")
     page = pages.get(modifier_page) if isinstance(pages, dict) else None
     if not isinstance(page, dict) or page.get("status") != "complete":
-        return None, f"最近的 mod_affix 导入没有完整替换 {modifier_page}"
+        return None, f"最近的 mod_affix 导入没有完整替换 {modifier_page} 的受审计范围"
+    if normal_only and page.get("scope") != "normal":
+        return None, f"{modifier_page} 的 normal 范围声明无效"
     if page.get("parse_complete") is not True or page.get("explicit_no_mods") is not False:
         return None, f"{modifier_page} 未声明非空载荷零丢失解析"
 
@@ -266,6 +276,8 @@ def verify_affix_page_snapshot(
             "source_deduped_rows", "source_dedup_conflicts",
         )
     }
+    textless = page.get("source_textless_rows", 0)
+    normal_source_rows = page.get("source_normal_rows") if normal_only else None
     if (
         isinstance(expected_count, bool)
         or not isinstance(expected_count, int)
@@ -277,14 +289,23 @@ def verify_affix_page_snapshot(
         or fetched_at is None
         or any(isinstance(value, bool) or not isinstance(value, int) or value < 0
                for value in counters.values())
+        or isinstance(textless, bool) or not isinstance(textless, int) or textless < 0
+        or (normal_only and (
+            isinstance(normal_source_rows, bool)
+            or not isinstance(normal_source_rows, int)
+            or normal_source_rows != expected_count
+        ))
     ):
         return None, f"{modifier_page} 的来源级页审计字段无效"
     if (
         counters["source_failed_rows"] != 0
         or counters["source_dedup_conflicts"] != 0
-        or counters["source_succeeded_rows"] != expected_count
+        or (not normal_only and counters["source_succeeded_rows"] != expected_count)
+        or (normal_only and counters["source_succeeded_rows"] < expected_count)
         or counters["source_total_rows"]
         != counters["source_succeeded_rows"] + counters["source_deduped_rows"]
+        + textless
+        or textless != 0
     ):
         return None, f"{modifier_page} 的来源行统计不能证明零丢失"
 
@@ -293,10 +314,13 @@ def verify_affix_page_snapshot(
     if age < -timedelta(minutes=5) or age > POOL_SNAPSHOT_MAX_AGE:
         return None, f"{modifier_page} 的来源快照已过期或时间异常"
 
-    actual_count, actual_digest = affix_page_digest(conn, modifier_page)
+    actual_count, actual_digest = affix_page_digest(
+        conn, modifier_page, normal_only=normal_only
+    )
     if actual_count != expected_count or actual_digest != expected_digest:
-        return None, f"{modifier_page} 当前数据与最近整页替换审计不一致"
+        return None, f"{modifier_page} 当前数据与最近页范围替换审计不一致"
     return PageSnapshotProof(
+        scope="normal" if normal_only else "full_page",
         modifier_page=modifier_page,
         row_count=actual_count,
         row_digest=actual_digest,

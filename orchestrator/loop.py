@@ -2979,9 +2979,65 @@ _DETERMINISTIC_DIRECT_TOOLS = frozenset({
 })
 
 
-def _direct_tool_answer(tool_result: ToolResult) -> str:
+def _direct_tool_answer(
+    tool_result: ToolResult, *, tool_name: str = "",
+    evidence: list[Evidence] | None = None,
+) -> str:
     """确定性工具由代码生成答案，防止模型改写数值、状态或边界限定。"""
-    return str((tool_result.data or {}).get("answer") or "").strip()
+    answer = str((tool_result.data or {}).get("answer") or "").strip()
+    if tool_name != "craft_attempt_plan" or (tool_result.data or {}).get("status") != "exact":
+        return answer
+    # 精确池完整性闸门要求 P2 底材、跨源映射和 P1 条件池三张证据实际参与回答。
+    # 分布与材料预算又引入了新数值，须同时绑定本工具的确定性计算证据。
+    by_kind = {
+        str(item.claim_data.get("kind") or ""): item.label
+        for item in evidence or []
+        if item.claim_scope in {"affix_pool_odds", "calculation"}
+    }
+    required = ("pob_base", "base_mapping", "pool_odds", "craft_attempt_plan")
+    if not all(kind in by_kind for kind in required):
+        return answer  # 缺证据由出口闸门拦截，不能合成假编号
+    pool = (tool_result.data or {}).get("pool") or {}
+    base = pool.get("base") or {}
+    distribution = (tool_result.data or {}).get("distribution") or {}
+    pob, mapping, odds, calculation = (by_kind[kind] for kind in required)
+    source_summary = (
+        f"底材“{base.get('name_zh')}”（{base.get('name_en')}）映射到 POEDB 词缀页"
+        f"“{base.get('modifier_page')}”[[{pob}]][[{mapping}]]。\n"
+        f"在 normal 来源、物品等级 {pool.get('item_level')}、"
+        f"{'前缀' if pool.get('generation_side') == 'prefix' else '后缀'}侧且未应用"
+        f"已有词缀 family 排除的条件下，有效池总权重为 {pool.get('total_weight')}，"
+        f"目标词缀组“{pool.get('target_group')}”"
+        f"权重为 {pool.get('target_weight')}，条件概率为 "
+        f"{distribution.get('single_attempt_probability_numerator')}/"
+        f"{distribution.get('single_attempt_probability_denominator')}"
+        f"（{distribution.get('single_attempt_probability')}）"
+        f"[[{pob}]][[{mapping}]][[{odds}]]。"
+    )
+    calc_marker = f"[[{calculation}]]"
+    bound_lines: list[str] = []
+    in_table = False
+    for line in answer.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("|"):
+            bound_lines.append(line)
+            in_table = True
+            continue
+        if in_table:
+            # 表格后独占一行的 Citation marker 对整块生效，避免每行重复编号。
+            bound_lines.append(calc_marker)
+            in_table = False
+        if not stripped:
+            bound_lines.append(line)
+        else:
+            # 分句在句号/分号处结束；标记必须位于标点之前，不能独占下一句。
+            marked = re.sub(r"([。；])", calc_marker + r"\1", line)
+            if not marked.endswith(("。", "；")):
+                marked += calc_marker
+            bound_lines.append(marked)
+    if in_table:
+        bound_lines.append(calc_marker)
+    return source_summary + "\n\n" + "\n".join(bound_lines)
 
 
 def _coverage_answer(tool_result: ToolResult) -> str:
@@ -3702,7 +3758,9 @@ def _prepare_turn(
         return setup
     if preferred_tool in _DETERMINISTIC_DIRECT_TOOLS and preferred_result is not None:
         if preferred_result.ok:
-            setup.final = _direct_tool_answer(preferred_result)
+            setup.final = _direct_tool_answer(
+                preferred_result, tool_name=preferred_tool, evidence=evidence
+            )
         else:
             result.evidence_gap = True
             setup.gap = (
