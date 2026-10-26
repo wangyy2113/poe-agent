@@ -9,7 +9,7 @@ import sqlite3
 import tempfile
 import unittest
 from dataclasses import replace
-from contextlib import redirect_stdout
+from contextlib import closing, redirect_stdout
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
@@ -333,7 +333,7 @@ class TestRefreshCli(unittest.TestCase):
         self.assertEqual(preview_code, 0)
         self.assertIn("未修改数据库", preview)
         self.assertFalse(self.backup_dir.exists())
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             self.assertEqual(conn.execute("SELECT count(*) FROM mod_affix").fetchone()[0], 0)
 
         apply_code, applied = self._run("apply")
@@ -342,7 +342,7 @@ class TestRefreshCli(unittest.TestCase):
         backups = list_backups(self.backup_dir)
         self.assertEqual(len(backups), 1)
         self.assertTrue(verify_backup(self.backup_dir, backups[0]["backup_name"]).valid)
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             conn.row_factory = sqlite3.Row
             self.assertEqual(status(conn)["ready_pages"], 7)
 
@@ -351,7 +351,7 @@ class TestRefreshCli(unittest.TestCase):
             code, output = self._run("apply")
         self.assertEqual(code, 2)
         self.assertIn("磁盘不可写", output)
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             self.assertEqual(conn.execute("SELECT count(*) FROM mod_affix").fetchone()[0], 0)
             self.assertEqual(conn.execute("SELECT count(*) FROM ingest_run").fetchone()[0], 0)
 
