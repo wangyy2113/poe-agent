@@ -458,10 +458,10 @@ CREATE TABLE IF NOT EXISTS game_constant (
 CREATE INDEX IF NOT EXISTS idx_const_group ON game_constant(group_name);
 
 -- ── PoB 唯一装备（P2，英文；用于与 POEDB 交叉校验）──
--- variant_scope 是关键：PoB 的文本块里**历史版本与当前版本混在一起**
+-- variant scope 是关键：PoB 的文本块里**历史版本与当前版本混在一起**
 -- （1293 件里 752 件带 Variant 标记）。冈姆的壮志同时写着 +500（3.25 前）
 -- 与 +1000（当前），不区分就会把过期数值当现值输出。
--- 只有 variant_scope='current' 的行可用于回答；'obsolete' 仅供版本 diff 分析。
+-- pob_unique.mods 只存当前有效词缀；逐变体记录另存在隔离表，不进可引用索引。
 CREATE TABLE IF NOT EXISTS pob_unique (
     uid             TEXT PRIMARY KEY,  -- unique:{name}
     name_en         TEXT NOT NULL,
@@ -487,6 +487,30 @@ CREATE TABLE IF NOT EXISTS pob_unique (
 );
 CREATE INDEX IF NOT EXISTS idx_pobuniq_name ON pob_unique(name_en);
 CREATE INDEX IF NOT EXISTS idx_pobuniq_base ON pob_unique(base_type_en);
+
+-- PoB 的每个 Variant 原样分区保存，供显式历史查询。
+-- `Pre 3.25.0` 是来源标签，表示该版之前，不是那一版的精确快照。
+-- 这张表绝不进入 chunk / alias / FTS；当前装备问答仍只读 pob_unique.mods。
+CREATE TABLE IF NOT EXISTS pob_unique_variant (
+    unique_uid      TEXT NOT NULL,
+    variant_index   INTEGER NOT NULL CHECK(variant_index > 0),
+    variant_name    TEXT NOT NULL,
+    scope           TEXT NOT NULL CHECK(scope IN ('current','obsolete')),
+    base_type_en    TEXT,
+    mods            TEXT NOT NULL CHECK(json_valid(mods)),
+    ranges_fp       TEXT NOT NULL CHECK(json_valid(ranges_fp)),
+    source_file     TEXT NOT NULL,
+    source          TEXT NOT NULL,
+    source_priority INTEGER NOT NULL,
+    url             TEXT NOT NULL,
+    source_commit   TEXT NOT NULL,
+    pob_version     TEXT,
+    game_version    TEXT,
+    updated_at      TEXT NOT NULL,
+    PRIMARY KEY(unique_uid, variant_index)
+);
+CREATE INDEX IF NOT EXISTS idx_pobuniq_variant_scope
+    ON pob_unique_variant(scope, unique_uid);
 
 -- ── PoB 技能石与辅助宝石（P2 出结构，POEDB 出中文名）──
 -- 桥接键是 PoB 的 `grantedEffectId`，它同时出现在 POEDB 清单页的

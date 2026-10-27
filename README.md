@@ -245,7 +245,7 @@ MCP JSON-RPC；诊断信息写 stderr。客户端必须保留工具返回的 `un
 .venv/bin/python scripts/probe_pob.py --align       # 先清点，确认解析无误
 .venv/bin/python scripts/import_pob_constants.py    # 游戏常量（calc/ 的真源）
 .venv/bin/python scripts/import_pob_mods.py         # 词缀
-.venv/bin/python scripts/import_pob_uniques.py      # 唯一装备（自动过滤历史变体）
+.venv/bin/python scripts/import_pob_uniques.py      # 当前装备 + 隔离的逐变体历史（先备份、原子发布）
 .venv/bin/python scripts/verify_pob_mods.py         # 词缀对账
 .venv/bin/python scripts/verify_pob_uniques.py      # 唯一装备对账
 ```
@@ -254,6 +254,16 @@ MCP JSON-RPC；诊断信息写 stderr。客户端必须保留工具返回的 `un
 不过滤会把旧版数值和现版一起输出（冈姆的壮志的 `+500` 与 `+1000` 并存）。
 判据是**排除变体名含 `Pre <版本号>` 的**，而不是「只取 Current」——有些变体
 是选择型而非历史版本（`Impresence` 的 5 种元素全都当前有效）。
+导入会在完整性体检通过后备份数据库，并在同一事务发布当前 `pob_unique` 与隔离的
+`pob_unique_variant`。PoB 当前样本有 1,300 件装备、2,642 条命名变体记录，其中
+1,493 条是历史变体。旧版词缀不进入当前装备卡片、别名或全文索引。
+
+历史查询走 `GET /poe_agent/unique-variants?name=Kaom%27s%20Heart`；返回变体编号后，
+`GET /poe_agent/unique-variants/detail?name=Kaom%27s%20Heart&index=2` 读取指定变体，
+`GET /poe_agent/unique-variants/compare?name=Kaom%27s%20Heart&left_index=2&right_index=3`
+比较指定两版的共同、新增、移除词缀和底材。Knowledge/MCP 工具
+`unique_variant_history` 也使用同一只读查询。`Pre 3.25.0` 的意思是 **3.25.0 之前**，
+不是 3.25.0 的精确快照；多个当前选择型变体必须明确指定编号，未知历史底材保持未知。
 
 ---
 
@@ -1746,7 +1756,7 @@ PoB 排 P2 而不是 P1：它在数值上更接近一手，但不含中文名与
 | `scripts/probe_pob.py` | PoB 数据资产清点与解析可行性验证 |
 | `scripts/import_pob_mods.py` | 导入 PoB 词缀（`--dry-run` 只体检） |
 | `scripts/import_pob_constants.py` | 导入游戏常量（`calc/` 真源） |
-| `scripts/import_pob_uniques.py` | 导入 PoB 唯一装备（过滤历史变体） |
+| `scripts/import_pob_uniques.py` | 原子导入 PoB 当前唯一装备与隔离的命名变体历史 |
 | `scripts/verify_pob_mods.py` | POEDB × PoB 词缀对账 |
 | `scripts/verify_pob_uniques.py` | POEDB × PoB 唯一装备对账 |
 | `scripts/verify_chat.py` | `/chat`、`/chat/stream`、`/item` 端到端验证，58 项（`--gap-only` 31 项，不需要凭证） |
@@ -1760,7 +1770,7 @@ PoB 排 P2 而不是 P1：它在数值上更接近一手，但不含中文名与
 ### 评测：四项指标与黄金问答集
 
 `config.yaml` 里的阈值与 `orchestrator/binding.py` 的闸门规则都需要判据，否则改动之后
-无法判断是变好还是变坏。判据来自 `tests/golden/questions.yaml`（196 条，六类样本：
+无法判断是变好还是变坏。判据来自 `tests/golden/questions.yaml`（198 条，六类样本：
 专名 / 描述性 / 数值 / 跨来源 / **确定不覆盖** / 工具路由），基线与结论记在
 `tests/golden/BASELINE.md`。
 
@@ -1791,7 +1801,7 @@ PoB 排 P2 而不是 P1：它在数值上更接近一手，但不含中文名与
 .venv/bin/python -m unittest discover -s tests -t .
 ```
 
-目前 2324 项，其中与「无据不答」直接相关的：
+目前 2332 项，其中与「无据不答」直接相关的：
 
 | 组 | 项数 | 重点 |
 | --- | --- | --- |
@@ -1959,8 +1969,9 @@ SHA-256、大小、schema SHA-256、SQLite/app 版本、页信息和关键表行
   `craft_affix_capacity`；普通装备、药剂、珠宝、Graft 与已腐化深渊珠宝按对应规则
   判断。但存在未识别显式词缀、隐匿占位、未鉴定状态或未归类行时只报告已识别数量，
   不声称还剩几个位置。
-- **PoB 唯一装备的历史变体已过滤但未入库。** 2157 条被排除的历史词缀目前丢弃了。
-  存下来能回答版本改动类问题，但必须与当前数据严格隔离，否则会被当成现值输出。
+- **PoB 历史变体只支持明确的命名变体对比。** 重新运行新版导入器后，旧版词缀会进入
+  隔离表；不会从 `Pre X` 标签推断某个具体补丁的精确数值。未能从上游唯一确定的历史
+  底材返回未知；多个当前选择型变体也不会自动折成单一“现版”。
 - ~~POEDB 侧 76% 的唯一装备缺需求等级。~~ **已解决**（2026-08-18 复核）：
   `unique_l2` 的详情页补全把这个字段填满了，现在 1342 件**全部**有需求等级
   （范围 1–84，中位数 49）。反倒是 **PoB 侧只有 324/1300 件带 `level_req`**，
