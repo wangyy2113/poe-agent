@@ -114,6 +114,8 @@ python scripts/setup.py          # Windows: python scripts\setup.py
 #    可单独跑：unique_item / unique_l2 / mods / bench（工艺台目录）
 #              / horticraft（收获定向工艺）/ metamods（元词缀矩阵）
 #              / tree（天赋树与 Atlas）/ coverage（只刷覆盖声明）
+#    首次完成唯一装备详情补全后，后续刷新请用下文的完整刷新命令；
+#    主列表单独导入会被拒绝，防止覆盖详情页补出的词条。
 
 # 5) 启动服务
 .venv/bin/python main.py
@@ -211,8 +213,29 @@ MCP JSON-RPC；诊断信息写 stderr。客户端必须保留工具返回的 `un
 `GET /admin/sync/runs/{sync_id}`，继续受独立 `ADMIN_TOKEN` 与可选 IP 白名单保护。
 
 当前自动集合覆盖词缀、工艺台、元词缀矩阵、天赋树、通货、地图、圣甲虫、精华、收获和
-怪物。唯一装备暂不加入：刷新主列表会覆盖详情页补齐的「不可改变」等词条，完整的
-1,342 页详情合并链尚未原子化；在解决这条数据回退风险前，宁可保留手工流程。
+怪物。唯一装备使用独立的完整刷新流程：
+
+```bash
+# 只读状态与本地缓存预检；预检不会修改数据库或发网络请求
+.venv/bin/python scripts/refresh_unique_items.py status
+.venv/bin/python scripts/refresh_unique_items.py preview
+.venv/bin/python scripts/refresh_unique_items.py proof --slug Headhunter
+
+# 重新抓取主列表、类别页、英文名页及每件详情页，完整预检后备份并原子发布
+.venv/bin/python scripts/refresh_unique_items.py apply
+```
+
+完整刷新约 1,450 页；在默认每秒 0.5 次请求的限速下，可能需要约 50 分钟。
+`preview --fetch` 可做在线只读预检，但 `apply` 仍会独立重新抓取，避免以旧预检发布。
+缓存预检会显示各页来源时间，**不能当成当前上游状态**。若列表与详情不一致，
+流程保留该物品已有实体与卡片，并登记 `unique_review` 待核对；缺页、解析失败、
+主列表/类别补集/英文索引低于完整性下限或清单骤降
+则整轮中止。发布前创建 SQLite 一致性备份，实体、卡片、别名、审计在同一事务中提交。
+`proof` 可查询已发布刷新中某件装备详情页的最终 URL、内容哈希、抓取时间与缓存标记；
+每页来源账与聚合摘要一起落库。`status` 会重算实体、卡片、FTS、别名及来源账摘要，
+显示 `valid` 或 `drifted`，便于发现发布后的变更或审计损坏。
+已有详情补全记录的库会拒绝旧的 `--category unique_item` 单页导入，防止详情词条回退。
+独立刷新尚未加入默认定时同步：全量详情页的时间和请求量需要单独安排维护窗口。
 
 可选：把 PoB 数据也导进来（需要本地有 PathOfBuilding 仓库）
 
@@ -1768,7 +1791,7 @@ PoB 排 P2 而不是 P1：它在数值上更接近一手，但不含中文名与
 .venv/bin/python -m unittest discover -s tests -t .
 ```
 
-目前 2313 项，其中与「无据不答」直接相关的：
+目前 2324 项，其中与「无据不答」直接相关的：
 
 | 组 | 项数 | 重点 |
 | --- | --- | --- |

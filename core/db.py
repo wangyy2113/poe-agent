@@ -1414,6 +1414,21 @@ CREATE TABLE IF NOT EXISTS ingest_run (
     note        TEXT
 );
 
+-- 完整唯一装备刷新使用的逐页来源账。聚合摘要在 ingest_run.note；
+-- 此表保留每个列表、类别、英文与详情页的具体哈希，供单件追溯。
+CREATE TABLE IF NOT EXISTS unique_refresh_page (
+    run_id       INTEGER NOT NULL,
+    role         TEXT NOT NULL,
+    url          TEXT NOT NULL,
+    final_url    TEXT NOT NULL,
+    content_hash TEXT NOT NULL,
+    fetched_at   TEXT NOT NULL,
+    from_cache   INTEGER NOT NULL,
+    PRIMARY KEY(run_id, url)
+);
+CREATE INDEX IF NOT EXISTS idx_unique_refresh_page_url
+    ON unique_refresh_page(url, run_id DESC);
+
 -- ── 自动同步与版本 diff 审计 ──
 -- ingest_run 记录单个采集器内部发生了什么；这里记录一次跨分类同步计划的整体边界，
 -- 以及同步前后事实快照的差异。二者不能混成一张表：一次自动同步可串行触发多个
