@@ -124,6 +124,9 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 .venv/bin/python -m kb.pipeline --category all
 #   category: unique_item | unique_l2 | mods | bench | horticraft | metamods | tree
 #             | monsters | currency | scarab | essence | maps | coverage | all
+#   已做详情页补全的库会拒绝 unique_item 单页重导；用完整刷新链：
+.venv/bin/python scripts/refresh_unique_items.py preview  # 缓存只读预检
+.venv/bin/python scripts/refresh_unique_items.py apply    # 全量强制抓取、备份、原子发布
 #   收获那一类叫 horticraft 不叫 harvest：下面 --harvest 已经是「只抓不抽」的开关
 #   --harvest 只抓缓存不抽取 / --force 忽略缓存 / --rebuild 清空重建
 #   --allow-bench-shrink、--allow-metamod-shrink、--allow-monster-shrink
@@ -146,7 +149,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 2313 项，秒级
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 2324 项，秒级
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选

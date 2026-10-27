@@ -150,6 +150,18 @@ def run_poedb_unique(*, force: bool = False, rebuild: bool = False) -> int:
     cfg = get_config()
     conn = dbmod.init_db(cfg.db_path, vector_dim=int(cfg.get("retrieval.vector.dim", 0) or 0))
 
+    # Once detail-only lines have been merged, a list-only commit is unsafe.
+    # The old warning was printed *after* the overwrite, leaving a broken
+    # snapshot until an operator noticed and re-ran another 1,342-page job.
+    if conn.execute(
+        "SELECT 1 FROM ingest_run WHERE category IN ('unique_detail','unique_refresh') "
+        "AND finished_at IS NOT NULL LIMIT 1"
+    ).fetchone():
+        raise poedb_unique.StructureError(
+            "唯一装备已有详情页补全；主列表单独导入会覆盖详情词条。"
+            "请使用 scripts/refresh_unique_items.py apply 完整预检并原子发布"
+        )
+
     started = time.time()
     cur = conn.execute(
         "INSERT INTO ingest_run(source, category, started_at) VALUES (?,?,datetime('now'))",
@@ -246,19 +258,6 @@ def run_poedb_unique(*, force: bool = False, rebuild: bool = False) -> int:
         indexed += _index_and_alias(conn, orphans)
         logger.info("补回 %d 件无切片的实体（多为 L2 补集，rebuild 时被连带清掉）",
                     len(orphans))
-
-    # 列表页是唯一装备的主源，重新入库会把 `scripts/import_unique_detail.py`
-    # 从**详情页**补进来的词条（实测以「不可改变」为主）覆盖掉。
-    # 提醒而不是静默：悄悄少一条词缀没人看得出来，而那条正是制作类问题要用的。
-    if conn.execute(
-        "SELECT 1 FROM ingest_run WHERE category='unique_detail' LIMIT 1"
-    ).fetchone():
-        logger.warning(
-            "本轮重写了唯一装备快照，详情页补进来的词条已被覆盖——"
-            "请紧接着重跑 scripts/import_unique_detail.py"
-        )
-        print("[注意] 唯一装备快照已重写，详情页补的词条被覆盖，"
-              "请重跑 scripts/import_unique_detail.py")
 
     elapsed_ms = int((time.time() - started) * 1000)
     conn.execute(

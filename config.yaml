@@ -164,7 +164,8 @@ crawl:
 knowledge_sync:
   # scripts/sync_knowledge.py 默认只预览；显式 --apply 后，只执行超过此时长的分类。
   stale_after_hours: 168
-  # 唯一装备暂不自动化：主列表刷新会覆盖详情页补齐词条，必须等完整详情链原子化。
+  # 唯一装备完整刷新为独立长任务（scripts/refresh_unique_items.py apply），
+  # 每轮约 1450 页，需单独安排维护窗口；不放入默认短周期自动同步。
   categories:
     - mods
     - bench
