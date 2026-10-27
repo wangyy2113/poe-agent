@@ -35,6 +35,7 @@ from api.item import router as item_router
 from api.memory import router as memory_router
 from api.search import router as search_router
 from api.screenshot import router as screenshot_router
+from api.unique_variants import router as unique_variants_router
 from core import db as dbmod
 from core.config import REPO_ROOT, get_config, get_secrets
 from core.llm import LLMError, get_llm_client
@@ -170,6 +171,7 @@ def create_app() -> FastAPI:
     api = APIRouter(prefix=base)
     api.add_api_route("/healthz", health, methods=["GET"], tags=["运维"])
     api.include_router(search_router)
+    api.include_router(unique_variants_router)
     api.include_router(chat_router)
     api.include_router(economy_router)
     api.include_router(craft_router)

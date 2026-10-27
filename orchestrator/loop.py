@@ -845,6 +845,10 @@ _SOURCE_CONFLICT_LOOKUP_INTENTS = (
 
 
 _PREFERRED_TOOL_INTENTS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("unique_variant_history", (
+        "历史变体", "旧版词缀", "旧版唯一装备", "唯一装备版本对比",
+        "unique variant", "Unique variant",
+    )),
     ("rotation_dps_compare", (
         "多技能DPS方案对比", "多技能 DPS 方案对比", "技能循环DPS对比", "技能循环 DPS 对比",
         "轮转DPS对比", "轮转 DPS 对比",

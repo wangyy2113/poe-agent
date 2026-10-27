@@ -3,15 +3,16 @@
     python scripts/import_pob_uniques.py --dry-run
     python scripts/import_pob_uniques.py
 
-**只有 `variant_scope='current'` 的词缀可用于回答。** PoB 的文本块里历史版本与
-当前版本混在一起（1293 件里 752 件带 Variant 标记），冈姆的壮志同时写着 +500
-（3.25 之前）与 +1000（当前）。历史版本单独存一份，仅供版本 diff 分析。
+`pob_unique.mods` 仍只含当前有效词缀；每个命名变体另存入隔离的
+`pob_unique_variant`，绝不进入 chunk / FTS / alias。`Pre X` 是 PoB 的
+“X 之前”标签，不是版本 X 的精确快照。两表与审计在同一事务发布。
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import sqlite3
 import sys
 import time
 from collections import Counter
@@ -20,10 +21,16 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from core import db as dbmod  # noqa: E402
+from core.backup import BackupError, create_backup  # noqa: E402
 from core.config import get_config  # noqa: E402
 from core.logging_setup import setup_logging  # noqa: E402
 from kb.sources.pob import PoBNotFound, PoBRepo, load_repo  # noqa: E402
-from kb.sources.pob_uniques import PoBUnique, extract_all, to_row_mods  # noqa: E402
+from kb.sources.pob_uniques import (  # noqa: E402
+    PoBUnique, extract_all, serialize_mods, to_row_mods,
+)
+
+MIN_UNIQUE_ITEMS = 1000
+MIN_VARIANT_ROWS = 1000
 
 
 def to_row(item: PoBUnique, repo: PoBRepo, priority: int) -> tuple:
@@ -66,12 +73,125 @@ def upsert(conn, rows: list[tuple]) -> int:  # noqa: ANN001
             current_variants=excluded.current_variants,
             obsolete_variants=excluded.obsolete_variants,
             mods=excluded.mods, ranges_fp=excluded.ranges_fp,
+            source=excluded.source, source_priority=excluded.source_priority,
             url=excluded.url, pob_version=excluded.pob_version,
             game_version=excluded.game_version, updated_at=datetime('now')
         """,
         rows,
     )
     return len(rows)
+
+
+def variant_rows(items: list[PoBUnique], repo: PoBRepo, priority: int) -> list[tuple]:
+    """Archive every named variant with its complete, individually scoped mods."""
+    rows: list[tuple] = []
+    for item in items:
+        current = set(item.current_variants)
+        obsolete = set(item.obsolete_variants)
+        if current & obsolete or current | obsolete != set(range(1, len(item.variant_names) + 1)):
+            raise ValueError(f"{item.name_en} 变体分区不完整")
+        for index, name in enumerate(item.variant_names, 1):
+            mods = item.mods_for_variant(index)
+            rows.append((
+                item.uid, index, name,
+                "current" if index in current else "obsolete",
+                item.base_type_for_variant(index),
+                json.dumps(serialize_mods(mods), ensure_ascii=False),
+                json.dumps([[[lo, hi] for lo, hi in mod.ranges] for mod in mods]),
+                item.source_file, repo.source_name(), priority,
+                repo.blob_url(item.source_file), repo.commit,
+                repo.version_label, repo.game_version or None,
+            ))
+    return rows
+
+
+def publish_snapshot(
+    conn: sqlite3.Connection, items: list[PoBUnique], repo: PoBRepo,
+    priority: int, *, problems: list[str] | None = None,
+    min_items: int = MIN_UNIQUE_ITEMS, min_variant_rows: int = MIN_VARIANT_ROWS,
+    allow_unpinned: bool = False, backup_dir: Path | None = None,
+    elapsed_ms: int = 0,
+) -> dict[str, int | str]:
+    """Replace current and historical snapshots atomically after full preflight."""
+    if conn.in_transaction:
+        raise ValueError("PoB 唯一装备发布连接已有未完成事务")
+    if problems:
+        raise ValueError(f"PoB 唯一装备抽取有 {len(problems)} 项问题，拒绝部分发布")
+    if not repo.reproducible and not allow_unpinned:
+        raise ValueError("PoB commit 未知，不能生成可复现的历史引用")
+    if len(items) < min_items:
+        raise ValueError(f"唯一装备只有 {len(items)} 件，低于完整性下限 {min_items}")
+    unique_uids = {item.uid for item in items}
+    if len(unique_uids) != len(items):
+        raise ValueError("PoB 唯一装备 UID 重复，拒绝静默覆盖")
+    archive = variant_rows(items, repo, priority)
+    if len(archive) < min_variant_rows:
+        raise ValueError(
+            f"逐变体记录只有 {len(archive)} 条，低于完整性下限 {min_variant_rows}"
+        )
+    rows = [to_row(item, repo, priority) for item in items]
+    # 全部抽取和约束都过关后才备份；备份失败时绝不进入写事务。
+    backup_name = ""
+    if backup_dir is not None:
+        backup_name = create_backup(repo_db_path(conn), backup_dir, connection=conn).backup_name
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        run = conn.execute(
+            "INSERT INTO ingest_run(source,category,started_at) "
+            "VALUES (?,'唯一装备',datetime('now'))", (repo.source_name(),),
+        )
+        run_id = int(run.lastrowid)
+        upsert(conn, rows)
+        conn.execute("CREATE TEMP TABLE IF NOT EXISTS _live_uniq(uid TEXT PRIMARY KEY)")
+        conn.execute("DELETE FROM _live_uniq")
+        conn.executemany("INSERT INTO _live_uniq(uid) VALUES (?)", [(uid,) for uid in unique_uids])
+        stale = conn.execute(
+            "SELECT count(*) FROM pob_unique WHERE uid NOT IN (SELECT uid FROM _live_uniq)"
+        ).fetchone()[0]
+        conn.execute("DELETE FROM pob_unique WHERE uid NOT IN (SELECT uid FROM _live_uniq)")
+        conn.execute("DELETE FROM pob_unique_variant")
+        conn.executemany(
+            "INSERT INTO pob_unique_variant(unique_uid,variant_index,variant_name,scope,"
+            "base_type_en,mods,ranges_fp,source_file,source,source_priority,url,"
+            "source_commit,pob_version,game_version,updated_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'))",
+            archive,
+        )
+        current_count = conn.execute("SELECT count(*) FROM pob_unique").fetchone()[0]
+        archive_count = conn.execute("SELECT count(*) FROM pob_unique_variant").fetchone()[0]
+        if (current_count, archive_count) != (len(items), len(archive)):
+            raise ValueError("PoB 唯一装备发布后行数与预检不一致")
+        obsolete_count = sum(len(item.obsolete_variants) for item in items)
+        note = json.dumps({
+            "commit": repo.commit,
+            "with_variants": sum(item.has_variants for item in items),
+            "current_items": current_count,
+            "variant_rows": archive_count,
+            "obsolete_variants": obsolete_count,
+            "historical_exclusive_mods": sum(len(item.mods_for("obsolete")) for item in items),
+            "problems": [],
+            "archive_scope": "isolated_no_chunk_fts_alias",
+        }, ensure_ascii=False, sort_keys=True)
+        conn.execute(
+            "UPDATE ingest_run SET finished_at=datetime('now'),total=?,succeeded=?,"
+            "failed=0,elapsed_ms=?,note=? WHERE run_id=?",
+            (len(items), current_count, elapsed_ms, note, run_id),
+        )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    return {"run_id": run_id, "current_items": current_count,
+            "variant_rows": archive_count, "obsolete_variants": obsolete_count,
+            "stale_removed": stale, "backup_name": backup_name}
+
+
+def repo_db_path(conn: sqlite3.Connection) -> Path:
+    """Backup API needs the file path belonging to this exact connection."""
+    row = conn.execute("PRAGMA database_list").fetchone()
+    if not row or not row[2]:
+        raise ValueError("内存数据库不能做文件备份")
+    return Path(row[2])
 
 
 def main() -> int:
@@ -185,49 +305,22 @@ def main() -> int:
 
     dbmod.init_db(cfg.db_path, vector_dim=int(cfg.get("retrieval.vector.dim", 0) or 0))
     conn = dbmod.get_conn()
-    run = conn.execute(
-        "INSERT INTO ingest_run(source, category, started_at) VALUES (?,?,datetime('now'))",
-        (repo.source_name(), "唯一装备"),
-    )
-    run_id = run.lastrowid
-
-    rows = [to_row(i, repo, priority) for i in items]
-    written = upsert(conn, rows)
-
-    conn.execute("CREATE TEMP TABLE IF NOT EXISTS _live_uniq(uid TEXT PRIMARY KEY)")
-    conn.execute("DELETE FROM _live_uniq")
-    conn.executemany("INSERT OR IGNORE INTO _live_uniq(uid) VALUES (?)",
-                     [(i.uid,) for i in items])
-    stale = conn.execute(
-        "SELECT count(*) FROM pob_unique WHERE uid NOT IN (SELECT uid FROM _live_uniq)"
-    ).fetchone()[0]
-    if stale:
-        conn.execute(
-            "DELETE FROM pob_unique WHERE uid NOT IN (SELECT uid FROM _live_uniq)"
+    try:
+        published = publish_snapshot(
+            conn, items, repo, priority, problems=problems,
+            allow_unpinned=args.allow_unpinned, backup_dir=cfg.backup_dir,
+            elapsed_ms=int(elapsed * 1000),
         )
-        print(f"  清理 {stale} 条已失效旧行")
-
-    conn.execute(
-        "UPDATE ingest_run SET finished_at=datetime('now'), total=?, succeeded=?, "
-        "failed=?, elapsed_ms=?, note=? WHERE run_id=?",
-        (
-            len(items), written, len(problems), int(elapsed * 1000),
-            json.dumps(
-                {
-                    "commit": repo.commit,
-                    "with_variants": len(with_var),
-                    "obsolete_mods_dropped": dropped,
-                    "problems": problems[:10],
-                },
-                ensure_ascii=False,
-            ),
-            run_id,
-        ),
-    )
-    conn.commit()
-    total = conn.execute("SELECT count(*) FROM pob_unique").fetchone()[0]
-    print(f"\n已写入 {written:,} 件，pob_unique 现有 {total:,} 行（run_id={run_id}）")
-    dbmod.close_db()
+    except (BackupError, ValueError, sqlite3.Error) as exc:
+        print(f"\n[中止] {exc}")
+        return 2
+    finally:
+        dbmod.close_db()
+    print(f"\n已写入 {published['current_items']:,} 件当前装备与 "
+          f"{published['variant_rows']:,} 条隔离变体（历史 "
+          f"{published['obsolete_variants']:,} 条），移除旧行 "
+          f"{published['stale_removed']}；run_id={published['run_id']}；"
+          f"备份 {published['backup_name']}")
     return 0
 
 

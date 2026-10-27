@@ -1188,6 +1188,21 @@ cases:
       总量问题走聚合工具；表总行数必须拆成 confirmed/review 与 active/resolved，
       不能把 547 条台账记录统称为冲突。
 
+  - id: route_unique_variant_history
+    query: 冈姆的壮志有哪些历史变体
+    kind: tool_route
+    expect_tool: unique_variant_history
+    note: >-
+      历史值不在当前装备卡片或 FTS；明确问历史变体时必须进入隔离表工具，
+      并先列可选编号，不能擅自选一个当前变体。
+
+  - id: route_unique_variant_compare
+    query: Kaom's Heart 的旧版词缀和当前变体怎么比较
+    kind: tool_route
+    expect_tool: unique_variant_history
+    note: >-
+      Pre X 是 X 之前；没有明确两侧编号时先列变体，不得伪造某个补丁的精确快照。
+
   - id: cross_pob_priority
     query: 词缀数值以 POEDB 还是 Path of Building 为准
     kind: cross_source

@@ -34,6 +34,8 @@ COUNTED_TABLES = (
     "alias",
     "mod_affix",
     "pob_mod",
+    "pob_unique",
+    "pob_unique_variant",
     "source_conflict",
     "conversation",
     "message",

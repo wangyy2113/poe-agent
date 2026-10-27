@@ -211,6 +211,32 @@ class PoBUnique:
             ]
         return [m for m in self.all_mods if m.applies_to(keep)]
 
+    def mods_for_variant(self, variant_index: int) -> list[PoBUniqueMod]:
+        """Full text for one named variant, including lines shared by all.
+
+        ``mods_for('obsolete')`` intentionally returns only old-exclusive lines;
+        it cannot represent a complete historical variant. Queries need both
+        shared and variant-specific lines in their original order.
+        """
+        if not 1 <= variant_index <= len(self.variant_names):
+            raise ValueError(f"变体下标越界：{variant_index}")
+        return [
+            mod for mod in self.all_mods
+            if not mod.variants or variant_index in mod.variants
+        ]
+
+    def base_type_for_variant(self, variant_index: int) -> str | None:
+        """Use a variant's explicit base; leave an unprovable old base unknown."""
+        if not 1 <= variant_index <= len(self.variant_names):
+            raise ValueError(f"变体下标越界：{variant_index}")
+        specific = {base.name for base in self.base_types if variant_index in base.variants}
+        if len(specific) == 1:
+            return next(iter(specific))
+        if specific:
+            return None
+        common = {base.name for base in self.base_types if not base.variants and base.name}
+        return next(iter(common)) if len(common) == 1 else None
+
     # ── 派生 ──
 
     @property
@@ -471,7 +497,7 @@ def extract_all(pob_root: Path) -> tuple[list[PoBUnique], list[str]]:
     return items, problems
 
 
-def to_row_mods(item: PoBUnique, scope: str) -> list[dict[str, Any]]:
+def serialize_mods(mods: list[PoBUniqueMod]) -> list[dict[str, Any]]:
     return [
         {
             "kind": m.kind,
@@ -481,5 +507,9 @@ def to_row_mods(item: PoBUnique, scope: str) -> list[dict[str, Any]]:
             "variants": list(m.variants),
             "tags": list(m.tags),
         }
-        for m in item.mods_for(scope)
+        for m in mods
     ]
+
+
+def to_row_mods(item: PoBUnique, scope: str) -> list[dict[str, Any]]:
+    return serialize_mods(item.mods_for(scope))

@@ -136,7 +136,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 .venv/bin/python scripts/probe_pob.py --align     # 先清点确认解析无误
 .venv/bin/python scripts/import_pob_constants.py  # 游戏常量（calc/ 的真源）
 .venv/bin/python scripts/import_pob_mods.py       # 词缀（--dry-run 只体检）
-.venv/bin/python scripts/import_pob_uniques.py    # 唯一装备（自动过滤历史变体）
+.venv/bin/python scripts/import_pob_uniques.py    # 当前唯一装备 + 隔离的历史命名变体
 .venv/bin/python scripts/import_pob_bases.py      # 底材，18 个装备类别（--dry-run 先清点）
 .venv/bin/python scripts/import_pob_skills.py     # 技能石与辅助宝石（中文名取自 POEDB 清单页，缺的再查详情页）
 .venv/bin/python scripts/import_pob_spectres.py   # 幽魂抗性与建模系数，并与 POEDB 侧对账
@@ -149,7 +149,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 2324 项，秒级
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 2332 项，秒级
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选
@@ -166,7 +166,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 .venv/bin/python scripts/eval_run.py --record        # 重录真实响应（**要凭证、烧 token**）
 ```
 
-黄金问答集是 `tests/golden/questions.yaml`（196 条，六类），基线与全部结论在
+黄金问答集是 `tests/golden/questions.yaml`（198 条，六类），基线与全部结论在
 `tests/golden/BASELINE.md`——**动闸门前先读它**，里面记了多个已修缺陷与三条已知未修边界，
 以及两次「测量本身写错」的教训。
 
@@ -1568,3 +1568,16 @@ NumPy 2.5.1 只支持 Python 3.12，与最低 3.10 声明冲突，回钉 2.2.6�
 统一从 `core.compat` 导入，3.11+ 使用标准库、3.10 用显式字符串值等价回退。
 最终 GitHub Actions 四格 **4/4 全绿**；Windows CI 已证明干净 runner 的代码/依赖/中文路径，
 但仍不冒充带真实库与中文客户端装备文本的 Windows 人工迁移验收。
+
+## 第一百二十七轮：历史变体只能显式查，Pre 标签不等于补丁快照
+
+PoB 唯一装备当前表只保留当前有效词缀；`pob_unique_variant` 按 UID 和 1-based 编号归档
+每个命名变体的完整词缀、可证明的底材和 commit 固定来源。导入器先做抽取、UID、行数和
+分区预检，再用 SQLite Backup API 备份；当前表、隔离表和 `ingest_run` 在同一事务提交。
+真实 PoB `9e6ea223e` 有 1,300 件当前装备、2,642 条命名变体记录，其中历史 1,493 条。
+
+`kb/unique_variants.py` 只读隔离表；列出变体后才允许按编号查看或比较。共同词缀按文本、
+类型和区间比对，忽略来源中的适用索引；未知历史底材不推断是否换底材。当前表与归档表的
+变体名、文件和固定 URL 不一致时拒绝查询。HTTP 和 Knowledge/MCP 工具共用此逻辑；
+聊天只对“历史变体”“旧版词缀”等专指问法优先给工具，不让历史词缀进入当前卡片、
+别名或 FTS。`Pre 3.25.0` 只意味着 3.25.0 之前，不提供 3.25.0 精确快照。
