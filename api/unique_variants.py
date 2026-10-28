@@ -6,10 +6,26 @@ from fastapi import APIRouter, HTTPException, Query
 
 from core import db as dbmod
 from kb.unique_variants import (
-    VariantQueryError, compare_variants, list_variants, variant_detail,
+    VariantQueryError, compare_variants, list_variants, search_variants, variant_detail,
 )
 
 router = APIRouter(prefix="/unique-variants", tags=["唯一装备历史变体"])
+
+
+@router.get("/search")
+def search(
+    query: str = Query(default="", max_length=100),
+    historical_only: bool = True,
+    limit: int = Query(default=20, ge=1, le=50),
+    offset: int = Query(default=0, ge=0, le=10_000),
+) -> dict:
+    try:
+        return search_variants(
+            dbmod.get_conn(), query, historical_only=historical_only,
+            limit=limit, offset=offset,
+        )
+    except VariantQueryError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.get("")

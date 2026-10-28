@@ -40,7 +40,55 @@ def _uid(conn: sqlite3.Connection, name: str) -> str:
 
 def _label(name: str) -> str:
     match = _PRE_LABEL.search(name)
-    return f"{match.group(1)} 之前" if match else "当前选择型变体"
+    return f"{match.group(1)} 之前" if match else "当前变体"
+
+
+def search_variants(
+    conn: sqlite3.Connection, query: str = "", *, historical_only: bool = True,
+    limit: int = 20, offset: int = 0,
+) -> dict[str, Any]:
+    """按中英文名称或 UID 浏览已归档装备；通配符始终视为字面输入。"""
+    query = query.strip()
+    if len(query) > 100:
+        raise VariantQueryError("搜索词最多 100 个字符")
+    if not 1 <= limit <= 50 or not 0 <= offset <= 10_000:
+        raise VariantQueryError("分页参数超出范围")
+    pattern = "%" + query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+    base = (
+        "SELECT p.uid,p.name_en,p.base_type_en,"
+        "(SELECT min(e.name_zh) FROM entity e WHERE e.entity_type='unique_item' "
+        "AND e.name_en=p.name_en COLLATE NOCASE) AS name_zh,"
+        "count(*) AS variant_count,"
+        "sum(CASE WHEN v.scope='obsolete' THEN 1 ELSE 0 END) AS historical_count,"
+        "sum(CASE WHEN v.scope='current' THEN 1 ELSE 0 END) AS current_count "
+        "FROM pob_unique p JOIN pob_unique_variant v ON v.unique_uid=p.uid "
+        "AND v.source_file=p.source_file AND v.url=p.url "
+        "AND v.variant_index BETWEEN 1 AND json_array_length(p.variant_names) "
+        "AND v.variant_name=json_extract(p.variant_names,"
+        "'$[' || (v.variant_index-1) || ']') "
+        "GROUP BY p.uid HAVING count(*)=json_array_length(p.variant_names) "
+        "AND count(DISTINCT v.source_commit)=1"
+    )
+    where = (
+        "WHERE (?='' OR name_en LIKE ? ESCAPE '\\' OR "
+        "name_zh LIKE ? ESCAPE '\\' OR uid LIKE ? ESCAPE '\\') "
+        "AND (?=0 OR historical_count>0)"
+    )
+    params = (query, pattern, pattern, pattern, int(historical_only))
+    total = int(conn.execute(f"SELECT count(*) FROM ({base}) {where}", params).fetchone()[0])
+    rows = conn.execute(
+        f"SELECT * FROM ({base}) {where} "
+        "ORDER BY name_en COLLATE NOCASE,uid LIMIT ? OFFSET ?",
+        (*params, limit, offset),
+    ).fetchall()
+    return {
+        "query": query, "historical_only": historical_only,
+        "total": total, "limit": limit, "offset": offset,
+        "has_more": offset + len(rows) < total,
+        "items": [dict(row) for row in rows],
+        "archive_ready": bool(conn.execute("SELECT 1 FROM pob_unique_variant LIMIT 1").fetchone()),
+        "note": "只列 PoB 命名变体；Pre X 表示 X 之前，不是 X 的精确快照。",
+    }
 
 
 def _row(row: sqlite3.Row) -> dict[str, Any]:
@@ -73,8 +121,14 @@ def _snapshot(conn: sqlite3.Connection, name: str) -> tuple[sqlite3.Row, list[di
         )
     variants = [_row(row) for row in rows]
     expected = json.loads(item["variant_names"] or "[]")
-    if [v["name"] for v in variants] != expected:
+    if ([v["index"] for v in variants] != list(range(1, len(expected) + 1))
+            or [v["name"] for v in variants] != expected):
         raise VariantQueryError("当前装备与历史变体快照不一致，请重新完整导入")
+    current = set(json.loads(item["current_variants"] or "[]"))
+    obsolete = set(json.loads(item["obsolete_variants"] or "[]"))
+    if (current & obsolete or current | obsolete != set(range(1, len(expected) + 1))
+            or any((v["index"] in current) != (v["scope"] == "current") for v in variants)):
+        raise VariantQueryError("当前装备与历史变体范围不一致，请重新完整导入")
     if len({v["source_commit"] for v in variants}) != 1:
         raise VariantQueryError("历史变体来源 commit 不一致，请重新完整导入")
     if any(v["source_file"] != item["source_file"] for v in variants):

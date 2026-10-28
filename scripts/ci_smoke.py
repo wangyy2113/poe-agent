@@ -3,7 +3,8 @@
 
 CI 在 Linux / Windows 与 Python 3.10 / 3.12 上运行：初始化全新 SQLite、写入一行、从
 活跃 WAL 连接创建一致性快照、深度校验、关闭后恢复到新目标，并确认 FastAPI schema 暴露
-受控备份接口。它验证的是全新机器可启动的基础设施，不伪装真实知识库或在线问答验收。
+受控备份及历史变体目录接口。它验证的是全新机器可启动的基础设施，不伪装真实知识库
+或在线问答验收。
 """
 
 from __future__ import annotations
@@ -61,10 +62,12 @@ def main() -> int:
         required = {
             "/poe_agent/admin/backups",
             "/poe_agent/admin/backups/{backup_name}/verify",
+            "/poe_agent/unique-variants/search",
+            "/poe_agent/unique-variants/compare",
         }
         missing = required - paths.keys()
         if missing:
-            print(f"OpenAPI 缺少备份端点：{sorted(missing)}")
+            print(f"OpenAPI 缺少端点：{sorted(missing)}")
             return 1
         print("发布冒烟通过：全新 SQLite → WAL 一致性快照 → 深度校验 → 离线恢复 → OpenAPI")
         return 0

@@ -149,7 +149,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 2332 项，秒级
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 2339 项，秒级
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选
@@ -1581,3 +1581,17 @@ PoB 唯一装备当前表只保留当前有效词缀；`pob_unique_variant` 按 
 变体名、文件和固定 URL 不一致时拒绝查询。HTTP 和 Knowledge/MCP 工具共用此逻辑；
 聊天只对“历史变体”“旧版词缀”等专指问法优先给工具，不让历史词缀进入当前卡片、
 别名或 FTS。`Pre 3.25.0` 只意味着 3.25.0 之前，不提供 3.25.0 精确快照。
+
+## 第一百二十八轮：历史变体要能被发现，比较前必须由用户选编号
+
+归档库已在本机成功发布 1,300 件当前装备、2,642 条命名变体；但上一轮的只读端点
+要求调用方知道精确名称，网页没有入口。`search_variants` 现在按中英文名或 UID 搜索，
+默认只返回含历史变体的装备，支持查看全部当前选择型变体；`%`、`_`、反斜杠按字面匹配，
+排序与分页稳定。目录只列当前表和归档表来源文件、URL 对得上的快照，不展示混合版本。
+
+聊天页增加原生 JS 的历史浏览器：目录搜索、分页、显式选一个编号看完整词缀，或选两个
+编号看共有/仅左/仅右差异。两个选择框初始都为空，多个当前变体不会被自动挑成“现版”；
+页内固定显示 `Pre X` 边界、未知底材和 commit 固定来源。外部文本只写 `textContent`，
+来源链接仅接受 HTTPS，异步响应以请求代际防止关闭或切换对象后旧结果回填。
+本机浏览器用“冈姆”检索出 5 件，手动选 2→3 后显示 `+500` 移除、`+1000` 新增，
+HTTP 全程 200，控制台无错误。普通装备卡片、chunk、别名与 FTS 路径仍不读取历史表。
