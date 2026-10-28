@@ -50,6 +50,7 @@
   </div>
   <div class="hint">
     答案中的角标可点击跳转到来源。标为「已拦截」的句子是模型试图输出的无据内容，已被出口校验挡下。
+    <button id="unique-history-open" type="button" class="hint-link">浏览唯一装备历史变体</button>
   </div>
 </footer>
 
@@ -113,6 +114,49 @@
   </div>
 </dialog>
 
+<dialog id="unique-history-dialog" class="history-dialog" aria-labelledby="history-title">
+  <div class="history-panel">
+    <div class="history-heading">
+      <div>
+        <h2 id="history-title">唯一装备历史变体</h2>
+        <p>数据来自当前导入的 PoB 快照。Pre X 表示 X 之前，不代表版本 X 的精确数值。</p>
+      </div>
+      <button id="history-close" type="button" class="ghost" aria-label="关闭历史变体浏览器">关闭</button>
+    </div>
+    <form id="history-search-form" class="history-search-form">
+      <label for="history-query">按中文名或英文名搜索</label>
+      <div class="history-search-row">
+        <input id="history-query" maxlength="100" placeholder="例如：冈姆、Kaom's Heart" autocomplete="off">
+        <button type="submit" class="auth-primary">搜索</button>
+      </div>
+      <label class="history-filter"><input id="history-only" type="checkbox" checked> 只显示含历史变体的装备</label>
+    </form>
+    <div id="history-status" class="history-status" role="status" aria-live="polite"></div>
+    <div id="history-items" class="history-items" aria-label="唯一装备搜索结果"></div>
+    <div class="history-pagination">
+      <button id="history-prev" type="button" class="ghost" disabled>上一页</button>
+      <span id="history-page"></span>
+      <button id="history-next" type="button" class="ghost" disabled>下一页</button>
+    </div>
+    <section id="history-selected" class="history-selected" hidden aria-labelledby="history-selected-title">
+      <h3 id="history-selected-title"></h3>
+      <p id="history-selected-note"></p>
+      <form id="history-compare-form" class="history-compare-form">
+        <label>第一个变体
+          <select id="history-left" required><option value="">请选择</option></select>
+        </label>
+        <label>第二个变体（可选）
+          <select id="history-right"><option value="">只查看第一个变体</option></select>
+        </label>
+        <button type="submit" class="auth-primary">查看或比较</button>
+      </form>
+      <div id="history-detail-status" class="history-status" role="status" aria-live="polite"></div>
+      <div id="history-detail" class="history-detail"></div>
+    </section>
+  </div>
+</dialog>
+
 <script src="app.js"></script>
+<script src="unique-history.js"></script>
 </body>
 </html>

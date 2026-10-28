@@ -265,6 +265,14 @@ MCP JSON-RPC；诊断信息写 stderr。客户端必须保留工具返回的 `un
 `unique_variant_history` 也使用同一只读查询。`Pre 3.25.0` 的意思是 **3.25.0 之前**，
 不是 3.25.0 的精确快照；多个当前选择型变体必须明确指定编号，未知历史底材保持未知。
 
+网页聊天页底部的“浏览唯一装备历史变体”可直接按中文名或英文名搜索归档目录，默认只列
+含历史变体的装备；取消勾选后也能浏览当前选择型变体。结果按英文名与 UID 稳定排序，
+每页 20 件。选中装备后要手动选择第一个变体；第二个编号留空时显示完整词缀，选择后
+显示两侧完整词缀及共有、仅左侧、仅右侧的差异。`Pre X` 边界、未知底材和钉住 commit
+的来源链接在页面上直接展示，不依赖模型转述。程序入口为
+`GET /poe_agent/unique-variants/search?query=Kaom&historical_only=true&limit=20&offset=0`；
+`%`、`_` 和反斜杠在搜索词中按字面处理，响应包含总数、是否还有下一页及归档是否就绪。
+
 ---
 
 ## 通过 web 与 poe-agent 交互
@@ -1801,7 +1809,7 @@ PoB 排 P2 而不是 P1：它在数值上更接近一手，但不含中文名与
 .venv/bin/python -m unittest discover -s tests -t .
 ```
 
-目前 2332 项，其中与「无据不答」直接相关的：
+目前 2339 项，其中与「无据不答」直接相关的：
 
 | 组 | 项数 | 重点 |
 | --- | --- | --- |
@@ -1876,7 +1884,7 @@ parsers/                输入解析：装备文本、词缀档位匹配、分�
 entities/               实体模型、分类体系、词缀反查
 kb/                     采集管线与各来源抽取器（poedb / pob）
 retrieval/              FTS5、别名、混合检索融合、分词、领域词表
-static/                 单页前端：index.html / app.js / style.css（无构建步骤）
+static/                 单页前端：index.html / app.js / unique-history.js / style.css（无构建步骤）
 tests/unit/             单元测试（unittest）
 tests/golden/           黄金问答集、录制回放、人工审计结论、指标基线
 scripts/                初始化、体检、验证、导入、评测

@@ -17,7 +17,7 @@ from core.db import SCHEMA
 from kb.sources.pob import PoBRepo
 from kb.sources.pob_uniques import BaseTypeLine, PoBUnique, PoBUniqueMod
 from kb.unique_variants import (
-    VariantQueryError, compare_variants, list_variants, variant_detail,
+    VariantQueryError, compare_variants, list_variants, search_variants, variant_detail,
 )
 from scripts.import_pob_uniques import publish_snapshot
 from tools.impl.unique_variants import unique_variant_history
@@ -146,6 +146,69 @@ class UniqueVariantTests(unittest.TestCase):
         self.conn.commit()
         with self.assertRaisesRegex(VariantQueryError, "来源版本不一致"):
             list_variants(self.conn, "Example Heart")
+
+    def test_catalog_searches_chinese_and_escapes_wildcards(self) -> None:
+        self.conn.execute(
+            "INSERT INTO entity(entity_id,entity_type,name_zh,name_en,attributes,source,"
+            "source_priority,url,content_hash,fetched_at,updated_at) "
+            "VALUES ('example','unique_item','示例之心','Example Heart','{}','POEDB',1,"
+            "'https://example.invalid/item','hash','2026-01-01','2026-01-01')"
+        )
+        self.conn.commit()
+        choice = PoBUnique(
+            name_en="Choice% Ring", source_file="Data/Uniques/ring.lua",
+            base_types=[BaseTypeLine("Ruby Ring")],
+            variant_names=["Fire", "Cold"],
+            all_mods=[PoBUniqueMod("+20% to Fire Resistance", "", (1,))],
+        )
+        publish_snapshot(self.conn, [self.item, choice], self.repo, 2,
+                         min_items=1, min_variant_rows=2)
+        chinese = search_variants(self.conn, "示例")
+        self.assertEqual(1, chinese["total"])
+        self.assertEqual("Example Heart", chinese["items"][0]["name_en"])
+        self.assertEqual(1, chinese["items"][0]["historical_count"])
+        self.assertEqual(1, search_variants(self.conn, "%", historical_only=False)["total"])
+        self.assertEqual(0, search_variants(self.conn, "_", historical_only=False)["total"])
+        self.assertEqual(0, search_variants(self.conn, "\\", historical_only=False)["total"])
+        self.assertEqual(1, search_variants(self.conn, "Choice", historical_only=False)["total"])
+        self.assertEqual(0, search_variants(self.conn, "Choice")["total"])
+        page = search_variants(self.conn, "", historical_only=False, limit=1, offset=0)
+        self.assertEqual(2, page["total"])
+        self.assertTrue(page["has_more"])
+        self.assertEqual(1, len(page["items"]))
+        next_page = search_variants(self.conn, "", historical_only=False, limit=1, offset=1)
+        self.assertFalse(next_page["has_more"])
+        self.assertNotEqual(page["items"][0]["uid"], next_page["items"][0]["uid"])
+
+    def test_catalog_rejects_unbounded_inputs_and_stale_snapshot(self) -> None:
+        with self.assertRaises(VariantQueryError):
+            search_variants(self.conn, "x" * 101)
+        with self.assertRaises(VariantQueryError):
+            search_variants(self.conn, limit=51)
+        with self.assertRaises(VariantQueryError):
+            search_variants(self.conn, offset=-1)
+        self.conn.execute("UPDATE pob_unique SET url='https://example.invalid/stale'")
+        self.conn.commit()
+        self.assertEqual(0, search_variants(self.conn)["total"])
+        self.conn.execute("UPDATE pob_unique SET url=?", (self.repo.blob_url(self.item.source_file),))
+        self.conn.execute(
+            "UPDATE pob_unique_variant SET variant_name='wrong' WHERE variant_index=1"
+        )
+        self.conn.commit()
+        self.assertEqual(0, search_variants(self.conn)["total"])
+        with self.assertRaisesRegex(VariantQueryError, "快照不一致"):
+            list_variants(self.conn, "Example Heart")
+
+    def test_catalog_http_contract(self) -> None:
+        app = FastAPI()
+        app.include_router(variant_router)
+        with patch("api.unique_variants.dbmod.get_conn", return_value=self.conn):
+            client = TestClient(app)
+            response = client.get("/unique-variants/search", params={"query": "Example", "limit": 1})
+            self.assertEqual(200, response.status_code)
+            self.assertEqual(1, response.json()["total"])
+            self.assertTrue(response.json()["archive_ready"])
+            self.assertEqual(422, client.get("/unique-variants/search", params={"limit": 51}).status_code)
 
 
 if __name__ == "__main__":
