@@ -81,6 +81,7 @@ async function apiFetch(path, options = {}) {
       clearConversationUi();
       clearMemoryUi();
       window.clearConflictLedger?.();
+      window.clearBossWorkbench?.();
       window.clearEconomyWorkbench?.();
       window.clearRareComparables?.();
     }
@@ -126,6 +127,7 @@ async function saveApiKey(event) {
       clearConversationUi();
       clearMemoryUi();
       window.clearConflictLedger?.();
+      window.clearBossWorkbench?.();
       window.clearEconomyWorkbench?.();
       window.clearRareComparables?.();
     }
@@ -150,6 +152,7 @@ function clearApiKey() {
   clearConversationUi();
   clearMemoryUi();
   window.clearConflictLedger?.();
+  window.clearBossWorkbench?.();
   window.clearEconomyWorkbench?.();
   window.clearRareComparables?.();
   updateAuthButton(authRequired);
