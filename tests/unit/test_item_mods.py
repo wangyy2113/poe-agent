@@ -129,6 +129,7 @@ def _insert_base(
     category: str, poedb_page: str, item_class: str,
     tags: list[str], armour_tag: str = "", modifier_page: str = "",
     implicit_text: str | None = None,
+    subtype: str = "",
 ) -> None:
     """用真 schema 放一条双来源底材桥，模拟已入库的逐字名称与属性标签。"""
     slug = name_en.replace(" ", "_")
@@ -140,7 +141,7 @@ def _insert_base(
         "category_key": category,
         "poedb_page": poedb_page,
         "item_class": item_class,
-        "subtype": "",
+        "subtype": subtype,
         "socket_limit": 4,
         "tags": json.dumps(tags),
         "influence_tags": "{}",
@@ -368,7 +369,7 @@ class TestBasePageResolution(ModsTestCase):
         self.assertEqual(ref.pages, ["One_Hand_Axes"])
         self.assertEqual(ref.matched_by, "base")
 
-    def test_药剂没有逐底材页面桥时保留现有类别查询(self):
+    def test_生命药剂按子类与PoB标签核定页面(self):
         _insert_affix(
             self.conn, page="Life_Flasks", code="LifeFlask", zh="生命药剂",
             group="FlaskLife", gen_label="前缀", ladder=_AMULET_LIFE,
@@ -376,13 +377,113 @@ class TestBasePageResolution(ModsTestCase):
         _insert_base(
             self.conn, name_en="Divine Life Flask", name_zh="不朽生命药剂",
             category="flask", poedb_page="Flasks", item_class="Flask",
-            tags=["flask", "life_flask"],
+            tags=["flask", "life_flask"], subtype="Life",
         )
         ref = refine_item_class_with_base(
             self.conn, resolve_item_class(self.conn, "Life Flasks"), "Divine Life Flask"
         )
         self.assertEqual(ref.pages, ["Life_Flasks"])
-        self.assertEqual(ref.matched_by, "page")
+        self.assertEqual(ref.matched_by, "base")
+
+    def test_真银和坚铁药剂优先命中逐字专页(self):
+        for page, name in (("Silver_Flask", "Silver Flask"),
+                           ("Iron_Flask", "Iron Flask")):
+            _insert_affix(
+                self.conn, page=page, code="UtilityFlask", zh="功能药剂",
+                group=f"{page}Charge", gen_label="前缀", ladder=_AMULET_LIFE,
+            )
+            _insert_base(
+                self.conn, name_en=name, name_zh=name,
+                category="flask", poedb_page="Flasks", item_class="Flask",
+                tags=["flask", "utility_flask"], subtype="Utility",
+            )
+        _insert_affix(
+            self.conn, page="Utility_Flasks", code="UtilityFlask", zh="功能药剂",
+            group="GeneralCharge", gen_label="前缀", ladder=_AMULET_LIFE,
+        )
+        for page, name in (("Silver_Flask", "Silver Flask"),
+                           ("Iron_Flask", "Iron Flask")):
+            ref = refine_item_class_with_base(
+                self.conn, resolve_item_class(self.conn, "Utility Flasks"), name
+            )
+            self.assertEqual(ref.pages, [page])
+            self.assertEqual(ref.matched_by, "base")
+            self.assertEqual(ref.base_evidence[0].poedb_url,
+                             f"https://poedb.tw/cn/{page}")
+        broad = refine_item_class_with_base(
+            self.conn, resolve_item_class(self.conn, "UtilityFlask"), "Iron Flask"
+        )
+        self.assertEqual(broad.pages, ["Iron_Flask"])
+        conflict = refine_item_class_with_base(
+            self.conn, resolve_item_class(self.conn, "Iron_Flask"), "Silver Flask"
+        )
+        self.assertFalse(conflict.ok)
+        self.assertEqual(conflict.matched_by, "base_conflict")
+
+    def test_普通功能药剂不借用专页(self):
+        _insert_affix(
+            self.conn, page="Utility_Flasks", code="UtilityFlask", zh="功能药剂",
+            group="Charge", gen_label="前缀", ladder=_AMULET_LIFE,
+        )
+        _insert_base(
+            self.conn, name_en="Granite Flask", name_zh="坚岩药剂",
+            category="flask", poedb_page="Flasks", item_class="Flask",
+            tags=["flask", "utility_flask"], subtype="Utility",
+        )
+        ref = refine_item_class_with_base(
+            self.conn, resolve_item_class(self.conn, "Utility Flasks"), "Granite Flask"
+        )
+        self.assertEqual(ref.pages, ["Utility_Flasks"])
+        self.assertEqual(ref.matched_by, "base")
+
+    def test_坚铁药剂词缀档位只从专页取(self):
+        _insert_affix(
+            self.conn, page="Utility_Flasks", code="UtilityFlask", zh="功能药剂",
+            group="Charge", gen_label="前缀", ladder=_AMULET_LIFE,
+        )
+        _, count, ilvl, ranges, text = _AMULET_LIFE[1]
+        iron_ladder = [(1, count, ilvl, ranges, text)]
+        _insert_affix(
+            self.conn, page="Iron_Flask", code="UtilityFlask", zh="坚铁药剂",
+            group="Charge", gen_label="前缀", ladder=iron_ladder,
+        )
+        _insert_base(
+            self.conn, name_en="Iron Flask", name_zh="坚铁药剂",
+            category="flask", poedb_page="Flasks", item_class="Flask",
+            tags=["flask", "utility_flask"], subtype="Utility",
+        )
+        item = parse_item(make_item(
+            "Utility Flasks", ["+107 最大生命"], base_type="Iron Flask",
+        ))
+        report = analyze_mods(self.conn, item)
+        self.assertEqual(report.item_class.pages, ["Iron_Flask"])
+        self.assertEqual(report.mods[0].tier, 1)
+        self.assertEqual(report.mods[0].url, "https://poedb.tw/cn/Iron_Flask")
+
+    def test_药剂类别冲突或标签不一致时拒绝定页(self):
+        for name, subtype, tags in (
+            ("Wrong Class Flask", "Mana", ["flask", "mana_flask"]),
+            ("Bad Tags Flask", "Life", ["flask", "utility_flask"]),
+        ):
+            _insert_base(
+                self.conn, name_en=name, name_zh=name,
+                category="flask", poedb_page="Flasks", item_class="Flask",
+                tags=tags, subtype=subtype,
+            )
+        _insert_affix(
+            self.conn, page="Life_Flasks", code="LifeFlask", zh="生命药剂",
+            group="Charge", gen_label="前缀", ladder=_AMULET_LIFE,
+        )
+        wrong = refine_item_class_with_base(
+            self.conn, resolve_item_class(self.conn, "Life Flasks"), "Wrong Class Flask"
+        )
+        self.assertEqual(wrong.matched_by, "base_conflict")
+        self.assertFalse(wrong.ok)
+        bad = refine_item_class_with_base(
+            self.conn, resolve_item_class(self.conn, "Life Flasks"), "Bad Tags Flask"
+        )
+        self.assertEqual(bad.matched_by, "base_unmapped")
+        self.assertFalse(bad.ok)
 
     def test_已识别的Ward底材没有可验证页面时不退回跨页(self):
         _insert_base(

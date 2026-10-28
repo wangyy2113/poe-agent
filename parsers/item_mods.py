@@ -9,11 +9,9 @@
    这条路径**语言无关**，英文客户端也能用。
 2. **中文文本查 POEDB 词缀库**（`entities.mod_lookup`）。宽松模板召回 →
    严格模板正则校验 → 数值区间覆盖 → 词缀组歧义判定。
-3. **英文普通复制**：拿不到 T 级。POEDB 词缀库只有中文文本（`mod_affix.text_zh`），
-   而 PoB 的英文库没有 tier 列。曾试过按词缀组名桥接两侧，实测组名对不上——
-   POEDB 用 `PhysicalDamage`，PoB 用 `LocalPhysicalDamage`，1578 个组只有 856 个
-   同名，局部武器词缀是系统性不同。硬桥会在一部分词缀上给出错误 T 级，
-   而错的 T 级比没有 T 级更糟，所以不桥，如实告知改用 Ctrl+Alt+C。
+3. **英文普通复制**：仅在 PoB 英文阶梯与 POEDB 中文阶梯按物等及区间
+   构成可验证的子集时桥接；组名不同不能直接当作同一词缀。无唯一桥时
+   保持未匹配，提示改用 Ctrl+Alt+C。
 
 ## 需求 7.9 的落点
 
@@ -24,7 +22,8 @@
   - 模板召回为空（库里没这条词缀）
   - 召回了但没有一条的数值区间吻合（可能被品质/工艺台改过）
   - 同类别下不同底材页面给出不同 T 级，而输入底材未能逐字桥接到具体页面
-  - 隐式词缀：尚未接入底材详情页的 T 级与区间反查
+  - 隐式词缀：英文固有隐式可核实 PoB 区间与 roll，T 级仍未知；
+    中文、腐化和未完整吻合的隐式不借该区间推断
 """
 
 from __future__ import annotations
@@ -251,11 +250,15 @@ _ARMOUR_PAGE_SUFFIX = {
 _ARMOUR_BASE_CATEGORIES = {"body", "gloves", "helmet", "boots", "shield"}
 
 
-def _base_modifier_page(row: sqlite3.Row) -> str | None:
+def _base_modifier_page(
+    conn: sqlite3.Connection, row: sqlite3.Row, ref: ItemClassRef
+) -> str | None:
     """把已入库的 PoB 底材标签映射到 POEDB 词缀页；未知标签不猜。"""
     poedb_page = str(row["poedb_page"] or "")
     if not poedb_page:
         return None
+    if row["category_key"] == "flask":
+        return _flask_modifier_page(conn, row, ref)
     if row["category_key"] not in _ARMOUR_BASE_CATEGORIES:
         return poedb_page
     try:
@@ -277,6 +280,49 @@ def _base_modifier_page(row: sqlite3.Row) -> str | None:
     return page
 
 
+def _flask_modifier_page(
+    conn: sqlite3.Connection, row: sqlite3.Row, ref: ItemClassRef
+) -> str | None:
+    """PoB 药剂子类与标签须一致；专页只按 POEDB 逐字 slug 命中。
+
+    `Flasks` 是底材目录，不是词缀页。生命/魔力/功能药剂的词缀页
+    由 `item_class_code` 区分；真银和坚铁另有同 code 的专页。复合药剂
+    当前没有可验证的 POEDB 词缀页，因此保持未知。
+    """
+    if row["poedb_page"] != "Flasks":
+        return None
+    subtype = str(row["subtype"] or "")
+    if subtype not in {"Life", "Mana", "Utility", "Hybrid"}:
+        return None
+    try:
+        tags = json.loads(row["tags"] or "[]")
+    except (TypeError, ValueError):
+        return None
+    expected_tag = f"{subtype.lower()}_flask"
+    if not isinstance(tags, list) or expected_tag not in tags or "flask" not in tags:
+        return None
+    code = f"{subtype}Flask"
+    if ref.code != code:
+        return None
+    slug = str(row["poedb_slug"] or "")
+    exact = conn.execute(
+        """SELECT 1 FROM mod_affix WHERE item_class_page = ?
+           AND item_class_code = ? LIMIT 1""", (slug, code),
+    ).fetchone()
+    if exact:
+        return slug
+    # 仅允许当前类别查询已经核实的同 code 普通页；不能把复合药剂
+    # 借用生命或魔力药剂的阶梯。
+    common_page = f"{subtype}_Flasks"
+    if common_page not in ref.pages:
+        return None
+    common = conn.execute(
+        """SELECT 1 FROM mod_affix WHERE item_class_page = ?
+           AND item_class_code = ? LIMIT 1""", (common_page, code),
+    ).fetchone()
+    return common_page if common else None
+
+
 def refine_item_class_with_base(
     conn: sqlite3.Connection, ref: ItemClassRef, base_type: str
 ) -> ItemClassRef:
@@ -291,8 +337,8 @@ def refine_item_class_with_base(
     if not base_type or not ref.ok:
         return ref
     rows = conn.execute(
-        """SELECT name_en,name_zh,item_class,category_key,poedb_page,
-                  armour_tag,modifier_page,tags,pob_url,poedb_url,implicit_text
+        """SELECT name_en,name_zh,item_class,category_key,poedb_page,poedb_slug,
+                  subtype,armour_tag,modifier_page,tags,pob_url,poedb_url,implicit_text
            FROM pob_base_item
            WHERE name_en = ? COLLATE NOCASE OR name_zh = ?
            ORDER BY base_id""",
@@ -300,15 +346,26 @@ def refine_item_class_with_base(
     ).fetchall()
     if not rows:
         return ref
-    # 药剂在 PoB 中统一叫 Flask，而 POEDB 词缀按 Life/Mana/Utility
-    # 乃至 Iron/Silver 拆页；当前没有逐底材的可靠桥，保留既有类别查询。
-    if all(row["category_key"] == "flask" for row in rows):
-        return ref
     ref.base_type = base_type
-    resolved = [(row, _base_modifier_page(row)) for row in rows]
-    compatible = [(row, page) for row, page in resolved if page in ref.pages]
+    resolved = [(row, _base_modifier_page(conn, row, ref)) for row in rows]
+    compatible = [
+        (row, page) for row, page in resolved
+        if page in ref.pages or (
+            row["category_key"] == "flask"
+            and page == row["poedb_slug"]
+            and ref.code == f"{row['subtype']}Flask"
+            and f"{row['subtype']}_Flasks" in ref.pages
+        )
+    ]
     if not compatible:
-        if any(page is None for _, page in resolved):
+        if any(row["category_key"] == "flask" and ref.code != f"{row['subtype']}Flask"
+               for row, _ in resolved):
+            ref.matched_by = "base_conflict"
+            ref.reason = (
+                f"底材「{base_type}」的药剂子类不属于装备文本类别「{ref.raw}」；"
+                "类别与底材矛盾，不给词缀 T 级"
+            )
+        elif any(page is None for _, page in resolved):
             ref.matched_by = "base_unmapped"
             ref.reason = (
                 f"已识别底材「{base_type}」，但其属性标签无法唯一映射到类别"
@@ -346,6 +403,13 @@ def refine_item_class_with_base(
     ref.pages = sorted({item.page for item in evidence})
     ref.base_evidence = evidence
     ref.matched_by = "base" if len(ref.pages) == 1 else "base_candidates"
+    if len(ref.pages) == 1:
+        page_row = conn.execute(
+            "SELECT item_class_zh FROM mod_affix WHERE item_class_page = ? LIMIT 1",
+            (ref.pages[0],),
+        ).fetchone()
+        if page_row and page_row["item_class_zh"]:
+            ref.name_zh = str(page_row["item_class_zh"])
     if old_page_count > len(ref.pages):
         ref.base_note = (
             f"按逐字底材「{base_type}」的 PoB 属性标签与 POEDB 名称桥，"
@@ -727,6 +791,8 @@ def blocking_mods(
         conn, analysis.mod.lookup_text, item_class_pages=ref.pages,
         categories=_KIND_TO_CATEGORIES.get(analysis.mod.kind),
     )
-    if hit.matched is None:
+    if (hit.matched is None or hit.ambiguous or hit.tier_varies_by_page
+            or hit.matched.correct_group != analysis.mod_group
+            or hit.matched.category != analysis.category):
         return []
     return exclusive_with(conn, hit.matched, ref.pages[0], limit=limit)
