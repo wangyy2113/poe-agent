@@ -198,6 +198,37 @@ class TestModSection(ReportTestCase):
         self.assertEqual(response.mods[0].ranges, [(8.0, 12.0)])
         self.assertEqual(response.mods[0].roll_pct, 0.5)
 
+    def test_坚铁药剂专页与双来源引用进入API(self):
+        _insert_affix(
+            self.conn, page="Utility_Flasks", code="UtilityFlask", zh="功能药剂",
+            group="OtherFlaskMod", gen_label="前缀",
+            ladder=[(1, 1, 1, [[1, 2]], "最大充能 +(1-2)")],
+        )
+        # POEDB Iron_Flask 当前 FlaskNumCharges T1：ilvl 82、32–35。
+        _insert_affix(
+            self.conn, page="Iron_Flask", code="UtilityFlask", zh="坚铁药剂",
+            group="FlaskNumCharges", gen_label="前缀",
+            ladder=[(1, 5, 82, [[32, 35]], "最大充能 +(32-35)")],
+        )
+        _insert_base(
+            self.conn, name_en="Iron Flask", name_zh="坚铁药剂",
+            category="flask", poedb_page="Flasks", item_class="Flask",
+            tags=["flask", "utility_flask"], subtype="Utility",
+        )
+        raw = make_item("Utility Flasks", ["最大充能 +33"], base_type="Iron Flask")
+        raw = raw.replace("稀有度: 稀有", "稀有度: 魔法")
+        report = build_report(self.conn, parse_item(raw))
+        self.assertEqual(report.mods.item_class.pages, ["Iron_Flask"])
+        self.assertEqual(report.mods.item_class.name_zh, "坚铁药剂")
+        self.assertEqual(report.mods.mods[0].tier, 1)
+        self.assertIn("词缀查询页：Iron_Flask", render_report(report))
+        with patch("api.item.dbmod.get_conn", return_value=self.conn):
+            response = analyze_item(ItemRequest(text=raw, render=False), caller="test")
+        self.assertEqual(response.item_class_pages, ["Iron_Flask"])
+        self.assertEqual(response.page_resolution, "base")
+        self.assertTrue(any("Iron_Flask" in c.url and "github.com" in c.url
+                            for c in response.citations))
+
 
 class TestCraftDirections(ReportTestCase):
     def test_最高档位不跨来源类别(self):
@@ -208,6 +239,8 @@ class TestCraftDirections(ReportTestCase):
         assert direction.upgrade is not None
         self.assertEqual(direction.upgrade.to_ranges, [(115.0, 129.0)])
         self.assertEqual(direction.upgrade.required_ilvl, 54)
+        self.assertEqual(direction.upgrade.level_gate, "met")
+        self.assertEqual(direction.upgrade.page_count, 1)
 
     def test_已是T1则没有升级方向(self):
         report = self.report_for(["+122 最大生命"])
@@ -218,6 +251,114 @@ class TestCraftDirections(ReportTestCase):
         text = render_report(self.report_for(["+107 最大生命"]))
         self.assertIn("### 可制作方向", text)
         self.assertIn("建议类内容", text)
+        self.assertIn("物等校验：当前物品等级已达到", text)
+
+    def test_当前物等未达到目标档位门槛时显式标注(self):
+        raw = make_item("项链", ["+107 最大生命"], ilvl=40)
+        report = build_report(self.conn, parse_item(raw))
+        upgrade = report.craft_directions[0].upgrade
+        assert upgrade is not None
+        self.assertEqual(upgrade.level_gate, "unmet")
+        self.assertIn("当前物品等级低于该档位门槛", render_report(report))
+        with patch("api.item.dbmod.get_conn", return_value=self.conn):
+            response = analyze_item(ItemRequest(text=raw, render=False), caller="test")
+        self.assertEqual(response.craft_directions[0].upgrade.level_gate, "unmet")
+        self.assertEqual(response.craft_directions[0].upgrade.evidence_urls,
+                         ["https://poedb.tw/cn/Amulets"])
+
+    def test_来源没有物等门槛时不把零当成游戏规则(self):
+        self.conn.execute(
+            "UPDATE mod_affix SET ilvl=0 WHERE item_class_page='Amulets' "
+            "AND correct_group='IncreasedLife' AND category='normal' AND tier=1"
+        )
+        report = self.report_for(["+107 最大生命"])
+        upgrade = report.craft_directions[0].upgrade
+        assert upgrade is not None
+        self.assertIsNone(upgrade.required_ilvl)
+        self.assertEqual(upgrade.level_gate, "unknown")
+        self.assertIn("物品等级门槛未知", render_report(report))
+
+    def test_最高档缺来源URL时不输出无据目标(self):
+        self.conn.execute(
+            "UPDATE mod_affix SET url='' WHERE item_class_page='Amulets' "
+            "AND correct_group='IncreasedLife' AND category='normal' AND tier=1"
+        )
+        report = self.report_for(["+107 最大生命"])
+        direction = report.craft_directions[0]
+        self.assertIsNone(direction.upgrade)
+        self.assertIn("缺少可引用的来源 URL", direction.boundary)
+
+    def test_跨页最高档完全一致时逐页核实并逐页引用(self):
+        report = self.report_for(["+107 最大生命"], class_line="手套")
+        direction = report.craft_directions[0]
+        assert direction.upgrade is not None
+        self.assertEqual(direction.upgrade.page_count, 3)
+        self.assertEqual(len(direction.upgrade.evidence_urls), 3)
+        self.assertEqual(direction.blocked, [])
+        self.assertIn("具体词缀页未确定", direction.boundary)
+        rendered = render_report(report)
+        self.assertIn("已核对的 3 个候选底材页共同最高档位", rendered)
+        for url in direction.upgrade.evidence_urls:
+            self.assertTrue(any(c.url == url for c in report.citations))
+
+    def test_跨页最高档门槛不同不取某一页冒充共同目标(self):
+        self.conn.execute(
+            "UPDATE mod_affix SET ilvl=85 WHERE item_class_page='Gloves_dex' AND tier=1"
+        )
+        report = self.report_for(["+107 最大生命"], class_line="手套")
+        direction = report.craft_directions[0]
+        self.assertIsNone(direction.upgrade)
+        self.assertIn("物等门槛不同", direction.boundary)
+        self.assertNotIn("共同最高档位", render_report(report))
+
+    def test_任一候选页缺阶梯不输出单一升级目标(self):
+        self.conn.execute(
+            "DELETE FROM mod_affix WHERE item_class_page='Gloves_dex' "
+            "AND correct_group='IncreasedLife'"
+        )
+        _insert_affix(
+            self.conn, page="Gloves_dex", code="Gloves", zh="手套",
+            group="Other", gen_label="后缀",
+            ladder=[(1, 1, 1, [[1, 2]], "+(1-2)% 火焰抗性")],
+        )
+        report = self.report_for(["+107 最大生命"], class_line="手套")
+        direction = report.craft_directions[0]
+        self.assertIsNone(direction.upgrade)
+        self.assertIn("并非每个候选底材页", direction.boundary)
+
+    def test_来源或词缀组歧义时不输出制作方向(self):
+        _insert_affix(
+            self.conn, page="Amulets", code="Amulet", zh="项链",
+            group="OtherLife", gen_label="前缀",
+            ladder=[(2, 9, 44, [[100, 114]], "+(100-114) 最大生命")],
+        )
+        report = self.report_for(["+107 最大生命"])
+        self.assertTrue(report.mods.mods[0].ambiguous)
+        direction = report.craft_directions[0]
+        self.assertIsNone(direction.upgrade)
+        self.assertEqual(direction.blocked, [])
+        self.assertIn("词缀组歧义", direction.boundary)
+
+    def test_互斥候选携带自己的来源URL且结构化API可用(self):
+        _insert_affix(
+            self.conn, page="Amulets", code="Amulet", zh="项链",
+            group="HybridLife", gen_label="前缀",
+            ladder=[(1, 1, 1, [[3, 5]], "+(3-5)% 最大生命")],
+        )
+        self.conn.execute(
+            "UPDATE mod_affix SET family_list='[\"IncreasedLife\"]' "
+            "WHERE correct_group='HybridLife'"
+        )
+        raw = make_item("项链", ["+107 最大生命"])
+        report = build_report(self.conn, parse_item(raw))
+        self.assertTrue(report.craft_directions[0].blocked)
+        blocked = report.craft_directions[0].blocked[0]
+        self.assertEqual(blocked.url, "https://poedb.tw/cn/Amulets")
+        self.assertIn("互斥：", render_report(report))
+        self.assertIn("[[E1]]", render_report(report))
+        with patch("api.item.dbmod.get_conn", return_value=self.conn):
+            response = analyze_item(ItemRequest(text=raw, render=False), caller="test")
+        self.assertEqual(response.craft_directions[0].blocked[0].url, blocked.url)
 
 
 class TestAffixCapacity(ReportTestCase):

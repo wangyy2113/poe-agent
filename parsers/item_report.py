@@ -57,8 +57,17 @@ class TierUpgrade:
     from_tier: int
     to_tier: int
     to_ranges: list[tuple[float, float]]
-    required_ilvl: int
+    required_ilvl: int | None
     text_zh: str
+    evidence_urls: list[str]
+    page_count: int
+    #: 这里只判断物等门槛，不表示该词缀可通过某种实际工艺生成。
+    level_gate: str  # met / unmet / unknown
+
+
+@dataclass
+class BlockedAffix:
+    text: str
     url: str
 
 
@@ -66,7 +75,8 @@ class TierUpgrade:
 class CraftDirection:
     mod_text: str
     upgrade: TierUpgrade | None = None
-    blocked: list[str] = field(default_factory=list)
+    blocked: list[BlockedAffix] = field(default_factory=list)
+    boundary: str = ""
 
 
 @dataclass
@@ -120,8 +130,8 @@ def build_report(conn: sqlite3.Connection, item: ParsedItem) -> ItemReport:
     )
     report = ItemReport(parsed=item, mods=mod_report, capacity=capacity)
     report.warnings = [*item.warnings, *mod_report.warnings]
-    report.citations = _citations(mod_report, capacity)
-    report.craft_directions = _craft_directions(conn, mod_report)
+    report.craft_directions = _craft_directions(conn, mod_report, item)
+    report.citations = _citations(mod_report, capacity, report.craft_directions)
     report.judgements = _judgements(item, mod_report)
     report.market = MarketInfo(
         available=False,
@@ -138,7 +148,8 @@ def build_report(conn: sqlite3.Connection, item: ParsedItem) -> ItemReport:
 
 
 def _citations(
-    mod_report: ItemModReport, capacity: CapacityAssessment
+    mod_report: ItemModReport, capacity: CapacityAssessment,
+    directions: list[CraftDirection],
 ) -> list[Citation]:
     """按 URL 去重装配引用。标题用中文词缀原文，便于对照。"""
     out: list[Citation] = []
@@ -175,6 +186,18 @@ def _citations(
             if url and url not in seen:
                 seen.add(url)
                 out.append(Citation(source=source, title=title, url=url, priority=priority))
+    for direction in directions:
+        urls = [*(direction.upgrade.evidence_urls if direction.upgrade else []),
+                *(blocked.url for blocked in direction.blocked)]
+        for url in urls:
+            if url and url not in seen:
+                seen.add(url)
+                out.append(Citation(
+                    source=Source.POEDB.value,
+                    title="词缀升级门槛与互斥关系",
+                    url=url,
+                    priority=1,
+                ))
     return out
 
 
@@ -209,25 +232,40 @@ def _label_of(report: ItemReport, url: str) -> str:
 
 
 def _craft_directions(
-    conn: sqlite3.Connection, mod_report: ItemModReport
+    conn: sqlite3.Connection, mod_report: ItemModReport, item: ParsedItem
 ) -> list[CraftDirection]:
     out: list[CraftDirection] = []
     ref = mod_report.item_class
     for analysis in mod_report.mods:
         if analysis.tier is None or not analysis.mod_group:
             continue
-        upgrade = _best_tier(conn, analysis, mod_report)
+        if analysis.ambiguous:
+            out.append(CraftDirection(
+                mod_text=analysis.mod.text,
+                boundary="这条词缀存在来源或词缀组歧义；不推断升级与互斥方向",
+            ))
+            continue
+        if not analysis.url:
+            out.append(CraftDirection(
+                mod_text=analysis.mod.text,
+                boundary="当前档位缺少可引用的来源 URL，不推断制作方向",
+            ))
+            continue
+        upgrade, note = _best_tier(conn, analysis, mod_report, item.item_level)
         blocked = _blocked_labels(conn, analysis, ref)
-        if upgrade or blocked:
+        if len(ref.pages) > 1:
+            note = (note + "；" if note else "") + "具体词缀页未确定，互斥列表暂不提供"
+        if upgrade or blocked or note:
             out.append(
-                CraftDirection(mod_text=analysis.mod.text, upgrade=upgrade, blocked=blocked)
+                CraftDirection(mod_text=analysis.mod.text, upgrade=upgrade,
+                               blocked=blocked, boundary=note)
             )
     return out
 
 
 def _blocked_labels(
     conn: sqlite3.Connection, analysis: ModAnalysis, ref, limit: int = 5
-) -> list[str]:
+) -> list[BlockedAffix]:
     """与该词缀互斥的**其他**词缀。
 
     两处降噪，否则这段没法看：
@@ -237,23 +275,28 @@ def _blocked_labels(
         有 8 个档位而刷 8 行
     """
     seen: set[str] = set()
-    out: list[str] = []
+    out: list[BlockedAffix] = []
     for c in blocking_mods(conn, analysis, ref, limit=60):
+        if not c.url:
+            continue
         key = c.loose_template or c.text_zh
         if analysis.loose_template and key == analysis.loose_template:
             continue
         if key in seen:
             continue
         seen.add(key)
-        out.append(f"{c.text_zh}（{c.category_label} {c.tier_label}）")
+        out.append(BlockedAffix(
+            text=f"{c.text_zh}（{c.category_label} {c.tier_label}）", url=c.url,
+        ))
         if len(out) >= limit:
             break
     return out
 
 
 def _best_tier(
-    conn: sqlite3.Connection, analysis: ModAnalysis, mod_report: ItemModReport
-) -> TierUpgrade | None:
+    conn: sqlite3.Connection, analysis: ModAnalysis, mod_report: ItemModReport,
+    item_level: int | None,
+) -> tuple[TierUpgrade | None, str]:
     """查**同来源类别、同词缀组**在该底材上的最高档位。已经是 T1 就没有升级空间。
 
     必须带 `category`：同一个词缀组下，掉落词缀与工艺台词缀各有一套 T 级。
@@ -264,28 +307,55 @@ def _best_tier(
     它们是另一条词缀，不是当前这条的更高档位。
     """
     if analysis.tier is None or analysis.tier <= 1 or not mod_report.item_class.pages:
-        return None
+        return None, ""
     if not analysis.category or not analysis.loose_template:
-        return None
+        return None, "当前词缀只有游戏原文档位，未核实同来源的完整阶梯"
     pages = mod_report.item_class.pages
     placeholders = ",".join("?" * len(pages))
-    row = conn.execute(
-        f"""SELECT tier, ilvl, ranges, text_zh, url FROM mod_affix
+    rows = conn.execute(
+        f"""SELECT item_class_page, tier, ilvl, ranges, text_zh, url FROM mod_affix
             WHERE correct_group = ? AND category = ? AND loose_template = ?
-              AND item_class_page IN ({placeholders})
-            ORDER BY tier ASC LIMIT 1""",  # noqa: S608
+              AND tier > 0 AND item_class_page IN ({placeholders})
+            ORDER BY item_class_page, tier ASC""",  # noqa: S608
         [analysis.mod_group, analysis.category, analysis.loose_template, *pages],
-    ).fetchone()
-    if row is None or int(row["tier"] or 0) >= analysis.tier:
-        return None
+    ).fetchall()
+    by_page: dict[str, list[sqlite3.Row]] = {page: [] for page in pages}
+    for row in rows:
+        by_page[row["item_class_page"]].append(row)
+    if any(not page_rows for page_rows in by_page.values()):
+        return None, "并非每个候选底材页都收录了同来源、同文本的档位阶梯"
+    highest = [
+        [row for row in page_rows if row["tier"] == page_rows[0]["tier"]]
+        for page_rows in by_page.values()
+    ]
+    signatures = {
+        (int(row["tier"] or 0), int(row["ilvl"] or 0), row["ranges"], row["text_zh"])
+        for group in highest for row in group
+    }
+    if len(signatures) != 1:
+        return None, "候选底材页的最高档位、区间或物等门槛不同，不给单一升级目标"
+    if any(not row["url"] for group in highest for row in group):
+        return None, "最高档位缺少可引用的来源 URL，不给升级目标"
+    row = highest[0][0]
+    tier = int(row["tier"] or 0)
+    if tier >= analysis.tier:
+        return None, ""
+    required_ilvl = int(row["ilvl"] or 0) or None
+    level_gate = (
+        "unknown" if item_level is None or required_ilvl is None else
+        "met" if item_level >= required_ilvl else "unmet"
+    )
+    urls = list(dict.fromkeys(str(row["url"]) for group in highest for row in group))
     return TierUpgrade(
         from_tier=analysis.tier,
-        to_tier=int(row["tier"] or 1),
+        to_tier=tier,
         to_ranges=[(float(a), float(b)) for a, b in json.loads(row["ranges"] or "[]")],
-        required_ilvl=int(row["ilvl"] or 0),
+        required_ilvl=required_ilvl,
         text_zh=row["text_zh"] or "",
-        url=row["url"] or "",
-    )
+        evidence_urls=urls,
+        page_count=len(pages),
+        level_gate=level_gate,
+    ), ""
 
 
 # ── 价值判断 ────────────────────────────────────────────────
@@ -453,14 +523,30 @@ def render_report(report: ItemReport) -> str:
             if direction.upgrade:
                 up = direction.upgrade
                 ranges = "、".join(f"{lo:g}-{hi:g}" for lo, hi in up.to_ranges)
-                label = _label_of(report, up.url)
-                mark = f"[[{label}]]" if label else ""
-                lines.append(
-                    f"  - 该底材上最高档位是 T{up.to_tier}（{ranges}），"
-                    f"要求物品等级 {up.required_ilvl}{mark}"
+                marks = "".join(
+                    f"[[{label}]]" for url in up.evidence_urls
+                    if (label := _label_of(report, url))
                 )
+                scope = ("该底材页" if up.page_count == 1
+                         else f"已核对的 {up.page_count} 个候选底材页共同")
+                level_phrase = (f"要求物品等级 {up.required_ilvl}"
+                                if up.required_ilvl is not None else "物品等级门槛未知")
+                lines.append(
+                    f"  - {scope}最高档位是 T{up.to_tier}（{ranges}），"
+                    f"{level_phrase}{marks}"
+                )
+                gate = {
+                    "met": "当前物品等级已达到该档位门槛；这不表示某种工艺可执行",
+                    "unmet": "当前物品等级低于该档位门槛；不能把它作为当前底材可生成的档位",
+                    "unknown": "当前物品等级或来源门槛未知，无法判断是否达到门槛",
+                }[up.level_gate]
+                lines.append(f"  - 物等校验：{gate}")
             for blocked in direction.blocked:
-                lines.append(f"  - 互斥：{blocked}")
+                label = _label_of(report, blocked.url)
+                mark = f"[[{label}]]" if label else ""
+                lines.append(f"  - 互斥：{blocked.text}{mark}")
+            if direction.boundary:
+                lines.append(f"  - 边界：{direction.boundary}")
 
     lines.append("")
     lines.append("### 市场价值")

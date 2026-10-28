@@ -86,6 +86,29 @@ class AffixCapacityOut(BaseModel):
     url: str
 
 
+class TierUpgradeOut(BaseModel):
+    from_tier: int
+    to_tier: int
+    to_ranges: list[tuple[float, float]]
+    required_ilvl: int | None
+    text_zh: str
+    page_count: int
+    level_gate: Literal["met", "unmet", "unknown"]
+    evidence_urls: list[str]
+
+
+class BlockedAffixOut(BaseModel):
+    text: str
+    url: str
+
+
+class CraftDirectionOut(BaseModel):
+    mod_text: str
+    upgrade: TierUpgradeOut | None
+    blocked: list[BlockedAffixOut]
+    boundary: str
+
+
 class ItemResponse(BaseModel):
     language: str
     #: 是否进阶复制（Ctrl+Alt+C）。为 true 时 T 级由游戏原文给出
@@ -109,6 +132,7 @@ class ItemResponse(BaseModel):
     prefix_count: int
     suffix_count: int
     affix_capacity: AffixCapacityOut
+    craft_directions: list[CraftDirectionOut]
     #: 本地报告不自动联网；实时同类挂单比较走 /economy/rare-comparables。
     market_available: bool
     market_reason: str
@@ -204,6 +228,23 @@ def analyze_item(req: ItemRequest, caller: str = Depends(require_user)) -> ItemR
             source=report.capacity.source,
             url=report.capacity.rule_url,
         ),
+        craft_directions=[
+            CraftDirectionOut(
+                mod_text=d.mod_text,
+                upgrade=(TierUpgradeOut(
+                    from_tier=d.upgrade.from_tier,
+                    to_tier=d.upgrade.to_tier,
+                    to_ranges=d.upgrade.to_ranges,
+                    required_ilvl=d.upgrade.required_ilvl,
+                    text_zh=d.upgrade.text_zh,
+                    page_count=d.upgrade.page_count,
+                    level_gate=d.upgrade.level_gate,
+                    evidence_urls=d.upgrade.evidence_urls,
+                ) if d.upgrade else None),
+                blocked=[BlockedAffixOut(text=b.text, url=b.url) for b in d.blocked],
+                boundary=d.boundary,
+            ) for d in report.craft_directions
+        ],
         market_available=report.market.available,
         market_reason=report.market.reason,
         judgements=[
