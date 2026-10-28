@@ -80,6 +80,7 @@ async function apiFetch(path, options = {}) {
       sessionStorage.removeItem(AUTH_STORE);
       clearConversationUi();
       clearMemoryUi();
+      window.clearRareComparables?.();
     }
     updateAuthButton(true);
     showAuthDialog(hadKey ? 'API Key 无效或已失效，请重新输入。' : '此服务需要 API Key。');
@@ -122,6 +123,7 @@ async function saveApiKey(event) {
     if (previous !== key) {
       clearConversationUi();
       clearMemoryUi();
+      window.clearRareComparables?.();
     }
     sessionStorage.setItem(AUTH_STORE, key);
     authRequired = false;
@@ -143,6 +145,7 @@ function clearApiKey() {
   el.authDialog.close();
   clearConversationUi();
   clearMemoryUi();
+  window.clearRareComparables?.();
   updateAuthButton(authRequired);
 }
 
@@ -852,6 +855,7 @@ function showPasteCard(kind, text) {
         '本项目只做判读，不会把它冒充为本地重算结果。</div>'
       : '') +
     `<div class="pc-actions"><button class="pc-primary">${isItem ? '解析并分析' : '解析并体检'}</button>` +
+    (isItem ? '<button class="pc-compare">查询可比挂单</button>' : '') +
     '<button class="pc-ghost">当作普通提问发送</button></div>';
 
   el.pasteCard.querySelector('.pc-close').onclick = hidePasteCard;
@@ -865,6 +869,13 @@ function showPasteCard(kind, text) {
     };
   }
   const primary = el.pasteCard.querySelector('.pc-primary');
+  const compare = el.pasteCard.querySelector('.pc-compare');
+  if (compare) {
+    compare.onclick = () => {
+      hidePasteCard();
+      window.openRareComparables?.(text);
+    };
+  }
   if (primary) {
     primary.onclick = () => {
       hidePasteCard();

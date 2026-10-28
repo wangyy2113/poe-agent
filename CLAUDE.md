@@ -149,7 +149,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 2406 项，秒级
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 2408 项，秒级
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选
@@ -314,7 +314,7 @@ Craft of Exile 矩阵证据支撑；两条 Citation 不得互相夹带正文。�
 | `parsers/` | `item_text.py`（纯文本，不连库）→ `item_mods.py` T 级匹配 → `mod_bridge.py` 英文桥接 → `item_report.py` 报告；`build_growth.py` 只做用户目标与 PlayerStat 的确定性差额规划 |
 | `craft/` | `feasibility.py` 词缀组合三态可行性、`pool.py` 胸甲普通词缀有效池与条件概率、`attempt_plan.py` 严格独立单次选择的几何分布/材料预算/价格快照一致性、`awakener_operations.py` 觉醒者之石双物品状态转移；各制作状态机只实现来源原文明示的变化，随机结果与未证实前提保留 unknown |
 | `calc/` | `constants.py` 常量访问层，**缺失即抛异常，绝不给默认值**；`derive.py` 各计算器共用的推导件；`resistance.py` 抗性结算；`mitigation.py` 受击结算；`recovery.py` 回复；`reservation.py` 保留；`ailment.py` 独立持续伤害；`threshold.py` 门槛型异常；`maxhit.py` 一发最大承受伤害；`boss_survival.py` Boss 命中生存；`crit.py` 暴击；`accuracy.py` 命中率；`attack_speed.py` 攻击速度；`dps.py` / `dps_analysis.py` 显式单技能命中、穿刺、点燃/中毒/流血稳态、终结、方案比较与目标频率反解。完整 Build 自动汇总、伤害转化下的 Max Hit、冰冻时长曲线仍未实现 |
-| `static/` | 单页前端三个文件，无构建步骤、无 Node、无第三方 JS（Markdown 渲染器自写，为了强制先转义再解析） |
+| `static/` | 原生单页前端，无构建步骤、无运行时 Node、无第三方 JS（Markdown 渲染器自写，为了强制先转义再解析） |
 | `tests/golden/` | 评测资产：`questions.yaml` 黄金问答集、`loader.py` 严格校验、`recording.py` 录制回放、`recordings/` 真实响应、`audit.yaml` 人工结论、`BASELINE.md` 指标基线 |
 
 ## 工具集：能精确算的不要猜
