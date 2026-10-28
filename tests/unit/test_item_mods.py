@@ -23,6 +23,7 @@ from parsers.item_mods import (  # noqa: E402
     TIER_FROM_ITEM_TEXT,
     TIER_FROM_POEDB,
     analyze_mods,
+    refine_item_class_with_base,
     resolve_item_class,
 )
 from core.db import SCHEMA as _REAL_SCHEMA  # noqa: E402
@@ -123,6 +124,50 @@ def _insert_pob(
         )
 
 
+def _insert_base(
+    conn: sqlite3.Connection, *, name_en: str, name_zh: str,
+    category: str, poedb_page: str, item_class: str,
+    tags: list[str], armour_tag: str = "", modifier_page: str = "",
+    implicit_text: str | None = None,
+) -> None:
+    """用真 schema 放一条双来源底材桥，模拟已入库的逐字名称与属性标签。"""
+    slug = name_en.replace(" ", "_")
+    values = {
+        "base_id": f"test:{slug}",
+        "name_en": name_en,
+        "name_zh": name_zh,
+        "poedb_slug": slug,
+        "category_key": category,
+        "poedb_page": poedb_page,
+        "item_class": item_class,
+        "subtype": "",
+        "socket_limit": 4,
+        "tags": json.dumps(tags),
+        "influence_tags": "{}",
+        "armour_tag": armour_tag,
+        "modifier_page": modifier_page,
+        "implicit_text": implicit_text,
+        "implicit_mod_types": "[]",
+        "implicit_ids": "[]",
+        "stats": "{}",
+        "stats_kind": "none",
+        "requirements": "{}",
+        "source_file": "Data/Bases/test.lua",
+        "source": "Path of Building",
+        "source_priority": 2,
+        "pob_url": f"https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/test/{slug}",
+        "poedb_url": f"https://poedb.tw/cn/{slug}",
+        "source_commit": "a" * 40,
+        "pob_version": "test",
+        "game_version": "test",
+        "content_hash": "test-hash",
+        "updated_at": "2026-10-28",
+    }
+    columns = ",".join(values)
+    params = ",".join("?" for _ in values)
+    conn.execute(f"INSERT INTO pob_base_item({columns}) VALUES ({params})", list(values.values()))
+
+
 #: 前后缀名额规则。数值照抄库里真实入库的那七条（POEDB 词缀页 × PoB Item.lua）。
 #: **桩库必须有这张表且有数据**：表空时容量判定会退回 unknown，于是「补了容量规则」
 #: 这件事在单测里完全不被执行，而受影响的用例照旧变绿（第三十七轮实测踩到）。
@@ -178,11 +223,13 @@ def fixture_conn() -> sqlite3.Connection:
     return conn
 
 
-def make_item(class_line: str, mods: list[str], *, language: str = "zh", ilvl: int = 84) -> str:
+def make_item(class_line: str, mods: list[str], *, language: str = "zh", ilvl: int = 84,
+              base_type: str = "测试底材") -> str:
     header = "物品类别" if language == "zh" else "Item Class"
     rarity = "稀有度: 稀有" if language == "zh" else "Rarity: Rare"
     lvl = "物品等级" if language == "zh" else "Item Level"
-    name = "测试物品\n测试底材" if language == "zh" else "Test Item\nTest Base"
+    name = (f"测试物品\n{base_type}" if language == "zh"
+            else f"Test Item\n{base_type}")
     body = "\n".join(mods)
     return f"{header}: {class_line}\n{rarity}\n{name}\n--------\n{lvl}: {ilvl}\n--------\n{body}\n"
 
@@ -228,6 +275,259 @@ class TestResolveItemClass(ModsTestCase):
         ref = resolve_item_class(self.conn, "")
         self.assertFalse(ref.ok)
         self.assertIn("没有类别行", ref.reason)
+
+
+class TestBasePageResolution(ModsTestCase):
+    """具体底材只在逐字桥与类别页双重一致时，缩窄词缀查询页面。"""
+
+    def setUp(self) -> None:
+        super().setUp()
+        _insert_base(
+            self.conn, name_en="Vaal Gauntlets", name_zh="瓦尔护手",
+            category="gloves", poedb_page="Gloves", item_class="Gloves",
+            tags=["armour", "gloves", "str_armour"],
+        )
+
+    def test_具体手套底材把跨页歧义缩到力量页(self):
+        # 同一生命数值在敏捷页被改为 T7，类别查询会拒绝；力量底材能定 T2。
+        self.conn.execute(
+            "UPDATE mod_affix SET tier=7 WHERE item_class_page='Gloves_dex' AND tier=2"
+        )
+        broad = analyze_mods(self.conn, parse_item(make_item("手套", ["+107 最大生命"])))
+        self.assertIsNone(broad.mods[0].tier)
+        item = parse_item(make_item("手套", ["+107 最大生命"], base_type="瓦尔护手"))
+        report = analyze_mods(self.conn, item)
+        self.assertEqual(report.item_class.pages, ["Gloves_str"])
+        self.assertEqual(report.item_class.matched_by, "base")
+        self.assertEqual(report.mods[0].tier, 2)
+        self.assertEqual(report.mods[0].url, "https://poedb.tw/cn/Gloves_str")
+        self.assertIn("从 3 个类别页面缩到 1 个", report.warnings[0])
+
+    def test_英文底材名同样逐字命中(self):
+        ref = refine_item_class_with_base(
+            self.conn, resolve_item_class(self.conn, "Gloves"), "vaal gauntlets"
+        )
+        self.assertEqual(ref.pages, ["Gloves_str"])
+        self.assertEqual(ref.base_evidence[0].name_en, "Vaal Gauntlets")
+
+    def test_重名底材若页面相同可定页面但不选择某一件(self):
+        for name in ("Silk Gloves", "Fingerless Silk Gloves"):
+            _insert_base(
+                self.conn, name_en=name, name_zh="丝绸手套",
+                category="gloves", poedb_page="Gloves", item_class="Gloves",
+                tags=["armour", "gloves", "int_armour"],
+            )
+        ref = refine_item_class_with_base(
+            self.conn, resolve_item_class(self.conn, "手套"), "丝绸手套"
+        )
+        self.assertEqual(ref.pages, ["Gloves_int"])
+        self.assertEqual(len(ref.base_evidence), 2)
+        self.assertIn("没有擅自选择某一件", ref.base_note)
+
+    def test_重名底材指向不同页面时保留候选页不选一个(self):
+        for name, tag in (("Twin A", "str_armour"), ("Twin B", "dex_armour")):
+            _insert_base(
+                self.conn, name_en=name, name_zh="同名护手",
+                category="gloves", poedb_page="Gloves", item_class="Gloves",
+                tags=["armour", "gloves", tag],
+            )
+        ref = refine_item_class_with_base(
+            self.conn, resolve_item_class(self.conn, "手套"), "同名护手"
+        )
+        self.assertEqual(ref.pages, ["Gloves_dex", "Gloves_str"])
+        self.assertEqual(ref.matched_by, "base_candidates")
+
+    def test_类别与已识别底材矛盾时不给T级(self):
+        item = parse_item(make_item("项链", ["+107 最大生命"], base_type="瓦尔护手"))
+        report = analyze_mods(self.conn, item)
+        self.assertEqual(report.item_class.pages, [])
+        self.assertEqual(report.item_class.matched_by, "base_conflict")
+        self.assertIsNone(report.mods[0].tier)
+        self.assertIn("不属于装备文本类别", report.warnings[0])
+
+    def test_显式页面与底材属性页冲突时不给T级(self):
+        ref = refine_item_class_with_base(
+            self.conn, resolve_item_class(self.conn, "Gloves_dex"), "Vaal Gauntlets"
+        )
+        self.assertFalse(ref.ok)
+        self.assertEqual(ref.matched_by, "base_conflict")
+
+    def test_武器两源类别拼法不同但实际词缀页相同可核实(self):
+        _insert_affix(
+            self.conn, page="One_Hand_Axes", code="One Hand Axe", zh="单手斧",
+            group="WeaponLife", gen_label="前缀", ladder=_AMULET_LIFE,
+        )
+        _insert_base(
+            self.conn, name_en="Arming Axe", name_zh="武装斧",
+            category="axe", poedb_page="One_Hand_Axes", item_class="One Handed Axe",
+            tags=["weapon", "axe", "one_hand_weapon"],
+        )
+        ref = refine_item_class_with_base(
+            self.conn, resolve_item_class(self.conn, "One Hand Axes"), "Arming Axe"
+        )
+        self.assertEqual(ref.pages, ["One_Hand_Axes"])
+        self.assertEqual(ref.matched_by, "base")
+
+    def test_药剂没有逐底材页面桥时保留现有类别查询(self):
+        _insert_affix(
+            self.conn, page="Life_Flasks", code="LifeFlask", zh="生命药剂",
+            group="FlaskLife", gen_label="前缀", ladder=_AMULET_LIFE,
+        )
+        _insert_base(
+            self.conn, name_en="Divine Life Flask", name_zh="不朽生命药剂",
+            category="flask", poedb_page="Flasks", item_class="Flask",
+            tags=["flask", "life_flask"],
+        )
+        ref = refine_item_class_with_base(
+            self.conn, resolve_item_class(self.conn, "Life Flasks"), "Divine Life Flask"
+        )
+        self.assertEqual(ref.pages, ["Life_Flasks"])
+        self.assertEqual(ref.matched_by, "page")
+
+    def test_已识别的Ward底材没有可验证页面时不退回跨页(self):
+        _insert_base(
+            self.conn, name_en="Runic Gloves", name_zh="符文手套",
+            category="gloves", poedb_page="Gloves", item_class="Gloves",
+            tags=["armour", "gloves", "ward_armour"],
+        )
+        item = parse_item(make_item("手套", ["+107 最大生命"], base_type="符文手套"))
+        report = analyze_mods(self.conn, item)
+        self.assertFalse(report.item_class.ok)
+        self.assertIsNone(report.mods[0].tier)
+        self.assertIn("无法唯一映射", report.item_class.reason)
+
+    def test_未入库底材维持类别查询而不虚构映射(self):
+        ref = refine_item_class_with_base(
+            self.conn, resolve_item_class(self.conn, "手套"), "不存在的手套"
+        )
+        self.assertEqual(len(ref.pages), 3)
+        self.assertEqual(ref.base_evidence, [])
+        self.assertEqual(ref.matched_by, "zh")
+
+    def test_胸甲既有modifier_page必须与标签推导一致(self):
+        _insert_affix(
+            self.conn, page="Body_Armours_str", code="Body Armour", zh="胸甲",
+            group="BodyLife", gen_label="前缀", ladder=_AMULET_LIFE,
+        )
+        _insert_base(
+            self.conn, name_en="Glorious Plate", name_zh="荣耀战铠",
+            category="body", poedb_page="Body_Armours", item_class="Body Armour",
+            tags=["armour", "body_armour", "str_armour"],
+            armour_tag="str_armour", modifier_page="Body_Armours_str",
+        )
+        ref = refine_item_class_with_base(
+            self.conn, resolve_item_class(self.conn, "胸甲"), "荣耀战铠"
+        )
+        self.assertEqual(ref.pages, ["Body_Armours_str"])
+        self.conn.execute(
+            "UPDATE pob_base_item SET modifier_page='Body_Armours_dex' "
+            "WHERE name_en='Glorious Plate'"
+        )
+        bad = refine_item_class_with_base(
+            self.conn, resolve_item_class(self.conn, "胸甲"), "荣耀战铠"
+        )
+        self.assertFalse(bad.ok)
+
+
+class TestBaseImplicitEvidence(ModsTestCase):
+    """PoB 只提供底材固有隐式原文与区间，不提供隐式 T 级。"""
+
+    def setUp(self) -> None:
+        super().setUp()
+        _insert_affix(
+            self.conn, page="Body_Armours_str", code="Body Armour", zh="胸甲",
+            group="BodyLife", gen_label="前缀", ladder=_AMULET_LIFE,
+        )
+        _insert_base(
+            self.conn, name_en="Astral Plate", name_zh="星芒战铠",
+            category="body", poedb_page="Body_Armours", item_class="Body Armour",
+            tags=["armour", "body_armour", "str_armour"],
+            armour_tag="str_armour", modifier_page="Body_Armours_str",
+            implicit_text="+(8-12)% to all Elemental Resistances",
+        )
+
+    def analyze_implicit(self, line: str, *, base_type: str = "Astral Plate"):
+        item = parse_item(make_item(
+            "Body Armours", [line], language="en", base_type=base_type
+        ))
+        self.assertEqual(len(item.implicits), 1)
+        return analyze_mods(self.conn, item).mods[0]
+
+    def test_英文底材固有隐式可核实区间和roll但不给T级(self):
+        mod = self.analyze_implicit("+10% to all Elemental Resistances (implicit)")
+        self.assertIsNone(mod.tier)
+        self.assertEqual(mod.ranges, [(8.0, 12.0)])
+        self.assertAlmostEqual(mod.roll_pct or -1, 0.5)
+        self.assertEqual(mod.source_label, "PoB 底材固有隐式")
+        self.assertIn("Astral_Plate", mod.url)
+        self.assertIn("PoB 未给隐式 T 级", mod.reason)
+
+    def test_隐式数值超出底材区间不报告来源区间(self):
+        mod = self.analyze_implicit("+99% to all Elemental Resistances (implicit)")
+        self.assertIsNone(mod.tier)
+        self.assertEqual(mod.ranges, [])
+        self.assertEqual(mod.url, "")
+
+    def test_底材不在注册表时不借其它底材的隐式(self):
+        mod = self.analyze_implicit(
+            "+10% to all Elemental Resistances (implicit)", base_type="Unknown Plate"
+        )
+        self.assertEqual(mod.ranges, [])
+        self.assertEqual(mod.url, "")
+
+    def test_固定值隐式逐字一致时来源可核但没有roll(self):
+        _insert_base(
+            self.conn, name_en="Assassin's Garb", name_zh="暗影之装",
+            category="body", poedb_page="Body_Armours", item_class="Body Armour",
+            tags=["armour", "body_armour", "dex_armour"],
+            armour_tag="dex_armour", modifier_page="Body_Armours_dex",
+            implicit_text="3% increased Movement Speed",
+        )
+        _insert_affix(
+            self.conn, page="Body_Armours_dex", code="Body Armour", zh="胸甲",
+            group="BodyDex", gen_label="前缀", ladder=_AMULET_LIFE,
+        )
+        mod = self.analyze_implicit(
+            "3% increased Movement Speed (implicit)", base_type="Assassin's Garb"
+        )
+        self.assertIsNone(mod.tier)
+        self.assertEqual(mod.ranges, [])
+        self.assertIsNone(mod.roll_pct)
+        self.assertTrue(mod.url)
+        self.assertIn("逐字吻合", mod.reason)
+
+    def test_多行底材定义不靠普通复制的第一行局部匹配(self):
+        self.conn.execute(
+            "UPDATE pob_base_item SET implicit_text=? WHERE name_en='Astral Plate'",
+            ["+(8-12)% to all Elemental Resistances\nYour Hits have 10% increased Damage"],
+        )
+        mod = self.analyze_implicit("+10% to all Elemental Resistances (implicit)")
+        self.assertEqual(mod.ranges, [])
+        self.assertEqual(mod.url, "")
+
+    def test_同名底材隐式原文不一致时不任选一个(self):
+        _insert_base(
+            self.conn, name_en="Other Plate", name_zh="星芒战铠",
+            category="body", poedb_page="Body_Armours", item_class="Body Armour",
+            tags=["armour", "body_armour", "str_armour"],
+            armour_tag="str_armour", modifier_page="Body_Armours_str",
+            implicit_text="+(20-25)% to all Elemental Resistances",
+        )
+        mod = self.analyze_implicit(
+            "+10% to all Elemental Resistances (implicit)", base_type="星芒战铠"
+        )
+        self.assertEqual(mod.ranges, [])
+        self.assertEqual(mod.url, "")
+
+    def test_类别底材矛盾时隐式原因保留冲突而不报范围(self):
+        item = parse_item(make_item(
+            "Amulets", ["+10% to all Elemental Resistances (implicit)"],
+            language="en", base_type="Astral Plate",
+        ))
+        analysis = analyze_mods(self.conn, item).mods[0]
+        self.assertIsNone(analysis.tier)
+        self.assertEqual(analysis.ranges, [])
+        self.assertIn("类别与底材矛盾", analysis.reason)
 
 
 class TestChineseTierLookup(ModsTestCase):

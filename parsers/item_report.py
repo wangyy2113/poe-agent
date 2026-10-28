@@ -150,10 +150,11 @@ def _citations(
         cls = mod_report.item_class.name_zh or mod_report.item_class.raw
         out.append(
             Citation(
-                source=Source.POEDB.value,
-                title=f"{cls} 词缀表",
+                source=analysis.evidence_source,
+                title=(f"{cls} 词缀表" if analysis.evidence_source == Source.POEDB.value
+                       else f"底材 {mod_report.item_class.base_type} 的 PoB 固有隐式"),
                 url=analysis.url,
-                priority=1,
+                priority=analysis.evidence_priority,
             )
         )
     if capacity.rule_url and capacity.rule_url not in seen:
@@ -165,6 +166,15 @@ def _citations(
                 priority=capacity.source_priority,
             )
         )
+        seen.add(capacity.rule_url)
+    for base in mod_report.item_class.base_evidence:
+        for source, priority, title, url in (
+            (Source.POB.value, 2, f"底材 {base.name_en} 的 PoB 属性标签", base.pob_url),
+            (Source.POEDB.value, 1, f"底材 {base.name_zh} 的 POEDB 名称", base.poedb_url),
+        ):
+            if url and url not in seen:
+                seen.add(url)
+                out.append(Citation(source=source, title=title, url=url, priority=priority))
     return out
 
 
@@ -392,6 +402,17 @@ def render_report(report: ItemReport) -> str:
         f"- 词缀档位对照的底材类别：{cls.name_zh or cls.raw or '未确定'}"
         + (f"（{len(cls.pages)} 个 POEDB 底材页面）" if len(cls.pages) > 1 else "")
     )
+    if cls.base_evidence:
+        base_labels = [
+            f"[[{label}]]"
+            for base in cls.base_evidence
+            for url in (base.pob_url, base.poedb_url)
+            if (label := _label_of(report, url))
+        ]
+        lines.append(
+            f"- 词缀查询页：{'、'.join(cls.pages)}；依据逐字底材「{cls.base_type}」"
+            f"的 PoB 标签与 POEDB 名称桥{''.join(dict.fromkeys(base_labels))}"
+        )
     lines.append(
         f"- 已确定档位 {report.mods.matched_count} 条 / 共 {len(report.mods.mods)} 条"
         f"；前缀 {report.mods.prefix_count} 条、后缀 {report.mods.suffix_count} 条"
@@ -483,8 +504,6 @@ def _render_mod(report: ItemReport, analysis: ModAnalysis) -> str:
     label = _label_of(report, analysis.url)
     mark = f"[[{label}]]" if label else ""
     head = f"- `{analysis.mod.text}` — **{analysis.tier_label}**{mark}"
-    if analysis.tier is None:
-        return head
     bits: list[str] = []
     if analysis.affix_type:
         bits.append(analysis.affix_type)
@@ -499,7 +518,7 @@ def _render_mod(report: ItemReport, analysis: ModAnalysis) -> str:
     if analysis.weight:
         bits.append(f"生成权重 {analysis.weight}")
     detail = "；".join(bits)
-    source = TIER_SOURCE_LABEL.get(analysis.tier_source, "")
+    source = TIER_SOURCE_LABEL.get(analysis.tier_source, "") if analysis.tier is not None else ""
     tail = f"\n  - {detail}" if detail else ""
     if source:
         tail += f"\n  - T 级来源：{source}"
