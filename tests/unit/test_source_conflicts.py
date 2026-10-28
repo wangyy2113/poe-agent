@@ -7,12 +7,15 @@ from unittest.mock import patch
 
 from api.conflicts import (
     SourceConflictLookupRequest,
+    conflict_detail as conflict_detail_api,
     conflict_lookup as conflict_lookup_api,
     conflict_summary as conflict_summary_api,
 )
 from core import db as dbmod
 from kb.conflicts import (
     ConflictQueryError,
+    MAX_DETAIL_TEXT_LENGTH,
+    get_conflict,
     lookup_conflicts,
     status_for_kind,
     summarize_conflicts,
@@ -250,6 +253,34 @@ class ConflictDomainTest(unittest.TestCase):
         self.assertEqual((), summary.source_pairs)
         self.assertEqual((), summary.review_causes)
 
+    def test_exact_detail_retains_review_status_and_source_references(self) -> None:
+        row = lookup_conflicts(self.conn, status="review", query="Review A").items[0]
+        self.conn.execute(
+            "UPDATE source_conflict SET ref_a=?, ref_b=? WHERE conflict_id=?",
+            ("poedb:42", "pob:mod-42", row.conflict_id),
+        )
+        detail = get_conflict(self.conn, row.conflict_id)
+        self.assertIsNotNone(detail)
+        self.assertEqual("review", detail.status)
+        self.assertEqual("poedb:42", detail.ref_a)
+        self.assertEqual("pob:mod-42", detail.ref_b)
+        self.assertEqual("(10-20)", detail.value_a)
+        self.assertFalse(detail.value_a_truncated)
+        self.assertEqual(len("(10-20)"), detail.value_a_length)
+
+    def test_detail_bounds_large_values_and_rejects_invalid_id(self) -> None:
+        value = "x" * (MAX_DETAIL_TEXT_LENGTH + 7)
+        conflict_id = _insert(self.conn, subject="oversize", value_a=value)
+        detail = get_conflict(self.conn, conflict_id)
+        self.assertEqual(MAX_DETAIL_TEXT_LENGTH, len(detail.value_a))
+        self.assertEqual(len(value), detail.value_a_length)
+        self.assertTrue(detail.value_a_truncated)
+        self.assertFalse(detail.value_b_truncated)
+        self.assertIsNone(get_conflict(self.conn, 999_999))
+        for invalid in (0, -1, True, "1"):
+            with self.subTest(invalid=invalid), self.assertRaises(ConflictQueryError):
+                get_conflict(self.conn, invalid)
+
 
 class ConflictToolAndApiTest(unittest.TestCase):
     def setUp(self) -> None:
@@ -370,6 +401,52 @@ class ConflictToolAndApiTest(unittest.TestCase):
             "invalid_source_conflict_query", caught.exception.detail["error"]
         )
 
+    def test_api_exact_detail_keeps_review_unconfirmed_and_resolved_historical(self) -> None:
+        from fastapi import HTTPException
+
+        review_id = lookup_conflicts(
+            self.conn, query="Review A", status="review",
+        ).items[0].conflict_id
+        review = conflict_detail_api(review_id, _caller="test")
+        self.assertEqual("review", review.status)
+        self.assertFalse(review.can_support_facts)
+        self.assertIn("不裁决", review.boundary)
+        resolved_id = lookup_conflicts(
+            self.conn, query="Resolved", resolution="resolved",
+        ).items[0].conflict_id
+        self.assertFalse(conflict_detail_api(resolved_id, _caller="test").can_support_facts)
+        with self.assertRaises(HTTPException) as missing:
+            conflict_detail_api(999_999, _caller="test")
+        self.assertEqual(404, missing.exception.status_code)
+
+    def test_http_detail_serialization_and_missing_id(self) -> None:
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+
+        from api.conflicts import router as conflict_router
+        from api.deps import require_user
+
+        app = FastAPI()
+        app.include_router(conflict_router)
+        app.dependency_overrides[require_user] = lambda: "test"
+        review_id = lookup_conflicts(
+            self.conn, query="Review A", status="review",
+        ).items[0].conflict_id
+        review_detail = get_conflict(self.conn, review_id)
+        with patch("api.conflicts.dbmod.get_conn", return_value=None), patch(
+            "api.conflicts.get_conflict",
+            side_effect=lambda _conn, conflict_id: review_detail if conflict_id == review_id else None,
+        ):
+            client = TestClient(app)
+            detail = client.get(f"/conflicts/{review_id}")
+            self.assertEqual(200, detail.status_code)
+            payload = detail.json()
+            self.assertEqual("review", payload["status"])
+            self.assertFalse(payload["can_support_facts"])
+            self.assertEqual(len("(10-20)"), payload["value_a_length"])
+            self.assertEqual(404, client.get("/conflicts/999999").status_code)
+            self.assertEqual(422, client.get("/conflicts/0").status_code)
+
     def test_openapi_registry_knowledge_and_routes_are_wired(self) -> None:
         from agents.knowledge import ALLOWED_TOOLS
         from main import create_app
@@ -388,6 +465,7 @@ class ConflictToolAndApiTest(unittest.TestCase):
         paths = create_app().openapi()["paths"]
         self.assertIn("/poe_agent/conflicts/lookup", paths)
         self.assertIn("/poe_agent/conflicts/summary", paths)
+        self.assertIn("/poe_agent/conflicts/{conflict_id}", paths)
 
 
 if __name__ == "__main__":

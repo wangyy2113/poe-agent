@@ -4,10 +4,12 @@ from __future__ import annotations
 
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Path
 from pydantic import BaseModel, Field
 
 from api.deps import require_user
+from core import db as dbmod
+from kb.conflicts import get_conflict
 from tools.impl.conflicts import source_conflict_lookup, source_conflict_summary
 
 
@@ -62,6 +64,17 @@ class SourceConflictLookupResponse(BaseModel):
     review_notice: str | None = None
     boundary: str
     answer: str
+
+
+class SourceConflictDetailResponse(SourceConflictItemOut):
+    ref_a: str | None = None
+    ref_b: str | None = None
+    value_a_length: int
+    value_b_length: int
+    value_a_truncated: bool
+    value_b_truncated: bool
+    can_support_facts: bool
+    boundary: str
 
 
 class SourceConflictKindSummaryOut(BaseModel):
@@ -125,3 +138,23 @@ def conflict_summary(
             "error": "source_conflict_summary_failed", "reason": result.error,
         })
     return SourceConflictSummaryResponse(**(result.data or {}))
+
+
+@router.get("/conflicts/{conflict_id}", response_model=SourceConflictDetailResponse)
+def conflict_detail(
+    conflict_id: int = Path(ge=1),
+    _caller: str = Depends(require_user),
+) -> SourceConflictDetailResponse:
+    item = get_conflict(dbmod.get_conn(), conflict_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail={
+            "error": "source_conflict_not_found", "reason": "台账中没有该 ID",
+        })
+    return SourceConflictDetailResponse(
+        **item.__dict__,
+        can_support_facts=item.status == "confirmed" and not item.resolved,
+        boundary=(
+            "review 只是待核对差异，不能支撑游戏事实；已解决记录保留为历史审计。"
+            "本接口只展示来源原值，不裁决哪一侧正确。"
+        ),
+    )

@@ -149,7 +149,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 2410 项，秒级
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 2416 项，秒级
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选
@@ -1595,3 +1595,14 @@ PoB 唯一装备当前表只保留当前有效词缀；`pob_unique_variant` 按 
 来源链接仅接受 HTTPS，异步响应以请求代际防止关闭或切换对象后旧结果回填。
 本机浏览器用“冈姆”检索出 5 件，手动选 2→3 后显示 `+500` 移除、`+1000` 新增，
 HTTP 全程 200，控制台无错误。普通装备卡片、chunk、别名与 FTS 路径仍不读取历史表。
+
+## 第一百二十九轮：台账详情继续守住 confirmed/review 边界
+
+网页页脚“跨来源核对”打开只读台账：默认查询未解决的 confirmed，review 和全部记录须由
+用户显式切换。概览分开计数，两侧原值、kind、处理状态和 review cause 在列表与详情
+中继续标注；筛选条件变化后游标归零，请求代际阻止旧页、旧详情或换 Key 前的响应回写。
+外部文本仅用 `textContent`，来源链接只接受明确允许的 HTTPS 主机。
+
+`GET /conflicts/{id}` 使用普通用户鉴权，按正整数 ID 精确读取；不存在返回 404。单侧
+原值上限 16000 字，返回原始长度与截断标记。只有未解决的 confirmed 才标记
+`can_support_facts=true`；review 和已解决历史记录只能供核对，不裁决哪一侧正确。

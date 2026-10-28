@@ -23,6 +23,7 @@ MAX_LIMIT = 100
 MAX_QUERY_LENGTH = 160
 MAX_FILTER_VALUES = 20
 MAX_TEXT_LENGTH = 2000
+MAX_DETAIL_TEXT_LENGTH = 16000
 
 
 class ConflictQueryError(ValueError):
@@ -47,6 +48,18 @@ class ConflictItem:
     resolved: bool
     first_seen: str
     last_seen: str
+
+
+@dataclass(frozen=True)
+class ConflictDetail(ConflictItem):
+    """显式按 ID 读取的原值；过长字段保留长度与截断状态。"""
+
+    ref_a: str | None
+    ref_b: str | None
+    value_a_length: int
+    value_b_length: int
+    value_a_truncated: bool
+    value_b_truncated: bool
 
 
 @dataclass(frozen=True)
@@ -259,6 +272,42 @@ def _item(row: sqlite3.Row) -> ConflictItem:
         note=_clip(row["note"]), cause=_clip(row["cause"]),
         resolved=bool(row["resolved"]), first_seen=str(row["first_seen"]),
         last_seen=str(row["last_seen"]),
+    )
+
+
+def _detail_value(value: object) -> tuple[str, int, bool]:
+    text = str(value)
+    length = len(text)
+    return text[:MAX_DETAIL_TEXT_LENGTH], length, length > MAX_DETAIL_TEXT_LENGTH
+
+
+def get_conflict(conn: sqlite3.Connection, conflict_id: object) -> ConflictDetail | None:
+    """ID 精确查询，不通过 review 过滤器提升其事实资格。"""
+    if isinstance(conflict_id, bool) or not isinstance(conflict_id, int) or conflict_id <= 0:
+        raise ConflictQueryError("conflict_id 必须是正整数")
+    row = conn.execute(
+        "SELECT conflict_id, subject, field, kind, source_a, value_a, ref_a, url_a, "
+        "source_b, value_b, ref_b, url_b, note, cause, resolved, first_seen, last_seen "
+        "FROM source_conflict WHERE conflict_id = ?",
+        (conflict_id,),
+    ).fetchone()
+    if row is None:
+        return None
+    value_a, len_a, truncated_a = _detail_value(row["value_a"])
+    value_b, len_b, truncated_b = _detail_value(row["value_b"])
+    return ConflictDetail(
+        conflict_id=int(row["conflict_id"]), subject=str(row["subject"]),
+        field=str(row["field"]), kind=str(row["kind"]),
+        status=status_for_kind(row["kind"]),
+        source_a=str(row["source_a"]), value_a=value_a,
+        ref_a=_clip(row["ref_a"]), url_a=_clip(row["url_a"]),
+        source_b=str(row["source_b"]), value_b=value_b,
+        ref_b=_clip(row["ref_b"]), url_b=_clip(row["url_b"]),
+        note=_clip(row["note"]), cause=_clip(row["cause"]),
+        resolved=bool(row["resolved"]), first_seen=str(row["first_seen"]),
+        last_seen=str(row["last_seen"]),
+        value_a_length=len_a, value_b_length=len_b,
+        value_a_truncated=truncated_a, value_b_truncated=truncated_b,
     )
 
 

@@ -80,6 +80,7 @@ async function apiFetch(path, options = {}) {
       sessionStorage.removeItem(AUTH_STORE);
       clearConversationUi();
       clearMemoryUi();
+      window.clearConflictLedger?.();
       window.clearEconomyWorkbench?.();
       window.clearRareComparables?.();
     }
@@ -124,6 +125,7 @@ async function saveApiKey(event) {
     if (previous !== key) {
       clearConversationUi();
       clearMemoryUi();
+      window.clearConflictLedger?.();
       window.clearEconomyWorkbench?.();
       window.clearRareComparables?.();
     }
@@ -147,6 +149,7 @@ function clearApiKey() {
   el.authDialog.close();
   clearConversationUi();
   clearMemoryUi();
+  window.clearConflictLedger?.();
   window.clearEconomyWorkbench?.();
   window.clearRareComparables?.();
   updateAuthButton(authRequired);
