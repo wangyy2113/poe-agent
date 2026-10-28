@@ -50,6 +50,7 @@
   </div>
   <div class="hint">
     答案中的角标可点击跳转到来源。标为「已拦截」的句子是模型试图输出的无据内容，已被出口校验挡下。
+    <button id="rare-open" type="button" class="hint-link">查询稀有装可比挂单</button>
     <button id="unique-history-open" type="button" class="hint-link">浏览唯一装备历史变体</button>
   </div>
 </footer>
@@ -114,6 +115,36 @@
   </div>
 </dialog>
 
+<dialog id="rare-dialog" class="rare-dialog" aria-labelledby="rare-title">
+  <div class="rare-panel">
+    <div class="rare-heading">
+      <div>
+        <h2 id="rare-title">稀有装备可比挂单</h2>
+        <p>查询官方 Trade 在线挂单。结果是限定样本的报价，不是成交价或精确估值。</p>
+      </div>
+      <button id="rare-close" type="button" class="ghost" aria-label="关闭稀有装备可比挂单">关闭</button>
+    </div>
+    <form id="rare-form" class="rare-form">
+      <label for="rare-text">完整装备复制文本</label>
+      <textarea id="rare-text" required maxlength="20000" rows="8"
+                placeholder="在游戏中复制一件稀有装备，然后粘贴到这里"></textarea>
+      <div class="rare-options">
+        <label for="rare-league">联盟（可选）
+          <input id="rare-league" maxlength="100" placeholder="留空使用当前普通挑战联盟">
+        </label>
+        <div class="rare-switches" role="group" aria-label="可比挂单结构筛选">
+          <label><input id="rare-quality" type="checkbox"> 精确匹配品质</label>
+          <label><input id="rare-sockets" type="checkbox"> 精确匹配连接组尺寸</label>
+        </div>
+      </div>
+      <p class="rare-filter-note">勾选筛选时，复制文本必须明确包含对应字段。连接组只比较大小，不比较颜色或位置。</p>
+      <button id="rare-submit" type="submit" class="auth-primary">查询可比挂单</button>
+    </form>
+    <div id="rare-status" class="rare-status" role="status" aria-live="polite"></div>
+    <div id="rare-result" class="rare-result" hidden></div>
+  </div>
+</dialog>
+
 <dialog id="unique-history-dialog" class="history-dialog" aria-labelledby="history-title">
   <div class="history-panel">
     <div class="history-heading">
@@ -157,6 +188,7 @@
 </dialog>
 
 <script src="app.js"></script>
+<script src="rare-comparables.js"></script>
 <script src="unique-history.js"></script>
 </body>
 </html>
