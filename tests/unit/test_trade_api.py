@@ -113,6 +113,78 @@ STATS = {
 
 
 class TradeApiClientTest(unittest.TestCase):
+    def test_rare_structural_filter_keeps_only_explicit_quality_and_link_groups(self) -> None:
+        rows = {}
+        for index in range(12):
+            row = rare_listing(10 + index, base_type="Test Chest")
+            row["item"]["properties"] = [{"name": "Quality", "values": [["+20%", 1]]}]
+            row["item"]["sockets"] = [
+                {"group": group, "sColour": "R"}
+                for group in (0, 0, 1, 1, 1)
+            ]
+            rows[f"r{index}"] = row
+        rows["r5"]["item"]["properties"][0]["values"] = [["+19%", 1]]
+        rows["r6"]["item"]["sockets"][-1]["group"] = 2
+        rows["r7"]["item"].pop("properties")
+        rows["r8"]["item"].pop("sockets")
+        rows["r9"]["listing"]["account"]["online"]["league"] = "Standard"
+        rows["r10"]["item"]["ilvl"] = 83
+        rows["r11"]["item"]["properties"][0]["values"] = [["+999%", 1]]
+        calls = []
+
+        def request(method: str, path: str, payload: dict | None):
+            calls.append((method, path, payload))
+            if path == "/api/trade/data/stats":
+                return STATS
+            if path.startswith("/api/trade/search/"):
+                return {"id": "rare-query", "total": 12, "result": list(rows)}
+            if path.startswith("/api/trade/fetch/"):
+                ids = path.split("/fetch/", 1)[1].split("?", 1)[0].split(",")
+                return {"result": [rows[item_id] for item_id in ids]}
+            self.fail(f"unexpected request: {path}")
+
+        client = TradeApiClient(
+            request_json=request, requests_per_second=0, minimum_samples=5,
+        )
+        quote = client.rare_quote(
+            "Allflame", "Test Chest", 84, False,
+            ["explicit.stat_3299347043"],
+            quality_percent=20, socket_group_sizes=(3, 2),
+        )
+        self.assertEqual(5, quote.sample_count)
+        self.assertEqual(12, quote.median_chaos)
+        self.assertEqual(1, quote.quality_mismatch_filtered_count)
+        self.assertEqual(1, quote.socket_mismatch_filtered_count)
+        self.assertEqual(3, quote.structure_missing_filtered_count)
+        self.assertEqual(1, quote.cross_league_filtered_count)
+        self.assertEqual(1, quote.invalid_quote_filtered_count)
+        self.assertEqual((2, 3), quote.socket_group_sizes)
+        self.assertIn("品质精确匹配 20%", quote.sample_scope)
+        self.assertIn("连接组尺寸精确匹配", quote.sample_scope)
+        self.assertIn("最多抓取前 40 条", quote.sample_scope)
+        rows["r4"]["item"]["properties"][0]["values"] = [["+19%", 1]]
+        thin = client.rare_quote(
+            "Allflame", "Test Chest", 84, False,
+            ["explicit.stat_3299347043"],
+            quality_percent=20, socket_group_sizes=(2, 3),
+        )
+        self.assertEqual(4, thin.sample_count)
+        self.assertIsNone(thin.median_chaos)
+        self.assertFalse(thin.sufficient)
+
+    def test_rare_structural_filter_rejects_malformed_inputs(self) -> None:
+        client = TradeApiClient(request_json=lambda _m, _p, _b: STATS,
+                                requests_per_second=0)
+        for quality, groups in ((True, None), (101, None), (20, (0, 2)),
+                                (20, (3, 4)), (20, [2, 3])):
+            with self.subTest(quality=quality, groups=groups):
+                with self.assertRaises(TradeApiError):
+                    client.rare_quote(
+                        "Allflame", "Test Chest", 84, False,
+                        ["explicit.stat_3299347043"],
+                        quality_percent=quality, socket_group_sizes=groups,
+                    )
+
     def test_sell_side_reverses_exchange_and_requires_fresh_full_quantity_depth(self) -> None:
         now = datetime(2026, 9, 24, 12, tzinfo=timezone.utc)
         calls: list[tuple[str, str, dict | None]] = []

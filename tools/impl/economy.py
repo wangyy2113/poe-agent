@@ -152,7 +152,9 @@ def render_rare_comparables(result: RareComparableEstimate) -> str:
         f"- 精确底材：{result.base_type_en}；物等：{result.item_level}；"
         f"腐化：{'是' if result.corrupted else '否'}",
         f"- 词缀映射：{result.mapped_mod_count}/{result.explicit_mod_count} 条；"
-        f"可比性：{result.comparison_quality}",
+        f"映射完整度：{result.comparison_quality}",
+        f"- 品质筛选：{str(result.quality_filter) + '%' if result.quality_filter is not None else '未启用'}；"
+        f"连接组尺寸筛选：{list(result.socket_group_sizes) if result.socket_group_sizes is not None else '未启用'}",
     ]
     for mapping in result.mapped_stats:
         labels = " / ".join(
@@ -182,6 +184,9 @@ def render_rare_comparables(result: RareComparableEstimate) -> str:
             f"{quote.invalid_quote_filtered_count}、无法换算货币 "
             f"{quote.unconverted_currency_filtered_count or 0}、统计离群 "
             f"{quote.outlier_filtered_count}",
+            f"- 结构筛选：品质不符 {quote.quality_mismatch_filtered_count}、"
+            f"连接组不符 {quote.socket_mismatch_filtered_count}、"
+            f"挂单结构字段缺失 {quote.structure_missing_filtered_count}",
             f"- 挂单时间：{quote.earliest_listing_at or '未提供'} → "
             f"{quote.latest_listing_at or '未提供'}",
             f"- 样本边界：{quote.sample_scope}",
@@ -707,7 +712,8 @@ def economy_price_lookup(
     description=(
         "把 POE1 稀有装备复制文本映射到 GGG 官方 Trade stat，查询同联盟、精确底材、"
         "相同物等和腐化状态、同时具备已映射显式词缀的在线可比挂单。返回中位数、范围、"
-        "样本/过滤审计和未映射词缀。它不是精确成交价、制作价值、利润或是否值得分裂/"
+        "样本/过滤审计和未映射词缀。可选按明确复制的品质、连接组尺寸再过滤；"
+        "它不是精确成交价、制作价值、利润或是否值得分裂/"
         "镜像湖/镜子级别的判断；样本不足时不输出代表价。"
     ),
     parameters={
@@ -724,16 +730,28 @@ def economy_price_lookup(
                 "maxLength": 100,
                 "description": "可选；留空时选择当前普通挑战联盟",
             },
+            "match_quality": {
+                "type": "boolean",
+                "description": "可选；要求复制文本与挂单都有明确品质，并精确匹配百分比",
+            },
+            "match_sockets": {
+                "type": "boolean",
+                "description": "可选；按连接组尺寸精确匹配，不比较颜色或位置",
+            },
         },
         "required": ["item_text"],
         "additionalProperties": False,
     },
 )
 def economy_rare_comparables(
-    item_text: str, league: str | None = None
+    item_text: str, league: str | None = None,
+    match_quality: bool = False, match_sockets: bool = False,
 ) -> ToolResult:
     try:
-        result = rare_service_from_config().estimate(item_text, league=league)
+        result = rare_service_from_config().estimate(
+            item_text, league=league,
+            match_quality=match_quality, match_sockets=match_sockets,
+        )
     except (InvalidRareComparable, TradeApiError) as exc:
         return ToolResult(ok=False, error=str(exc), meta={"source": "GGG Trade API"})
     except ValueError as exc:
