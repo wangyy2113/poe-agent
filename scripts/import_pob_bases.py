@@ -85,6 +85,7 @@ def to_row(base: BaseItem, repo: PoBRepo, priority: int) -> tuple:
         repo.version_label,
         repo.game_version,
         base.content_hash,
+        base.implicit_zh,
     )
 
 
@@ -126,8 +127,8 @@ def replace_snapshot(
             subtype,socket_limit,tags,influence_tags,armour_tag,modifier_page,
             implicit_text,implicit_mod_types,implicit_ids,stats,stats_kind,
             requirements,source_file,source,source_priority,pob_url,poedb_url,
-            source_commit,pob_version,game_version,content_hash,updated_at
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'))
+            source_commit,pob_version,game_version,content_hash,implicit_zh,updated_at
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'))
         """,
         rows,
     )
@@ -254,6 +255,9 @@ def main() -> int:
     by_reason = Counter(item.reason for item in skipped)
     print(f"\nPoB：{repo.version_label} commit={repo.commit}")
     print(f"底材：{len(bases)} 条（{len(categories)} 个类别），解析 {elapsed_ms} ms")
+    implicit_en = sum(bool(base.implicit_text) for base in bases)
+    implicit_zh = sum(bool(base.implicit_zh) for base in bases)
+    print(f"固有隐式：PoB 英文 {implicit_en} 条；POEDB 中文同底材数值核对 {implicit_zh} 条")
     print(f"ItemClass 分布：{dict(sorted(by_class.items()))}")
     print(f"跳过 {len(skipped)} 条：{dict(sorted(by_reason.items()))}")
     if args.dry_run:
@@ -288,6 +292,7 @@ def main() -> int:
             raise
         note = (
             f"{written} 条底材（{len(categories)} 类别）；"
+            f"中文固有隐式 {implicit_zh} 条；"
             f"跳过 {len(skipped)} 条 {dict(sorted(by_reason.items()))}；"
             f"台账登记 {gap_rows} 组"
         )

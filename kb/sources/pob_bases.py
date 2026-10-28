@@ -39,6 +39,7 @@ from typing import Any
 
 from selectolax.parser import HTMLParser
 
+from kb.sources.poedb_mods import LINE_SEP, clean_mod_text
 from kb.sources.pob_lua import LuaOpaque, load_lua_file, parse_assignments
 
 BODY_BASE_FILE = "Data/Bases/body.lua"
@@ -207,6 +208,8 @@ class BaseItem:
     category_key: str = "body"
     poedb_page: str = "Body_Armours"
     source_file: str = BODY_BASE_FILE
+    #: POEDB 中文类别页中与同一 slug 对应的固有隐式；数值序列还须与 PoB 对账。
+    implicit_zh: str | None = None
 
     @property
     def poedb_url(self) -> str:
@@ -214,7 +217,17 @@ class BaseItem:
 
     @property
     def content_hash(self) -> str:
-        payload = {
+        payload = self._content_payload()
+        payload["implicit_zh"] = self.implicit_zh
+        return self._hash_payload(payload)
+
+    @property
+    def legacy_content_hash(self) -> str:
+        """旧快照未含中文隐式字段；回填前先用它校验其余所有字段。"""
+        return self._hash_payload(self._content_payload())
+
+    def _content_payload(self) -> dict[str, Any]:
+        return {
             "name_en": self.name_en,
             "name_zh": self.name_zh,
             "poedb_slug": self.poedb_slug,
@@ -234,6 +247,9 @@ class BaseItem:
             "category_key": self.category_key,
             "poedb_page": self.poedb_page,
         }
+
+    @staticmethod
+    def _hash_payload(payload: dict[str, Any]) -> str:
         raw = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
         return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
@@ -313,6 +329,38 @@ def parse_poedb_base_names(
             f"POEDB {page or classes} 页面没有可识别的普通底材卡片"
         )
     return out, ambiguous
+
+
+_IMPLICIT_NUMBERS = re.compile(r"(?<!\d)[+-]?\d+(?:\.\d+)?")
+
+
+def _implicit_numbers(text: str) -> tuple[float, ...]:
+    """跨语言只核对按出现顺序排列的数值，不从译文推断机制。"""
+    return tuple(float(value) for value in _IMPLICIT_NUMBERS.findall(text))
+
+
+def parse_poedb_base_implicits(html: str, classes: tuple[str, ...]) -> dict[str, str]:
+    """从类别页的具名底材卡片提取固有隐式；同 slug 多版本不一致时留空。"""
+    tree = HTMLParser(html)
+    candidates: dict[str, set[str]] = {}
+    for cls in classes:
+        for link in tree.css(f"a.whiteitem.{cls}"):
+            parent = link.parent
+            if not _text(link) or parent is None or "flex-grow-1" not in (
+                parent.attributes.get("class") or ""
+            ).split():
+                continue
+            href = str(link.attributes.get("href") or "").strip()
+            slug = href.split("?", 1)[0].rstrip("/").rsplit("/", 1)[-1]
+            if not slug or slug.startswith(_EXCLUDED_SLUG_PREFIXES):
+                continue
+            lines = [clean_mod_text(node.html) for node in parent.css(".implicitMod")]
+            text = LINE_SEP.join(line for line in lines if line)
+            candidates.setdefault(slug, set()).add(text)
+    return {
+        slug: next(iter(texts)) for slug, texts in candidates.items()
+        if len(texts) == 1 and "" not in texts
+    }
 
 
 def _jsonable(value: Any, *, path: str) -> Any:
@@ -413,6 +461,7 @@ def extract_category_bases(
 
     cn_by_slug: dict[str, str] = {}
     en_by_slug: dict[str, str] = {}
+    implicit_by_slug: dict[str, str] = {}
     slug_page: dict[str, str] = {}
     ambiguous_slugs: set[str] = set()
     ambiguous_names: set[str] = set()
@@ -425,6 +474,7 @@ def extract_category_bases(
         cn_html, en_html = htmls
         cn, cn_ambiguous = parse_poedb_base_names(cn_html, page.classes, page=page.slug)
         en, en_ambiguous = parse_poedb_base_names(en_html, page.classes, page=page.slug)
+        cn_implicits = parse_poedb_base_implicits(cn_html, page.classes)
         # 任一侧无法唯一命名的 slug 一律不进桥接池：中文名不确定就不能入库
         for slug in cn_ambiguous | en_ambiguous:
             cn.pop(slug, None)
@@ -447,6 +497,7 @@ def extract_category_bases(
             slug_page.setdefault(slug, page.slug)
         cn_by_slug.update(cn)
         en_by_slug.update(en)
+        implicit_by_slug.update(cn_implicits)
 
     slugs_by_en: dict[str, list[str]] = {}
     for slug, name in en_by_slug.items():
@@ -543,6 +594,10 @@ def extract_category_bases(
         implicit_raw = raw.get("implicit")
         if implicit_raw is not None and not isinstance(implicit_raw, str):
             raise BaseStructureError(f"{name_en!r}.implicit 不是字符串")
+        implicit_zh = implicit_by_slug.get(slug)
+        if (not implicit_raw or not implicit_zh
+                or _implicit_numbers(implicit_raw) != _implicit_numbers(implicit_zh)):
+            implicit_zh = None
         implicit_mod_types = _jsonable(
             raw.get("implicitModTypes") or {}, path=f"{name_en}.implicitModTypes"
         )
@@ -565,6 +620,7 @@ def extract_category_bases(
                 armour_tag=armour_tag,
                 modifier_page=modifier_page,
                 implicit_text=implicit_raw,
+                implicit_zh=implicit_zh,
                 implicit_mod_types=implicit_mod_types,
                 implicit_ids=_string_array(
                     raw.get("implicitIds"), path=f"{name_en}.implicitIds"

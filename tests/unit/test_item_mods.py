@@ -531,7 +531,7 @@ class TestBasePageResolution(ModsTestCase):
 
 
 class TestBaseImplicitEvidence(ModsTestCase):
-    """PoB 只提供底材固有隐式原文与区间，不提供隐式 T 级。"""
+    """底材固有隐式可核实区间与 roll；来源类别页不提供 T 级。"""
 
     def setUp(self) -> None:
         super().setUp()
@@ -562,6 +562,32 @@ class TestBaseImplicitEvidence(ModsTestCase):
         self.assertEqual(mod.source_label, "PoB 底材固有隐式")
         self.assertIn("Astral_Plate", mod.url)
         self.assertIn("PoB 未给隐式 T 级", mod.reason)
+
+    def test_中文底材固有隐式从同底材卡片核实区间和roll(self):
+        self.conn.execute(
+            "UPDATE pob_base_item SET implicit_zh=? WHERE name_en='Astral Plate'",
+            ("+(8-12)% 所有元素抗性",),
+        )
+        raw = make_item(
+            "胸甲", ["+10% 所有元素抗性", "--------", "+107 最大生命"],
+            base_type="星芒战铠",
+        )
+        item = parse_item(raw)
+        self.assertEqual(1, len(item.implicits))
+        mod = analyze_mods(self.conn, item).mods[0]
+        self.assertEqual([(8.0, 12.0)], mod.ranges)
+        self.assertAlmostEqual(0.5, mod.roll_pct)
+        self.assertEqual("POEDB 底材固有隐式", mod.source_label)
+        self.assertEqual("POEDB", mod.evidence_source)
+        self.assertEqual("https://poedb.tw/cn/Body_Armours", mod.url)
+        self.assertIsNone(mod.tier)
+
+        # 改成其它数值或别的文字都不得借用此底材的区间。
+        for text in ("+99% 所有元素抗性", "+10% 火焰抗性"):
+            changed = raw.replace("+10% 所有元素抗性", text)
+            miss = analyze_mods(self.conn, parse_item(changed)).mods[0]
+            self.assertEqual([], miss.ranges)
+            self.assertEqual("", miss.url)
 
     def test_隐式数值超出底材区间不报告来源区间(self):
         mod = self.analyze_implicit("+99% to all Elemental Resistances (implicit)")

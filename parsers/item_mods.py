@@ -75,6 +75,8 @@ class BasePageEvidence:
     pob_url: str
     poedb_url: str
     implicit_text: str = ""
+    implicit_zh: str = ""
+    implicit_zh_url: str = ""
 
 
 @dataclass
@@ -338,7 +340,8 @@ def refine_item_class_with_base(
         return ref
     rows = conn.execute(
         """SELECT name_en,name_zh,item_class,category_key,poedb_page,poedb_slug,
-                  subtype,armour_tag,modifier_page,tags,pob_url,poedb_url,implicit_text
+                  subtype,armour_tag,modifier_page,tags,pob_url,poedb_url,
+                  implicit_text,implicit_zh
            FROM pob_base_item
            WHERE name_en = ? COLLATE NOCASE OR name_zh = ?
            ORDER BY base_id""",
@@ -397,6 +400,8 @@ def refine_item_class_with_base(
             page=page, pob_url=str(row["pob_url"]),
             poedb_url=str(row["poedb_url"]),
             implicit_text=str(row["implicit_text"] or ""),
+            implicit_zh=str(row["implicit_zh"] or ""),
+            implicit_zh_url=f"https://poedb.tw/cn/{row['poedb_page']}",
         ))
 
     old_page_count = len(ref.pages)
@@ -652,20 +657,23 @@ def _analyze_one(
 def _fill_base_implicit(
     out: ModAnalysis, mod: ParsedMod, ref: ItemClassRef, item: ParsedItem
 ) -> None:
-    """只核实英文底材固有隐式的原文和可变区间，不从 PoB 文本猜 T 级。"""
+    """逐字核实底材固有隐式与区间；类别页与 PoB 均不证明隐式 T 级。"""
     if not ref.ok and ref.reason:
         out.reason = f"{ref.reason}；隐式区间也不能据此核实"
         return
     out.reason = (
-        "隐式词缀的 T 级尚无底材详情页证据；当前未能从已核实底材的英文固有"
+        "隐式词缀的 T 级尚无底材详情页证据；当前未能从已核实底材的固有"
         "隐式原文确定区间"
     )
-    if item.language != "en" or not ref.base_evidence:
+    if item.language not in {"en", "zh"} or not ref.base_evidence:
         return
-    definitions = {base.implicit_text for base in ref.base_evidence}
+    definitions = {
+        (base.implicit_text, base.implicit_zh) for base in ref.base_evidence
+    }
     if len(definitions) != 1:
         return
-    definition = next(iter(definitions))
+    english, chinese = next(iter(definitions))
+    definition = english if item.language == "en" else chinese
     if not definition:
         return
     full_text = LINE_SEP.join(part.strip() for part in definition.splitlines() if part.strip())
@@ -684,14 +692,24 @@ def _fill_base_implicit(
         return
     out.ranges = ranges
     out.roll_pct = _roll_pct(rolled_values, ranges)
-    out.source_label = "PoB 底材固有隐式"
-    out.url = ref.base_evidence[0].pob_url
-    out.evidence_source = Source.POB.value
-    out.evidence_priority = 2
-    out.reason = (
-        "英文隐式原文与已核实底材的 PoB 定义逐字吻合，全部可变数值落在其区间内；"
-        "PoB 未给隐式 T 级，故仍标未匹配 T 级"
-    )
+    if item.language == "en":
+        out.source_label = "PoB 底材固有隐式"
+        out.url = ref.base_evidence[0].pob_url
+        out.evidence_source = Source.POB.value
+        out.evidence_priority = 2
+        out.reason = (
+            "英文隐式原文与已核实底材的 PoB 定义逐字吻合，全部可变数值落在其区间内；"
+            "PoB 未给隐式 T 级，故仍标未匹配 T 级"
+        )
+    else:
+        out.source_label = "POEDB 底材固有隐式"
+        out.url = ref.base_evidence[0].implicit_zh_url
+        out.evidence_source = Source.POEDB.value
+        out.evidence_priority = 1
+        out.reason = (
+            "中文隐式原文与 POEDB 底材卡片逐字吻合，数值序列经 PoB 同底材定义核对，"
+            "全部可变值落在区间内；类别页未给隐式 T 级，故仍标未匹配 T 级"
+        )
 
 
 def _lookup(conn: sqlite3.Connection, mod: ParsedMod, ref: ItemClassRef) -> ModMatch:
