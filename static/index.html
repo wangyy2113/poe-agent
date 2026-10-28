@@ -50,6 +50,7 @@
   </div>
   <div class="hint">
     答案中的角标可点击跳转到来源。标为「已拦截」的句子是模型试图输出的无据内容，已被出口校验挡下。
+    <button id="conflict-open" type="button" class="hint-link">跨来源核对</button>
     <button id="economy-open" type="button" class="hint-link">经济分析</button>
     <button id="rare-open" type="button" class="hint-link">查询稀有装可比挂单</button>
     <button id="unique-history-open" type="button" class="hint-link">浏览唯一装备历史变体</button>
@@ -113,6 +114,59 @@
         <button id="memory-save" type="submit" class="auth-primary">保存记忆</button>
       </div>
     </form>
+  </div>
+</dialog>
+
+<dialog id="conflict-dialog" class="conflict-dialog" aria-labelledby="conflict-title">
+  <div class="conflict-panel">
+    <div class="conflict-heading">
+      <div>
+        <h2 id="conflict-title">跨来源核对台账</h2>
+        <p>已确认冲突与待核对差异分开计数。待核对记录不能证明哪一侧正确。</p>
+      </div>
+      <button id="conflict-close" type="button" class="ghost" aria-label="关闭跨来源核对">关闭</button>
+    </div>
+    <section class="conflict-overview" aria-label="台账概览">
+      <div id="conflict-summary-status" class="conflict-status" role="status"></div>
+      <div id="conflict-summary"></div>
+    </section>
+    <form id="conflict-form" class="conflict-form">
+      <label>对象、字段或两侧原值
+        <input id="conflict-query" maxlength="160" placeholder="例如：Cursed Mariner">
+      </label>
+      <div class="conflict-filters">
+        <label>分类
+          <select id="conflict-kind-status">
+            <option value="confirmed">已确认冲突</option>
+            <option value="review">待核对差异</option>
+            <option value="all">全部，仍分开标注</option>
+          </select>
+        </label>
+        <label>处理状态
+          <select id="conflict-resolution">
+            <option value="active">未解决</option>
+            <option value="resolved">已解决</option>
+            <option value="all">全部</option>
+          </select>
+        </label>
+        <label>Kind（可选，精确匹配）
+          <input id="conflict-kind" maxlength="80" placeholder="例如：mod_review">
+        </label>
+        <label>来源（可选，精确匹配）
+          <input id="conflict-source" maxlength="80" placeholder="例如：POEDB">
+        </label>
+      </div>
+      <button id="conflict-search" type="submit" class="auth-primary">查询台账</button>
+    </form>
+    <div id="conflict-status" class="conflict-status" role="status" aria-live="polite"></div>
+    <div id="conflict-results" class="conflict-results"></div>
+    <div class="conflict-pagination">
+      <button id="conflict-prev" type="button" class="ghost" disabled>上一页</button>
+      <span id="conflict-page"></span>
+      <button id="conflict-next" type="button" class="ghost" disabled>下一页</button>
+    </div>
+    <section id="conflict-detail" class="conflict-detail" hidden aria-label="单条来源核对详情"></section>
+    <p class="conflict-boundary">台账只并列展示来源原值和审计状态；待核对差异不是已确认冲突，也不裁决游戏事实。</p>
   </div>
 </dialog>
 
@@ -255,6 +309,7 @@
 </dialog>
 
 <script src="app.js"></script>
+<script src="conflict-ledger.js"></script>
 <script src="economy-workbench.js"></script>
 <script src="rare-comparables.js"></script>
 <script src="unique-history.js"></script>

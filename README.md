@@ -40,7 +40,7 @@ POE1 的机制耦合极深，一个错误的小前提会让整条结论反向。
 | 星团珠宝 | 3 个尺寸（小 2–3 / 中 4–6 / 大 8–12 个小天赋）+ 55 条小天赋类型 + 308 条核心天赋与基石清单；`cluster_jewel_info` 将同 commit 的类型 tag 与核心天赋词缀正权重连接，当前覆盖 52 个类型、568 条类型—核心关系，并支持物等过滤与双向反查。基础生成权重不冒充单次概率；**掉落与价格未采集** |
 | 天赋树路径 | 连线 3382 条 + 7 个职业起点入库；`passive_path` 按职业算「点到某节点要几点」并给出逐节点路径（总点数 123） |
 | 怪物数据 | 怪物词缀 183 条（有中文文本的）+ 可作幽魂怪物 1948 个与其伤害% / 生命%，其中 268 个另有 PoB 的四抗性与建模系数；倍率排名在这 268 个里做；**Boss 技能机制与打法、掉落、普通怪物技能说明未采集** |
-| 跨来源冲突与待核对差异 | `source_conflict_lookup` / `POST /conflicts/lookup` 默认只返回 8 条 active confirmed 幽魂分歧；`source_conflict_summary` / `GET /conflicts/summary` 将 547 条台账拆成 8 条 confirmed 与 539 条 review，并按 kind、来源对和 review cause 聚合。所有 `*_review` 必须显式请求，只能称“待核对差异”，引用不能支撑游戏事实，也绝不进入冲突并列块；游标绑定完整过滤条件，不能跨查询复用 |
+| 跨来源冲突与待核对差异 | 网页“跨来源核对”入口提供概览、筛选、分页与两侧原值详情；`POST /conflicts/lookup` 默认只返回 8 条 active confirmed 幽魂分歧，`GET /conflicts/summary` 将 547 条台账拆成 8 条 confirmed 与 539 条 review，`GET /conflicts/{id}` 精确读取单条。所有 `*_review` 必须显式请求，只能称“待核对差异”，引用不能支撑游戏事实，也绝不进入冲突并列块；游标绑定完整过滤条件，不能跨查询复用 |
 | 元词缀矩阵 | 页面矩阵 134 条（operation × guard，5 个小节）；空白格只进审计、不成为证据 |
 | 基础通货状态机 | `craft_operation_state` / `POST /craft/operation`：按 POEDB 效果原文模拟增幅、崇高、重铸、神圣、剥离、改造、混沌、富豪、机会、点金 10 种基础通货；检查稀有度与前后缀名额，输出三态结论和条件后状态。可选 `metamod_guard` 会把对应 Craft of Exile 矩阵原值作为独立证据并列披露；空白/缺失仍为 unknown，**不解释 YES/NO，不生成结果词缀、成功率、步骤、成本或路线** |
 | 古灵通货状态机 | `eldritch_operation_state` / `POST /craft/eldritch`：逐字覆盖四档余烬、四档溶液、古灵混沌/崇高/剥离石与冲突石共 12 种；检查装备部位、首要影响、前后缀名额和双基底词缀状态，并列披露已有元词缀矩阵原值。随机结果、概率、未给出的档级推进与特殊状态保持未知 |
@@ -1684,8 +1684,10 @@ curl -s -X POST http://127.0.0.1:8787/poe_agent/search \
 
 可选参数：`top_k`（1–50）、`category`（按一级分类过滤）。
 
-**查询跨来源冲突与待核对差异** —— 普通用户只读接口与聊天/MCP 工具共用同一套分类和
-过滤实现。默认值是 `status=confirmed`、`resolution=active`；只有明确传
+**查询跨来源冲突与待核对差异** —— 网页页脚的“跨来源核对”入口可查看台账概览，按分类、
+处理状态、kind、来源和字面内容筛选，逐页打开两侧原值与来源标识。普通用户只读接口与
+聊天/MCP 工具共用同一套分类和过滤实现。网页与 API 默认值都是 `status=confirmed`、
+`resolution=active`；只有明确选择或传入
 `status=review` 或 `all` 才会看到 `kind` 以 `_review` 结尾的待核对记录：
 
 ```bash
@@ -1696,6 +1698,9 @@ curl -s -X POST http://127.0.0.1:8787/poe_agent/conflicts/lookup \
 
 curl -s 'http://127.0.0.1:8787/poe_agent/conflicts/summary' \
   -H "Authorization: Bearer $POE_AGENT_API_KEY"
+
+curl -s 'http://127.0.0.1:8787/poe_agent/conflicts/42' \
+  -H "Authorization: Bearer $POE_AGENT_API_KEY"
 ```
 
 逐条查询还支持 `query`（对象、字段或两侧原值的字面搜索）、`kinds`、`sources`、
@@ -1703,6 +1708,11 @@ curl -s 'http://127.0.0.1:8787/poe_agent/conflicts/summary' \
 不会变成 SQL 通配符。响应同时返回本页 confirmed/review/resolved 计数、总匹配数、
 `has_more` 和 `next_cursor`；后续页必须保持完全相同的过滤条件，改变任一条件都会得到 422，
 避免把不同查询的页面拼成一份清单。
+
+`GET /conflicts/{id}` 按正整数 ID 读取单条记录，找不到返回 404；详情包含两侧来源标识、
+原值、原始长度、截断标记、审计状态和 `can_support_facts`。单侧原值最多显示前 16000 字，
+超出部分不会传给网页。只有未解决的 confirmed 记录具有事实资格；review 和已解决历史
+记录均为 `false`。网页仅把可信 HTTPS 来源域名渲染为外链，其他来源地址保留在 API 数据中。
 
 `GET /conflicts/summary` 分开报告 confirmed/review、active/resolved、kind、来源对和 review
 成因。**台账总数不等于已确认冲突数**：当前 `spectre` 8 条属于 confirmed；
@@ -1849,7 +1859,7 @@ PoB 排 P2 而不是 P1：它在数值上更接近一手，但不含中文名与
 .venv/bin/python -m unittest discover -s tests -t .
 ```
 
-目前 2410 项，其中与「无据不答」直接相关的：
+目前 2416 项，其中与「无据不答」直接相关的：
 
 | 组 | 项数 | 重点 |
 | --- | --- | --- |
