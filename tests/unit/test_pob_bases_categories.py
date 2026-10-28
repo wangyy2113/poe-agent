@@ -25,6 +25,7 @@ from kb.sources.pob_bases import (
     PoedbPage,
     extract_category_bases,
     parse_poedb_base_names,
+    parse_poedb_base_implicits,
 )
 
 
@@ -36,6 +37,15 @@ def page_html(entries: list[tuple[str, str]], cls: str) -> str:
         for slug, name in entries
     )
     return f"<html><body>{links}</body></html>"
+
+
+def implicit_card(slug: str, name: str, text: str, cls: str = "Belt") -> str:
+    """POEDB 类别页的具名链接与固有隐式同在 flex-grow-1 卡片中。"""
+    return (
+        f'<div class="flex-grow-1 ms-2"><a class="whiteitem {cls}" '
+        f'href="{slug}">{name}</a><div><div class="separator"></div>'
+        f'<div class="implicitMod">{text}</div></div></div>'
+    )
 
 
 def lua_file(body: str) -> Path:
@@ -170,6 +180,33 @@ itemBases["Chain Belt"] = { type = "Belt", tags = { belt = true, default = true,
 
 
 class PoedbPageParsingTest(unittest.TestCase):
+    def test_implicit_card_keeps_range_and_line_order(self) -> None:
+        html = implicit_card(
+            "Rustic_Sash", "素布腰带",
+            '全局物理伤害提高 <span class="mod-value">(12<span class="ndash">—</span>24)</span>%'
+        )
+        self.assertEqual(
+            {"Rustic_Sash": "全局物理伤害提高 (12-24)%"},
+            parse_poedb_base_implicits(html, ("Belt",)),
+        )
+
+    def test_conflicting_implicit_cards_are_not_selected(self) -> None:
+        html = (
+            implicit_card("Rustic_Sash", "素布腰带", "伤害提高 (12-24)%")
+            + implicit_card("Rustic_Sash", "素布腰带", "伤害提高 (20-30)%")
+        )
+        self.assertEqual({}, parse_poedb_base_implicits(html, ("Belt",)))
+
+    def test_chinese_implicit_requires_same_base_and_numeric_fingerprint(self) -> None:
+        root = lua_file(BELT_LUA)
+        en = page_html([("Rustic_Sash", "Rustic Sash")], "Belt")
+        cn = implicit_card("Rustic_Sash", "素布腰带", "全局物理伤害提高 (12-24)%")
+        bases, _ = extract_category_bases(BELT_CATEGORY, root, {"Belts": (cn, en)})
+        self.assertEqual("全局物理伤害提高 (12-24)%", bases[0].implicit_zh)
+        changed = implicit_card("Rustic_Sash", "素布腰带", "全局物理伤害提高 (20-30)%")
+        bases, _ = extract_category_bases(BELT_CATEGORY, root, {"Belts": (changed, en)})
+        self.assertIsNone(bases[0].implicit_zh)
+
     def test_royale_slugs_excluded(self) -> None:
         """Royale 底材的英文名与常规底材完全相同，不剔掉会让常规底材命中 2 个 slug。"""
         html = page_html(

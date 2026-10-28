@@ -191,6 +191,7 @@ CREATE TABLE IF NOT EXISTS pob_base_item (
         'Body_Armours_str_dex_int'
     )),
     implicit_text   TEXT,
+    implicit_zh     TEXT,              -- POEDB 中文类别页固有隐式，数值序列与 PoB 对账
     implicit_mod_types TEXT NOT NULL CHECK(json_valid(implicit_mod_types)),
     implicit_ids    TEXT NOT NULL CHECK(json_valid(implicit_ids)),
     -- 数值表 + 它取自 PoB 的哪个键。原名 `defences` 只对护甲成立，
@@ -1658,6 +1659,7 @@ def _migrate(conn: sqlite3.Connection) -> None:
         _migrate_gap_kind(conn)
         _migrate_gap_verify_source(conn)
         _migrate_base_item_all_categories(conn)
+        _migrate_base_implicit_zh(conn)
         _migrate_conflict_cause(conn)
         _migrate_reservation_columns(conn)
         _migrate_gap_source(conn)
@@ -2019,6 +2021,13 @@ def _migrate_gap_verify_source(conn: sqlite3.Connection) -> None:
             "缺口台账迁移：%d 条核对脚本的发现已从 chat 改判为 verify/ingest_gap"
             "（先前被算成用户流量，把采集优先级带偏）", moved,
         )
+
+
+def _migrate_base_implicit_zh(conn: sqlite3.Connection) -> None:
+    """现有底材快照添一列；实际中文原文由下一轮底材导入填充。"""
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(pob_base_item)")}
+    if cols and "implicit_zh" not in cols:
+        conn.execute("ALTER TABLE pob_base_item ADD COLUMN implicit_zh TEXT")
 
 
 def _migrate_base_item_all_categories(conn: sqlite3.Connection) -> None:
