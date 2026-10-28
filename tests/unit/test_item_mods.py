@@ -14,6 +14,7 @@ import sqlite3
 import sys
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
@@ -25,6 +26,7 @@ from parsers.item_mods import (  # noqa: E402
     resolve_item_class,
 )
 from core.db import SCHEMA as _REAL_SCHEMA  # noqa: E402
+from kb.sources.poedb_mods import loose_templatize  # noqa: E402
 from parsers.item_text import parse_item  # noqa: E402
 
 #: 桩库直接用 `core.db.SCHEMA`，**不再手抄一份表定义**。
@@ -53,6 +55,14 @@ _BOW_PHYS = [
     (2, 9, 65, [[30, 40], [63, 73]], "该装备附加 (30-40) - (63-73) 基础物理伤害"),
     (3, 9, 54, [[25, 33], [52, 61]], "该装备附加 (25-33) - (52-61) 基础物理伤害"),
 ]
+#: 真实数据：POEDB 项链工艺台「所有元素抗性 / 召唤生物元素抗性」
+#: （2026-10 本地库）。两个数值位必须同时落在同一档区间。
+_AMULET_MIXED_RES = [
+    (1, 2, 60, [[7, 9], [9, 12]],
+     "+(7-9)% 所有元素抗性 / 召唤生物获得 +(9-12)% 元素抗性"),
+    (2, 2, 30, [[4, 6], [5, 8]],
+     "+(4-6)% 所有元素抗性 / 召唤生物获得 +(5-8)% 元素抗性"),
+]
 
 
 def _insert_affix(
@@ -73,6 +83,8 @@ def _insert_affix(
         for lo, hi in ranges:
             strict = strict.replace(f"({lo}-{hi})", "#", 1)
             loose = loose.replace(f"({lo}-{hi})", "#", 1)
+        # 宽松模板还要占位固定数字；真实导入器也这样处理。
+        loose = loose_templatize(loose)
         conn.execute(
             """INSERT INTO mod_affix VALUES
                (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'))""",
@@ -332,6 +344,22 @@ class TestAdvancedCopyTier(ModsTestCase):
         self.assertEqual(a.tier, 4)
         self.assertEqual(a.tier_source, TIER_FROM_ITEM_TEXT)
 
+    def test_无Tier头下多行整体失配不能借首行给T级(self):
+        text = make_item("项链", [
+            '{ Prefix Modifier "Unknown Mixed" }',
+            "+107(100-114) 最大生命",
+            "未知的第二行",
+        ])
+        item = parse_item(text)
+        self.assertTrue(item.advanced_copy)
+        self.assertEqual(len(item.all_mods), 1)
+        self.assertTrue(item.all_mods[0].is_multiline)
+        analysis = analyze_mods(self.conn, item).mods[0]
+        self.assertIsNone(analysis.tier)
+        self.assertEqual(analysis.tier_label, "未匹配")
+        self.assertEqual(analysis.affix_type, "前缀")  # 方向来自游戏头，仍可信
+        self.assertIn("没有匹配模板", analysis.reason)
+
 
 class TestEnglishBridge(ModsTestCase):
     """英文普通复制走「PoB 阶梯 ⊇ POEDB 阶梯」的指纹桥。"""
@@ -397,6 +425,266 @@ class TestPageInconsistency(ModsTestCase):
         a = analyze_mods(self.conn, item).mods[0]
         self.assertEqual(a.tier, 2)
         self.assertIn("底材页面上档位一致", a.reason)
+
+
+class TestPlainCopyMixedAffix(ModsTestCase):
+    """普通复制只在完整、唯一的库证据下合并相邻混合词缀行。"""
+
+    def setUp(self) -> None:
+        super().setUp()
+        _insert_affix(
+            self.conn, page="Amulets", code="Amulet", zh="项链",
+            group="AllResistances", gen_label="后缀", ladder=_AMULET_MIXED_RES,
+            category="master", category_label="工艺工作台",
+        )
+        self.conn.commit()
+
+    @staticmethod
+    def mixed_lines(first: str = "+5% 所有元素抗性",
+                    second: str = "召唤生物获得 +7% 元素抗性") -> list[str]:
+        return [first, second]
+
+    def test_真实工艺台双行按完整区间合成一条(self):
+        item = parse_item(make_item("项链", self.mixed_lines()))
+        original = [(m.text, m.raw, list(m.values)) for m in item.all_mods]
+        report = analyze_mods(self.conn, item)
+        self.assertEqual(len(report.mods), 1)
+        mod = report.mods[0]
+        self.assertEqual(mod.mod.lookup_text,
+                         "+5% 所有元素抗性 / 召唤生物获得 +7% 元素抗性")
+        self.assertEqual(mod.mod.values, [5.0, 7.0])
+        self.assertEqual(mod.mod.raw,
+                         "+5% 所有元素抗性\n召唤生物获得 +7% 元素抗性")
+        self.assertEqual(mod.tier, 2)
+        self.assertEqual(mod.tier_source, TIER_FROM_POEDB)
+        self.assertEqual(mod.affix_type, "后缀")
+        self.assertEqual(report.suffix_count, 1)
+        self.assertAlmostEqual(mod.roll_pct or -1, (1 / 2 + 2 / 3) / 2)
+        self.assertIn("合并分析", report.warnings[0])
+        # 查库分析不得偷偷改写无库的纯文本解析结果。
+        self.assertEqual([(m.text, m.raw, m.values) for m in item.all_mods], original)
+
+    def test_第一行数值换档时必须两行同档(self):
+        item = parse_item(make_item("项链", self.mixed_lines(
+            "+8% 所有元素抗性", "召唤生物获得 +11% 元素抗性")))
+        mod = analyze_mods(self.conn, item).mods[0]
+        self.assertEqual(mod.tier, 1)
+        self.assertEqual(mod.ranges, [(7.0, 9.0), (9.0, 12.0)])
+
+    def test_两组互不重叠的混合词缀分别合并(self):
+        # POEDB 项链工艺台另一个真实定义：生命 / 固定每秒回魔。
+        _insert_affix(
+            self.conn, page="Amulets", code="Amulet", zh="项链",
+            group="LifeManaRegen", gen_label="前缀",
+            ladder=[(4, 6, 30, [[28, 33]], "+(28-33) 最大生命 / 每秒再生 2 魔力")],
+            category="master", category_label="工艺工作台",
+        )
+        report = analyze_mods(self.conn, parse_item(make_item("项链", [
+            "+30 最大生命", "每秒再生 2 魔力", *self.mixed_lines(),
+        ])))
+        self.assertEqual(len(report.mods), 2)
+        self.assertEqual([m.tier for m in report.mods], [4, 2])
+        self.assertEqual((report.prefix_count, report.suffix_count), (1, 1))
+        self.assertEqual(sum("合并分析" in w for w in report.warnings), 2)
+
+    def test_任一数值超出完整区间则保留两行且不猜T级(self):
+        item = parse_item(make_item("项链", self.mixed_lines(
+            "+5% 所有元素抗性", "召唤生物获得 +99% 元素抗性")))
+        report = analyze_mods(self.conn, item)
+        self.assertEqual(len(report.mods), 2)
+        self.assertTrue(all(m.tier is None for m in report.mods))
+        self.assertFalse(any("合并分析" in w for w in report.warnings))
+
+    def test_相邻两行都能独立成立则不擅自合并(self):
+        _insert_affix(
+            self.conn, page="Amulets", code="Amulet", zh="项链",
+            group="StandaloneAllRes", gen_label="后缀",
+            ladder=[(1, 1, 1, [[4, 6]], "+(4-6)% 所有元素抗性")],
+        )
+        _insert_affix(
+            self.conn, page="Amulets", code="Amulet", zh="项链",
+            group="StandaloneMinionRes", gen_label="后缀",
+            ladder=[(1, 1, 1, [[5, 8]], "召唤生物获得 +(5-8)% 元素抗性")],
+        )
+        report = analyze_mods(self.conn, parse_item(make_item("项链", self.mixed_lines())))
+        self.assertEqual(len(report.mods), 2)
+        self.assertEqual([m.mod.text for m in report.mods], self.mixed_lines())
+        self.assertTrue(all(m.tier is None and m.ambiguous for m in report.mods))
+        self.assertEqual(report.suffix_count, 0)
+        self.assertIn("无法唯一确认", report.warnings[0])
+
+    def test_拼接结果跨来源组有歧义则不合并(self):
+        _insert_affix(
+            self.conn, page="Amulets", code="Amulet", zh="项链",
+            group="OtherMixedRes", gen_label="后缀", ladder=_AMULET_MIXED_RES,
+            category="essence", category_label="精华",
+        )
+        report = analyze_mods(self.conn, parse_item(make_item("项链", self.mixed_lines())))
+        self.assertEqual(len(report.mods), 2)
+        self.assertTrue(all(m.tier is None for m in report.mods))
+        self.assertFalse(any("合并分析" in w for w in report.warnings))
+
+    def test_其他方向的隐式候选不能拿来合并显式行(self):
+        # POEDB 项链真实腐化隐式模板；普通显式段没有隐式旗标时不可借它定档。
+        _insert_affix(
+            self.conn, page="Amulets", code="Amulet", zh="项链",
+            group="CorruptedAttributes", gen_label="其他",
+            ladder=[(1, 1, 1, [[4, 6], [4, 6]],
+                     "力量提高 (4-6)% / 敏捷提高 (4-6)%")],
+            category="corrupted", category_label="腐化",
+        )
+        report = analyze_mods(self.conn, parse_item(make_item("项链", [
+            "力量提高 5%", "敏捷提高 5%",
+        ])))
+        self.assertEqual(len(report.mods), 2)
+        self.assertTrue(all(m.tier is None for m in report.mods))
+        self.assertFalse(any("合并分析" in w for w in report.warnings))
+
+    def test_重叠的两种分组都可行时不选择一边(self):
+        for group, text in (
+            ("FirstPair", "第 (1-3) 行 / 第 (4-6) 行"),
+            ("SecondPair", "第 (4-6) 行 / 第 (7-9) 行"),
+        ):
+            _insert_affix(
+                self.conn, page="Amulets", code="Amulet", zh="项链",
+                group=group, gen_label="前缀",
+                ladder=[(1, 1, 1, [[1, 3], [4, 6]] if group == "FirstPair"
+                         else [[4, 6], [7, 9]], text)],
+            )
+        report = analyze_mods(self.conn, parse_item(make_item(
+            "项链", ["第 2 行", "第 5 行", "第 8 行"])))
+        self.assertEqual(len(report.mods), 3)
+        self.assertTrue(all(m.tier is None for m in report.mods))
+        self.assertFalse(any("合并分析" in w for w in report.warnings))
+
+    def test_真实三行词缀也只占一个位置(self):
+        # POEDB Convoking_Wand 的真实三行定义，两个固定数字不计入可变区间。
+        _insert_affix(
+            self.conn, page="Convoking_Wand", code="Wand", zh="召集法杖",
+            group="WeaponCasterDamagePrefix", gen_label="前缀",
+            ladder=[(1, 1, 50, [[70, 74]],
+                     "使用技能时触发一个插入的法术，它有 4 秒冷却时间 / "
+                     "通过这种方式触发的法术消耗总增 150% / 法术伤害提高 (70-74)%")],
+            category="incursion", category_label="神庙",
+        )
+        lines = [
+            "使用技能时触发一个插入的法术，它有 4 秒冷却时间",
+            "通过这种方式触发的法术消耗总增 150%",
+            "法术伤害提高 72%",
+        ]
+        report = analyze_mods(self.conn, parse_item(make_item("召集法杖", lines)))
+        self.assertEqual(len(report.mods), 1)
+        self.assertEqual(report.mods[0].tier, 1)
+        self.assertEqual(report.mods[0].mod.values, [4.0, 150.0, 72.0])
+        self.assertEqual(report.prefix_count, 1)
+
+    def test_三行与后两行都能组成词缀时不猜分组(self):
+        # 真实库里这三行本身是一条隐匿词缀，但后两行也有独立词缀定义。
+        # 无词缀头的普通复制不能断言哪种分组正确。
+        _insert_affix(
+            self.conn, page="Helmets_dex", code="Helmet", zh="头部",
+            group="MinionLifeAndLimits", gen_label="前缀",
+            ladder=[(1, 1, 1, [[8, 10]],
+                     "召唤生物的最大生命提高 (8-10)% / +1 魔卫复苏数量上限 / +1 魔侍数量上限")],
+            category="veiled", category_label="隐匿",
+        )
+        _insert_affix(
+            self.conn, page="Helmets_dex", code="Helmet", zh="头部",
+            group="MinionLimits", gen_label="前缀",
+            ladder=[(1, 1, 1, [], "+1 魔卫复苏数量上限 / +1 魔侍数量上限")],
+            category="veiled", category_label="隐匿",
+        )
+        lines = ["召唤生物的最大生命提高 9%", "+1 魔卫复苏数量上限", "+1 魔侍数量上限"]
+        report = analyze_mods(self.conn, parse_item(make_item("头部", lines)))
+        self.assertEqual(len(report.mods), 3)
+        self.assertTrue(all(m.tier is None for m in report.mods))
+        self.assertFalse(any("合并分析" in w for w in report.warnings))
+
+    def test_多底材页面档位冲突不能靠拼接选定T级(self):
+        for page, tier in (("Gloves_str", 1), ("Gloves_dex", 2)):
+            _insert_affix(
+                self.conn, page=page, code="Gloves", zh="手套",
+                group="AllResistances", gen_label="后缀",
+                ladder=[(tier, 2, 30, [[4, 6], [5, 8]],
+                         "+(4-6)% 所有元素抗性 / 召唤生物获得 +(5-8)% 元素抗性")],
+                category="master", category_label="工艺工作台",
+            )
+        report = analyze_mods(self.conn, parse_item(make_item("手套", self.mixed_lines())))
+        self.assertEqual(len(report.mods), 2)
+        self.assertTrue(all(m.tier is None for m in report.mods))
+        self.assertFalse(any("合并分析" in w for w in report.warnings))
+
+    def test_多底材页面同档但前后缀方向不同也不能合并(self):
+        # T 级一致不代表容量方向一致；lookup_mod 的同档去重不会检查方向。
+        for page, direction in (("Gloves_str", "前缀"), ("Gloves_dex", "后缀")):
+            _insert_affix(
+                self.conn, page=page, code="Gloves", zh="手套",
+                group="AllResistances", gen_label=direction,
+                ladder=[(2, 2, 30, [[4, 6], [5, 8]],
+                         "+(4-6)% 所有元素抗性 / 召唤生物获得 +(5-8)% 元素抗性")],
+                category="master", category_label="工艺工作台",
+            )
+        report = analyze_mods(self.conn, parse_item(make_item("手套", self.mixed_lines())))
+        self.assertEqual(len(report.mods), 2)
+        self.assertTrue(all(m.tier is None for m in report.mods))
+        self.assertEqual((report.prefix_count, report.suffix_count), (0, 0))
+
+    def test_多底材页面同档但门槛或权重不同不借某一页的数据(self):
+        for page, ilvl in (("Gloves_str", 30), ("Gloves_dex", 60)):
+            _insert_affix(
+                self.conn, page=page, code="Gloves", zh="手套",
+                group="AllResistances", gen_label="后缀",
+                ladder=[(2, 2, ilvl, [[4, 6], [5, 8]],
+                         "+(4-6)% 所有元素抗性 / 召唤生物获得 +(5-8)% 元素抗性")],
+                category="master", category_label="工艺工作台",
+            )
+        report = analyze_mods(self.conn, parse_item(make_item("手套", self.mixed_lines())))
+        self.assertEqual(len(report.mods), 2)
+        self.assertTrue(all(m.tier is None and m.ilvl is None for m in report.mods))
+
+    def test_跨段及不同旗标不拼接(self):
+        separated = make_item("项链", [self.mixed_lines()[0],
+                                        "--------", self.mixed_lines()[1]])
+        self.assertEqual(len(analyze_mods(self.conn, parse_item(separated)).mods), 2)
+        flagged = self.mixed_lines()
+        flagged[0] += " (crafted)"
+        self.assertEqual(len(analyze_mods(
+            self.conn, parse_item(make_item("项链", flagged))).mods), 2)
+
+    def test_进阶复制和英文普通复制不走这条推断路径(self):
+        advanced = make_item("项链", [
+            '{ Suffix Modifier "One" (Tier: 2) }',
+            "+5(4-6)% 所有元素抗性",
+            '{ Suffix Modifier "Two" (Tier: 2) }',
+            "召唤生物获得 +7(5-8)% 元素抗性",
+        ])
+        report = analyze_mods(self.conn, parse_item(advanced))
+        self.assertEqual(len(report.mods), 2)
+        self.assertFalse(any("合并分析" in w for w in report.warnings))
+        english = parse_item(make_item("Amulets", [
+            "+5% to all Elemental Resistances",
+            "Minions have +7% to Elemental Resistances",
+        ], language="en"))
+        self.assertEqual(len(analyze_mods(self.conn, english).mods), 2)
+
+    def test_三种通货状态入口共享合并后的名额计数(self):
+        # 这三个入口直接调用 analyze_mods，不经过 build_report。
+        from tools.impl.craft_operation import _state_from_item_text as craft_state
+        from tools.impl.eldritch_operation import _state_from_item_text as eldritch_state
+        from tools.impl.veiled_operation import _state_from_item_text as veiled_state
+
+        raw = make_item("项链", ["+107 最大生命", *self.mixed_lines()])
+        for state_fn, db_path in (
+            (craft_state, "tools.impl.craft_operation.dbmod.get_conn"),
+            (eldritch_state, "tools.impl.eldritch_operation.dbmod.get_conn"),
+            (veiled_state, "tools.impl.veiled_operation.dbmod.get_conn"),
+        ):
+            with self.subTest(state_fn=state_fn.__module__), patch(
+                db_path, return_value=self.conn
+            ):
+                state = state_fn(raw)
+                self.assertEqual((state.prefix_count, state.suffix_count), (1, 1))
+                self.assertEqual(state.incomplete_reason, "")
 
 
 class TestReport(ModsTestCase):

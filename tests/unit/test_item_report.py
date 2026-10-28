@@ -21,7 +21,12 @@ from api.item import ItemRequest, analyze_item  # noqa: E402
 from craft.capacity import assess_affix_capacity, infer_item_kind  # noqa: E402
 from parsers.item_report import build_report, render_report  # noqa: E402
 from parsers.item_text import parse_item  # noqa: E402
-from tests.unit.test_item_mods import _insert_affix, fixture_conn, make_item  # noqa: E402
+from tests.unit.test_item_mods import (  # noqa: E402
+    _AMULET_MIXED_RES,
+    _insert_affix,
+    fixture_conn,
+    make_item,
+)
 
 #: 真实数据：项链生命组在**工艺工作台**来源下的档位，T1 只有 (41-45)。
 #: 掉落来源的 T1 是 (115-129)。两者同属 IncreasedLife 组——正是「只按组查会
@@ -80,6 +85,56 @@ class TestModSection(ReportTestCase):
     def test_全部匹配时不出现未匹配分区(self):
         text = render_report(self.report_for(["+107 最大生命"]))
         self.assertNotIn("未能确定档位的词缀", text)
+
+    def test_混合词缀报告条数容量引用与API一致(self):
+        _insert_affix(
+            self.conn, page="Amulets", code="Amulet", zh="项链",
+            group="AllResistances", gen_label="后缀", ladder=_AMULET_MIXED_RES,
+            category="master", category_label="工艺工作台",
+        )
+        raw = make_item("项链", [
+            "+107 最大生命", "+5% 所有元素抗性", "召唤生物获得 +7% 元素抗性",
+        ])
+        report = build_report(self.conn, parse_item(raw))
+        self.assertEqual(len(report.parsed.all_mods), 3)  # 原始文本保持可审计
+        self.assertEqual(len(report.mods.mods), 2)
+        self.assertEqual(report.mods.matched_count, 2)
+        self.assertEqual((report.mods.prefix_count, report.mods.suffix_count), (1, 1))
+        self.assertEqual((report.capacity.prefix_remaining,
+                          report.capacity.suffix_remaining), (2, 2))
+        self.assertEqual(len(report.citations), 2)  # 词缀页 + 容量规则
+        rendered = render_report(report)
+        self.assertIn("已确定档位 2 条 / 共 2 条；前缀 1 条、后缀 1 条", rendered)
+        self.assertIn("+5% 所有元素抗性 / 召唤生物获得 +7% 元素抗性", rendered)
+        request = ItemRequest(text=raw, render=True)
+        with patch("api.item.dbmod.get_conn", return_value=self.conn):
+            response = analyze_item(request, caller="test")
+        self.assertEqual(len(response.mods), 2)
+        self.assertEqual((response.prefix_count, response.suffix_count), (1, 1))
+        self.assertEqual(response.mods[1].tier, 2)
+        self.assertTrue(any("合并分析" in w for w in response.warnings))
+
+    def test_可合并也可独立时报告与容量都保持未知(self):
+        _insert_affix(
+            self.conn, page="Amulets", code="Amulet", zh="项链",
+            group="AllResistances", gen_label="后缀", ladder=_AMULET_MIXED_RES,
+            category="master", category_label="工艺工作台",
+        )
+        _insert_affix(
+            self.conn, page="Amulets", code="Amulet", zh="项链",
+            group="StandaloneAllRes", gen_label="后缀",
+            ladder=[(1, 1, 1, [[4, 6]], "+(4-6)% 所有元素抗性")],
+        )
+        _insert_affix(
+            self.conn, page="Amulets", code="Amulet", zh="项链",
+            group="StandaloneMinionRes", gen_label="后缀",
+            ladder=[(1, 1, 1, [[5, 8]], "召唤生物获得 +(5-8)% 元素抗性")],
+        )
+        report = self.report_for(["+5% 所有元素抗性", "召唤生物获得 +7% 元素抗性"])
+        self.assertEqual(len(report.mods.mods), 2)
+        self.assertEqual(report.mods.matched_count, 0)
+        self.assertEqual(report.capacity.status, "unknown")
+        self.assertIn("无法唯一确认的词缀分组", render_report(report))
 
 
 class TestCraftDirections(ReportTestCase):
