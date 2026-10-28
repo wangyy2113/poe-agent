@@ -30,11 +30,11 @@
 from __future__ import annotations
 
 import sqlite3
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from entities.mod_lookup import ModCandidate, ModMatch, exclusive_with, lookup_mod
 from entities.taxonomy import ModKind
-from parsers.item_text import ParsedItem, ParsedMod
+from parsers.item_text import LINE_SEP, ParsedItem, ParsedMod
 from parsers.mod_bridge import BridgeResult, bridge_english_mod
 
 #: 词缀类型 → 可在 `mod_affix.category` 里出现的来源类别。
@@ -233,15 +233,159 @@ def analyze_mods(conn: sqlite3.Connection, item: ParsedItem) -> ItemModReport:
             f"页面之间 T 级不一致的词缀会标为未匹配而不是取其一"
         )
 
-    for mod in item.all_mods:
-        report.mods.append(_analyze_one(conn, mod, ref, item))
+    mods, reconciliation_warnings = _reconcile_plain_copy_lines(conn, item, ref)
+    report.warnings.extend(reconciliation_warnings)
+    for mod, grouping_uncertain in mods:
+        if grouping_uncertain:
+            report.mods.append(ModAnalysis(
+                mod=mod,
+                affix_type=_affix_type_zh(mod.affix_type),
+                ambiguous=True,
+                reason=(
+                    "普通复制文本存在可行但无法唯一确认的词缀分组；无法确定这行是否属于相邻的"
+                    "混合词缀，因此不给 T 级。请用 Ctrl+Alt+C 进阶复制核对"
+                ),
+            ))
+        else:
+            report.mods.append(_analyze_one(conn, mod, ref, item))
     return report
+
+
+def _reconcile_plain_copy_lines(
+    conn: sqlite3.Connection, item: ParsedItem, ref: ItemClassRef
+) -> tuple[list[tuple[ParsedMod, bool]], list[str]]:
+    """仅在中文普通复制与词缀库共同支持时，合并相邻的两至三行。
+
+    解析器不查库，仍原样保留各行；这里产生分析用的副本，不改调用方的
+    ``ParsedItem``。拼接必须通过完整模板及区间校验，且来源、词缀组、
+    档位不能有歧义。各行若都能单独解释，普通复制没有证据证明它们同属
+    一条；候选拼接彼此重叠时也不选择一种分组。
+    """
+    mods = item.all_mods
+    if item.language != "zh" or item.advanced_copy or not ref.ok or len(mods) < 2:
+        return [(mod, False) for mod in mods], []
+
+    plausible: dict[tuple[int, int], ModMatch] = {}
+    eligible: set[tuple[int, int]] = set()
+    single_viable: dict[int, bool] = {}
+
+    def can_stand_alone(index: int) -> bool:
+        if index not in single_viable:
+            mod = mods[index]
+            hit = lookup_mod(
+                conn, mod.lookup_text, item_class_pages=ref.pages,
+                categories=_KIND_TO_CATEGORIES.get(mod.kind),
+            )
+            single_viable[index] = bool(hit.viable)
+        return single_viable[index]
+
+    for start in range(len(mods) - 1):
+        for width in (2, 3):
+            end = start + width
+            if end > len(mods):
+                continue
+            group = mods[start:end]
+            if any(not _can_join_plain_lines(a, b) for a, b in zip(group, group[1:])):
+                continue
+            joined = LINE_SEP.join(mod.text for mod in group)
+            hit = lookup_mod(
+                conn, joined, item_class_pages=ref.pages,
+                categories=_KIND_TO_CATEGORIES.get(group[0].kind),
+            )
+            if not hit.viable:
+                continue
+            plausible[start, end] = hit
+            # 各行都可单独成立、或完整词缀跨来源/底材仍不唯一时，
+            # 不仅不能合并，也不能再把某一行的单独匹配当成确定的 T 级。
+            interpretations = {
+                (candidate.category, candidate.correct_group, candidate.tier,
+                 candidate.tier_count, candidate.gen_label, candidate.ilvl,
+                 tuple(candidate.ranges), candidate.weight, candidate.weight_pct)
+                for candidate in hit.viable
+            }
+            if (hit.matched is not None and not hit.ambiguous
+                    and not hit.tier_varies_by_page
+                    and len(interpretations) == 1
+                    and hit.matched.gen_label in ("前缀", "后缀")
+                    and not all(can_stand_alone(i) for i in range(start, end))):
+                eligible.add((start, end))
+
+    # 任意两个候选共用一行，就无法从普通复制判断正确分组；一并弃用。
+    selected = {
+        start: (end, hit)
+        for (start, end), hit in plausible.items()
+        if (start, end) in eligible
+        if not any(
+            start < other_end and other_start < end
+            for other_start, other_end in plausible
+            if (other_start, other_end) != (start, end)
+        )
+    }
+    selected_spans = {(start, end) for start, (end, _) in selected.items()}
+    uncertain_indices = {
+        index
+        for (start, end) in plausible if (start, end) not in selected_spans
+        for index in range(start, end)
+    }
+
+    result: list[tuple[ParsedMod, bool]] = []
+    warnings: list[str] = []
+    if uncertain_indices:
+        warnings.append(
+            "普通复制中有相邻行可组成词缀，但分组或来源无法唯一确认；"
+            "相关行的档位保持未匹配。"
+            "请用 Ctrl+Alt+C 进阶复制核对"
+        )
+    index = 0
+    while index < len(mods):
+        if index in selected:
+            end, hit = selected[index]
+            group = mods[index:end]
+            left = group[0]
+            joined = LINE_SEP.join(mod.text for mod in group)
+            result.append((replace(
+                left,
+                text=joined,
+                raw="\n".join(mod.raw for mod in group),
+                values=[value for mod in group for value in mod.values],
+                ranges=[span for mod in group for span in mod.ranges],
+                lines=[mod.text for mod in group],
+            ), False))
+            candidate = hit.matched
+            assert candidate is not None
+            warnings.append(
+                f"普通复制中将相邻 {len(group)} 行「{joined}」按 POEDB "
+                f"{candidate.category_label or candidate.category} 词缀合并分析；"
+                "原文仍保留。若游戏显示为独立词缀，请用 Ctrl+Alt+C 进阶复制核对"
+            )
+            index = end
+        else:
+            result.append((mods[index], index in uncertain_indices))
+            index += 1
+    return result, warnings
+
+
+def _can_join_plain_lines(left: ParsedMod, right: ParsedMod) -> bool:
+    """分段、类型与客户端旗标必须一致；已有词缀头或多行信息不重组。"""
+    return (
+        left.kind in (ModKind.EXPLICIT, ModKind.CRAFTED, ModKind.FRACTURED)
+        and left.kind == right.kind
+        and left.section == right.section
+        and left.flags == right.flags
+        and not left.is_multiline and not right.is_multiline
+        and left.tier is None and right.tier is None
+        and left.tier_rank is None and right.tier_rank is None
+        and not left.affix_type and not right.affix_type
+        and not left.affix_name and not right.affix_name
+    )
 
 
 def _analyze_one(
     conn: sqlite3.Connection, mod: ParsedMod, ref: ItemClassRef, item: ParsedItem
 ) -> ModAnalysis:
-    out = ModAnalysis(mod=mod)
+    # 进阶复制的 Prefix/Suffix 头是游戏直接给的；即使档位查不到，容量计数
+    # 仍应使用这个方向，不依赖 POEDB 是否收录整条混合词缀。
+    out = ModAnalysis(mod=mod, affix_type=_affix_type_zh(mod.affix_type))
 
     # ── 路径 1：装备文本自带 T 级（进阶复制）──
     if mod.tier is not None:
@@ -292,22 +436,11 @@ def _analyze_one(
 
 
 def _lookup(conn: sqlite3.Connection, mod: ParsedMod, ref: ItemClassRef) -> ModMatch:
-    """查库。多行词缀先按拼接文本查，查不到再退回单行。
-
-    退回是必要的：混合词缀在库里存成一条（`A / B`），但普通复制看不出两行属于
-    同一条词缀，此时 `lookup_text` 就是单行，拼接查询会失配。
-    """
+    """按整条词缀查库；多行整条失配时不可用首行冒充整条的 T 级。"""
     categories = _KIND_TO_CATEGORIES.get(mod.kind)
-    hit = lookup_mod(
+    return lookup_mod(
         conn, mod.lookup_text, item_class_pages=ref.pages, categories=categories
     )
-    if not hit.ok and mod.is_multiline:
-        first = lookup_mod(
-            conn, mod.lines[0], item_class_pages=ref.pages, categories=categories
-        )
-        if first.ok:
-            return first
-    return hit
 
 
 def _fill_from_match(out: ModAnalysis, hit: ModMatch, mod: ParsedMod) -> None:
