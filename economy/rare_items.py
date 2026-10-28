@@ -50,6 +50,8 @@ class RareComparableEstimate:
     explicit_mod_count: int
     mapped_mod_count: int
     comparison_quality: str
+    quality_filter: int | None = None
+    socket_group_sizes: tuple[int, ...] | None = None
     mapped_stats: tuple[MappedTradeStat, ...] = field(default_factory=tuple)
     unmapped_mods: tuple[str, ...] = field(default_factory=tuple)
     quote: TradeQuote | None = None
@@ -61,6 +63,9 @@ class RareComparableEstimate:
     def as_dict(self) -> dict:
         out = asdict(self)
         out["available"] = self.available
+        out["socket_group_sizes"] = (
+            list(self.socket_group_sizes) if self.socket_group_sizes is not None else None
+        )
         out["mapped_stats"] = [item.as_dict() for item in self.mapped_stats]
         out["unmapped_mods"] = list(self.unmapped_mods)
         out["quote"] = asdict(self.quote) if self.quote is not None else None
@@ -156,11 +161,12 @@ def map_trade_stats(
     official_stats: dict[str, str],
 ) -> tuple[tuple[MappedTradeStat, ...], tuple[str, ...]]:
     """映射可搜索显式词缀；任何歧义、缺 hash 或官方字典缺项都归入未映射。"""
-    explicit_ids = {id(mod) for mod in item.explicits}
     mapped: list[MappedTradeStat] = []
     unmapped: list[str] = []
     for analysis in mod_report.mods:
-        if id(analysis.mod) not in explicit_ids or analysis.mod.kind not in {
+        # 普通复制中的多行词缀可能在 analyze_mods 中被合成一条新对象。
+        # 这里按规范化后的词缀类型计数，不用原 ParsedMod 的对象身份。
+        if analysis.mod.kind not in {
             ModKind.EXPLICIT,
             ModKind.CRAFTED,
             ModKind.FRACTURED,
@@ -194,20 +200,37 @@ class RareComparableService:
         self.client = client
         self.now = now or (lambda: datetime.now(timezone.utc))
 
-    def estimate(self, item_text: str, *, league: str | None = None) -> RareComparableEstimate:
+    def estimate(
+        self, item_text: str, *, league: str | None = None,
+        match_quality: bool = False, match_sockets: bool = False,
+    ) -> RareComparableEstimate:
         try:
             item = parse_item(item_text)
         except ItemParseError as exc:
             raise InvalidRareComparable(exc.reason) from exc
         self._validate_item(item)
+        quality_filter = None
+        if match_quality:
+            if item.quality is None:
+                raise InvalidRareComparable("要求品质匹配时，装备文本必须明确给出品质")
+            if not 0 <= item.quality <= 100:
+                raise InvalidRareComparable("品质必须是 0–100 的整数百分比")
+            quality_filter = item.quality
+        socket_groups = None
+        if match_sockets:
+            if not item.sockets.raw or not item.sockets.groups:
+                raise InvalidRareComparable("要求插槽连接匹配时，装备文本必须明确给出插槽")
+            socket_groups = tuple(sorted(len(group) for group in item.sockets.groups))
+            if item.sockets.total > 6:
+                raise InvalidRareComparable("当前只支持总数不超过 6 的插槽连接组")
         base_type_en = self._resolve_base_type(item.base_type)
         official_stats = self.client.explicit_stats()
         mod_report = analyze_mods(self.conn, item)
         mapped, unmapped = map_trade_stats(self.conn, item, mod_report, official_stats)
-        explicit_count = len([
-            mod for mod in item.explicits
-            if mod.kind in {ModKind.EXPLICIT, ModKind.CRAFTED, ModKind.FRACTURED}
-        ])
+        explicit_count = sum(
+            analysis.mod.kind in {ModKind.EXPLICIT, ModKind.CRAFTED, ModKind.FRACTURED}
+            for analysis in mod_report.mods
+        )
         if not mapped:
             return RareComparableEstimate(
                 status="unmapped",
@@ -226,6 +249,8 @@ class RareComparableService:
                 explicit_mod_count=explicit_count,
                 mapped_mod_count=0,
                 comparison_quality="none",
+                quality_filter=quality_filter,
+                socket_group_sizes=socket_groups,
                 unmapped_mods=unmapped,
             )
 
@@ -237,6 +262,8 @@ class RareComparableService:
             int(item.item_level or 0),
             item.flags.corrupted,
             stat_ids,
+            quality_percent=quality_filter,
+            socket_group_sizes=socket_groups,
         )
         quality = "full" if not unmapped and len(mapped) == explicit_count else "partial"
         status = "ready" if quote.sufficient else "insufficient_samples"
@@ -250,6 +277,11 @@ class RareComparableService:
         )
         if quality == "partial":
             reason += "；存在未映射显式词缀，结果只能视为部分可比"
+        if quality_filter is not None or socket_groups is not None:
+            reason += (
+                "；已对抓取的挂单逐件核对请求的品质/连接组字段，"
+                "字段缺失或不符的挂单已剔除；词缀数值与其他装备属性仍未归一化"
+            )
         return RareComparableEstimate(
             status=status,
             reason=reason,
@@ -264,6 +296,8 @@ class RareComparableService:
             explicit_mod_count=explicit_count,
             mapped_mod_count=len(mapped),
             comparison_quality=quality,
+            quality_filter=quality_filter,
+            socket_group_sizes=socket_groups,
             mapped_stats=mapped,
             unmapped_mods=unmapped,
             quote=quote,

@@ -116,6 +116,8 @@ class MaterialCostResponse(BaseModel):
 class RareComparableRequest(BaseModel):
     item_text: str = Field(min_length=1, max_length=20000)
     league: str | None = Field(default=None, max_length=100)
+    match_quality: bool = False
+    match_sockets: bool = False
 
 
 class RareComparableResponse(BaseModel):
@@ -133,6 +135,8 @@ class RareComparableResponse(BaseModel):
     explicit_mod_count: int
     mapped_mod_count: int
     comparison_quality: str
+    quality_filter: int | None
+    socket_group_sizes: tuple[int, ...] | None
     mapped_stats: list[dict[str, Any]]
     unmapped_mods: list[str]
     quote: dict[str, Any] | None
@@ -237,7 +241,10 @@ def rare_comparables(
     req: RareComparableRequest, _caller: str = Depends(require_user)
 ) -> RareComparableResponse:
     try:
-        result = rare_service_from_config().estimate(req.item_text, league=req.league)
+        result = rare_service_from_config().estimate(
+            req.item_text, league=req.league,
+            match_quality=req.match_quality, match_sockets=req.match_sockets,
+        )
     except InvalidRareComparable as exc:
         raise HTTPException(status_code=422, detail={
             "error": "invalid_rare_comparable", "reason": str(exc),

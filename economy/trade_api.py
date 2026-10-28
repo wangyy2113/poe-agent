@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import math
+import re
 import statistics
 import threading
 import time
@@ -63,6 +64,11 @@ class TradeQuote:
     requested_quantity: float = 1.0
     insufficient_stock_filtered_count: int = 0
     stale_listing_filtered_count: int = 0
+    quality_filter_percent: int | None = None
+    socket_group_sizes: tuple[int, ...] | None = None
+    quality_mismatch_filtered_count: int = 0
+    socket_mismatch_filtered_count: int = 0
+    structure_missing_filtered_count: int = 0
 
     @property
     def sufficient(self) -> bool:
@@ -87,6 +93,47 @@ def _parse_time(value: Any) -> datetime | None:
     except ValueError:
         return None
     return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+
+
+def _listing_quality(item: dict[str, Any]) -> int | None:
+    """仅识别 GGG fetch 中明确显示的整数 Quality；缺失不当作 0。"""
+    properties = item.get("properties")
+    if not isinstance(properties, list):
+        return None
+    found: list[int] = []
+    for prop in properties:
+        if not isinstance(prop, dict) or str(prop.get("name") or "").strip() != "Quality":
+            continue
+        values = prop.get("values")
+        if not isinstance(values, list) or len(values) != 1:
+            return None
+        entry = values[0]
+        if not isinstance(entry, list) or not entry or not isinstance(entry[0], str):
+            return None
+        match = re.fullmatch(r"\+?(\d{1,3})%", entry[0].strip())
+        if match is None:
+            return None
+        quality = int(match.group(1))
+        if quality > 100:
+            return None
+        found.append(quality)
+    return found[0] if len(found) == 1 else None
+
+
+def _listing_socket_groups(item: dict[str, Any]) -> tuple[int, ...] | None:
+    """只比较连接组尺寸，不把插槽颜色或位置伪装成相同。"""
+    sockets = item.get("sockets")
+    if not isinstance(sockets, list) or not sockets:
+        return None
+    groups: dict[int, int] = {}
+    for socket in sockets:
+        if not isinstance(socket, dict):
+            return None
+        group = socket.get("group")
+        if isinstance(group, bool) or not isinstance(group, int) or group < 0:
+            return None
+        groups[group] = groups.get(group, 0) + 1
+    return tuple(sorted(groups.values()))
 
 
 def _iso(value: datetime) -> str:
@@ -563,6 +610,9 @@ class TradeApiClient:
         item_level: int,
         corrupted: bool,
         stat_ids: list[str],
+        *,
+        quality_percent: int | None = None,
+        socket_group_sizes: tuple[int, ...] | None = None,
     ) -> TradeQuote:
         """查询同底材、同物等/腐化状态、同时具备指定显式 stat 的稀有挂单。
 
@@ -576,6 +626,22 @@ class TradeApiClient:
             raise TradeApiError("稀有装备可比查询需要精确英文底材和 1–100 物品等级")
         if not unique_stats:
             raise TradeApiError("稀有装备可比查询至少需要一个官方显式 stat")
+        if quality_percent is not None and (
+            isinstance(quality_percent, bool) or not isinstance(quality_percent, int)
+            or not 0 <= quality_percent <= 100
+        ):
+            raise TradeApiError("品质筛选必须是 0–100 的整数百分比")
+        if socket_group_sizes is not None and (
+            not isinstance(socket_group_sizes, tuple)
+            or not socket_group_sizes
+            or any(isinstance(size, bool) or not isinstance(size, int) or size < 1
+                   for size in socket_group_sizes)
+            or sum(socket_group_sizes) > 6
+        ):
+            raise TradeApiError("插槽筛选必须是总数不超过 6 的正整数连接组")
+        normalized_socket_groups = (
+            tuple(sorted(socket_group_sizes)) if socket_group_sizes is not None else None
+        )
         official_stats = self.explicit_stats()
         unknown = [stat_id for stat_id in unique_stats if stat_id not in official_stats]
         if unknown:
@@ -642,6 +708,9 @@ class TradeApiClient:
         cross_league = 0
         invalid = 0
         unsupported_currency = 0
+        quality_mismatch = 0
+        socket_mismatch = 0
+        structure_missing = 0
         chaos_rows: list[tuple[float, datetime]] = []
         divine_rows: list[tuple[float, datetime]] = []
         for row in fetched:
@@ -666,6 +735,22 @@ class TradeApiClient:
             ):
                 invalid += 1
                 continue
+            if quality_percent is not None:
+                observed_quality = _listing_quality(item)
+                if observed_quality is None:
+                    structure_missing += 1
+                    continue
+                if observed_quality != quality_percent:
+                    quality_mismatch += 1
+                    continue
+            if normalized_socket_groups is not None:
+                observed_groups = _listing_socket_groups(item)
+                if observed_groups is None:
+                    structure_missing += 1
+                    continue
+                if observed_groups != normalized_socket_groups:
+                    socket_mismatch += 1
+                    continue
             indexed = _parse_time(listing.get("indexed"))
             price_data = listing.get("price")
             if indexed is None or not isinstance(price_data, dict):
@@ -736,11 +821,21 @@ class TradeApiClient:
             divine_chaos_rate=divine_rate,
             conversion_sample_count=conversion_samples,
             conversion_status=conversion_status,
+            quality_filter_percent=quality_percent,
+            socket_group_sizes=normalized_socket_groups,
+            quality_mismatch_filtered_count=quality_mismatch,
+            socket_mismatch_filtered_count=socket_mismatch,
+            structure_missing_filtered_count=structure_missing,
             sample_scope=(
+                f"按价格升序最多抓取前 {self.unique_max_results} 条结果；"
                 f"稀有、精确底材、物等 {int(item_level)}、"
                 f"{'已腐化' if corrupted else '未腐化'}、同时具备 {len(unique_stats)} 个"
-                "已映射显式 stat；只约束词缀存在，不归一化词缀数值、隐式/附魔、"
-                "品质、插槽或链接"
+                "已映射显式 stat；只约束词缀存在，不归一化词缀数值、隐式/附魔"
+                + (f"；品质精确匹配 {quality_percent}%" if quality_percent is not None
+                   else "；品质未匹配")
+                + (f"；连接组尺寸精确匹配 {list(normalized_socket_groups)}"
+                   if normalized_socket_groups is not None else "；插槽/链接未匹配")
+                + "；不是成交价"
             ),
             source_url=f"https://www.pathofexile.com/trade/search/{quote(league, safe='')}/{search_id}",
         )
