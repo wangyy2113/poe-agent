@@ -93,6 +93,8 @@ class ItemResponse(BaseModel):
     item_class: str
     #: 词缀档位比对用的底材类别页面（可能多个）
     item_class_pages: list[str]
+    #: page/code/zh 是类别解析；base 是具体底材把页定为唯一，base_* 为冲突或未知
+    page_resolution: str
     rarity: str
     name: str
     base_type: str
@@ -147,6 +149,7 @@ def analyze_item(req: ItemRequest, caller: str = Depends(require_user)) -> ItemR
         advanced_copy=parsed.advanced_copy,
         item_class=parsed.item_class,
         item_class_pages=report.mods.item_class.pages,
+        page_resolution=report.mods.item_class.matched_by,
         rarity=parsed.rarity.value,
         name=parsed.name,
         base_type=parsed.base_type,

@@ -23,17 +23,19 @@
   - 类别名解析不出对应的 POEDB 页面
   - 模板召回为空（库里没这条词缀）
   - 召回了但没有一条的数值区间吻合（可能被品质/工艺台改过）
-  - 同类别下不同底材页面给出不同 T 级（底材库未入库，定不到页面）
-  - 隐式词缀：它来自底材，而底材库尚未入库
+  - 同类别下不同底材页面给出不同 T 级，而输入底材未能逐字桥接到具体页面
+  - 隐式词缀：尚未接入底材详情页的 T 级与区间反查
 """
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from dataclasses import dataclass, field, replace
 
 from entities.mod_lookup import ModCandidate, ModMatch, exclusive_with, lookup_mod
-from entities.taxonomy import ModKind
+from entities.taxonomy import ModKind, Source
+from kb.sources.poedb_mods import parse_ranges, strict_template_regex, templatize
 from parsers.item_text import LINE_SEP, ParsedItem, ParsedMod
 from parsers.mod_bridge import BridgeResult, bridge_english_mod
 
@@ -65,19 +67,34 @@ TIER_SOURCE_LABEL = {
 
 
 @dataclass
+class BasePageEvidence:
+    """逐字底材名的双来源桥：PoB 标签定属性页，POEDB 名称定中文对应。"""
+
+    name_en: str
+    name_zh: str
+    page: str
+    pob_url: str
+    poedb_url: str
+    implicit_text: str = ""
+
+
+@dataclass
 class ItemClassRef:
     """装备类别 → POEDB 词缀页面。
 
     `pages` 可能多于一个：护甲类的一个类别按属性需求拆成多个页面，
-    而装备文本只给类别名，落到哪个页面取决于底材（底材库尚未入库）。
+    若装备文本只给类别名，落到哪个页面取决于具体底材；已入库底材可缩窄。
     """
 
     raw: str
     pages: list[str] = field(default_factory=list)
     name_zh: str = ""
     code: str = ""
-    matched_by: str = ""  # page / code / zh
+    matched_by: str = ""  # page / code / zh / base / base_candidates / base_conflict / base_unmapped
     reason: str = ""
+    base_type: str = ""
+    base_evidence: list[BasePageEvidence] = field(default_factory=list)
+    base_note: str = ""
 
     @property
     def ok(self) -> bool:
@@ -110,6 +127,8 @@ class ModAnalysis:
     #: 宽松模板，用于识别「同一条词缀的其他档位」
     loose_template: str = ""
     url: str = ""
+    evidence_source: str = Source.POEDB.value
+    evidence_priority: int = 1
     ambiguous: bool = False
     alternatives: list[str] = field(default_factory=list)
     reason: str = ""
@@ -218,15 +237,143 @@ def resolve_item_class(conn: sqlite3.Connection, raw_class: str) -> ItemClassRef
     return ref
 
 
+# ── 具体底材消歧 ────────────────────────────────────────────
+
+_ARMOUR_PAGE_SUFFIX = {
+    "str_armour": "str",
+    "dex_armour": "dex",
+    "int_armour": "int",
+    "str_dex_armour": "str_dex",
+    "str_int_armour": "str_int",
+    "dex_int_armour": "dex_int",
+    "str_dex_int_armour": "str_dex_int",
+}
+_ARMOUR_BASE_CATEGORIES = {"body", "gloves", "helmet", "boots", "shield"}
+
+
+def _base_modifier_page(row: sqlite3.Row) -> str | None:
+    """把已入库的 PoB 底材标签映射到 POEDB 词缀页；未知标签不猜。"""
+    poedb_page = str(row["poedb_page"] or "")
+    if not poedb_page:
+        return None
+    if row["category_key"] not in _ARMOUR_BASE_CATEGORIES:
+        return poedb_page
+    try:
+        tags = json.loads(row["tags"] or "[]")
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(tags, list):
+        return None
+    armour_tags = [tag for tag in _ARMOUR_PAGE_SUFFIX if tag in tags]
+    if len(armour_tags) != 1:
+        return None
+    tag = armour_tags[0]
+    # 胸甲导入时已明确记录标签与 modifier_page；再次对照，不能容忍漂移。
+    if row["armour_tag"] and row["armour_tag"] != tag:
+        return None
+    page = f"{poedb_page}_{_ARMOUR_PAGE_SUFFIX[tag]}"
+    if row["modifier_page"] and row["modifier_page"] != page:
+        return None
+    return page
+
+
+def refine_item_class_with_base(
+    conn: sqlite3.Connection, ref: ItemClassRef, base_type: str
+) -> ItemClassRef:
+    """用逐字底材桥把类别候选页缩到可证明的页；冲突时不给 T 级。
+
+    中文名并不唯一（当前库中四个重名），但若同名记录全都指向同一词缀页，
+    页面依然唯一。两源的武器类别英文拼法不完全相同，故以实际词缀页交集
+    判断是否兼容。类别页与底材页冲突、底材没有可验证的页时，
+    不退回跨页查询：那会掩盖矛盾并给出看似可信的档位。
+    """
+    base_type = base_type.strip()
+    if not base_type or not ref.ok:
+        return ref
+    rows = conn.execute(
+        """SELECT name_en,name_zh,item_class,category_key,poedb_page,
+                  armour_tag,modifier_page,tags,pob_url,poedb_url,implicit_text
+           FROM pob_base_item
+           WHERE name_en = ? COLLATE NOCASE OR name_zh = ?
+           ORDER BY base_id""",
+        (base_type, base_type),
+    ).fetchall()
+    if not rows:
+        return ref
+    # 药剂在 PoB 中统一叫 Flask，而 POEDB 词缀按 Life/Mana/Utility
+    # 乃至 Iron/Silver 拆页；当前没有逐底材的可靠桥，保留既有类别查询。
+    if all(row["category_key"] == "flask" for row in rows):
+        return ref
+    ref.base_type = base_type
+    resolved = [(row, _base_modifier_page(row)) for row in rows]
+    compatible = [(row, page) for row, page in resolved if page in ref.pages]
+    if not compatible:
+        if any(page is None for _, page in resolved):
+            ref.matched_by = "base_unmapped"
+            ref.reason = (
+                f"已识别底材「{base_type}」，但其属性标签无法唯一映射到类别"
+                "词缀页面；不给词缀 T 级"
+            )
+        else:
+            ref.matched_by = "base_conflict"
+            ref.reason = (
+                f"底材「{base_type}」的词缀页不属于装备文本类别「{ref.raw}」；"
+                "类别与底材矛盾，不给词缀 T 级"
+            )
+        ref.pages = []
+        return ref
+
+    # 同名且同类别的另一条记录若无可核实页面，不能假定用户一定指向已映射那条。
+    compatible_class = {str(row["item_class"]) for row, _ in compatible}
+    if any(page is None and str(row["item_class"]) in compatible_class
+           for row, page in resolved):
+        ref.pages = []
+        ref.reason = f"同名底材「{base_type}」中有记录无法映射到词缀页，不能选另一条代替"
+        ref.matched_by = "base_unmapped"
+        return ref
+
+    evidence: list[BasePageEvidence] = []
+    for row, page in compatible:
+        assert page is not None
+        evidence.append(BasePageEvidence(
+            name_en=str(row["name_en"]), name_zh=str(row["name_zh"]),
+            page=page, pob_url=str(row["pob_url"]),
+            poedb_url=str(row["poedb_url"]),
+            implicit_text=str(row["implicit_text"] or ""),
+        ))
+
+    old_page_count = len(ref.pages)
+    ref.pages = sorted({item.page for item in evidence})
+    ref.base_evidence = evidence
+    ref.matched_by = "base" if len(ref.pages) == 1 else "base_candidates"
+    if old_page_count > len(ref.pages):
+        ref.base_note = (
+            f"按逐字底材「{base_type}」的 PoB 属性标签与 POEDB 名称桥，"
+            f"将词缀查询从 {old_page_count} 个类别页面缩到 {len(ref.pages)} 个页面"
+        )
+    if len(evidence) > 1:
+        shared = (
+            f"底材名「{base_type}」对应 {len(evidence)} 条注册记录；"
+            f"它们的词缀页{'一致' if len(ref.pages) == 1 else '不同'}，"
+            "没有擅自选择某一件具体底材"
+        )
+        ref.base_note = f"{ref.base_note}；{shared}" if ref.base_note else shared
+    return ref
+
+
 # ── 词缀匹配 ────────────────────────────────────────────────
 
 
 def analyze_mods(conn: sqlite3.Connection, item: ParsedItem) -> ItemModReport:
     """给装备上的每条词缀定 T 级与数值范围。"""
-    ref = resolve_item_class(conn, item.item_class)
+    ref = refine_item_class_with_base(
+        conn, resolve_item_class(conn, item.item_class), item.base_type
+    )
     report = ItemModReport(item_class=ref)
     if ref.reason:
         report.warnings.append(ref.reason)
+    if ref.base_note:
+        report.warnings.append(ref.base_note)
     if ref.matched_by in ("code", "zh") and len(ref.pages) > 1:
         report.warnings.append(
             f"类别「{ref.raw}」对应 {len(ref.pages)} 个底材页面，已跨页查询；"
@@ -416,8 +563,11 @@ def _analyze_one(
         return out
 
     # ── 隐式词缀：来自底材，不在词缀库里 ──
-    if mod.kind in (ModKind.IMPLICIT, ModKind.CORRUPTED_IMPLICIT):
-        out.reason = "隐式词缀由底材决定，底材库尚未入库，无法给出 T 级与数值范围"
+    if mod.kind is ModKind.IMPLICIT:
+        _fill_base_implicit(out, mod, ref, item)
+        return out
+    if mod.kind is ModKind.CORRUPTED_IMPLICIT:
+        out.reason = "腐化隐式不等于底材固有隐式；当前没有可核实的 T 级与区间，不能借底材词条推断"
         return out
 
     if not ref.ok:
@@ -433,6 +583,51 @@ def _analyze_one(
     hit = _lookup(conn, mod, ref)
     _fill_from_match(out, hit, mod)
     return out
+
+
+def _fill_base_implicit(
+    out: ModAnalysis, mod: ParsedMod, ref: ItemClassRef, item: ParsedItem
+) -> None:
+    """只核实英文底材固有隐式的原文和可变区间，不从 PoB 文本猜 T 级。"""
+    if not ref.ok and ref.reason:
+        out.reason = f"{ref.reason}；隐式区间也不能据此核实"
+        return
+    out.reason = (
+        "隐式词缀的 T 级尚无底材详情页证据；当前未能从已核实底材的英文固有"
+        "隐式原文确定区间"
+    )
+    if item.language != "en" or not ref.base_evidence:
+        return
+    definitions = {base.implicit_text for base in ref.base_evidence}
+    if len(definitions) != 1:
+        return
+    definition = next(iter(definitions))
+    if not definition:
+        return
+    full_text = LINE_SEP.join(part.strip() for part in definition.splitlines() if part.strip())
+    # 底材定义是多行时，绝不能让装备复制中的单独首行继承整条的区间。
+    if not full_text or (LINE_SEP in full_text and not mod.is_multiline):
+        return
+    ranges = parse_ranges(full_text)
+    match = strict_template_regex(templatize(full_text)).match(mod.lookup_text)
+    if match is None:
+        return
+    rolled_values = [float(value) for value in match.groups()]
+    if len(rolled_values) != len(ranges) or any(
+        not lo <= value <= hi
+        for value, (lo, hi) in zip(rolled_values, ranges, strict=True)
+    ):
+        return
+    out.ranges = ranges
+    out.roll_pct = _roll_pct(rolled_values, ranges)
+    out.source_label = "PoB 底材固有隐式"
+    out.url = ref.base_evidence[0].pob_url
+    out.evidence_source = Source.POB.value
+    out.evidence_priority = 2
+    out.reason = (
+        "英文隐式原文与已核实底材的 PoB 定义逐字吻合，全部可变数值落在其区间内；"
+        "PoB 未给隐式 T 级，故仍标未匹配 T 级"
+    )
 
 
 def _lookup(conn: sqlite3.Connection, mod: ParsedMod, ref: ItemClassRef) -> ModMatch:

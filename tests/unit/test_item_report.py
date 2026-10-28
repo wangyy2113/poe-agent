@@ -24,6 +24,7 @@ from parsers.item_text import parse_item  # noqa: E402
 from tests.unit.test_item_mods import (  # noqa: E402
     _AMULET_MIXED_RES,
     _insert_affix,
+    _insert_base,
     fixture_conn,
     make_item,
 )
@@ -135,6 +136,67 @@ class TestModSection(ReportTestCase):
         self.assertEqual(report.mods.matched_count, 0)
         self.assertEqual(report.capacity.status, "unknown")
         self.assertIn("无法唯一确认的词缀分组", render_report(report))
+
+    def test_具体底材页面出处在报告与API中可核对(self):
+        _insert_base(
+            self.conn, name_en="Vaal Gauntlets", name_zh="瓦尔护手",
+            category="gloves", poedb_page="Gloves", item_class="Gloves",
+            tags=["armour", "gloves", "str_armour"],
+        )
+        raw = make_item("手套", ["+107 最大生命"], base_type="瓦尔护手")
+        report = build_report(self.conn, parse_item(raw))
+        self.assertEqual(report.mods.item_class.pages, ["Gloves_str"])
+        self.assertEqual(report.mods.item_class.matched_by, "base")
+        urls = {citation.url for citation in report.citations}
+        self.assertIn("https://poedb.tw/cn/Vaal_Gauntlets", urls)
+        self.assertIn(
+            "https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/test/Vaal_Gauntlets",
+            urls,
+        )
+        rendered = render_report(report)
+        self.assertIn("词缀查询页：Gloves_str", rendered)
+        self.assertIn("PoB 标签与 POEDB 名称桥", rendered)
+        request = ItemRequest(text=raw, render=False)
+        with patch("api.item.dbmod.get_conn", return_value=self.conn):
+            response = analyze_item(request, caller="test")
+        self.assertEqual(response.item_class_pages, ["Gloves_str"])
+        self.assertEqual(response.page_resolution, "base")
+        self.assertTrue(any("Vaal_Gauntlets" in c.url for c in response.citations))
+
+    def test_隐式区间有据时报告展示但T级仍未知(self):
+        _insert_affix(
+            self.conn, page="Body_Armours_str", code="Body Armour", zh="胸甲",
+            group="BodyLife", gen_label="前缀",
+            ladder=[(1, 1, 1, [[115, 129]], "+(115-129) 最大生命")],
+        )
+        _insert_base(
+            self.conn, name_en="Astral Plate", name_zh="星芒战铠",
+            category="body", poedb_page="Body_Armours", item_class="Body Armour",
+            tags=["armour", "body_armour", "str_armour"],
+            armour_tag="str_armour", modifier_page="Body_Armours_str",
+            implicit_text="+(8-12)% to all Elemental Resistances",
+        )
+        raw = make_item(
+            "Body Armours", ["+10% to all Elemental Resistances (implicit)"],
+            language="en", base_type="Astral Plate",
+        )
+        report = build_report(self.conn, parse_item(raw))
+        self.assertEqual(report.mods.matched_count, 0)
+        implicit_citation = next(
+            citation for citation in report.citations if "Astral_Plate" in citation.url
+            and "github.com" in citation.url
+        )
+        self.assertEqual(implicit_citation.source, "Path of Building")
+        self.assertEqual(implicit_citation.priority, 2)
+        rendered = render_report(report)
+        self.assertIn("**未匹配**", rendered)
+        self.assertIn("PoB 底材固有隐式；区间 8-12；roll 50%", rendered)
+        self.assertIn("PoB 未给隐式 T 级", rendered)
+        with patch("api.item.dbmod.get_conn", return_value=self.conn):
+            response = analyze_item(ItemRequest(text=raw, render=False), caller="test")
+        self.assertIsNone(response.mods[0].tier)
+        self.assertEqual(response.mods[0].ranges, [(8.0, 12.0)])
+        self.assertEqual(response.mods[0].roll_pct, 0.5)
 
 
 class TestCraftDirections(ReportTestCase):
