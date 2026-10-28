@@ -149,7 +149,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 2416 项，秒级
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 2418 项，秒级
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选
@@ -1606,3 +1606,15 @@ HTTP 全程 200，控制台无错误。普通装备卡片、chunk、别名与 FT
 `GET /conflicts/{id}` 使用普通用户鉴权，按正整数 ID 精确读取；不存在返回 404。单侧
 原值上限 16000 字，返回原始长度与截断标记。只有未解决的 confirmed 才标记
 `can_support_facts=true`；review 和已解决历史记录只能供核对，不裁决哪一侧正确。
+
+## 第一百三十轮：Boss 风险网页必须展示未知，不能把护甲空白当零
+
+聊天页“Boss 命中风险”实验台复用 `POST /boss/audit` 和 `POST /boss/threshold`。
+用户显式填写防御池、敌人等级与连续命中次数；四抗和护甲允许留空，审计把相应技能保留
+为未知。已评估项与未评估项分区，只有已评估项按后端风险名次展示；顶层统一池子门槛
+明确只适用于已评估项。物理技能护甲空白时不开放门槛请求，避免后端 `armour=0`
+默认值被误解为用户防御快照。基础物理减伤 0%、承伤倍率 1 和压制 0% 在表单明示。
+
+页面从不自动读取 PoB Build、推断 Boss 连招或宣称整场生存。输入变更、关窗和换 API Key
+会使请求代际失效；所有服务端文字只写 `textContent`。真实 JS DOM 测试覆盖这些边界，
+未通过浏览器截图核对布局。

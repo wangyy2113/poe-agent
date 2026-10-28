@@ -51,6 +51,7 @@
   <div class="hint">
     答案中的角标可点击跳转到来源。标为「已拦截」的句子是模型试图输出的无据内容，已被出口校验挡下。
     <button id="conflict-open" type="button" class="hint-link">跨来源核对</button>
+    <button id="boss-open" type="button" class="hint-link">Boss 命中风险</button>
     <button id="economy-open" type="button" class="hint-link">经济分析</button>
     <button id="rare-open" type="button" class="hint-link">查询稀有装可比挂单</button>
     <button id="unique-history-open" type="button" class="hint-link">浏览唯一装备历史变体</button>
@@ -167,6 +168,41 @@
     </div>
     <section id="conflict-detail" class="conflict-detail" hidden aria-label="单条来源核对详情"></section>
     <p class="conflict-boundary">台账只并列展示来源原值和审计状态；待核对差异不是已确认冲突，也不裁决游戏事实。</p>
+  </div>
+</dialog>
+
+<dialog id="boss-dialog" class="boss-dialog" aria-labelledby="boss-title">
+  <div class="boss-panel">
+    <div class="boss-heading">
+      <div>
+        <h2 id="boss-title">Boss 命中风险实验台</h2>
+        <p>只比较当前收录的 PoB 技能预设。每个字段是本次假设，不会从角色或 Boss 阶段猜测。</p>
+      </div>
+      <button id="boss-close" type="button" class="ghost" aria-label="关闭 Boss 命中风险">关闭</button>
+    </div>
+    <form id="boss-form" class="boss-form">
+      <div class="boss-fields">
+        <label>敌人等级 <input id="boss-level" type="number" min="1" max="100" step="1" value="84" required></label>
+        <label>本次防御池 <input id="boss-pool" type="number" min="0" max="1000000000" step="any" placeholder="必须填写且大于 0" required></label>
+        <label>同一技能连续命中次数 <input id="boss-hits" type="number" min="1" max="100" step="1" value="1" required></label>
+        <label>固定掷骰点 %（可选） <input id="boss-roll" type="number" min="0" max="100" step="any" placeholder="留空看完整区间"></label>
+        <label>火焰抗性 %（可选） <input id="boss-fire" type="number" min="-200" max="90" step="any" placeholder="未知"></label>
+        <label>冰霜抗性 %（可选） <input id="boss-cold" type="number" min="-200" max="90" step="any" placeholder="未知"></label>
+        <label>闪电抗性 %（可选） <input id="boss-lightning" type="number" min="-200" max="90" step="any" placeholder="未知"></label>
+        <label>混沌抗性 %（可选） <input id="boss-chaos" type="number" min="-200" max="90" step="any" placeholder="未知"></label>
+        <label>护甲（可选） <input id="boss-armour" type="number" min="0" max="10000000000" step="any" placeholder="未知，不能当 0"></label>
+        <label>额外固定物理减伤 % <input id="boss-physical" type="number" min="0" max="90" step="any" value="0" required></label>
+        <label>承受伤害倍率 <input id="boss-taken" type="number" min="0" step="any" value="1" required></label>
+        <label>物理减伤压制 % <input id="boss-overwhelm" type="number" min="0" max="100" step="any" value="0" required></label>
+      </div>
+      <label class="boss-uber"><input id="boss-uber" type="checkbox"> 使用 Uber 穿透预设</label>
+      <button id="boss-run" type="submit" class="auth-primary">审计已收录技能</button>
+    </form>
+    <div id="boss-status" class="boss-status" role="status" aria-live="polite"></div>
+    <section id="boss-summary" class="boss-summary" hidden aria-label="审计概览"></section>
+    <div id="boss-skills" class="boss-skills" aria-label="技能审计结果"></div>
+    <section id="boss-detail" class="boss-detail" hidden aria-label="单技能防御门槛"></section>
+    <p class="boss-boundary">连续命中是你给出的假设，未计入命中概率、真实连招、恢复、持续伤害、阶段和打法。未知技能不会排成低风险；挂在当前收录范围外的技能不在此审计中。</p>
   </div>
 </dialog>
 
@@ -310,6 +346,7 @@
 
 <script src="app.js"></script>
 <script src="conflict-ledger.js"></script>
+<script src="boss-workbench.js"></script>
 <script src="economy-workbench.js"></script>
 <script src="rare-comparables.js"></script>
 <script src="unique-history.js"></script>

@@ -29,7 +29,7 @@ POE1 的机制耦合极深，一个错误的小前提会让整条结论反向。
 | 通货 | 113 条（中英文名、堆叠上限、效果原文）；工艺台费用引用的 18 个通货全部能对上；**获取途径与兑换比例未采集**；市场价格以 poe.watch 为主、GGG Trade API 在线挂单为备用 |
 | 圣甲虫 | 118 个（效果、堆叠上限、地图装置放置上限）；**掉落来源未采集**；市场价格以 poe.watch 为主、GGG Trade API 在线挂单为备用 |
 | 实时经济价格、趋势、成本与双边价差 | `POST /economy/price` 查询当前快照；`POST /economy/trend` 查询历史；`POST /economy/material-cost` 汇总明确清单；`POST /economy/rare-comparables` 查询稀有装可比挂单，可选逐件核对品质与连接组尺寸；`POST /economy/flip-analysis` 对标准 exchange 条目核验买卖两侧、整单深度、时效与显式费用后计算净利润。SQLite 价格缓存 TTL 30 分钟、历史保留 90 天；主源无缓存时标准条目与唯一装备可显式降级官方 Trade API。**不足两个趋势点不判趋势；单侧过滤后不足 5 条不报代表价；任一侧或费用不完整时利润与 Flip 判断保持 unknown；所有结果都不是成交或收益保证** |
-| Boss 技能伤害、生存校验与防御门槛 | 10 条 Boss 技能的伤害建模 + 22 个 Boss 的护甲/闪避倍率；`boss_survival_check` 校验同一命中连续 1–100 次，`boss_defence_threshold` 反解最低防御池、抗性/护甲门槛，`boss_sequence_check` 按用户明确顺序逐击累计；`boss_timed_sequence_*` 结算显式时间轴、固定恢复与门槛；`boss_probabilistic_sequence_*` 计算闪避/格挡/压制后的低/高伤害生存分布与风险分位；`boss_layered_sequence_*` 分别推进生命、能量护盾、MoM 式魔力分流、各池回复和护盾回充中断；`boss_recovery_sequence_*` 再结算命中前后瞬回、定时恢复、偷取实例限速与满池溢出；`boss_dot_sequence_*` 用边界解析连续流统一结算显式 DoT 暴露、命中和恢复；`boss_mitigation_sequence_*` 在分层路由前结算显式临时承伤乘数、Guard 容量与精确耗尽；`boss_ward_sequence_*` 再逐击推进 Ward 破裂、恢复和吸收；`boss_risk_audit` 批量排列已收录技能风险。`POST /build` 可直接消费 PoB 基础防御、分池回复及适用概率字段快照。**序列不是真实连招，概率不是保证，审计不是 Boss 难度排行，不给打法**；不自动推断 DoT/连招/恢复事件、Guard/Ward 当前状态、熵式闪避相关性、幸运/不幸、CI/EB 等池替换、阶段与应对；数字是 PoB 建模值，GGG 未公布 |
+| Boss 技能伤害、生存校验与防御门槛 | 网页“Boss 命中风险”入口支持显式防御输入、批量风险审计与单技能门槛；10 条 Boss 技能的伤害建模 + 22 个 Boss 的护甲/闪避倍率；`boss_survival_check` 校验同一命中连续 1–100 次，`boss_defence_threshold` 反解最低防御池、抗性/护甲门槛，`boss_sequence_check` 按用户明确顺序逐击累计；`boss_timed_sequence_*` 结算显式时间轴、固定恢复与门槛；`boss_probabilistic_sequence_*` 计算闪避/格挡/压制后的低/高伤害生存分布与风险分位；`boss_layered_sequence_*` 分别推进生命、能量护盾、MoM 式魔力分流、各池回复和护盾回充中断；`boss_recovery_sequence_*` 再结算命中前后瞬回、定时恢复、偷取实例限速与满池溢出；`boss_dot_sequence_*` 用边界解析连续流统一结算显式 DoT 暴露、命中和恢复；`boss_mitigation_sequence_*` 在分层路由前结算显式临时承伤乘数、Guard 容量与精确耗尽；`boss_ward_sequence_*` 再逐击推进 Ward 破裂、恢复和吸收；`boss_risk_audit` 批量排列已收录技能风险。`POST /build` 可直接消费 PoB 基础防御、分池回复及适用概率字段快照。**序列不是真实连招，概率不是保证，审计不是 Boss 难度排行，不给打法**；不自动推断 DoT/连招/恢复事件、Guard/Ward 当前状态、熵式闪避相关性、幸运/不幸、CI/EB 等池替换、阶段与应对；数字是 PoB 建模值，GGG 未公布 |
 | 制作规则（名额与影响力） | 7 条前后缀名额规则（魔法 1+1、稀有 3+3、传奇不受限制、药剂随魔法，另有 PoB 独有的珠宝/Graft 2+2 与「已腐化深渊珠宝回到 3+3」）；`base_influence_profile` 可查 1,022 条具体底材的六类传统影响 `influenceTags`，`check_mod_combination` 在给定具体底材、单一影响与可选物等时，会用 PoB 底材标签和 POEDB 词缀 `spawn_tags` 验证影响词缀适用性。`possible` 只表示词缀能共存，不表示能制作；古灵基底由独立状态机处理。**影响底材获得方式、多影响词缀池组合与完整元词缀状态机仍未采集** |
 | 独立尝试分布与材料预算 | `craft_attempt_plan` / `POST /craft/attempt-plan`：在完整、新鲜的胸甲 `normal` 同侧词缀池上，接受逐字底材、物等、唯一目标、每次材料清单与尝试上限，计算几何分布的单次条件概率、首次成功期望、P50/P90/P95、上限内成功/耗尽概率、提前停止后的期望消耗与最坏材料预算；可选对整张每次清单实时计价。**只适用于每次完整重置、独立同分布且每次恰好一次同侧加权选择；不是任何真实通货/工艺的一次成功率，不推断步骤或完整路线；任一材料缺价或联盟/来源/时间口径不一致时不输出部分总成本** |
 | 觉醒者之石状态机 | `awakener_orb_state` / `POST /craft/awakener`：接受供体与目标的两段装备复制文本，或显式物品类别与传统影响；逐字绑定 POEDB 效果，检查同类物品、双方唯一且不同的传统影响，输出供体销毁、目标重铸为稀有并兼有两种影响的条件后状态。**不声称各保留一条影响词缀，不生成重铸后的具体词缀、数量、数值、概率、成本或路线** |
@@ -991,6 +991,12 @@ Boss 技能预设，按指定 `hit_count`（1–100，默认 1）的最坏累计
 补强可达/不可达计数。缺少某一类抗性或护甲时，其它已知项仍可规划，但顶层状态为
 `partial`、`verdict=unknown`，未知项绝不会被排到末尾冒充低风险。
 
+网页页脚“Boss 命中风险”入口把此审计与 `POST /boss/threshold` 接起来。输入的防御池必须
+显式填写；抗性和护甲留空表示未知，审计会保留对应未知项。物理技能在护甲未知时不能从
+网页打开单技能门槛，避免接口默认护甲 0 被误认为角色实测值。点击可评估技能后，详情会
+显示当前池子与只补对应抗性或护甲的目标；修改输入、关闭弹窗或切换 API Key 都会清除
+旧结果。网页不会自动读取 PoB Build，也不会把已评估项的统一门槛称作所有技能的结论。
+
 ```bash
 curl -s -X POST http://127.0.0.1:8787/poe_agent/boss/audit \
   -H 'Content-Type: application/json' \
@@ -1859,7 +1865,7 @@ PoB 排 P2 而不是 P1：它在数值上更接近一手，但不含中文名与
 .venv/bin/python -m unittest discover -s tests -t .
 ```
 
-目前 2416 项，其中与「无据不答」直接相关的：
+目前 2418 项，其中与「无据不答」直接相关的：
 
 | 组 | 项数 | 重点 |
 | --- | --- | --- |
