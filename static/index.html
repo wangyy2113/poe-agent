@@ -50,6 +50,7 @@
   </div>
   <div class="hint">
     答案中的角标可点击跳转到来源。标为「已拦截」的句子是模型试图输出的无据内容，已被出口校验挡下。
+    <button id="economy-open" type="button" class="hint-link">经济分析</button>
     <button id="rare-open" type="button" class="hint-link">查询稀有装可比挂单</button>
     <button id="unique-history-open" type="button" class="hint-link">浏览唯一装备历史变体</button>
   </div>
@@ -112,6 +113,72 @@
         <button id="memory-save" type="submit" class="auth-primary">保存记忆</button>
       </div>
     </form>
+  </div>
+</dialog>
+
+<dialog id="economy-dialog" class="economy-dialog" aria-labelledby="economy-title">
+  <div class="economy-panel">
+    <div class="economy-heading">
+      <div>
+        <h2 id="economy-title">经济分析</h2>
+        <p>价格、趋势、明确材料清单与双边价差。统计快照和在线挂单都不是成交或收益保证。</p>
+      </div>
+      <button id="economy-close" type="button" class="ghost" aria-label="关闭经济分析">关闭</button>
+    </div>
+    <form id="economy-form" class="economy-form" novalidate>
+      <label>分析类型
+        <select id="economy-mode">
+          <option value="price">当前价格</option>
+          <option value="trend">历史趋势</option>
+          <option value="materials">材料清单成本</option>
+          <option value="flip">双边价差</option>
+        </select>
+      </label>
+      <div id="economy-query-fields" class="economy-columns">
+        <label>物品名称
+          <input id="economy-query" maxlength="200" placeholder="例如：神圣石、猎首">
+        </label>
+        <label>类别
+          <select id="economy-category">
+            <option value="auto">自动识别</option>
+            <option value="unique">唯一装备</option>
+            <option value="currency">通货</option>
+            <option value="scarab">圣甲虫</option>
+            <option value="card">命运卡</option>
+            <option value="fragment">碎片</option>
+          </select>
+        </label>
+      </div>
+      <label>联盟（可选，留空使用当前普通挑战联盟）
+        <input id="economy-league" maxlength="100" placeholder="例如：Standard">
+      </label>
+      <div id="economy-trend-fields" class="economy-extra" hidden>
+        <label>观察窗口（小时，1–2160）
+          <input id="economy-window" type="number" min="1" max="2160" step="1" value="168">
+        </label>
+      </div>
+      <div id="economy-material-fields" class="economy-extra" hidden>
+        <p>只计算你明确列出的材料；任一项缺价时不输出部分总价。</p>
+        <div id="economy-material-rows"></div>
+        <button id="economy-add-material" type="button" class="ghost">添加材料</button>
+      </div>
+      <div id="economy-flip-fields" class="economy-extra" hidden>
+        <p>仅支持标准 exchange 条目。费用需逐项明确填写，填 0 表示已明确不计该项。</p>
+        <div class="economy-columns">
+          <label>交易数量<input id="economy-quantity" type="number" min="0" max="1000000000" step="any" value="1"></label>
+          <label>挂单时限（小时）<input id="economy-age" type="number" min="1" max="168" step="1" value="24"></label>
+          <label>买入固定费用（混沌石）<input id="economy-buy-fixed" type="number" min="0" step="any" value="0"></label>
+          <label>买入比例费用（%）<input id="economy-buy-percent" type="number" min="0" step="any" value="0"></label>
+          <label>卖出固定费用（混沌石）<input id="economy-sell-fixed" type="number" min="0" step="any" value="0"></label>
+          <label>卖出比例费用（%）<input id="economy-sell-percent" type="number" min="0" step="any" value="0"></label>
+          <label>最低净利润（混沌石）<input id="economy-min-profit" type="number" min="0" step="any" value="0"></label>
+          <label>最低利润率（%）<input id="economy-min-margin" type="number" min="0" step="any" value="0"></label>
+        </div>
+      </div>
+      <button id="economy-submit" type="submit" class="auth-primary">查询</button>
+    </form>
+    <div id="economy-status" class="economy-status" role="status" aria-live="polite"></div>
+    <div id="economy-result" class="economy-result" hidden></div>
   </div>
 </dialog>
 
@@ -188,6 +255,7 @@
 </dialog>
 
 <script src="app.js"></script>
+<script src="economy-workbench.js"></script>
 <script src="rare-comparables.js"></script>
 <script src="unique-history.js"></script>
 </body>
