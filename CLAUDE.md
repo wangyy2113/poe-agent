@@ -149,7 +149,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 2420 项，秒级
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 2422 项，秒级
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选
@@ -1631,3 +1631,19 @@ HTTP 全程 200，控制台无错误。普通装备卡片、chunk、别名与 FT
 不超过五分钟时才返回 `cost_budget`。网页遇到不完整价格只给原因，不拼部分总价。
 外部文本全用 `textContent`，来源链接只允许 POEDB HTTPS；输入改变、关窗、换 Key
 均使旧结果失效。这仍是每次完整重置且只选一次的数学模型，不生成真实制作路线。
+
+## 第一百三十二轮：基础通货网页要保留未知，矩阵原值不能改写状态
+
+聊天页“基础通货状态”表单调用已有的 `POST /craft/operation`，只提供十种已审计
+操作。手工状态中的空白稀有度与前后缀数量分别送 `null`，明确输入 `0` 才是零条；
+完整装备文本模式只传操作、文本与可选 guard，不混入手工字段。装备粘贴卡片只负责
+预填，不自动调用后端。
+
+页面逐项呈现 POEDB 效果、输入与条件后状态、稀有度/名额检查和未知项。
+`compatible` 是已知约束兼容，不代表游戏中完整可执行；条件后状态也不是已发生的
+制作结果。Metamod guard 的 Craft of Exile 矩阵原值独立展示；空白/缺失时，
+基础结论若为 compatible，整体结论转为 unknown。不解释 `YES/NO` 的外延，
+不拿矩阵改写基础通货状态。
+外部文字只写 `textContent`，外链限制在可信 HTTPS 来源域名；输入变化、关窗与换
+API Key 后旧响应不能回写。真实 JS DOM 测试覆盖请求、渲染与失效路径；网页布局
+未通过浏览器截图核对。

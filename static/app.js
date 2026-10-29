@@ -83,6 +83,7 @@ async function apiFetch(path, options = {}) {
       window.clearConflictLedger?.();
       window.clearBossWorkbench?.();
       window.clearCraftAttemptWorkbench?.();
+      window.clearCurrencyOperation?.();
       window.clearEconomyWorkbench?.();
       window.clearRareComparables?.();
     }
@@ -130,6 +131,7 @@ async function saveApiKey(event) {
       window.clearConflictLedger?.();
       window.clearBossWorkbench?.();
       window.clearCraftAttemptWorkbench?.();
+      window.clearCurrencyOperation?.();
       window.clearEconomyWorkbench?.();
       window.clearRareComparables?.();
     }
@@ -156,6 +158,7 @@ function clearApiKey() {
   window.clearConflictLedger?.();
   window.clearBossWorkbench?.();
   window.clearCraftAttemptWorkbench?.();
+  window.clearCurrencyOperation?.();
   window.clearEconomyWorkbench?.();
   window.clearRareComparables?.();
   updateAuthButton(authRequired);
@@ -868,6 +871,7 @@ function showPasteCard(kind, text) {
       : '') +
     `<div class="pc-actions"><button class="pc-primary">${isItem ? '解析并分析' : '解析并体检'}</button>` +
     (isItem ? '<button class="pc-compare">查询可比挂单</button>' : '') +
+    (isItem ? '<button class="pc-craft">核对通货操作</button>' : '') +
     '<button class="pc-ghost">当作普通提问发送</button></div>';
 
   el.pasteCard.querySelector('.pc-close').onclick = hidePasteCard;
@@ -882,10 +886,17 @@ function showPasteCard(kind, text) {
   }
   const primary = el.pasteCard.querySelector('.pc-primary');
   const compare = el.pasteCard.querySelector('.pc-compare');
+  const craft = el.pasteCard.querySelector('.pc-craft');
   if (compare) {
     compare.onclick = () => {
       hidePasteCard();
       window.openRareComparables?.(text);
+    };
+  }
+  if (craft) {
+    craft.onclick = () => {
+      hidePasteCard();
+      window.openCurrencyOperation?.(text);
     };
   }
   if (primary) {
