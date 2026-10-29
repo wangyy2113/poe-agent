@@ -149,7 +149,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 2422 项，秒级
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 2426 项，秒级
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选
@@ -1647,3 +1647,17 @@ HTTP 全程 200，控制台无错误。普通装备卡片、chunk、别名与 FT
 外部文字只写 `textContent`，外链限制在可信 HTTPS 来源域名；输入变化、关窗与换
 API Key 后旧响应不能回写。真实 JS DOM 测试覆盖请求、渲染与失效路径；网页布局
 未通过浏览器截图核对。
+
+## 第一百三十三轮：精华网页清单取当前库，原文漂移时不披露旧结果
+
+`GET /craft/essences` 在普通用户鉴权下读取当前 `poedb_essence` 的精确名称、
+等阶与物等上限，网页不维护另一份固定 105 件列表。筛选按中英文名或 T 等阶，
+用户必须明确选一件；清单加载不自动提交状态核对。手工稀有度、物品等级和类别
+允许留空保持未知；装备文本模式只送精华名与原文，不混入手工状态。
+
+网页复用已有 `POST /craft/essence` 的逐字效果契约、三态检查和逐类别保底记录。
+原文漂移后后端 `after.guaranteed_modifier` 为空，网页只读该条件后字段，不能用
+独立原始类别表冒充结果。即使返回 compatible，也只表示已提供状态通过当前已知
+约束；不补额外词缀、最终数值、成功率、步骤、成本或路线。外部文字用
+`textContent`，来源链接只允许 POEDB HTTPS；输入改变、关窗与 API Key 切换
+使旧清单或旧结果失效。真实 JS DOM 测试覆盖请求与渲染，网页布局未截图核对。

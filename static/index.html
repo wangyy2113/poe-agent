@@ -54,6 +54,7 @@
     <button id="boss-open" type="button" class="hint-link">Boss 命中风险</button>
     <button id="craft-attempt-open" type="button" class="hint-link">独立尝试预算</button>
     <button id="currency-operation-open" type="button" class="hint-link">基础通货状态</button>
+    <button id="essence-operation-open" type="button" class="hint-link">精华状态</button>
     <button id="economy-open" type="button" class="hint-link">经济分析</button>
     <button id="rare-open" type="button" class="hint-link">查询稀有装可比挂单</button>
     <button id="unique-history-open" type="button" class="hint-link">浏览唯一装备历史变体</button>
@@ -338,6 +339,65 @@
   </div>
 </dialog>
 
+<dialog id="essence-operation-dialog" class="essence-operation-dialog" aria-labelledby="essence-operation-title">
+  <div class="essence-operation-panel">
+    <div class="essence-operation-heading">
+      <div>
+        <h2 id="essence-operation-title">精华状态转移核对</h2>
+        <p>从当前入库清单选择精华，逐项核对效果原文、物等上限与装备类别保底词缀。</p>
+      </div>
+      <button id="essence-operation-close" type="button" class="ghost" aria-label="关闭精华状态核对">关闭</button>
+    </div>
+    <form id="essence-operation-form" class="essence-operation-form" novalidate>
+      <div class="essence-operation-picker">
+        <label for="essence-operation-query">筛选已收录精华（中文名、英文名或 T 等阶）</label>
+        <input id="essence-operation-query" maxlength="80" autocomplete="off" placeholder="例如：憎恨、Hatred、T7">
+        <label for="essence-operation-name">选择精确名称</label>
+        <select id="essence-operation-name" size="6" aria-describedby="essence-operation-catalog-status"></select>
+        <p id="essence-operation-catalog-status" role="status" aria-live="polite"></p>
+      </div>
+      <label>装备状态来源
+        <select id="essence-operation-mode">
+          <option value="manual">手工填写结构化状态</option>
+          <option value="item">粘贴游戏复制的完整装备文本</option>
+        </select>
+      </label>
+      <section id="essence-operation-manual" class="essence-operation-inputs" aria-label="手工装备状态">
+        <p>稀有度、物品等级与装备类别留空时保持未知；保底词缀需要唯一可映射的类别。</p>
+        <div class="essence-operation-fields">
+          <label>稀有度
+            <select id="essence-operation-rarity">
+              <option value="">未知</option><option value="普通">普通</option>
+              <option value="魔法">魔法</option><option value="稀有">稀有</option>
+              <option value="传奇">传奇</option>
+            </select>
+          </label>
+          <label>物品等级（可选）
+            <input id="essence-operation-level" type="number" min="1" max="100" step="1" placeholder="未知">
+          </label>
+          <label>装备类别（可选）
+            <input id="essence-operation-class" maxlength="80" placeholder="例如：项链">
+          </label>
+        </div>
+        <div class="essence-operation-flags">
+          <label><input id="essence-operation-corrupted" type="checkbox"> 已腐化</label>
+          <label><input id="essence-operation-mirrored" type="checkbox"> 已镜像</label>
+          <label><input id="essence-operation-fractured" type="checkbox"> 含裂隙词缀</label>
+        </div>
+      </section>
+      <section id="essence-operation-item-wrap" class="essence-operation-inputs" hidden aria-label="装备复制文本">
+        <label>完整装备复制文本
+          <textarea id="essence-operation-item" maxlength="20000" rows="7" placeholder="从游戏中复制装备文本；不会与手工状态混用"></textarea>
+        </label>
+      </section>
+      <button id="essence-operation-run" type="submit" class="auth-primary" disabled>核对条件状态</button>
+    </form>
+    <div id="essence-operation-status" class="essence-operation-status" role="status" aria-live="polite"></div>
+    <div id="essence-operation-result" class="essence-operation-result" hidden></div>
+    <p class="essence-operation-boundary">compatible 只表示已提供状态通过已审计的稀有度、物等上限和类别检查，不等于游戏中完整可执行。条件后状态不是实际结果；额外词缀、最终数值、成功率、步骤、成本与路线保持未知。</p>
+  </div>
+</dialog>
+
 <dialog id="economy-dialog" class="economy-dialog" aria-labelledby="economy-title">
   <div class="economy-panel">
     <div class="economy-heading">
@@ -481,6 +541,7 @@
 <script src="boss-workbench.js"></script>
 <script src="craft-attempt-workbench.js"></script>
 <script src="currency-operation.js"></script>
+<script src="essence-operation.js"></script>
 <script src="economy-workbench.js"></script>
 <script src="rare-comparables.js"></script>
 <script src="unique-history.js"></script>

@@ -6,7 +6,7 @@ import sqlite3
 import unittest
 from unittest.mock import patch
 
-from api.craft import EssenceOperationRequest, essence_state
+from api.craft import EssenceOperationRequest, essence_catalog, essence_state
 from core.db import SCHEMA
 from craft.essence_operations import (
     HIGH_ESSENCE_EFFECT,
@@ -192,6 +192,33 @@ class EssenceOperationToolApiAndRoutingTest(unittest.TestCase):
         }, loop._essence_operation_args(question))
         self.assertIsNone(loop._essence_operation_args("憎恨之破空精华多少钱"))
         self.assertEqual("", loop._preferred_tool_route("憎恨之低语精华有什么用"))
+
+
+class EssenceCatalogTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.conn = _conn()
+        self.patch = patch("api.craft.dbmod.get_conn", return_value=self.conn)
+        self.patch.start()
+
+    def tearDown(self) -> None:
+        self.patch.stop()
+        self.conn.close()
+
+    def test_catalog_uses_current_database_names_and_preserves_tier_zero(self) -> None:
+        catalog = essence_catalog(_caller="test")
+        self.assertEqual(3, catalog.total)
+        self.assertEqual(["哀恸精华", "憎恨之低语精华", "憎恨之破空精华"], [
+            item.name_zh for item in catalog.items
+        ])
+        self.assertEqual(0, catalog.items[0].tier)
+        self.assertEqual(15, catalog.items[0].level_cap)
+        self.assertIsNone(catalog.items[2].level_cap)
+
+    def test_empty_catalog_does_not_fabricate_supported_essences(self) -> None:
+        self.conn.execute("DELETE FROM poedb_essence")
+        catalog = essence_catalog(_caller="test")
+        self.assertEqual(0, catalog.total)
+        self.assertEqual([], catalog.items)
 
 
 if __name__ == "__main__":
