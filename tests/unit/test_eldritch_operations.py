@@ -6,7 +6,7 @@ import sqlite3
 import unittest
 from unittest.mock import patch
 
-from api.craft import EldritchOperationRequest, eldritch_state
+from api.craft import EldritchOperationRequest, eldritch_catalog, eldritch_state
 from core.db import SCHEMA
 from craft.eldritch_operations import (
     ELDRITCH_SPECS,
@@ -14,7 +14,7 @@ from craft.eldritch_operations import (
     evaluate_eldritch_operation,
 )
 from orchestrator import loop
-from tools.impl.eldritch_operation import eldritch_operation_state
+from tools.impl.eldritch_operation import eldritch_operation_state, render_eldritch_operation
 from tools.registry import REGISTRY
 
 
@@ -154,9 +154,14 @@ class EldritchStateTest(unittest.TestCase):
         self.conn.execute(
             "UPDATE poedb_currency SET effect_zh='上游变化' WHERE name_zh='次级古灵余烬'"
         )
-        self.assertEqual("unknown", self.evaluate(
-            "次级古灵余烬", item_slot="helmet"
-        ).verdict)
+        drifted = self.evaluate("次级古灵余烬", item_slot="helmet")
+        self.assertEqual("unknown", drifted.verdict)
+        self.assertEqual("unknown", drifted.after["implicit_modifier_change"])
+        self.assertIsNone(drifted.after["has_searing_implicit"])
+        self.assertIn("来源原文变化后的状态转移", drifted.unknown_fields)
+        rendered = render_eldritch_operation(drifted)
+        self.assertIn("未知（来源效果原文已变化）", rendered)
+        self.assertNotIn("添加指定档级的焚界者基底词缀", rendered)
         self.assertEqual("unknown", self.evaluate(
             "高级古灵溶液", item_slot="boots", corrupted=True
         ).verdict)
@@ -204,6 +209,31 @@ class EldritchToolApiAndRoutingTest(unittest.TestCase):
 
     def test_价格问法不进入状态机(self) -> None:
         self.assertIsNone(loop._eldritch_operation_args("古灵崇高石多少钱"))
+
+
+class EldritchCatalogTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.conn = _conn()
+        self.patch = patch("api.craft.dbmod.get_conn", return_value=self.conn)
+        self.patch.start()
+
+    def tearDown(self) -> None:
+        self.patch.stop()
+        self.conn.close()
+
+    def test_catalog_only_lists_imported_contracts_and_marks_drift(self) -> None:
+        self.conn.execute("DELETE FROM poedb_currency WHERE metadata_id=?", (
+            ELDRITCH_SPECS[0].metadata_id,
+        ))
+        self.conn.execute("UPDATE poedb_currency SET effect_zh='上游变化' WHERE metadata_id=?", (
+            ELDRITCH_SPECS[1].metadata_id,
+        ))
+        catalog = eldritch_catalog(_caller="test")
+        self.assertEqual(11, catalog.total)
+        self.assertNotIn(ELDRITCH_SPECS[0].name_zh, [item.name_zh for item in catalog.items])
+        self.assertEqual(ELDRITCH_SPECS[1].name_zh, catalog.items[0].name_zh)
+        self.assertFalse(catalog.items[0].source_contract_ok)
+        self.assertTrue(all(item.source_contract_ok for item in catalog.items[1:]))
 
 
 if __name__ == "__main__":

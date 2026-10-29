@@ -259,7 +259,16 @@ def evaluate_eldritch_operation(
     after = _base_after(state)
     capacity: CapacityAssessment | None = None
 
-    if spec.action == "set_implicit":
+    if not source_ok:
+        after.update({
+            "prefix_count": None, "suffix_count": None,
+            "has_searing_implicit": None, "has_eater_implicit": None,
+            "explicit_modifier_change": "unknown",
+            "implicit_modifier_change": "unknown",
+            "random_outcome": None,
+        })
+        unknown.append("来源原文变化后的状态转移")
+    elif spec.action == "set_implicit":
         if state.item_slot is None:
             checks.append(EldritchCheck(
                 "item_slot", "unknown", "需要提供装备部位；原文只列出身体、脚部、手部与头部装备", url
