@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, model_validator
 
 from api.deps import require_user
+from core import db as dbmod
 from economy.service import PUBLIC_CATEGORIES
 from tools.impl.awakener_operation import awakener_orb_state
 from tools.impl.craft_attempt_plan import craft_attempt_plan as build_craft_attempt_plan
@@ -197,6 +198,18 @@ class EssenceOperationResponse(BaseModel):
     unknown_fields: list[str]
     boundary: str
     answer: str
+
+
+class EssenceCatalogEntry(BaseModel):
+    name_zh: str
+    name_en: str | None
+    tier: int
+    level_cap: int | None
+
+
+class EssenceCatalogResponse(BaseModel):
+    total: int
+    items: list[EssenceCatalogEntry]
 
 
 class EldritchOperationRequest(BaseModel):
@@ -526,6 +539,17 @@ def awakener_state(
             "reason": (result.data or {}).get("reason", "觉醒者之石来源记录不可用"),
         })
     return AwakenerOrbResponse(**result.data)
+
+
+@router.get("/craft/essences", response_model=EssenceCatalogResponse)
+def essence_catalog(_caller: str = Depends(require_user)) -> EssenceCatalogResponse:
+    """当前已入库精华的精确名称；网页选择器不维护另一份手写清单。"""
+    rows = dbmod.get_conn().execute(
+        "SELECT name_zh,name_en,tier,level_cap FROM poedb_essence "
+        "ORDER BY tier,name_zh,metadata_id"
+    ).fetchall()
+    items = [EssenceCatalogEntry(**dict(row)) for row in rows]
+    return EssenceCatalogResponse(total=len(items), items=items)
 
 
 @router.post("/craft/essence", response_model=EssenceOperationResponse)
