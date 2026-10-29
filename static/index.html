@@ -55,6 +55,7 @@
     <button id="craft-attempt-open" type="button" class="hint-link">独立尝试预算</button>
     <button id="currency-operation-open" type="button" class="hint-link">基础通货状态</button>
     <button id="essence-operation-open" type="button" class="hint-link">精华状态</button>
+    <button id="eldritch-operation-open" type="button" class="hint-link">古灵通货状态</button>
     <button id="economy-open" type="button" class="hint-link">经济分析</button>
     <button id="rare-open" type="button" class="hint-link">查询稀有装可比挂单</button>
     <button id="unique-history-open" type="button" class="hint-link">浏览唯一装备历史变体</button>
@@ -398,6 +399,94 @@
   </div>
 </dialog>
 
+<dialog id="eldritch-operation-dialog" class="eldritch-operation-dialog" aria-labelledby="eldritch-operation-title">
+  <div class="eldritch-operation-panel">
+    <div class="eldritch-operation-heading">
+      <div>
+        <h2 id="eldritch-operation-title">古灵通货状态转移核对</h2>
+        <p>只核对当前已入库的 12 种已审计操作；随机结果与完整可执行性保持未知。</p>
+      </div>
+      <button id="eldritch-operation-close" type="button" class="ghost" aria-label="关闭古灵通货状态核对">关闭</button>
+    </div>
+    <form id="eldritch-operation-form" class="eldritch-operation-form" novalidate>
+      <label>古灵通货操作
+        <select id="eldritch-operation-name" aria-describedby="eldritch-operation-catalog-status">
+          <option value="">正在读取当前入库操作…</option>
+        </select>
+      </label>
+      <p id="eldritch-operation-catalog-status" role="status" aria-live="polite"></p>
+      <label>装备状态来源
+        <select id="eldritch-operation-mode">
+          <option value="manual">手工填写结构化状态</option>
+          <option value="item">粘贴游戏复制的完整装备文本</option>
+        </select>
+      </label>
+      <p id="eldritch-operation-action-note" class="eldritch-operation-note"></p>
+      <section id="eldritch-operation-manual" class="eldritch-operation-inputs" aria-label="手工装备状态">
+        <p>下列留空项保持未知；0 条词缀、有/没有基底词缀须显式选择。未勾选的特殊状态按否处理。</p>
+        <div id="eldritch-operation-slot-wrap" class="eldritch-operation-fields" hidden>
+          <label>装备部位
+            <select id="eldritch-operation-slot">
+              <option value="">未知</option><option value="body_armour">身体装备</option>
+              <option value="boots">脚部装备</option><option value="gloves">手部装备</option>
+              <option value="helmet">头部装备</option><option value="other">其他</option>
+            </select>
+          </label>
+        </div>
+        <div id="eldritch-operation-dominant-wrap" class="eldritch-operation-fields" hidden>
+          <label>稀有度
+            <select id="eldritch-operation-rarity">
+              <option value="">未知</option><option value="普通">普通</option>
+              <option value="魔法">魔法</option><option value="稀有">稀有</option>
+              <option value="传奇">传奇</option>
+            </select>
+          </label>
+          <label>首要影响
+            <select id="eldritch-operation-dominance">
+              <option value="">未知</option><option value="焚界者">焚界者</option>
+              <option value="灭界者">灭界者</option><option value="平衡">平衡</option>
+              <option value="无">无</option>
+            </select>
+          </label>
+          <label>当前前缀数量
+            <input id="eldritch-operation-prefix" type="number" min="0" max="6" step="1" placeholder="未知">
+          </label>
+          <label>当前后缀数量
+            <input id="eldritch-operation-suffix" type="number" min="0" max="6" step="1" placeholder="未知">
+          </label>
+        </div>
+        <div id="eldritch-operation-implicit-wrap" class="eldritch-operation-fields" hidden>
+          <label>已有焚界者基底词缀
+            <select id="eldritch-operation-searing">
+              <option value="">未知</option><option value="yes">有</option><option value="no">没有</option>
+            </select>
+          </label>
+          <label>已有灭界者基底词缀
+            <select id="eldritch-operation-eater">
+              <option value="">未知</option><option value="yes">有</option><option value="no">没有</option>
+            </select>
+          </label>
+        </div>
+        <div class="eldritch-operation-flags">
+          <label><input id="eldritch-operation-corrupted" type="checkbox"> 已腐化</label>
+          <label><input id="eldritch-operation-mirrored" type="checkbox"> 已镜像</label>
+          <label><input id="eldritch-operation-fractured" type="checkbox"> 含裂隙词缀</label>
+        </div>
+      </section>
+      <section id="eldritch-operation-item-wrap" class="eldritch-operation-inputs" hidden aria-label="装备复制文本">
+        <label>完整装备复制文本
+          <textarea id="eldritch-operation-item" maxlength="20000" rows="7" placeholder="从游戏中复制装备文本；不会与手工状态混用"></textarea>
+        </label>
+        <p>装备文本解析器不能确定“哪一方为首要”；古灵混沌、崇高、剥离石请用手工状态明确选择。</p>
+      </section>
+      <button id="eldritch-operation-run" type="submit" class="auth-primary" disabled>核对条件状态</button>
+    </form>
+    <div id="eldritch-operation-status" class="eldritch-operation-status" role="status" aria-live="polite"></div>
+    <div id="eldritch-operation-result" class="eldritch-operation-result" hidden></div>
+    <p class="eldritch-operation-boundary">compatible 只表示已提供状态通过已知来源与名额检查。基底词缀随机结果、冲突石升降档级和完整游戏可执行性保持未知；Metamod 矩阵仅披露原值，不解释 YES/NO，也不改写 POEDB 状态转移。</p>
+  </div>
+</dialog>
+
 <dialog id="economy-dialog" class="economy-dialog" aria-labelledby="economy-title">
   <div class="economy-panel">
     <div class="economy-heading">
@@ -542,6 +631,7 @@
 <script src="craft-attempt-workbench.js"></script>
 <script src="currency-operation.js"></script>
 <script src="essence-operation.js"></script>
+<script src="eldritch-operation.js"></script>
 <script src="economy-workbench.js"></script>
 <script src="rare-comparables.js"></script>
 <script src="unique-history.js"></script>

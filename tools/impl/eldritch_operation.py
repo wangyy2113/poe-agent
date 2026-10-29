@@ -92,12 +92,14 @@ def render_eldritch_operation(result: EldritchOperationResult) -> str:
     after = result.after
     lines += ["", "条件状态转移（仅在操作实际成功执行时）："]
     implicit_labels = {
+        "unknown": "未知（来源效果原文已变化）",
         "unchanged": "基底词缀不变",
         "set_searing_and_replace_all_except_eater": "添加指定档级的焚界者基底词缀；除灭界者基底词缀外，替换其他原有基底词缀",
         "set_eater_and_replace_all_except_searing": "添加指定档级的灭界者基底词缀；除焚界者基底词缀外，替换其他原有基底词缀",
         "random_one_raised_other_lowered": "随机提高焚界者或灭界者一方，并降低另一方；被降低的次级词缀会被移除",
     }
     explicit_labels = {
+        "unknown": "未知（来源效果原文已变化）",
         "unchanged": "显式词缀不变",
         "prefix_modifiers_rerolled": "重置前缀，后缀保持不变",
         "suffix_modifiers_rerolled": "重置后缀，前缀保持不变",

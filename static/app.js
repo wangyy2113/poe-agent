@@ -85,6 +85,7 @@ async function apiFetch(path, options = {}) {
       window.clearCraftAttemptWorkbench?.();
       window.clearCurrencyOperation?.();
       window.clearEssenceOperation?.();
+      window.clearEldritchOperation?.();
       window.clearEconomyWorkbench?.();
       window.clearRareComparables?.();
     }
@@ -134,6 +135,7 @@ async function saveApiKey(event) {
       window.clearCraftAttemptWorkbench?.();
       window.clearCurrencyOperation?.();
       window.clearEssenceOperation?.();
+      window.clearEldritchOperation?.();
       window.clearEconomyWorkbench?.();
       window.clearRareComparables?.();
     }
@@ -162,6 +164,7 @@ function clearApiKey() {
   window.clearCraftAttemptWorkbench?.();
   window.clearCurrencyOperation?.();
   window.clearEssenceOperation?.();
+  window.clearEldritchOperation?.();
   window.clearEconomyWorkbench?.();
   window.clearRareComparables?.();
   updateAuthButton(authRequired);
@@ -876,6 +879,7 @@ function showPasteCard(kind, text) {
     (isItem ? '<button class="pc-compare">查询可比挂单</button>' : '') +
     (isItem ? '<button class="pc-craft">核对通货操作</button>' : '') +
     (isItem ? '<button class="pc-essence">核对精华操作</button>' : '') +
+    (isItem ? '<button class="pc-eldritch">核对古灵操作</button>' : '') +
     '<button class="pc-ghost">当作普通提问发送</button></div>';
 
   el.pasteCard.querySelector('.pc-close').onclick = hidePasteCard;
@@ -892,6 +896,7 @@ function showPasteCard(kind, text) {
   const compare = el.pasteCard.querySelector('.pc-compare');
   const craft = el.pasteCard.querySelector('.pc-craft');
   const essence = el.pasteCard.querySelector('.pc-essence');
+  const eldritch = el.pasteCard.querySelector('.pc-eldritch');
   if (compare) {
     compare.onclick = () => {
       hidePasteCard();
@@ -908,6 +913,12 @@ function showPasteCard(kind, text) {
     essence.onclick = () => {
       hidePasteCard();
       window.openEssenceOperation?.(text);
+    };
+  }
+  if (eldritch) {
+    eldritch.onclick = () => {
+      hidePasteCard();
+      window.openEldritchOperation?.(text);
     };
   }
   if (primary) {

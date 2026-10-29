@@ -149,7 +149,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 2426 项，秒级
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 2429 项，秒级
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选
@@ -1661,3 +1661,18 @@ API Key 后旧响应不能回写。真实 JS DOM 测试覆盖请求、渲染与�
 约束；不补额外词缀、最终数值、成功率、步骤、成本或路线。外部文字用
 `textContent`，来源链接只允许 POEDB HTTPS；输入改变、关窗与 API Key 切换
 使旧清单或旧结果失效。真实 JS DOM 测试覆盖请求与渲染，网页布局未截图核对。
+
+## 第一百三十四轮：古灵通货来源漂移不能继续输出旧条件后状态
+
+`GET /craft/eldritch/operations` 只列当前已入库的 12 种审计契约，并明确标记
+效果原文是否仍逐字一致。来源漂移时，状态机的 `after` 将数量、基底存在性与
+显式/基底变化全部置为未知，确定性答案不再复述旧效果；Metamod 矩阵仍作为
+独立来源原值披露，不参与 POEDB 状态结论。
+
+聊天页按操作收集不同手工字段：余烬/溶液用部位与双基底状态，古灵混沌/崇高/
+剥离石用首要方和前后缀数量，冲突石用双基底状态。空白保持未知，`0` 与“没有”
+才是已知值。装备文本模式只传操作和文本；解析器不能确定首要方，因此三种依赖
+首要方的操作会显示缺据，不从基底存在性猜首要。粘贴卡片只预填，不自动执行。
+网页逐项显示三态检查、条件后状态、未知项与矩阵原值，不解释 `YES/NO` 的外延。
+外部文字用 `textContent`，可信外链只允许 POEDB/Craft of Exile HTTPS；输入、
+关窗与换 Key 均使旧响应失效。真实 JS DOM 测试覆盖主要路径，布局未截图核对。

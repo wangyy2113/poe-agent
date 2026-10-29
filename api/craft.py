@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field, model_validator
 
 from api.deps import require_user
 from core import db as dbmod
+from craft.eldritch_operations import ELDRITCH_SPECS
 from economy.service import PUBLIC_CATEGORIES
 from tools.impl.awakener_operation import awakener_orb_state
 from tools.impl.craft_attempt_plan import craft_attempt_plan as build_craft_attempt_plan
@@ -256,6 +257,18 @@ class EldritchOperationResponse(BaseModel):
     metamod_interactions: list[dict[str, Any]]
     boundary: str
     answer: str
+
+
+class EldritchCatalogEntry(BaseModel):
+    name_zh: str
+    name_en: str
+    action: str
+    source_contract_ok: bool
+
+
+class EldritchCatalogResponse(BaseModel):
+    total: int
+    items: list[EldritchCatalogEntry]
 
 
 class VeiledOperationRequest(BaseModel):
@@ -576,6 +589,22 @@ def essence_state(
             "reason": "只接受本库 105 件精华的唯一精确名称，不按相似名称猜操作语义",
         })
     return EssenceOperationResponse(**result.data)
+
+
+@router.get("/craft/eldritch/operations", response_model=EldritchCatalogResponse)
+def eldritch_catalog(_caller: str = Depends(require_user)) -> EldritchCatalogResponse:
+    """仅列当前入库的已审计操作；逐字效果漂移也明确标记。"""
+    rows = dbmod.get_conn().execute(
+        "SELECT metadata_id,effect_zh FROM poedb_currency WHERE metadata_id IN ("
+        + ",".join("?" for _ in ELDRITCH_SPECS) + ")",
+        tuple(spec.metadata_id for spec in ELDRITCH_SPECS),
+    ).fetchall()
+    by_id = {row["metadata_id"]: row["effect_zh"] for row in rows}
+    items = [EldritchCatalogEntry(
+        name_zh=spec.name_zh, name_en=spec.name_en, action=spec.action,
+        source_contract_ok=by_id[spec.metadata_id] == spec.expected_effect,
+    ) for spec in ELDRITCH_SPECS if spec.metadata_id in by_id]
+    return EldritchCatalogResponse(total=len(items), items=items)
 
 
 @router.post("/craft/eldritch", response_model=EldritchOperationResponse)
