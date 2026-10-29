@@ -52,6 +52,7 @@
     答案中的角标可点击跳转到来源。标为「已拦截」的句子是模型试图输出的无据内容，已被出口校验挡下。
     <button id="conflict-open" type="button" class="hint-link">跨来源核对</button>
     <button id="boss-open" type="button" class="hint-link">Boss 命中风险</button>
+    <button id="craft-attempt-open" type="button" class="hint-link">独立尝试预算</button>
     <button id="economy-open" type="button" class="hint-link">经济分析</button>
     <button id="rare-open" type="button" class="hint-link">查询稀有装可比挂单</button>
     <button id="unique-history-open" type="button" class="hint-link">浏览唯一装备历史变体</button>
@@ -206,6 +207,56 @@
   </div>
 </dialog>
 
+<dialog id="craft-attempt-dialog" class="craft-attempt-dialog" aria-labelledby="craft-attempt-title">
+  <div class="craft-attempt-panel">
+    <div class="craft-attempt-heading">
+      <div>
+        <h2 id="craft-attempt-title">独立尝试分布与材料预算</h2>
+        <p>仅适用于完整且新鲜的胸甲 normal 同侧词缀池；每次完整重置，恰好进行一次加权选择。</p>
+      </div>
+      <button id="craft-attempt-close" type="button" class="ghost" aria-label="关闭独立尝试预算">关闭</button>
+    </div>
+    <form id="craft-attempt-form" class="craft-attempt-form" novalidate>
+      <div class="craft-attempt-fields">
+        <label>胸甲底材逐字名称
+          <input id="craft-attempt-base" maxlength="80" placeholder="例如：铁制背心">
+        </label>
+        <label>物品等级
+          <input id="craft-attempt-level" type="number" min="1" max="100" step="1" value="50">
+        </label>
+        <label>生成侧
+          <select id="craft-attempt-side">
+            <option value="prefix">前缀</option>
+            <option value="suffix">后缀</option>
+          </select>
+        </label>
+        <label>唯一目标词缀组或逐字文本
+          <input id="craft-attempt-target" maxlength="100" placeholder="例如：IncreasedLife">
+        </label>
+        <label>最多尝试次数
+          <input id="craft-attempt-cap" type="number" min="1" max="1000000" step="1" value="100">
+        </label>
+      </div>
+      <section class="craft-attempt-materials" aria-label="每次尝试显式消耗的材料">
+        <h3>每次尝试的材料清单</h3>
+        <p>材料是你的假设；本工具不会根据目标推断应使用哪种通货或制作步骤。</p>
+        <div id="craft-attempt-material-rows"></div>
+        <button id="craft-attempt-add-material" type="button" class="ghost">添加材料</button>
+      </section>
+      <label class="craft-attempt-price-toggle">
+        <input id="craft-attempt-price" type="checkbox"> 查询整张材料清单的当前代表价
+      </label>
+      <label id="craft-attempt-league-wrap" hidden>联盟（可选，留空使用当前普通挑战联盟）
+        <input id="craft-attempt-league" maxlength="100" placeholder="例如：Standard">
+      </label>
+      <button id="craft-attempt-run" type="submit" class="auth-primary">计算独立尝试预算</button>
+    </form>
+    <div id="craft-attempt-status" class="craft-attempt-status" role="status" aria-live="polite"></div>
+    <div id="craft-attempt-result" class="craft-attempt-result" hidden></div>
+    <p class="craft-attempt-boundary">这是独立同分布的单次加权选择模型，不是混沌石、精华、化石或其它真实工艺的一次成功率；不生成步骤、完整路线或成交保证。</p>
+  </div>
+</dialog>
+
 <dialog id="economy-dialog" class="economy-dialog" aria-labelledby="economy-title">
   <div class="economy-panel">
     <div class="economy-heading">
@@ -347,6 +398,7 @@
 <script src="app.js"></script>
 <script src="conflict-ledger.js"></script>
 <script src="boss-workbench.js"></script>
+<script src="craft-attempt-workbench.js"></script>
 <script src="economy-workbench.js"></script>
 <script src="rare-comparables.js"></script>
 <script src="unique-history.js"></script>
