@@ -149,7 +149,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 2418 项，秒级
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 2420 项，秒级
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选
@@ -1618,3 +1618,16 @@ HTTP 全程 200，控制台无错误。普通装备卡片、chunk、别名与 FT
 页面从不自动读取 PoB Build、推断 Boss 连招或宣称整场生存。输入变更、关窗和换 API Key
 会使请求代际失效；所有服务端文字只写 `textContent`。真实 JS DOM 测试覆盖这些边界，
 未通过浏览器截图核对布局。
+
+## 第一百三十一轮：独立尝试预算网页不能把条件概率说成通货成功率
+
+聊天页“独立尝试预算”表单只把用户明确填写的底材、物等、生成侧、目标、尝试上限和
+1–20 项每次材料送入 `POST /craft/attempt-plan`。词缀池不完整、过期或目标不唯一时，
+只展示缺口与可选目标组；点击候选仅回填字段，不自动请求，更不把未知写成 0%。
+完整池才展示几何分布、成功即停期望与材料预算。P50/P90/P95 的最少尝试数即使超出
+用户上限仍可列出，但所有相应材料量及成本都标记“超出上限”。
+
+市场计价完全可选；后端只有在每项材料均有唯一代表价、同联盟/来源且抓取时间跨度
+不超过五分钟时才返回 `cost_budget`。网页遇到不完整价格只给原因，不拼部分总价。
+外部文本全用 `textContent`，来源链接只允许 POEDB HTTPS；输入改变、关窗、换 Key
+均使旧结果失效。这仍是每次完整重置且只选一次的数学模型，不生成真实制作路线。
