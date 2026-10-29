@@ -53,6 +53,7 @@
     <button id="conflict-open" type="button" class="hint-link">跨来源核对</button>
     <button id="boss-open" type="button" class="hint-link">Boss 命中风险</button>
     <button id="craft-attempt-open" type="button" class="hint-link">独立尝试预算</button>
+    <button id="currency-operation-open" type="button" class="hint-link">基础通货状态</button>
     <button id="economy-open" type="button" class="hint-link">经济分析</button>
     <button id="rare-open" type="button" class="hint-link">查询稀有装可比挂单</button>
     <button id="unique-history-open" type="button" class="hint-link">浏览唯一装备历史变体</button>
@@ -257,6 +258,86 @@
   </div>
 </dialog>
 
+<dialog id="currency-operation-dialog" class="currency-operation-dialog" aria-labelledby="currency-operation-title">
+  <div class="currency-operation-panel">
+    <div class="currency-operation-heading">
+      <div>
+        <h2 id="currency-operation-title">基础通货状态转移核对</h2>
+        <p>只核对已审计通货的效果原文、稀有度和结构化名额；结果词缀与制作成功率保持未知。</p>
+      </div>
+      <button id="currency-operation-close" type="button" class="ghost" aria-label="关闭基础通货状态核对">关闭</button>
+    </div>
+    <form id="currency-operation-form" class="currency-operation-form" novalidate>
+      <div class="currency-operation-fields">
+        <label>通货操作
+          <select id="currency-operation-name">
+            <option value="">请选择</option>
+            <option value="增幅石">增幅石</option><option value="崇高石">崇高石</option>
+            <option value="重铸石">重铸石</option><option value="神圣石">神圣石</option>
+            <option value="剥离石">剥离石</option><option value="改造石">改造石</option>
+            <option value="混沌石">混沌石</option><option value="富豪石">富豪石</option>
+            <option value="机会石">机会石</option><option value="点金石">点金石</option>
+          </select>
+        </label>
+        <label>装备状态来源
+          <select id="currency-operation-mode">
+            <option value="manual">手工填写结构化状态</option>
+            <option value="item">粘贴游戏复制的完整装备文本</option>
+          </select>
+        </label>
+      </div>
+      <section id="currency-operation-manual" class="currency-operation-inputs" aria-label="手工装备状态">
+        <p>留空的稀有度或前后缀数量保持未知；不会自动当作普通装备或 0 条词缀。</p>
+        <div class="currency-operation-fields">
+          <label>稀有度
+            <select id="currency-operation-rarity">
+              <option value="">未知</option><option value="普通">普通</option>
+              <option value="魔法">魔法</option><option value="稀有">稀有</option>
+              <option value="传奇">传奇</option>
+            </select>
+          </label>
+          <label>装备种类
+            <select id="currency-operation-kind">
+              <option value="default">一般装备</option><option value="jewel">珠宝</option>
+              <option value="flask">药剂</option><option value="graft">Graft</option>
+              <option value="jewel_abyss_corrupted">已腐化深渊珠宝</option>
+            </select>
+          </label>
+          <label>当前前缀数量（可选）
+            <input id="currency-operation-prefix" type="number" min="0" max="6" step="1" placeholder="未知">
+          </label>
+          <label>当前后缀数量（可选）
+            <input id="currency-operation-suffix" type="number" min="0" max="6" step="1" placeholder="未知">
+          </label>
+        </div>
+        <div class="currency-operation-flags">
+          <label><input id="currency-operation-corrupted" type="checkbox"> 已腐化</label>
+          <label><input id="currency-operation-mirrored" type="checkbox"> 已镜像</label>
+          <label><input id="currency-operation-fractured" type="checkbox"> 含裂隙词缀</label>
+        </div>
+      </section>
+      <section id="currency-operation-item-wrap" class="currency-operation-inputs" hidden aria-label="装备复制文本">
+        <label>完整装备复制文本
+          <textarea id="currency-operation-item" maxlength="20000" rows="7" placeholder="从游戏中复制装备文本；不会与手工状态混用"></textarea>
+        </label>
+      </section>
+      <label>Metamod guard（可选，只并列来源矩阵原值）
+        <select id="currency-operation-guard">
+          <option value="">不查询元词缀矩阵</option>
+          <option value="前缀无法被变更">前缀无法被变更</option>
+          <option value="后缀无法被变更">后缀无法被变更</option>
+          <option value="无法骰出攻击词缀">无法骰出攻击词缀</option>
+          <option value="无法骰出法术词缀">无法骰出法术词缀</option>
+        </select>
+      </label>
+      <button id="currency-operation-run" type="submit" class="auth-primary">核对条件状态</button>
+    </form>
+    <div id="currency-operation-status" class="currency-operation-status" role="status" aria-live="polite"></div>
+    <div id="currency-operation-result" class="currency-operation-result" hidden></div>
+    <p class="currency-operation-boundary">compatible 只代表已提供状态通过已知约束，不等于游戏中完整可执行。元词缀矩阵与 POEDB 效果是两条独立证据；不解释 YES/NO 的外延，不生成结果词缀、概率、步骤、成本或路线。</p>
+  </div>
+</dialog>
+
 <dialog id="economy-dialog" class="economy-dialog" aria-labelledby="economy-title">
   <div class="economy-panel">
     <div class="economy-heading">
@@ -399,6 +480,7 @@
 <script src="conflict-ledger.js"></script>
 <script src="boss-workbench.js"></script>
 <script src="craft-attempt-workbench.js"></script>
+<script src="currency-operation.js"></script>
 <script src="economy-workbench.js"></script>
 <script src="rare-comparables.js"></script>
 <script src="unique-history.js"></script>
