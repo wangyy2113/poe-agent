@@ -18,6 +18,10 @@ class RerankError(RuntimeError):
     """The optional remote ranker did not return a usable complete ranking."""
 
 
+class RerankTimeout(RerankError):
+    """The complete request, including retries, exceeded its time budget."""
+
+
 MAX_DOCUMENTS = 64
 MAX_DOCUMENT_CHARS = 4096
 MAX_QUERY_CHARS = 500
@@ -58,7 +62,13 @@ class RerankClient:
         ):
             raise RerankError("ReRank 文档数量或长度超出上限")
         endpoint = _endpoint(self.base_url)
+        if self.timeout_seconds <= 0:
+            raise RerankTimeout("ReRank 请求总时限已耗尽")
+        deadline = time.monotonic() + self.timeout_seconds
         for attempt in range(MAX_RETRIES + 1):
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise RerankTimeout("ReRank 请求总时限已耗尽")
             try:
                 response = httpx.post(
                     endpoint,
@@ -67,19 +77,22 @@ class RerankClient:
                         "model": self.model, "query": query,
                         "documents": documents, "top_n": len(documents),
                     },
-                    timeout=self.timeout_seconds,
+                    timeout=remaining,
                 )
             except httpx.HTTPError as exc:
                 if attempt == MAX_RETRIES:
-                    raise RerankError(
+                    error_type = RerankTimeout if isinstance(exc, httpx.TimeoutException) else RerankError
+                    raise error_type(
                         f"ReRank 请求失败：{type(exc).__name__}"
                     ) from None
-                time.sleep(0.25 * (2 ** attempt))
+                time.sleep(min(0.25 * (2 ** attempt), max(0, deadline - time.monotonic())))
                 continue
             if response.status_code in (429, 500, 502, 503, 504) and attempt < MAX_RETRIES:
-                time.sleep(0.25 * (2 ** attempt))
+                time.sleep(min(0.25 * (2 ** attempt), max(0, deadline - time.monotonic())))
                 continue
             break
+        if time.monotonic() >= deadline:
+            raise RerankTimeout("ReRank 请求总时限已耗尽")
         if response.status_code != 200:
             raise RerankError(f"ReRank 服务返回 HTTP {response.status_code}")
         try:

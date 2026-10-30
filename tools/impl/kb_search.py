@@ -96,6 +96,7 @@ def kb_search(
         category=category or None,
         league=league or None,
         version=version or None,
+        timeout_seconds=float(cfg.get("retrieval.timeout_seconds", 8)),
     )
 
     citations: list[dict[str, Any]] = []

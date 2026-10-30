@@ -105,6 +105,13 @@ class TestCraftingBenchExtractor(unittest.TestCase):
         self.assertEqual(first[0].effect_text, altered[0].effect_text)
         self.assertNotEqual(first[0].recipe_id, altered[0].recipe_id)
 
+    def test_费用变化保留配方身份并更新内容哈希(self):
+        html = _load_fixture()
+        original, _ = extract_bench_recipes(html)
+        changed, _ = extract_bench_recipes(html.replace("1x <a", "2x <a", 1))
+        self.assertEqual(original[0].recipe_id, changed[0].recipe_id)
+        self.assertNotEqual(original[0].content_hash, changed[0].content_hash)
+
     def test_关键字段缺失整批拒绝(self):
         cases = (
             _load_fixture().replace("1x <a class=\"item_currency", "<a class=\"item_currency", 1),

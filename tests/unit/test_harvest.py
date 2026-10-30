@@ -297,6 +297,25 @@ class ExtractTest(unittest.TestCase):
         with self.assertRaisesRegex(HarvestStructureError, "元数据路径"):
             extract_harvest_crafts(html)
 
+    def test_仅用已验证slug和同名通货恢复元数据路径(self) -> None:
+        html = page(craft_row(
+            "重铸",
+            '<a class="item_currency" data-hover="https://cdn.poedb.tw/cache/hash" '
+            'href="Wild_Crystallised_Lifeforce">狂野紫晶命能</a> x50',
+        ))
+        known = {"Wild_Crystallised_Lifeforce": (
+            "Metadata/Items/Currency/HarvestSeedRed", "狂野紫晶命能",
+        )}
+        crafts, _ = extract_harvest_crafts(html, known_currencies_by_slug=known)
+        self.assertEqual(known["Wild_Crystallised_Lifeforce"][0],
+                         crafts[0].costs[0].currency_metadata_id)
+        with self.assertRaisesRegex(HarvestStructureError, "身份不一致"):
+            extract_harvest_crafts(
+                html, known_currencies_by_slug={"Wild_Crystallised_Lifeforce": (
+                    known["Wild_Crystallised_Lifeforce"][0], "别的通货",
+                )},
+            )
+
     def test_找不到主表时报出观测到的表头(self) -> None:
         with self.assertRaisesRegex(HarvestStructureError, "观测到的表头"):
             extract_harvest_crafts("<html><body>" + CROP_TABLE + "</body></html>")

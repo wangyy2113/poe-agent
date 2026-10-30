@@ -80,15 +80,18 @@ class SkippedCard:
 
 
 def extract_scarabs(
-    html_zh: str, html_en: str | None = None
+    html_zh: str, html_en: str | None = None, *,
+    known_keys_by_slug: Mapping[str, str] | None = None,
 ) -> tuple[list[Scarab], list[SkippedCard]]:
     """抽取圣甲虫，返回 ``(圣甲虫, 按物品类跳过的卡片)``。"""
-    cards_zh = parse_cards(html_zh, SCARAB_SELECTOR)
+    cards_zh = parse_cards(html_zh, SCARAB_SELECTOR, known_keys_by_slug=known_keys_by_slug)
     if not cards_zh:
         raise CardStructureError(
             "圣甲虫页没有解析到任何 a.whiteitem 卡片（页面结构可能已改）"
         )
-    cards_en = parse_cards(html_en, SCARAB_SELECTOR) if html_en else {}
+    cards_en = parse_cards(
+        html_en, SCARAB_SELECTOR, known_keys_by_slug=known_keys_by_slug
+    ) if html_en else {}
 
     out: list[Scarab] = []
     skipped: list[SkippedCard] = []
@@ -119,3 +122,4 @@ def extract_scarabs(
         )
     assert_chinese([s.name_zh for s in out], what="圣甲虫名")
     return out, skipped
+from typing import Mapping

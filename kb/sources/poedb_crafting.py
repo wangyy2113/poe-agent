@@ -71,9 +71,17 @@ class BenchRecipe:
             sort_keys=True,
             separators=(",", ":"),
         )
-        digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
-        object.__setattr__(self, "recipe_id", f"bench:{digest}")
-        object.__setattr__(self, "content_hash", digest)
+        content_hash = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+        # A changed price or unlock URL is a change to the same recipe, not
+        # the deletion of one recipe and creation of another. The pair is
+        # unique in the POEDB catalog; duplicate pairs fail extraction below.
+        identity = json.dumps(
+            [self.effect_text, list(self.item_classes)],
+            ensure_ascii=False, separators=(",", ":"),
+        )
+        recipe_hash = hashlib.sha256(identity.encode("utf-8")).hexdigest()
+        object.__setattr__(self, "recipe_id", f"bench:{recipe_hash}")
+        object.__setattr__(self, "content_hash", content_hash)
 
 
 @dataclass

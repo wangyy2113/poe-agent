@@ -63,6 +63,7 @@ import hashlib
 import json
 import re
 from dataclasses import dataclass, field
+from typing import Mapping
 from urllib.parse import unquote, urljoin, urlparse
 
 from selectolax.parser import HTMLParser, Node
@@ -185,7 +186,10 @@ def _find_table(tree: HTMLParser, expected: tuple[str, ...], *, what: str) -> No
     return matches[0] if matches else None
 
 
-def _extract_costs(cell: Node, *, row_number: int, page_url: str) -> tuple[HarvestCost, ...]:
+def _extract_costs(
+    cell: Node, *, row_number: int, page_url: str,
+    known_currencies_by_slug: Mapping[str, tuple[str, str]] | None = None,
+) -> tuple[HarvestCost, ...]:
     """解析 `<a>通货</a> x50<br><a>通货</a> x2` 形态的费用单元格。
 
     **数量在链接之后**（工艺台正相反）。所以逐个节点走：遇到通货链接先挂起，
@@ -247,13 +251,21 @@ def _extract_costs(cell: Node, *, row_number: int, page_url: str) -> tuple[Harve
             raise HarvestStructureError(
                 f"第 {row_number} 行通货字段不完整：href={href!r}, name={name!r}"
             )
-        if meta is None:
-            # 元数据路径是与 poedb_currency 对账的键，缺了就没法核对
+        known = (known_currencies_by_slug or {}).get(slug)
+        if known and (known[1] != name or (meta and meta.group(1) != known[0])):
             raise HarvestStructureError(
-                f"第 {row_number} 行通货 {name!r} 的 data-hover 里没有元数据路径"
+                f"第 {row_number} 行通货 {name!r} 与已入库 slug 身份不一致"
+            )
+        metadata_id = meta.group(1) if meta else (known[0] if known else None)
+        if metadata_id is None:
+            # Opaque tooltip hashes are not IDs. Resolve only through a
+            # previously verified currency slug and the same Chinese name.
+            raise HarvestStructureError(
+                f"第 {row_number} 行通货 {name!r} 的 data-hover 里没有元数据路径，"
+                "且没有可核对的通货目录记录"
             )
         pending = {
-            "metadata_id": meta.group(1),
+            "metadata_id": metadata_id,
             "slug": slug,
             "name": name,
             "url": currency_url,
@@ -269,7 +281,8 @@ def _extract_costs(cell: Node, *, row_number: int, page_url: str) -> tuple[Harve
 
 
 def extract_harvest_crafts(
-    html: str, *, page_url: str = HORTICRAFTING_URL
+    html: str, *, page_url: str = HORTICRAFTING_URL,
+    known_currencies_by_slug: Mapping[str, tuple[str, str]] | None = None,
 ) -> tuple[list[HarvestCraft], HarvestExtractStats]:
     """抽取定向工艺目录。返回 ``(工艺, 清点)``。"""
     tree = HTMLParser(html)
@@ -291,7 +304,10 @@ def extract_harvest_crafts(
         effect = _text(cells[0])
         if not effect:
             raise HarvestStructureError(f"第 {row_number} 行描述为空")
-        costs = _extract_costs(cells[1], row_number=row_number, page_url=page_url)
+        costs = _extract_costs(
+            cells[1], row_number=row_number, page_url=page_url,
+            known_currencies_by_slug=known_currencies_by_slug,
+        )
         craft = HarvestCraft(effect_text=effect, costs=costs, url=page_url)
         if craft.craft_id in seen:
             # 描述实测 74/74 唯一；真撞上说明页面重复列了同一条

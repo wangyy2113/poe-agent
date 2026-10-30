@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from typing import Mapping
 from dataclasses import dataclass
 
 from kb.sources.poedb_cards import (
@@ -76,14 +77,19 @@ def count_other_class(html: str) -> int:
     return count_links(html, OTHER_CLASS_SELECTOR)
 
 
-def extract_currencies(html_zh: str, html_en: str | None = None) -> list[Currency]:
+def extract_currencies(
+    html_zh: str, html_en: str | None = None, *,
+    known_keys_by_slug: Mapping[str, str] | None = None,
+) -> list[Currency]:
     """抽取通货。英文页可选——取不到时 `name_en` 留 None，不由 slug 反推。"""
-    cards_zh = parse_cards(html_zh, CURRENCY_SELECTOR)
+    cards_zh = parse_cards(html_zh, CURRENCY_SELECTOR, known_keys_by_slug=known_keys_by_slug)
     if not cards_zh:
         raise CardStructureError(
             "通货页没有解析到任何 a.item_currency 卡片（页面结构可能已改）"
         )
-    cards_en = parse_cards(html_en, CURRENCY_SELECTOR) if html_en else {}
+    cards_en = parse_cards(
+        html_en, CURRENCY_SELECTOR, known_keys_by_slug=known_keys_by_slug
+    ) if html_en else {}
 
     out: list[Currency] = []
     for key, card in sorted(cards_zh.items()):

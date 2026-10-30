@@ -927,8 +927,15 @@ def run_poedb_harvest(*, force: bool = False, allow_shrink: bool = False) -> int
         conn.commit()
         return 2
 
+    known_currencies = {
+        str(slug): (str(metadata_id), str(name_zh))
+        for metadata_id, name_zh, slug in conn.execute(
+            "SELECT metadata_id, name_zh, poedb_slug FROM poedb_currency"
+        )
+    }
     crafts, stats = poedb_harvest.extract_harvest_crafts(
-        res.text, page_url=poedb_harvest.HORTICRAFTING_URL
+        res.text, page_url=poedb_harvest.HORTICRAFTING_URL,
+        known_currencies_by_slug=known_currencies,
     )
     existing = int(conn.execute("SELECT count(*) FROM harvest_craft").fetchone()[0])
     if len(crafts) < MIN_HARVEST_CRAFTS or (existing and len(crafts) < existing * 0.8):
@@ -2014,7 +2021,15 @@ def run_poedb_currency(*, force: bool = False, allow_shrink: bool = False) -> in
     except Exception as exc:  # noqa: BLE001  英文名缺失不阻塞采集
         logger.warning("通货英文页取不到（%s），本轮 name_en 将为空", exc)
 
-    items = poedb_currency.extract_currencies(res.text, html_en)
+    known_keys = {
+        str(slug): str(metadata_id)
+        for metadata_id, slug in conn.execute(
+            "SELECT metadata_id, poedb_slug FROM poedb_currency"
+        )
+    }
+    items = poedb_currency.extract_currencies(
+        res.text, html_en, known_keys_by_slug=known_keys
+    )
     other_class = poedb_currency.count_other_class(res.text)
     existing = int(conn.execute("SELECT count(*) FROM poedb_currency").fetchone()[0])
     if len(items) < MIN_CURRENCIES or (existing and len(items) < existing * 0.8):
@@ -2333,7 +2348,16 @@ def run_poedb_essence(*, force: bool = False, allow_shrink: bool = False) -> int
         conn.commit()
         return 2
 
-    items = poedb_essence.parse_essences(res.text, page_url=poedb_essence.ESSENCE_URL)
+    previous_names = {
+        str(slug): (str(metadata_id), str(name_zh), name_en)
+        for metadata_id, name_zh, name_en, slug in conn.execute(
+            "SELECT metadata_id, name_zh, name_en, slug FROM poedb_essence"
+        )
+    }
+    items = poedb_essence.parse_essences(
+        res.text, page_url=poedb_essence.ESSENCE_URL,
+        known_keys_by_slug={slug: row[0] for slug, row in previous_names.items()},
+    )
     existing = int(conn.execute("SELECT count(*) FROM poedb_essence").fetchone()[0])
     if len(items) < MIN_ESSENCES or (existing and len(items) < existing * 0.8):
         if not allow_shrink:
@@ -2356,13 +2380,18 @@ def run_poedb_essence(*, force: bool = False, allow_shrink: bool = False) -> int
             INSERT INTO poedb_essence(
                 metadata_id,name_zh,name_en,slug,tier,stack_max,level_cap,base_effect,
                 source,source_priority,url,content_hash,fetched_at,updated_at
-            ) VALUES (?,?,NULL,?,?,?,?,?,?,?,?,?,?,datetime('now'))
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'))
             """,
             [
                 # `i.content_hash` 而不是 `res.content_hash`：后者是**整页**哈希，
                 # 105 行会写成同一个值、这一列就没有分辨力（第五十九轮的写法）。
                 # 与通货 / 圣甲虫 / 地图三处对齐，判据见 `Essence.content_hash`。
-                (i.key, i.name_zh, i.slug, i.tier, i.stack_max, i.level_cap, i.base_effect,
+                (i.key, i.name_zh,
+                 previous_names[i.slug][2]
+                 if i.slug in previous_names
+                 and previous_names[i.slug][:2] == (i.key, i.name_zh)
+                 else None,
+                 i.slug, i.tier, i.stack_max, i.level_cap, i.base_effect,
                  Source.POEDB.value, priority, f"{poedb_essence.ESSENCE_URL}#{i.slug}",
                  i.content_hash, res.fetched_at)
                 for i in items
@@ -2407,21 +2436,8 @@ def run_poedb_essence(*, force: bool = False, allow_shrink: bool = False) -> int
     logger.info("精华采集完成：%d 件、保底词缀 %d 行（卡片 %d、别名 %d），耗时 %dms",
                 len(items), mod_rows, chunks, aliases, elapsed_ms)
 
-    # `name_en` 在上面的 INSERT 里写死为 NULL——它由 `verify_essence.py --write`
-    # 对完账再回填。所以重跑本采集会把英文名**连同卡片上的它**一起抹掉。
-    # 2026-09-03 实测踩到：卡片首行从
-    # 「# 憎恨之低语精华（Whispering Essence of Hatred）」变回「# 憎恨之低语精华」，
-    # 而唯一露出来的信号是一条录制过期。**提醒而不是静默**，
-    # 与上面唯一装备详情页那处同一条。
-    if conn.execute(
-        "SELECT 1 FROM source_conflict WHERE kind='essence_review' LIMIT 1"
-    ).fetchone():
-        logger.warning(
-            "本轮重写了精华快照，name_en 已被清空、卡片上的英文名随之消失——"
-            "请紧接着重跑 scripts/verify_essence.py --write"
-        )
-        print("[注意] 精华快照已重写，name_en 被清空，"
-              "请重跑 scripts/verify_essence.py --write")
+    # Only a verified pair of metadata ID and Chinese name may retain its
+    # previously reconciled English name. New or renamed items remain NULL.
     return 0
 
 
@@ -2458,7 +2474,15 @@ def run_poedb_scarab(*, force: bool = False, allow_shrink: bool = False) -> int:
     except Exception as exc:  # noqa: BLE001  英文名缺失不阻塞采集
         logger.warning("圣甲虫英文页取不到（%s），本轮 name_en 将为空", exc)
 
-    items, skipped = poedb_scarab.extract_scarabs(res.text, html_en)
+    known_keys = {
+        str(slug): str(metadata_id)
+        for metadata_id, slug in conn.execute(
+            "SELECT metadata_id, poedb_slug FROM poedb_scarab"
+        )
+    }
+    items, skipped = poedb_scarab.extract_scarabs(
+        res.text, html_en, known_keys_by_slug=known_keys
+    )
     existing = int(conn.execute("SELECT count(*) FROM poedb_scarab").fetchone()[0])
     if len(items) < MIN_SCARABS or (existing and len(items) < existing * 0.8):
         if not allow_shrink:

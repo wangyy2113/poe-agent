@@ -17,6 +17,10 @@ class EmbeddingError(RuntimeError):
     """The remote embedding channel cannot safely supply a vector."""
 
 
+class EmbeddingTimeout(EmbeddingError):
+    """The complete request, including retries, exceeded its time budget."""
+
+
 MAX_BATCH = 32
 MAX_DIM = 8192
 MAX_RETRIES = 2
@@ -44,25 +48,34 @@ class EmbeddingClient:
         if not 1 <= len(texts) <= MAX_BATCH or any(not item.strip() for item in texts):
             raise EmbeddingError(f"Embedding 输入必须是 1..{MAX_BATCH} 条非空文本")
         endpoint = _endpoint(self.base_url)
+        if self.timeout_seconds <= 0:
+            raise EmbeddingTimeout("Embedding 请求总时限已耗尽")
+        deadline = time.monotonic() + self.timeout_seconds
         for attempt in range(MAX_RETRIES + 1):
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise EmbeddingTimeout("Embedding 请求总时限已耗尽")
             try:
                 response = httpx.post(
                     endpoint,
                     headers={"Authorization": f"Bearer {self.api_key}"},
                     json={"model": self.model, "input": texts},
-                    timeout=self.timeout_seconds,
+                    timeout=remaining,
                 )
             except httpx.HTTPError as exc:
                 if attempt == MAX_RETRIES:
-                    raise EmbeddingError(
+                    error_type = EmbeddingTimeout if isinstance(exc, httpx.TimeoutException) else EmbeddingError
+                    raise error_type(
                         f"Embedding 请求失败：{type(exc).__name__}"
                     ) from exc
-                time.sleep(0.25 * (2 ** attempt))
+                time.sleep(min(0.25 * (2 ** attempt), max(0, deadline - time.monotonic())))
                 continue
             if response.status_code in (429, 500, 502, 503, 504) and attempt < MAX_RETRIES:
-                time.sleep(0.25 * (2 ** attempt))
+                time.sleep(min(0.25 * (2 ** attempt), max(0, deadline - time.monotonic())))
                 continue
             break
+        if time.monotonic() >= deadline:
+            raise EmbeddingTimeout("Embedding 请求总时限已耗尽")
         if response.status_code != 200:
             raise EmbeddingError(f"Embedding 服务返回 HTTP {response.status_code}")
         try:
