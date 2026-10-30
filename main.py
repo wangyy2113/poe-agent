@@ -44,6 +44,7 @@ from core.config import REPO_ROOT, get_config, get_secrets
 from core.llm import LLMError, get_llm_client
 from core.logging_setup import setup_logging
 from core.version import APP_VERSION
+from retrieval.runtime import vector_runtime as active_vector_runtime
 
 # 导入即注册工具（kb_search / entity_lookup）
 import tools.impl  # noqa: F401
@@ -89,6 +90,7 @@ def _warn_if_open() -> None:
 def health() -> dict[str, Any]:
     """反映 SQLite / 向量扩展 / LLM 凭证池 / embedding 通道状态。"""
     out: dict[str, Any] = {"status": "ok", "base_path": BASE_PATH or "/"}
+    conn = None
     try:
         conn = dbmod.get_conn()
         out["db"] = {
@@ -118,7 +120,14 @@ def health() -> dict[str, Any]:
 
     vs = dbmod.vector_status()
     vector_requested = bool(cfg.get("retrieval.vector.enabled", False))
-    vector_runtime = dbmod.vector_channel_status(vector_requested)
+    try:
+        sec = get_secrets()
+        vector_runtime = (
+            active_vector_runtime(conn, vector_requested, sec)[0]
+            if conn is not None else dbmod.vector_channel_status(vector_requested)
+        )
+    except Exception as exc:  # noqa: BLE001  健康检查不能因一个通道失败而整体 500
+        vector_runtime = dbmod.VectorStatus(False, f"向量通道检查失败：{type(exc).__name__}")
     out["vector"] = {
         "extension_available": vs.available,
         "requested": vector_requested,
@@ -146,7 +155,10 @@ def health() -> dict[str, Any]:
             out["status"] = "degraded"
             out["llm"]["pool_error"] = str(exc)
         out["embedding"] = {
-            "configured": bool(sec.embedding_base_url and sec.embedding_model),
+            "configured": bool(
+                sec.embedding_base_url and getattr(sec, "embedding_api_key", "")
+                and sec.embedding_model
+            ),
             "model": sec.embedding_model or None,
         }
     except Exception as exc:  # noqa: BLE001

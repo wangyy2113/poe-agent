@@ -2241,6 +2241,7 @@ def vector_channel_status(
     requested: bool,
     *,
     query_adapter_ready: bool = False,
+    query_adapter_reason: str = "",
 ) -> VectorStatus:
     """返回向量检索的**运行时有效状态**，而不是只复述配置值。
 
@@ -2266,10 +2267,10 @@ def vector_channel_status(
     if row is None:
         return VectorStatus(
             False,
-            "向量表未建立（retrieval.vector.dim 必须为正数）",
+            "向量表未建立（需运行 scripts/backfill_vectors.py --apply）",
         )
     if not query_adapter_ready:
-        return VectorStatus(False, "向量查询适配器尚未接入")
+        return VectorStatus(False, query_adapter_reason or "向量查询适配器尚未接入")
     return VectorStatus(True, extension.reason)
 
 

@@ -14,6 +14,7 @@ from core import db as dbmod
 from core.config import get_config
 from entities.taxonomy import MAX_FACTUAL_PRIORITY
 from retrieval.hybrid import retrieve
+from retrieval.runtime import configured_vector_runtime as vector_runtime_status
 from tools.registry import REGISTRY, ToolResult
 
 logger = logging.getLogger(__name__)
@@ -58,9 +59,13 @@ def kb_search(query: str, category: str | None = None, top_k: int | None = None)
     cfg = get_config()
     k = max(1, min(int(top_k or cfg.get("retrieval.top_k", 20)), 20))
     vector_requested = bool(cfg.get("retrieval.vector.enabled", False))
-    vector_runtime = dbmod.vector_channel_status(vector_requested)
+    conn = dbmod.get_conn()
+    vector_runtime, embedding_client = vector_runtime_status(
+        conn, vector_requested,
+        timeout_seconds=float(cfg.get("retrieval.timeout_seconds", 8)),
+    )
     result = retrieve(
-        dbmod.get_conn(),
+        conn,
         query,
         top_k=k,
         min_score=float(cfg.get("retrieval.min_score", 0.35)),
@@ -73,6 +78,7 @@ def kb_search(query: str, category: str | None = None, top_k: int | None = None)
             if vector_requested and not vector_runtime.available
             else ""
         ),
+        embedding_client=embedding_client,
         rerank_enabled=bool(cfg.get("retrieval.rerank.enabled", False)),
         category=category or None,
     )

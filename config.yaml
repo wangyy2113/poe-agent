@@ -82,10 +82,11 @@ retrieval:
   timeout_seconds: 8
 
   vector:
-    # 2026-08-04 实测：网关未注册 embedding 模型 → 关闭。
+    # 2026-10-30 实测：当前网关未注册 embedding 模型 → 关闭。
     # 关闭后走 BM25 + 实体精确匹配 + search_keywords 补偿。
     enabled: false
-    # 维度不写死：启用时按 embedding 模型实际输出维度建表
+    # 默认 0：scripts/backfill_vectors.py --apply 用模型实际输出维度建表。
+    # 若手动预建表，必须与该模型维度一致；完整回填前向量通道仍关闭。
     dim: 0
   rerank:
     enabled: false

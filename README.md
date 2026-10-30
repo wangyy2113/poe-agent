@@ -1855,13 +1855,22 @@ ASGI 服务器看到的 TCP peer，刻意不信任 `X-Forwarded-For`。如果前
 
 ### 检索结果里的 `degraded=true` 是什么意思
 
-配置主动关闭时不是故障。2026-08-04 实测网关未注册任何 embedding / rerank 模型，所以
+配置主动关闭时不是故障。2026-10-30 实测网关未注册任何 embedding / rerank 模型，所以
 `config.yaml` 里 `retrieval.vector.enabled` 与 `rerank.enabled` 都是 `false`，
 检索走 BM25 + 实体精确 + 词缀意图三路，`degraded` 标记的是「向量通道未参与」。
 `/healthz` 会分开报告配置请求值 `requested` 与运行时有效值 `enabled`。即使配置误设为
-`true`，扩展不可加载、`chunk_vec` 未建立或查询适配器尚未接入时也会自动按关闭处理，
-在启动日志、健康检查和检索附注中写明原因，不会把一个未执行的 `vector` 通道列进元数据；
+`true`，扩展不可加载、Embedding 凭证缺失、`chunk_vec` 未建立或当前模型的索引未完整回填时
+也会自动按关闭处理，在健康检查和检索附注中写明原因，不会把一个未执行的 `vector`
+通道列进元数据；
 BM25 与实体精确检索继续可用。
+
+`retrieval/embedding.py` 已实现远程 OpenAI 兼容 Embedding 响应校验；
+`retrieval/vector.py` 将完整索引与模型绑定，在 sqlite-vec 中查询并与其它通道 RRF 融合。
+`scripts/backfill_vectors.py` 默认只读预览；将来有可用的 Embedding 模型后，在本机 `.env`
+填写 `EMBEDDING_BASE_URL`、`EMBEDDING_API_KEY`、`EMBEDDING_MODEL`，执行
+`.venv/bin/python scripts/backfill_vectors.py --apply` 完整回填，再打开 `vector.enabled`。
+回填按模型与原文 SHA-256 复用已算向量；任一知识切片更新会将索引标脏，远程查询失败也会
+在该轮退回 BM25 与实体精确匹配。当前没有可用模型，因此未执行真实回填或线上向量验收。
 
 ---
 
@@ -1954,7 +1963,7 @@ PoB 排 P2 而不是 P1：它在数值上更接近一手，但不含中文名与
 .venv/bin/python -m unittest discover -s tests -t .
 ```
 
-目前 2470 项单元测试覆盖以下与「无据不答」直接相关的重点：
+目前 2478 项单元测试覆盖以下与「无据不答」直接相关的重点：
 
 | 组 | 项数 | 重点 |
 | --- | --- | --- |
@@ -2118,7 +2127,7 @@ SHA-256、大小、schema SHA-256、SQLite/app 版本、页信息和关键表行
 - **数值计算派生只接受本地计算器结果。** 带“因此/合计/换算”等标记的数值结论必须
   绑定确定性计算器输出，且逐值精确匹配；模型自行心算、换算或从证据区间任选一点都会
   被拦截。尚无对应计算器的领域因此不能给派生数值。
-- **向量通道关闭。** 网关没有 embedding 模型，描述性查询依赖 `search_keywords` 的覆盖质量。
+- **向量通道关闭。** 查询适配器与回填流程已实现，但网关没有 embedding 模型，尚未真实回填或在线验收；描述性查询仍依赖 `search_keywords` 的覆盖质量。
 - **普通复制的混合词缀分组仍有边界。** 中文相邻两至三行可在 POEDB 整条词缀
   唯一匹配时合并；四行以上、英文普通复制、来源或底材档位/方向有歧义、多个候选分组
   共用一行时都不会自动合并。普通复制本身不标记词缀边界，即使完整组合与库吻合，

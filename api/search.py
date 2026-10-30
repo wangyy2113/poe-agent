@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 from core import db as dbmod
 from core.config import get_config
 from retrieval.hybrid import retrieve
+from retrieval.runtime import configured_vector_runtime
 
 router = APIRouter(tags=["检索"])
 
@@ -48,22 +49,27 @@ class SearchResponse(BaseModel):
 @router.post("/search", response_model=SearchResponse)
 def search(req: SearchRequest) -> SearchResponse:
     cfg = get_config()
+    conn = dbmod.get_conn()
     vector_requested = bool(cfg.get("retrieval.vector.enabled", False))
-    vector_runtime = dbmod.vector_channel_status(vector_requested)
+    runtime, embedding_client = configured_vector_runtime(
+        conn, vector_requested,
+        timeout_seconds=float(cfg.get("retrieval.timeout_seconds", 8)),
+    )
     result = retrieve(
-        dbmod.get_conn(),
+        conn,
         req.query,
         top_k=req.top_k or int(cfg.get("retrieval.top_k", 20)),
         min_score=float(cfg.get("retrieval.min_score", 0.35)),
         min_coverage=float(cfg.get("retrieval.min_coverage", 0.5)),
         rrf_k=int(cfg.get("retrieval.rrf_k", 60)),
         priority_decay=float(cfg.get("retrieval.priority_decay", 0.08)),
-        vector_enabled=vector_runtime.available,
+        vector_enabled=runtime.available,
         vector_disabled_reason=(
-            vector_runtime.reason
-            if vector_requested and not vector_runtime.available
+            runtime.reason
+            if vector_requested and not runtime.available
             else ""
         ),
+        embedding_client=embedding_client,
         rerank_enabled=bool(cfg.get("retrieval.rerank.enabled", False)),
         category=req.category,
     )

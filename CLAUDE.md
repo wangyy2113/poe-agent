@@ -151,7 +151,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 2470 项，约 20 秒
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 2478 项，约 20 秒
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选
@@ -1724,5 +1724,6 @@ Elder、Uber Elder 这四页得到这三类门槛；Maven、Cortex、Exarch、Ea
 在 `/v1/models` 中，但用它调用 `/v1/embeddings` 返回 HTTP 400
 `Unmapped LLM provider for this endpoint`；模型清单 31 项里没有可识别的
 Embedding 模型。保留向量通道显式关闭，不把聊天模型名写进 `EMBEDDING_MODEL`。
-即便网关以后注册了可用模型，也还须接通真正的查询适配器和索引回填；
-`vector_channel_status` 在适配器未就绪时会拒绝把配置请求报告成运行时启用。
+后续已接通远程 OpenAI 兼容 Embedding 客户端、sqlite-vec 查询、模型绑定的完整回填、
+同内容缓存与检索 RRF 融合；`vector_channel_status` 在扩展、凭证或完整索引缺失时仍拒绝
+把配置请求报告成运行时启用。当前网关没有 Embedding 模型，真实回填与在线向量验收尚未完成。

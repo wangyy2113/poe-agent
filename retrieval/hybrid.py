@@ -1,7 +1,6 @@
 """混合检索：实体精确通道 + BM25，RRF 融合 → 来源优先级加权 → 充分依据判定。
 
-向量通道当前关闭（网关无 embedding 模型），接口已预留：一旦 embedding 可用，
-在 `_gather` 里加一路候选即可，融合与判定逻辑无需改动。
+向量通道需要远程 embedding 与完整的 sqlite-vec 索引；任一缺失时透明降级。
 
 **充分依据判定由代码执行，不交给模型自觉**（需求 1.3）：
 最高分低于 min_score 即返回 evidence_gap，不进入生成。
@@ -28,8 +27,10 @@ import sqlite3
 from dataclasses import dataclass, field
 
 from retrieval import alias as alias_mod
+from retrieval.embedding import EmbeddingClient, EmbeddingError
 from retrieval.fts import Hit, absent_from_corpus, search_fts, term_coverage
 from retrieval.tokenize import query_content_words
+from retrieval.vector import search_vector
 
 logger = logging.getLogger(__name__)
 
@@ -174,6 +175,7 @@ def retrieve(
     priority_decay: float = 0.08,
     vector_enabled: bool = False,
     vector_disabled_reason: str = "",
+    embedding_client: EmbeddingClient | None = None,
     rerank_enabled: bool = False,
     category: str | None = None,
     league: str | None = None,
@@ -224,21 +226,36 @@ def retrieve(
             channels["mod_intent"] = mod_hits
             result.channels.append("mod_intent")
 
-    # ── 通道 4：向量（当前关闭）──
-    if vector_enabled:
-        result.channels.append("vector")
+    # ── 通道 4：远程 embedding + 进程内 sqlite-vec ──
+    if vector_enabled and embedding_client is not None:
+        try:
+            vector_hits = search_vector(
+                conn, query, embedding_client, limit=recall_k,
+                category=category, league=league,
+            )
+            if vector_hits:
+                channels["vector"] = vector_hits
+            result.channels.append("vector")
+        except (EmbeddingError, sqlite3.Error) as exc:
+            result.degraded = True
+            result.note = (
+                f"向量检索已自动降级（{exc}），当前走 BM25 + 实体精确匹配"
+            )
     else:
         result.degraded = True
+        if vector_enabled and embedding_client is None:
+            vector_disabled_reason = "Embedding 客户端未配置"
         if vector_disabled_reason:
             result.note = (
                 f"向量检索已自动降级（{vector_disabled_reason}），"
                 "当前走 BM25 + 实体精确匹配"
             )
         else:
-            result.note = "向量检索与重排未启用（网关无 embedding 模型），当前走 BM25 + 实体精确匹配"
+            result.note = "向量检索未启用，当前走 BM25 + 实体精确匹配"
 
-    if not rerank_enabled:
+    if rerank_enabled:
         result.degraded = True
+        result.note = (result.note + "；" if result.note else "") + "ReRank 查询适配器尚未接入"
 
     if not channels:
         result.sufficient = False
