@@ -86,6 +86,7 @@ async function apiFetch(path, options = {}) {
       window.clearCurrencyOperation?.();
       window.clearEssenceOperation?.();
       window.clearEldritchOperation?.();
+      window.clearVeiledOperation?.();
       window.clearEconomyWorkbench?.();
       window.clearRareComparables?.();
     }
@@ -136,6 +137,7 @@ async function saveApiKey(event) {
       window.clearCurrencyOperation?.();
       window.clearEssenceOperation?.();
       window.clearEldritchOperation?.();
+      window.clearVeiledOperation?.();
       window.clearEconomyWorkbench?.();
       window.clearRareComparables?.();
     }
@@ -165,6 +167,7 @@ function clearApiKey() {
   window.clearCurrencyOperation?.();
   window.clearEssenceOperation?.();
   window.clearEldritchOperation?.();
+  window.clearVeiledOperation?.();
   window.clearEconomyWorkbench?.();
   window.clearRareComparables?.();
   updateAuthButton(authRequired);
@@ -880,6 +883,7 @@ function showPasteCard(kind, text) {
     (isItem ? '<button class="pc-craft">核对通货操作</button>' : '') +
     (isItem ? '<button class="pc-essence">核对精华操作</button>' : '') +
     (isItem ? '<button class="pc-eldritch">核对古灵操作</button>' : '') +
+    (isItem ? '<button class="pc-veiled">核对加密通货</button>' : '') +
     '<button class="pc-ghost">当作普通提问发送</button></div>';
 
   el.pasteCard.querySelector('.pc-close').onclick = hidePasteCard;
@@ -897,6 +901,7 @@ function showPasteCard(kind, text) {
   const craft = el.pasteCard.querySelector('.pc-craft');
   const essence = el.pasteCard.querySelector('.pc-essence');
   const eldritch = el.pasteCard.querySelector('.pc-eldritch');
+  const veiled = el.pasteCard.querySelector('.pc-veiled');
   if (compare) {
     compare.onclick = () => {
       hidePasteCard();
@@ -919,6 +924,12 @@ function showPasteCard(kind, text) {
     eldritch.onclick = () => {
       hidePasteCard();
       window.openEldritchOperation?.(text);
+    };
+  }
+  if (veiled) {
+    veiled.onclick = () => {
+      hidePasteCard();
+      window.openVeiledOperation?.(text);
     };
   }
   if (primary) {

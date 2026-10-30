@@ -72,6 +72,7 @@ def render_veiled_operation(result: VeiledOperationResult) -> str:
 
     after = result.after
     change_labels = {
+        "unknown": "未知（来源效果原文已变化）",
         "all_modifiers_rerolled_with_one_random_veiled_modifier": "重置全部词缀，并包含一个随机加密词缀",
         "one_random_modifier_removed_and_one_random_veiled_modifier_added": "移除一个随机词缀，并添加一个随机加密词缀",
     }
@@ -79,7 +80,7 @@ def render_veiled_operation(result: VeiledOperationResult) -> str:
         "",
         "条件状态转移（仅在操作实际成功执行时）：",
         f"- 词缀变化：{change_labels.get(after['modifier_change'], after['modifier_change'])}",
-        f"- 加密词缀可能位置：{' / '.join(after['veiled_modifier_position'])}",
+        f"- 加密词缀可能位置：{' / '.join(after['veiled_modifier_position']) or '未知'}",
     ]
     if after["possible_affix_counts"]:
         counts = " 或 ".join(

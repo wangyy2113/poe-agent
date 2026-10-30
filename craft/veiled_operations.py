@@ -264,13 +264,14 @@ def evaluate_veiled_operation(
     unknown: list[str] = []
     capacity: CapacityAssessment | None = None
 
-    rarity = normalize_rarity(state.rarity)
-    if rarity is None:
-        checks.append(VeiledCheck("rarity", "unknown", "需要提供物品稀有度；效果原文要求稀有物品", url))
-    elif rarity != "稀有":
-        checks.append(VeiledCheck("rarity", "fail", f"当前是{rarity}物品，但效果原文要求稀有物品", url))
-    else:
-        checks.append(VeiledCheck("rarity", "pass", "当前是稀有物品，与效果原文一致", url))
+    if source_ok:
+        rarity = normalize_rarity(state.rarity)
+        if rarity is None:
+            checks.append(VeiledCheck("rarity", "unknown", "需要提供物品稀有度；效果原文要求稀有物品", url))
+        elif rarity != "稀有":
+            checks.append(VeiledCheck("rarity", "fail", f"当前是{rarity}物品，但效果原文要求稀有物品", url))
+        else:
+            checks.append(VeiledCheck("rarity", "pass", "当前是稀有物品，与效果原文一致", url))
 
     pool: dict[str, Any] | None = None
     positions: list[str] = []
@@ -297,16 +298,18 @@ def evaluate_veiled_operation(
         unknown.append("未给底材类别，无法列出本库对应的隐匿词缀候选目录")
 
     after: dict[str, Any] = {
-        "rarity": "稀有",
-        "prefix_count": state.prefix_count,
-        "suffix_count": state.suffix_count,
+        "rarity": "稀有" if source_ok else None,
+        "prefix_count": state.prefix_count if source_ok else None,
+        "suffix_count": state.suffix_count if source_ok else None,
         "possible_affix_counts": [],
-        "modifier_change": "",
-        "has_veiled_modifier": True,
-        "veiled_modifier_position": positions or ["前缀", "后缀"],
-        "random_outcome": True,
+        "modifier_change": "" if source_ok else "unknown",
+        "has_veiled_modifier": True if source_ok else None,
+        "veiled_modifier_position": (positions or ["前缀", "后缀"]) if source_ok else [],
+        "random_outcome": True if source_ok else None,
     }
-    if spec.action == "reroll_all_with_veiled":
+    if not source_ok:
+        unknown.append("来源原文变化后的状态转移")
+    elif spec.action == "reroll_all_with_veiled":
         after.update(
             prefix_count=None,
             suffix_count=None,

@@ -56,6 +56,7 @@
     <button id="currency-operation-open" type="button" class="hint-link">基础通货状态</button>
     <button id="essence-operation-open" type="button" class="hint-link">精华状态</button>
     <button id="eldritch-operation-open" type="button" class="hint-link">古灵通货状态</button>
+    <button id="veiled-operation-open" type="button" class="hint-link">加密通货状态</button>
     <button id="economy-open" type="button" class="hint-link">经济分析</button>
     <button id="rare-open" type="button" class="hint-link">查询稀有装可比挂单</button>
     <button id="unique-history-open" type="button" class="hint-link">浏览唯一装备历史变体</button>
@@ -487,6 +488,65 @@
   </div>
 </dialog>
 
+<dialog id="veiled-operation-dialog" class="veiled-operation-dialog" aria-labelledby="veiled-operation-title">
+  <div class="veiled-operation-panel">
+    <div class="veiled-operation-heading">
+      <div>
+        <h2 id="veiled-operation-title">加密通货状态转移核对</h2>
+        <p>按 POEDB 效果原文核对；候选目录来自本库隐匿词缀记录。</p>
+      </div>
+      <button id="veiled-operation-close" type="button" class="ghost" aria-label="关闭加密通货状态核对">关闭</button>
+    </div>
+    <form id="veiled-operation-form" class="veiled-operation-form" novalidate>
+      <label>当前入库的操作
+        <select id="veiled-operation-name" aria-describedby="veiled-operation-catalog-status"></select>
+      </label>
+      <p id="veiled-operation-catalog-status" role="status" aria-live="polite"></p>
+      <label>装备状态来源
+        <select id="veiled-operation-mode">
+          <option value="manual">手工填写</option>
+          <option value="item">装备复制文本</option>
+        </select>
+      </label>
+      <p id="veiled-operation-action-note"></p>
+      <section id="veiled-operation-manual" class="veiled-operation-inputs" aria-label="手工装备状态">
+        <div class="veiled-operation-fields">
+          <label>稀有度
+            <select id="veiled-operation-rarity">
+              <option value="">未知</option><option value="普通">普通</option>
+              <option value="魔法">魔法</option><option value="稀有">稀有</option>
+              <option value="传奇">传奇</option>
+            </select>
+          </label>
+          <label>底材类别（可选）
+            <input id="veiled-operation-class" maxlength="80" placeholder="例如：胸甲">
+          </label>
+          <label>前缀数量（可选）
+            <input id="veiled-operation-prefix" type="number" min="0" max="6" step="1" placeholder="未知">
+          </label>
+          <label>后缀数量（可选）
+            <input id="veiled-operation-suffix" type="number" min="0" max="6" step="1" placeholder="未知">
+          </label>
+        </div>
+        <div class="veiled-operation-flags">
+          <label><input id="veiled-operation-corrupted" type="checkbox"> 已腐化</label>
+          <label><input id="veiled-operation-mirrored" type="checkbox"> 已镜像</label>
+          <label><input id="veiled-operation-fractured" type="checkbox"> 含裂隙词缀</label>
+        </div>
+      </section>
+      <section id="veiled-operation-item-wrap" class="veiled-operation-inputs" hidden aria-label="装备复制文本">
+        <label>完整装备复制文本
+          <textarea id="veiled-operation-item" maxlength="20000" rows="7" placeholder="从游戏中复制装备文本；不会与手工状态混用"></textarea>
+        </label>
+      </section>
+      <button id="veiled-operation-run" type="submit" class="auth-primary" disabled>核对条件状态</button>
+    </form>
+    <div id="veiled-operation-status" class="veiled-operation-status" role="status" aria-live="polite"></div>
+    <div id="veiled-operation-result" class="veiled-operation-result" hidden></div>
+    <p class="veiled-operation-boundary">compatible 只表示已提供状态满足已审计效果中的稀有度与可移除词缀前提。候选目录不是单次揭露选项，页面 weight 不是操作结果概率；随机结果、成本与完整游戏可执行性保持未知。</p>
+  </div>
+</dialog>
+
 <dialog id="economy-dialog" class="economy-dialog" aria-labelledby="economy-title">
   <div class="economy-panel">
     <div class="economy-heading">
@@ -632,6 +692,7 @@
 <script src="currency-operation.js"></script>
 <script src="essence-operation.js"></script>
 <script src="eldritch-operation.js"></script>
+<script src="veiled-operation.js"></script>
 <script src="economy-workbench.js"></script>
 <script src="rare-comparables.js"></script>
 <script src="unique-history.js"></script>
