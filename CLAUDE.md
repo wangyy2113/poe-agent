@@ -149,7 +149,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 2429 项，秒级
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 2433 项，秒级
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选
@@ -1676,3 +1676,19 @@ API Key 后旧响应不能回写。真实 JS DOM 测试覆盖请求、渲染与�
 网页逐项显示三态检查、条件后状态、未知项与矩阵原值，不解释 `YES/NO` 的外延。
 外部文字用 `textContent`，可信外链只允许 POEDB/Craft of Exile HTTPS；输入、
 关窗与换 Key 均使旧响应失效。真实 JS DOM 测试覆盖主要路径，布局未截图核对。
+
+## 第一百三十五轮：加密通货网页状态核对与完整候选目录
+
+`GET /craft/veiled/operations` 在普通用户鉴权下仅列当前入库的加密崇高石和
+加密混沌石，逐项标记 POEDB 效果原文是否仍与已审计契约逐字一致。来源漂移时，
+后端把条件后稀有度、前后缀、加密词缀存在性、可能位置与随机结果置为未知；
+确定性答案不再复述旧操作语义。`veiled_pool` 仍只是按底材类别检索的隐匿来源
+词缀目录，与单次揭露选项无关，页面 `weight` 不作操作结果概率。
+
+聊天页显式选择操作，可用手工状态或完整装备文本；文本模式只提交操作与文本。
+粘贴卡片只预填。结果展示三态结论、来源效果、输入与条件后状态、检查、未知项、
+目录来源行数和去重数及前后缀分布，并将所有候选按每页 20 条翻页。Metamod
+矩阵仅显示原值，不解释 `YES/NO` 或改变 POEDB 状态结论。所有外部文字使用
+`textContent`，外链限制可信 HTTPS 域名；输入改变、关窗和 API Key 切换均
+使旧清单与结果失效。真实 JS DOM 测试覆盖请求、分页、漂移与失效路径；
+网页布局未截图核对。

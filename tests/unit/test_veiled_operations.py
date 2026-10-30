@@ -6,7 +6,7 @@ import sqlite3
 import unittest
 from unittest.mock import patch
 
-from api.craft import VeiledOperationRequest, veiled_state
+from api.craft import VeiledOperationRequest, veiled_catalog, veiled_state
 from core.db import SCHEMA
 from craft.veiled_operations import (
     VEILED_SPECS,
@@ -150,12 +150,26 @@ class VeiledStateTest(unittest.TestCase):
         ).verdict)
 
     def test_来源漂移拒绝沿用状态转移(self) -> None:
-        self.conn.execute(
-            "UPDATE poedb_currency SET effect_zh='上游变化' WHERE name_zh='加密混沌石'"
-        )
-        self.assertEqual("unknown", self.evaluate(
-            "加密混沌石", rarity="稀有"
-        ).verdict)
+        for operation in ("加密混沌石", "加密崇高石"):
+            self.conn.execute(
+                "UPDATE poedb_currency SET effect_zh='上游变化' WHERE name_zh=?",
+                (operation,),
+            )
+            result = self.evaluate(
+                operation, rarity="稀有", item_class="胸甲",
+                prefix_count=2, suffix_count=2,
+            )
+            self.assertEqual("unknown", result.verdict)
+            self.assertEqual("unknown", result.after["modifier_change"])
+            self.assertIsNone(result.after["rarity"])
+            self.assertIsNone(result.after["prefix_count"])
+            self.assertIsNone(result.after["suffix_count"])
+            self.assertIsNone(result.after["has_veiled_modifier"])
+            self.assertIsNone(result.after["random_outcome"])
+            self.assertEqual([], result.after["veiled_modifier_position"])
+            self.assertEqual([], result.after["possible_affix_counts"])
+            self.assertIn("来源原文变化后的状态转移", result.unknown_fields)
+            self.assertFalse(any(check.key == "rarity" for check in result.checks))
 
 
 class VeiledToolApiAndRoutingTest(unittest.TestCase):
@@ -186,6 +200,29 @@ class VeiledToolApiAndRoutingTest(unittest.TestCase):
         ), _caller="test")
         self.assertEqual("compatible", response.verdict)
         self.assertEqual(2, response.veiled_pool["unique_candidates"])
+
+    def test_清单只列当前入库操作并标记来源漂移(self) -> None:
+        catalog = veiled_catalog(_caller="test")
+        self.assertEqual(2, catalog.total)
+        self.assertEqual(["加密崇高石", "加密混沌石"], [x.name_zh for x in catalog.items])
+        self.assertTrue(all(x.source_contract_ok for x in catalog.items))
+        self.conn.execute(
+            "UPDATE poedb_currency SET effect_zh='上游变化' WHERE name_zh='加密崇高石'"
+        )
+        self.assertFalse(veiled_catalog(_caller="test").items[0].source_contract_ok)
+        self.conn.execute(
+            "DELETE FROM poedb_currency WHERE name_zh='加密混沌石'"
+        )
+        self.assertEqual(1, veiled_catalog(_caller="test").total)
+
+    def test_来源漂移的确定性答案不复述旧操作语义(self) -> None:
+        self.conn.execute(
+            "UPDATE poedb_currency SET effect_zh='上游变化' WHERE name_zh='加密混沌石'"
+        )
+        result = veiled_operation_state("加密混沌石", rarity="稀有", item_class="胸甲")
+        self.assertEqual("unknown", result.data["verdict"])
+        self.assertIn("未知（来源效果原文已变化）", result.data["answer"])
+        self.assertNotIn("重置全部词缀，并包含一个随机加密词缀", result.data["answer"])
 
     def test_加密通货优先于基础通货子串(self) -> None:
         question = "稀有胸甲有2条前缀2条后缀，加密崇高石会怎样"

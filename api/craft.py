@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field, model_validator
 from api.deps import require_user
 from core import db as dbmod
 from craft.eldritch_operations import ELDRITCH_SPECS
+from craft.veiled_operations import VEILED_SPECS
 from economy.service import PUBLIC_CATEGORIES
 from tools.impl.awakener_operation import awakener_orb_state
 from tools.impl.craft_attempt_plan import craft_attempt_plan as build_craft_attempt_plan
@@ -290,6 +291,18 @@ class VeiledOperationRequest(BaseModel):
         ):
             raise ValueError("item_text 与手工状态字段不能混用")
         return self
+
+
+class VeiledCatalogEntry(BaseModel):
+    name_zh: str
+    name_en: str
+    action: str
+    source_contract_ok: bool
+
+
+class VeiledCatalogResponse(BaseModel):
+    total: int
+    items: list[VeiledCatalogEntry]
 
 
 class VeiledOperationResponse(BaseModel):
@@ -636,6 +649,22 @@ def eldritch_state(
             "supported_operations": (result.data or {}).get("supported_operations", []),
         })
     return EldritchOperationResponse(**result.data)
+
+
+@router.get("/craft/veiled/operations", response_model=VeiledCatalogResponse)
+def veiled_catalog(_caller: str = Depends(require_user)) -> VeiledCatalogResponse:
+    """仅列当前入库的两种操作；原文漂移仍列出并显式标记。"""
+    rows = dbmod.get_conn().execute(
+        "SELECT metadata_id,effect_zh FROM poedb_currency WHERE metadata_id IN ("
+        + ",".join("?" for _ in VEILED_SPECS) + ")",
+        tuple(spec.metadata_id for spec in VEILED_SPECS),
+    ).fetchall()
+    by_id = {row["metadata_id"]: row["effect_zh"] for row in rows}
+    items = [VeiledCatalogEntry(
+        name_zh=spec.name_zh, name_en=spec.name_en, action=spec.action,
+        source_contract_ok=by_id[spec.metadata_id] == spec.expected_effect,
+    ) for spec in VEILED_SPECS if spec.metadata_id in by_id]
+    return VeiledCatalogResponse(total=len(items), items=items)
 
 
 @router.post("/craft/veiled", response_model=VeiledOperationResponse)
