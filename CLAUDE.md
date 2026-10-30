@@ -151,7 +151,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 2454 项，秒级
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 2457 项，秒级
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选
@@ -1695,3 +1695,15 @@ API Key 后旧响应不能回写。真实 JS DOM 测试覆盖请求、渲染与�
 `textContent`，外链限制可信 HTTPS 域名；输入改变、关窗和 API Key 切换均
 使旧清单与结果失效。真实 JS DOM 测试覆盖请求、分页、漂移与失效路径；
 网页布局未截图核对。
+
+## 第一百三十六轮：单实体问答先冻结唯一证据，再给模型写句子
+
+本机可用 LLM 凭证只放在 Git 忽略的 `.env`，在线 `verify_llm.py` 51 项通过。
+原先“猎首是什么”会把仿品也作为证据，并携 81 个工具 schema 消耗 5 万多 token；
+“猎首有哪些词缀”实测消耗约 1.6 万 token，且非流式有过无据句拦截。
+`_preferred_tool_route` 现在对单实体定义/词缀题先核验唯一别名，代码调用
+`entity_lookup` 后仅保留其一条精确引用，并关闭本轮后续 schema；多实体或比较题
+不走该路径。游戏专名 `POE1/POE2` 内的数字不按游戏数值校验，其它数字仍必须
+出现在证据或工具输出。真实“猎首有哪些词缀”复验为 723 token、单条 POEDB 引用、
+0 条拦截；流式与非流式端到端检查共 61 项。`verify_chat.py` 还区分 PoE2 越界
+和库内查不到，避免把正确拒答误判为失败。

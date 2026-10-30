@@ -16,12 +16,71 @@ import unittest
 from unittest.mock import patch
 
 from orchestrator import loop
+from tools.registry import ToolResult
 
 #: 打桩词表。取值照抄真实词表里的同类词，含单字类别「弓」。
 _CLASSES = {"腰带", "项链", "弓", "胸甲", "手套"}
 _GEN = {"前缀", "后缀"}
 _SOURCES = {"精华", "工艺工作台", "隐匿"}
 _OTHER = {"力量", "敏捷", "火焰伤害", "生命偷取", "力量和敏捷", "最大生命"}
+
+
+class SimpleEntityCostTest(unittest.TestCase):
+    def test_single_entity_definition_uses_precise_route_and_no_more_schemas(self) -> None:
+        question = "猎首是什么？请用中文回答并附来源。"
+        with patch("retrieval.alias.lookup", return_value=["unique_item:Headhunter"]), patch.object(
+            loop.dbmod, "get_conn", return_value=object()
+        ):
+            self.assertEqual("entity_lookup", loop._preferred_tool_route(question))
+            self.assertEqual("entity_lookup", loop._preferred_tool_route(
+                "猎首（Headhunter）有哪些词缀？"
+            ))
+        result = ToolResult(ok=True, citations=[{"url": "https://poedb.tw/cn/Headhunter"}])
+        self.assertTrue(loop._can_finish_from_entity(question, "entity_lookup", result))
+        self.assertTrue(loop._can_finish_from_entity(
+            "猎首（Headhunter）有哪些词缀？", "entity_lookup", result
+        ))
+        self.assertFalse(loop._can_finish_from_entity(
+            "猎首是什么，和仿品有何区别？", "entity_lookup", result
+        ))
+        self.assertFalse(loop._can_finish_from_entity(
+            "猎首和仿品是什么？", "entity_lookup", result
+        ))
+        self.assertFalse(loop._can_finish_from_entity(
+            question, "entity_lookup", ToolResult(ok=True, citations=[])
+        ))
+
+    def test_preparation_limits_simple_answer_to_exact_entity_evidence(self) -> None:
+        question = "猎首是什么？请用中文回答并附来源。"
+        original = {
+            "chunk_id": "unique_item:Headhunter:0", "entity_id": "unique_item:Headhunter",
+            "title": "猎首", "url": "https://poedb.tw/cn/Headhunter",
+            "source": "POEDB", "source_priority": 1, "can_support_facts": True,
+            "text": "猎首是一件唯一装备，需求等级 40。",
+        }
+        replica = {**original, "chunk_id": "unique_item:Replica:0",
+                   "entity_id": "unique_item:Replica", "title": "猎首【仿品】"}
+        search = ToolResult(
+            ok=True, data={"sufficient": True}, citations=[original, replica],
+            meta={"channels": ["alias", "fts"]},
+        )
+        exact = ToolResult(ok=True, data={"found": True}, citations=[original])
+
+        def call(name: str, _args: str) -> ToolResult:
+            return search if name == "kb_search" else exact
+
+        result = loop.TurnResult(trace_id="test", question=question, answer="")
+        with patch("retrieval.alias.lookup", return_value=["unique_item:Headhunter"]), patch.object(
+            loop.dbmod, "get_conn", return_value=object()
+        ), patch.object(loop.REGISTRY, "call", side_effect=call), patch.object(
+            loop, "_apply_dimension_gate", return_value=({"sufficient": True}, False)
+        ), patch.object(loop, "_tools_for_question", return_value=[{"function": {"name": "x"}}]):
+            setup = loop._prepare_turn(question, result)
+        self.assertEqual([], setup.tools)
+        self.assertEqual(1, len(result.evidence))
+        self.assertEqual("猎首", result.evidence[0].title)
+        self.assertEqual("exact_single_entity", result.retrieval_meta["evidence_policy"])
+        self.assertIn("本轮没有计算工具", setup.messages[0]["content"])
 
 
 def _scan(text: str) -> list[str]:

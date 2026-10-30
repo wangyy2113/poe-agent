@@ -1730,6 +1730,12 @@ missing_terms = ["升华", "机制"]
 `sufficient=false` 时 **`hits` 里的内容不得用于支撑事实断言**——BM25 总会返回
 「最不差」的若干条，但那不等于有依据。调用方（以及将来的 Agent）必须走缺据声明路径。
 
+单实体的“是什么 / 有哪些词缀”问题在精确别名只命中一个实体时，仅把该实体的已编号
+POEDB 证据交给模型，并关闭后续工具 schema；多实体与比较问题仍走完整检索和工具路径。
+2026-10-30 用本机已配置网关实测“猎首（Headhunter）有哪些词缀？”：非流式
+`723` token、单条 POEDB 引用、0 条拦截；优化前同问约 `15,640` token，
+且可能把仿品一并带入。`scripts/verify_chat.py` 对这些边界有在线断言。
+
 自然语言描述也能命中，走的是词缀意图通道：
 
 ```bash
@@ -1876,7 +1882,7 @@ PoB 排 P2 而不是 P1：它在数值上更接近一手，但不含中文名与
 | `scripts/import_pob_uniques.py` | 原子导入 PoB 当前唯一装备与隔离的命名变体历史 |
 | `scripts/verify_pob_mods.py` | POEDB × PoB 词缀对账 |
 | `scripts/verify_pob_uniques.py` | POEDB × PoB 唯一装备对账 |
-| `scripts/verify_chat.py` | `/chat`、`/chat/stream`、`/item` 端到端验证，58 项（`--gap-only` 31 项，不需要凭证） |
+| `scripts/verify_chat.py` | `/chat`、`/chat/stream`、`/item` 端到端验证，61 项（`--gap-only` 31 项，不需要凭证） |
 | `scripts/check_spec_refs.py` | 校验 spec 里的需求交叉引用 |
 | `scripts/check_doc_facts.py` | 核对文档里的数字断言（单测项数、库内行数）与实际状态是否一致 |
 | `scripts/check_portability.py` | AST 平台中立性检查：平台专有模块、shell 依赖、路径 API 与文本编码 |
@@ -1918,7 +1924,7 @@ PoB 排 P2 而不是 P1：它在数值上更接近一手，但不含中文名与
 .venv/bin/python -m unittest discover -s tests -t .
 ```
 
-目前 2454 项，其中与「无据不答」直接相关的：
+目前 2457 项，其中与「无据不答」直接相关的：
 
 | 组 | 项数 | 重点 |
 | --- | --- | --- |

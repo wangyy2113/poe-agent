@@ -81,10 +81,10 @@
   - 待补：`gate_model` 廉价守门的调用封装（3.6 用得上）
   - _需求: 4.7, 5.5, 5.6, 5.7, 5.8, 5.9, 16.4_
 
-- [ ] 0.6c 补上可用的 LLM 凭证（**阻塞后续所有在线链路**）
-  - 现状：`.env` 的 `LLM_API_KEY` 是占位符 `sk-`（长度 3，从未填过）；`~/.claude/settings.json` 里那个已于 2026-07-31 15:59 UTC 过期
-  - 影响：`scripts/verify_llm.py` 的在线部分、后续 Agent 与 `/chat` 全部无法实跑
-  - 处理：把可用的 LiteLLM virtual key 填进 `.env`；有多个时用 `LLM_API_KEYS`（`key[:model]` 逗号分隔，按优先级），故障转移逻辑已就绪
+- [x] 0.6c 本机可用 LLM 凭证与在线验收 —— **2026-10-30 完成**
+  - 凭证仅保存在本机被 Git 忽略的 `.env`；仓库和 CI 不携带密钥
+  - `scripts/verify_llm.py` 在线 51 项通过；`/chat` 的真实中文问答已返回单条 POEDB 引用并经出口闸门验收
+  - 新安装仍须按 `.env.example` 自行配置可用凭证；多个凭证可用 `LLM_API_KEYS`（`key[:model]` 逗号分隔，按优先级）
   - _需求: 5.5, 16.2_
 
 - [x] 0.7 平台中立性检查 —— **已完成（2026-09-08，`scripts/check_portability.py`）**
