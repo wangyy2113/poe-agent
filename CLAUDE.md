@@ -1717,3 +1717,12 @@ Elder、Uber Elder 这四页得到这三类门槛；Maven、Cortex、Exarch、Ea
 生命与能量护盾缺一不补零，三元素抗性缺一不宣称全满。DPS 只有调用方显式确认当前
 敌人、技能、增益配置适用于该 Boss，且 PoB 保存 Boss 档位时才比较。响应不会把
 `at_or_above` 叫作通关就绪，始终披露回复、药剂及 Wiki 建议当前版本适用性未知。
+
+## 第一百三十八轮：Chat 模型名不能充当 Embedding 模型
+
+2026-10-30 用已配置的本机凭证核验同一网关：`deepseek-v4-1-flash-1017`
+在 `/v1/models` 中，但用它调用 `/v1/embeddings` 返回 HTTP 400
+`Unmapped LLM provider for this endpoint`；模型清单 31 项里没有可识别的
+Embedding 模型。保留向量通道显式关闭，不把聊天模型名写进 `EMBEDDING_MODEL`。
+即便网关以后注册了可用模型，也还须接通真正的查询适配器和索引回填；
+`vector_channel_status` 在适配器未就绪时会拒绝把配置请求报告成运行时启用。
