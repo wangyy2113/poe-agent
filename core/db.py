@@ -61,6 +61,35 @@ CREATE TABLE IF NOT EXISTS entity (
 CREATE INDEX IF NOT EXISTS idx_entity_type ON entity(entity_type);
 CREATE INDEX IF NOT EXISTS idx_entity_name_zh ON entity(name_zh);
 
+-- GGG 官方 PoE1 补丁公告。论坛标题、首帖和日期逐页验证后才发布；
+-- 单独保留原文和抓取哈希，防止把社区回复或 PoE2 公告混进可引用索引。
+CREATE TABLE IF NOT EXISTS ggg_patch_note (
+    thread_id     INTEGER PRIMARY KEY,
+    version       TEXT NOT NULL,
+    kind          TEXT NOT NULL CHECK(kind IN ('patch','hotfix')),
+    title         TEXT NOT NULL,
+    published_on  TEXT NOT NULL,
+    body          TEXT NOT NULL,
+    source_url    TEXT NOT NULL,
+    content_hash  TEXT NOT NULL,
+    fetched_at    TEXT NOT NULL,
+    updated_at    TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ggg_patch_note_version
+    ON ggg_patch_note(version, published_on DESC);
+
+-- PoE Wiki Boss 攻略原文；来源是可变页面，保留抓取时间和哈希，
+-- 不把攻略中的推荐数值当作 PoB 对当前角色的自动计算。
+CREATE TABLE IF NOT EXISTS boss_guide (
+    boss_key     TEXT PRIMARY KEY,
+    page_title   TEXT NOT NULL,
+    sections     TEXT NOT NULL,
+    source_url   TEXT NOT NULL,
+    content_hash TEXT NOT NULL,
+    fetched_at   TEXT NOT NULL,
+    updated_at   TEXT NOT NULL
+);
+
 -- 别名 → 实体。别名是检索匹配辅助，不是事实断言，
 -- 因此允许收录 slug 去下划线等派生形式。
 CREATE TABLE IF NOT EXISTS alias (
@@ -1085,6 +1114,34 @@ CREATE TABLE IF NOT EXISTS passive_tree_meta (
     source          TEXT NOT NULL,
     source_priority INTEGER NOT NULL,
     url             TEXT NOT NULL CHECK(url <> ''),
+    updated_at      TEXT NOT NULL
+);
+
+-- Atlas 图与角色天赋图分库：节点连接可用于展示到目标天赋的路径，
+-- 但 Atlas 的点数获取/消耗规则未核验，不能套用角色天赋的点数公式。
+CREATE TABLE IF NOT EXISTS atlas_graph_node (
+    node_id         TEXT PRIMARY KEY,
+    name_zh         TEXT NOT NULL,
+    name_en         TEXT NOT NULL,
+    kind            TEXT NOT NULL,
+    passable        INTEGER NOT NULL CHECK(passable IN (0,1)),
+    tree_version    TEXT NOT NULL,
+    source_url      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS atlas_graph_edge (
+    node_a          TEXT NOT NULL,
+    node_b          TEXT NOT NULL,
+    tree_version    TEXT NOT NULL,
+    PRIMARY KEY(node_a,node_b),
+    CHECK(node_a < node_b)
+);
+CREATE INDEX IF NOT EXISTS idx_atlas_graph_name ON atlas_graph_node(name_zh);
+CREATE TABLE IF NOT EXISTS atlas_tree_meta (
+    key             TEXT PRIMARY KEY,
+    value_num       REAL NOT NULL,
+    tree_version    TEXT NOT NULL,
+    source_url      TEXT NOT NULL,
     updated_at      TEXT NOT NULL
 );
 
@@ -2184,6 +2241,7 @@ def vector_channel_status(
     requested: bool,
     *,
     query_adapter_ready: bool = False,
+    query_adapter_reason: str = "",
 ) -> VectorStatus:
     """返回向量检索的**运行时有效状态**，而不是只复述配置值。
 
@@ -2209,10 +2267,10 @@ def vector_channel_status(
     if row is None:
         return VectorStatus(
             False,
-            "向量表未建立（retrieval.vector.dim 必须为正数）",
+            "向量表未建立（需运行 scripts/backfill_vectors.py --apply）",
         )
     if not query_adapter_ready:
-        return VectorStatus(False, "向量查询适配器尚未接入")
+        return VectorStatus(False, query_adapter_reason or "向量查询适配器尚未接入")
     return VectorStatus(True, extension.reason)
 
 

@@ -1887,13 +1887,14 @@ def run_passive_tree(*, force: bool = False, targets: list[str] | None = None) -
         # 属性按 (种类, 名字, 内容) 合并，而图必须保留**每一个树上位置**，
         # 合并过的实体没法用来算路径。
         #
-        # **只主天赋树入图**：Atlas 树没有职业起点（它压根没有 classes），
-        # 而且它的点数来源与消耗是另一套规则，没实测过就不入库——
-        # 否则 `passive_path` 会拿主树的模型去算 Atlas。
-        n_graph: dict = {"skipped": "非主天赋树"}
+        # 两棵树分表；Atlas 只保存原始连接，不套用角色天赋的点数规则。
+        n_graph: dict
         if target == poedb_tree.TARGET_PASSIVE:
             graph = poedb_tree.extract_graph(payload_zh, payload_en, ep_zh)
             n_graph = _replace_passive_graph(conn, graph, ep_zh, version)
+        else:
+            graph = poedb_tree.extract_atlas_graph(payload_zh, payload_en, ep_zh)
+            n_graph = _replace_atlas_graph(conn, graph, ep_zh, version)
 
         total_entities += len(entities)
         total_indexed += indexed
@@ -2728,8 +2729,10 @@ def _replace_passive_graph(conn, graph, ep, version: str) -> dict:  # noqa: ANN0
         return {"skipped": "只主天赋树入图"}
     cfg = get_config()
     priority = int(cfg.priority_of(Source.POEDB.value))
-    conn.execute("DELETE FROM passive_graph_node WHERE tree_version = ?", (version,))
-    conn.execute("DELETE FROM passive_graph_edge WHERE tree_version = ?", (version,))
+    # 每次为当前完整快照；旧版本与删掉的节点不能残留并污染路径。
+    conn.execute("DELETE FROM passive_graph_node")
+    conn.execute("DELETE FROM passive_graph_edge")
+    conn.execute("DELETE FROM passive_tree_meta")
     conn.executemany(
         """
         INSERT INTO passive_graph_node(
@@ -2771,6 +2774,31 @@ def _replace_passive_graph(conn, graph, ep, version: str) -> dict:  # noqa: ANN0
         "class_starts": len(graph.class_starts),
         "meta": graph.meta,
     }
+
+
+def _replace_atlas_graph(conn, graph, ep, version: str) -> dict:  # noqa: ANN001
+    """原子替换 Atlas 原始拓扑；不声称沿路径需要多少图鉴点。"""
+    if ep.target != poedb_tree.TARGET_ATLAS:
+        raise ValueError("Atlas 图不能发布到其它树")
+    conn.execute("DELETE FROM atlas_graph_edge")
+    conn.execute("DELETE FROM atlas_graph_node")
+    conn.execute("DELETE FROM atlas_tree_meta")
+    conn.executemany(
+        "INSERT INTO atlas_graph_node(node_id,name_zh,name_en,kind,passable,"
+        "tree_version,source_url,updated_at) VALUES(?,?,?,?,?,?,?,datetime('now'))",
+        [(node.node_id, node.name_zh, node.name_en, node.kind, int(node.passable),
+          version, ep.json_url) for node in graph.nodes],
+    )
+    conn.executemany(
+        "INSERT INTO atlas_graph_edge(node_a,node_b,tree_version) VALUES(?,?,?)",
+        [(a, b, version) for a, b in sorted(graph.edges)],
+    )
+    conn.executemany(
+        "INSERT INTO atlas_tree_meta(key,value_num,tree_version,source_url,updated_at) "
+        "VALUES(?,?,?,?,datetime('now'))",
+        [(key, value, version, ep.json_url) for key, value in graph.meta.items()],
+    )
+    return {"nodes": len(graph.nodes), "edges": len(graph.edges), "meta": graph.meta}
 
 
 def _record_monster_gaps(conn, extracted: poedb_monsters.MonsterExtract) -> int:  # noqa: ANN001

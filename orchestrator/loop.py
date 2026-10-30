@@ -26,6 +26,7 @@ from typing import Any, Iterator
 from agents.knowledge import (
     ALLOWED_TOOLS,
     EVIDENCE_TEMPLATE,
+    SIMPLE_ENTITY_SYSTEM_PROMPT,
     build_system_prompt,
     render_gap,
 )
@@ -845,6 +846,10 @@ _SOURCE_CONFLICT_LOOKUP_INTENTS = (
 
 
 _PREFERRED_TOOL_INTENTS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("atlas_candidates", (
+        "Atlas 天赋规划", "Atlas配点", "Atlas 配点", "图鉴天赋规划",
+        "图鉴天赋怎么点", "Atlas 刷图", "Atlas刷图", "Atlas 通货",
+    )),
     ("unique_variant_history", (
         "历史变体", "旧版词缀", "旧版唯一装备", "唯一装备版本对比",
         "unique variant", "Unique variant",
@@ -1152,8 +1157,32 @@ _PREFERRED_TOOL_INTENTS: tuple[tuple[str, tuple[str, ...]], ...] = (
 #: 靠意图词判不出来，得查别名表（见 `_preferred_tool_route`）。
 _ENTITY_LOOKUP_INTENTS = (
     "完整词缀", "全部词缀", "有哪些词缀", "的词缀列表", "基础信息", "属性是什么",
-    "什么属性", "是什么装备",
+    "什么属性", "是什么装备", "是什么",
 )
+
+# 单一实体的“是什么”问法在代码直接查完实体后，只需模型整理已编号证据。
+# 省掉后续 81 个工具 schema 可避免简单问答消耗数万 prompt token；
+# 复合问题仍保留完整工具集，不能因为一次实体命中就截断其它能力。
+_SIMPLE_ENTITY_QUESTION_RE = re.compile(
+    r"^[^，,；;\n]{1,60}(?:是什么|是啥|有哪些词缀|有什么词缀|的词缀列表|"
+    r"是什么装备|属性是什么|什么属性)[？?。]?"
+    r"(?:请用中文回答并附来源[。.]?)?$"
+)
+
+
+def _can_finish_from_entity(
+    question: str, preferred_tool: str, preferred_result: ToolResult | None,
+) -> bool:
+    # 含多个对象或比较意图的短句即使某个别名只命中一项，也不能据此截断其余检索。
+    if any(word in question for word in ("和", "与", "以及", "跟", "对比", "比较", "区别", "相比", "还是")):
+        return False
+    return bool(
+        preferred_tool == "entity_lookup"
+        and _SIMPLE_ENTITY_QUESTION_RE.fullmatch(question.strip())
+        and preferred_result is not None
+        and preferred_result.ok
+        and len(preferred_result.citations) == 1
+    )
 
 
 #: 「带着具体数字问抗性」= 要算，不是要查。意图词表列不完这种问法
@@ -1953,6 +1982,19 @@ def _preferred_tool_route(question: str) -> str:
     只在**第一次**调用时强制（`tool_choice`），后续轮次放开——工具结果可能说明
     需要换工具，锁死会让它无路可走。
     """
+    # 有唯一别名命中的单实体定义/词缀题优先于类目词缀汇总。
+    # 否则“猎首有哪些词缀”会被“有哪些词缀”抢到 mod_class_summary，
+    # 明明实体已知却让模型携 81 个 schema 重新搜索，还容易混入仿品。
+    if _SIMPLE_ENTITY_QUESTION_RE.fullmatch(question.strip()) and not any(
+        word in question for word in ("和", "与", "以及", "跟", "对比", "比较", "区别", "相比", "还是")
+    ):
+        try:
+            from retrieval import alias as alias_mod  # noqa: PLC0415
+
+            if len(alias_mod.lookup(dbmod.get_conn(), question)) == 1:
+                return "entity_lookup"
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("单实体路由探测失败，交回常规意图路由：%s", exc)
     if _rare_comparable_args(question) is not None:
         return "economy_rare_comparables"
     if _craft_attempt_plan_args(question) is not None:
@@ -2941,6 +2983,11 @@ _CODE_INVOKED_TOOLS: dict[str, Any] = {
     "entity_lookup": lambda question: {"name": question},
     # 无参数
     "kb_coverage": lambda question: {},
+    # 逐节点点数没有采集。让模型反复调用尺寸目录会烧光单轮预算；
+    # 仅在这类问句上由代码取结构化总览并直接披露缺口。
+    "cluster_jewel_info": lambda question: (
+        {"query": question} if _cluster_point_cost_query(question) else None
+    ),
     "source_conflict_lookup": _source_conflict_lookup_args,
     "source_conflict_summary": lambda question: {},
     # 参数需要从领域词表里抽，可能抽不出来
@@ -2958,6 +3005,13 @@ _CODE_INVOKED_TOOLS: dict[str, Any] = {
     "attack_speed_calc": _attack_speed_args,
     "hit_dps_calc": _hit_dps_args,
 }
+
+
+def _cluster_point_cost_query(question: str) -> bool:
+    return (
+        "星团" in question and "天赋点" in question
+        and any(term in question for term in ("花", "需要", "消耗", "几个", "多少", "点数"))
+    )
 
 #: 这些工具按设计**不产出引用**（覆盖声明是元信息不是游戏事实）。
 #: 「一条证据都没拿到就走缺据」的兜底要放过它们，否则它们永远进不了生成。
@@ -3738,6 +3792,13 @@ def _prepare_turn(
     if preferred_result is not None and preferred_result.ok and preferred_result.citations:
         evidence = _merge_evidence(evidence, preferred_result.citations)
         result.evidence = evidence
+    simple_entity = _can_finish_from_entity(question, preferred_tool, preferred_result)
+    if simple_entity:
+        # “是什么”只问一个已唯一解析的实体。用该实体的精确证据收口，避免
+        # 相关度检索把仿品/旧版等相似卡带进答案，也减少无关 token。
+        evidence = number_evidence(preferred_result.citations)
+        result.evidence = evidence
+        result.retrieval_meta["evidence_policy"] = "exact_single_entity"
     if first.meta.get("degraded"):
         result.degraded_note = (
             f"检索以降级通道完成（{', '.join(first.meta.get('channels') or [])}）："
@@ -3752,6 +3813,26 @@ def _prepare_turn(
         needs_model_call=bool(preferred_tool) and preferred_result is None,
         missing_terms=list(data.get("missing_terms") or []),
     )
+    if (
+        preferred_tool == "cluster_jewel_info"
+        and _cluster_point_cost_query(question)
+        and preferred_result is not None and preferred_result.ok
+        and (preferred_result.data or {}).get("kind") == "overview"
+        and (preferred_result.data or {}).get("point_cost_known") is False
+        and preferred_result.citations
+    ):
+        # The PoB size table does not contain point costs.  The direct answer
+        # preserves that boundary and avoids a tool loop for a missing field.
+        result.evidence = number_evidence(preferred_result.citations)
+        setup.evidence = result.evidence
+        setup.final = str((preferred_result.data or {}).get("answer") or "").strip()
+        if setup.final:
+            setup.final += f"\n\n尺寸表来源 [[{result.evidence[0].label}]]。"
+            result.retrieval_meta["evidence_policy"] = "cluster_point_cost_boundary"
+            return setup
+    if simple_entity:
+        setup.tools = []
+        result.retrieval_meta["tool_schema_policy"] = "none_after_single_entity"
     # 覆盖声明走代码生成路径，直接答完（理由见 `_coverage_answer`）
     if (
         preferred_tool == "kb_coverage"
@@ -3803,7 +3884,9 @@ def _prepare_turn(
             logger.warning("长期记忆注入失败，继续无记忆问答：%s", type(exc).__name__)
             result.retrieval_meta["memory_error"] = type(exc).__name__
     setup.messages = [
-        {"role": "system", "content": build_system_prompt()},
+        {"role": "system", "content": (
+            SIMPLE_ENTITY_SYSTEM_PROMPT if simple_entity else build_system_prompt()
+        )},
         {
             "role": "user",
             "content": _initial_user_content(

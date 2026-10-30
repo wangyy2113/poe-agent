@@ -52,6 +52,7 @@
     答案中的角标可点击跳转到来源。标为「已拦截」的句子是模型试图输出的无据内容，已被出口校验挡下。
     <button id="conflict-open" type="button" class="hint-link">跨来源核对</button>
     <button id="boss-open" type="button" class="hint-link">Boss 命中风险</button>
+    <button id="league-open" type="button" class="hint-link">PoB 阶段路线</button>
     <button id="craft-attempt-open" type="button" class="hint-link">独立尝试预算</button>
     <button id="currency-operation-open" type="button" class="hint-link">基础通货状态</button>
     <button id="essence-operation-open" type="button" class="hint-link">精华状态</button>
@@ -685,7 +686,34 @@
   </div>
 </dialog>
 
+<dialog id="league-dialog" class="league-dialog" aria-labelledby="league-title">
+  <div class="league-panel">
+    <div class="league-heading">
+      <div>
+        <h2 id="league-title">PoB 阶段路线</h2>
+        <p>按你提供的阶段快照排列目标。数值只在 PoB 技能、配置、树版本和字段口径一致时比较。</p>
+      </div>
+      <button id="league-close" type="button" class="ghost" aria-label="关闭阶段路线">关闭</button>
+    </div>
+    <form id="league-form" class="league-form">
+      <label>当前 PoB 分享码或白名单链接
+        <textarea id="league-current" required maxlength="200000" rows="3" spellcheck="false"></textarea>
+      </label>
+      <div id="league-stages" class="league-stages"></div>
+      <button id="league-add" type="button" class="ghost">添加阶段（最多 5 个）</button>
+      <label>比较指标（可选，逗号分隔；留空比较全部支持项）
+        <input id="league-metrics" maxlength="400" placeholder="例如 life,dps,fire_resistance">
+      </label>
+      <button id="league-run" type="submit" class="auth-primary">生成阶段路线</button>
+    </form>
+    <div id="league-status" class="league-status" role="status" aria-live="polite"></div>
+    <div id="league-result" class="league-result" hidden></div>
+    <p class="league-boundary">顺序和目标来自你提供的 PoB；结构变化不证明数值变化的原因，阶段目标也不代表游戏门槛或最优路线。</p>
+  </div>
+</dialog>
+
 <script src="app.js"></script>
+<script src="league-starter.js"></script>
 <script src="conflict-ledger.js"></script>
 <script src="boss-workbench.js"></script>
 <script src="craft-attempt-workbench.js"></script>

@@ -121,6 +121,20 @@ class BuildCompareDomainTest(unittest.TestCase):
         self.assertIsNone(field_mismatch.metrics[0].values[1].delta)
         self.assertIn("字段口径不同", field_mismatch.metrics[0].values[1].reason)
 
+    def test_missing_calcs_selection_or_config_cannot_claim_numeric_comparability(self) -> None:
+        no_calcs = scenario(stats={"Life": 4500})
+        no_calcs.calcs_skill_group = None
+        missing_config = scenario(stats={"Life": 4500})
+        missing_config.config = {}
+        for candidate in (no_calcs, missing_config):
+            with self.subTest(candidate=candidate):
+                result = compare_build_scenarios([
+                    ("当前", scenario(stats={"Life": 4000})),
+                    ("候选", candidate),
+                ], metrics=["life"])
+                self.assertEqual("unknown", result.metrics[0].values[1].status)
+                self.assertIsNone(result.metrics[0].values[1].delta)
+
     def test_partial_metric_coverage_keeps_known_comparison_only(self) -> None:
         result = compare_build_scenarios([
             ("当前", scenario(stats={"Life": 4000, "Armour": 10000})),

@@ -876,8 +876,8 @@ DOMAINS: tuple[DomainSpec, ...] = (
             "与 **22 个 Boss 的护甲与闪避倍率**，真实伤害按 PoB 原式配 `monsterDamageTable` "
             "算出（`boss_skill_damage` 工具）；`boss_survival_check` 可将一次单类型命中与"
             "用户明确提供的防御池、抗性、护甲和承受倍率合并，输出完整掷骰区间的三态结论；"
-            "**未采集**：技能的**机制说明与应对打法**（PoB 只给建模，POEDB 的 Monsters 页"
-            "也没有打法）、Boss 的掉落、以及这些终局 Boss 的**中文名**"
+            "本 PoB 数据源**没有**技能的机制说明与应对打法（另见 PoE Wiki Boss 攻略域）、"
+            "Boss 的掉落、以及这些终局 Boss 的**中文名**"
             "（本地没有译名来源，只有英文）"
         ),
         missing_dimension_hints=(
@@ -902,6 +902,21 @@ DOMAINS: tuple[DomainSpec, ...] = (
             "补进来的是**伤害建模**而不是打法：这条分界写在 partial_note 里，"
             "别因为域从 harvested 变成 partial 就以为打法也有了。"
         ),
+    ),
+    DomainSpec(
+        key="boss_guide",
+        display_zh="终局 Boss 攻略原文",
+        category=Category.ATLAS,
+        authority_url="https://www.poewiki.net/wiki/The_Maven",
+        count_sql="SELECT count(*) FROM boss_guide",
+        chunk_prefix="boss_guide:",
+        hints=("Boss攻略", "Boss 攻略", "Boss打法", "Boss 打法", "打法", "怎么打",
+               "怎么躲", "站位", "Boss机制", "首领机制"),
+        question_hints=("指定终局 Boss 的阶段、技能与原文打法", "普通与 Uber 变体原文差异"),
+        partial_note=("只覆盖已核验的八篇 PoE Wiki 终局 Boss 页面攻略章节；"
+                      "Wiki 为可变社区维护页面，具体数值、药剂门槛与当前版本适用性需另行核验"),
+        missing_dimension_hints=("推荐 DPS", "推荐防御数值", "药剂配置", "保证能打", "掉落"),
+        note="按页面章节保留英文原文、抓取时间与 URL，不把 Wiki 攻略冒充 GGG 官方数据",
     ),
     DomainSpec(
         key="monster_mod",
@@ -1072,6 +1087,20 @@ DOMAINS: tuple[DomainSpec, ...] = (
         hints=("赛季", "联盟", "新机制"),
         question_hints=("当前赛季有什么机制",),
         note="赛季名须从 GGG api/leagues 动态解析，不得硬编码",
+    ),
+    DomainSpec(
+        key="patch_notes",
+        display_zh="GGG 官方版本公告",
+        category=Category.BASICS,
+        authority_url="https://www.pathofexile.com/forum/view-forum/patch-notes",
+        count_sql="SELECT count(*) FROM ggg_patch_note",
+        chunk_prefix="patch_note:",
+        hints=("补丁公告", "补丁说明", "Patch Notes", "Hotfix", "版本改动"),
+        question_hints=("某版本改了什么", "某机制在公告中的历史提及", "PoB 部件在公告中的提及"),
+        partial_note=("只覆盖已核验并入库的官方 PoE1 公告；未入库版本、"
+                      "英文公告到中文机制实体的映射、Build 实际影响仍需另行核对"),
+        missing_dimension_hints=("我的 Build 受影响", "BD 受影响", "自动判断版本影响"),
+        note="按官方论坛原文与版本查询；最新入库公告不自动等于当前游戏版本",
     ),
 )
 

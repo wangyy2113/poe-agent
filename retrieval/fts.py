@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from dataclasses import field
 
 from entities.models import Chunk
+from entities.taxonomy import MAX_FACTUAL_PRIORITY
 from retrieval.tokenize import query_content_words, query_tokens
 
 logger = logging.getLogger(__name__)
@@ -52,7 +53,7 @@ class Hit:
 
     @property
     def can_support_facts(self) -> bool:
-        return self.source_priority <= 5
+        return self.source_priority <= MAX_FACTUAL_PRIORITY
 
 
 def term_coverage(query_terms: list[str], haystack: str) -> tuple[float, list[str], list[str]]:
@@ -175,6 +176,7 @@ def search_fts(
     limit: int = 20,
     category: str | None = None,
     league: str | None = None,
+    version: str | None = None,
     entity_prefix: str | None = None,
     channel: str = "fts",
 ) -> list[Hit]:
@@ -197,6 +199,12 @@ def search_fts(
     if entity_prefix:
         sql += " AND f.entity_id LIKE ?"
         params.append(entity_prefix + "%")
+    # Filter in SQL before LIMIT.  Filtering the first N BM25 hits in Python
+    # can incorrectly return no result when the matching version ranks N+1.
+    for key, value in (("category", category), ("league", league), ("version", version)):
+        if value:
+            sql += f" AND json_extract(c.metadata, '$.{key}') = ?"
+            params.append(value)
     sql += " ORDER BY score LIMIT ?"
     params.append(limit * 3)
 
@@ -216,6 +224,8 @@ def search_fts(
         if category and meta.get("category") != category:
             continue
         if league and meta.get("league") != league:
+            continue
+        if version and meta.get("version") != version:
             continue
         raw.append(float(r["score"]))
         haystack = f"{r['text']}\n{r['keywords']}"

@@ -126,7 +126,11 @@ def main() -> int:
         check(f"「{q[:14]}…」判为依据不足", gap)
         check("  未消耗 LLM token（缺据路径不经模型）",
               d["tokens"].get("total", 0) == 0)
-        check("  缺据声明含「查不到」表述", "查不到" in d["answer"])
+        # POE2 属于服务范围外：应明确拒答，不需要假称“知识库查不到”。
+        check("  缺据或越界原因明确", (
+            "只覆盖" in d["answer"] and "流放之路 1" in d["answer"]
+            if "流放之路2" in q else "查不到" in d["answer"]
+        ))
         check("  缺据声明给出查证途径", "poedb.tw" in d["answer"])
         check("  未伪造引用", not d["citations"])
 
@@ -209,6 +213,14 @@ def main() -> int:
           all(c["url"].startswith("http") for c in d["citations"]))
     check("引用来源可支撑事实断言（P<=6）",
           all(c["priority"] <= 6 for c in d["citations"]))
+    check("单实体问答只引用猎首本体",
+          len(d["citations"]) == 1
+          and d["citations"][0]["url"] == "https://poedb.tw/cn/Headhunter")
+    check("单实体问答未混入仿品且无拦截",
+          "仿品" not in d["answer"] and d["blocked_claims"] == 0)
+    check("单实体问答不发送全量工具 schema",
+          d["tokens"].get("prompt", 0) < 3000,
+          f"prompt_tokens={d['tokens'].get('prompt', 0)}")
     check("Token 计量含 reasoning 字段", "reasoning" in d["tokens"],
           f"model={d['model']} tokens={d['tokens']}")
     if d["model"].startswith("glm"):

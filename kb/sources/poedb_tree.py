@@ -645,6 +645,47 @@ def extract_graph(
     return graph
 
 
+def extract_atlas_graph(
+    payload_zh: dict, payload_en: dict | None, ep: TreeEndpoint
+) -> TreeGraph:
+    """只抽 Atlas 原始连接；不复用角色天赋的点数或职业起点规则。"""
+    if ep.target != TARGET_ATLAS:
+        raise TreeStructureError("Atlas 图抽取器只接受 atlas-skill-tree")
+    nodes_zh = payload_zh.get("nodes")
+    if not isinstance(nodes_zh, dict) or len(nodes_zh) < MIN_NODES[TARGET_ATLAS]:
+        raise TreeStructureError("Atlas 节点数量低于结构下限")
+    nodes_en = (payload_en or {}).get("nodes") or {}
+    if "root" not in nodes_zh:
+        raise TreeStructureError("Atlas 图缺少 root 节点")
+    graph = TreeGraph()
+    for node_id, raw in nodes_zh.items():
+        if not isinstance(raw, dict):
+            continue
+        kind = _graph_kind(raw)
+        graph.nodes.append(GraphNode(
+            node_id=str(node_id), name_zh=str(raw.get("name") or ""),
+            name_en=str((nodes_en.get(node_id) or {}).get("name") or ""),
+            kind=kind, ascendancy_id="", class_start="",
+            passable=kind != KIND_MASTERY,
+        ))
+    known = {node.node_id for node in graph.nodes}
+    for node_id, raw in nodes_zh.items():
+        if not isinstance(raw, dict):
+            continue
+        for other in _as_list(raw.get("out")) + _as_list(raw.get("in")):
+            other_id = str(other)
+            if other_id in known and other_id != str(node_id):
+                graph.edges.add(tuple(sorted((str(node_id), other_id))))
+    if len(graph.edges) < 500 or not any("root" in edge for edge in graph.edges):
+        raise TreeStructureError("Atlas 连接数量不足或 root 未接入")
+    points = payload_zh.get("points")
+    if isinstance(points, dict):
+        value = points.get("totalPoints")
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            graph.meta["totalPoints"] = float(value)
+    return graph
+
+
 def build_adjacency(
     graph_edges: set[tuple[str, str]], passable: set[str]
 ) -> dict[str, set[str]]:
@@ -676,7 +717,7 @@ def nearest_path(
     queue = deque([src])
     while queue:
         cur = queue.popleft()
-        for nxt in adj.get(cur, ()):
+        for nxt in sorted(adj.get(cur, ())):
             if nxt in prev:
                 continue
             prev[nxt] = cur

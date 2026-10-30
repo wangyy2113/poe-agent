@@ -245,13 +245,18 @@ def online() -> None:
         m.MIN_MAX_TOKENS = 16
         tiny = m.LLMClient()
         try:
-            tiny.chat([{"role": "user", "content": "详细说明流放之路的抗性上限机制。"}],
-                      max_tokens=16)
-            check("正文为空时抛 EmptyContentError", False, "既没抛异常也没拿到正文以外的结果")
+            short = tiny.chat(
+                [{"role": "user", "content": "详细说明流放之路的抗性上限机制。"}],
+                max_tokens=16,
+            )
+            # 网关有时在 16 token 内仍会返回一两个正文字符。这里验收的是
+            # “空正文不能静默成功”；非空极短正文不用于事实问答质量判断。
+            check("极小预算未静默返回空正文", bool(short.content.strip()),
+                  f"正文字符数={len(short.content)}")
         except m.EmptyContentError as exc:
-            check("正文为空时抛 EmptyContentError", True, str(exc)[:100])
+            check("极小预算未静默返回空正文", True, str(exc)[:100])
         except m.LLMError as exc:
-            check("正文为空时抛 EmptyContentError", False, f"抛的是别的 LLMError：{exc}")
+            check("极小预算未静默返回空正文", False, f"抛的是别的 LLMError：{exc}")
     finally:
         m.MIN_MAX_TOKENS = original
 

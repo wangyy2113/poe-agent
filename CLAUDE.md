@@ -141,6 +141,8 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 .venv/bin/python scripts/import_pob_skills.py     # 技能石与辅助宝石（中文名取自 POEDB 清单页，缺的再查详情页）
 .venv/bin/python scripts/import_pob_spectres.py   # 幽魂抗性与建模系数，并与 POEDB 侧对账
 .venv/bin/python scripts/import_pob_bosses.py     # Boss 技能的伤害建模（不是打法；--dry-run 只清点与 tooltip 抽验）
+.venv/bin/python scripts/import_boss_guides.py     # 八篇 PoE Wiki Boss 攻略原文预检；--apply 后发布
+.venv/bin/python scripts/import_ggg_patch_notes.py # GGG 官方 PoE1 公告预检；--apply 后发布
 .venv/bin/python scripts/import_pantheon.py       # 万神殿（PoB 出结构 × POEDB 逐神页出中文，--dry-run 只对账）
 .venv/bin/python scripts/verify_pob_mods.py       # 与 POEDB 对账
 .venv/bin/python scripts/verify_essence.py --write # 精华 POEDB × PoB 对账，回填 name_en 并重渲染卡片
@@ -149,7 +151,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 2433 项，秒级
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 2490 项，约 20 秒
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选
@@ -307,7 +309,7 @@ Craft of Exile 矩阵证据支撑；两条 Citation 不得互相夹带正文。�
 | `orchestrator/` | `loop.py` 主循环与轨迹（批量与流式**共用** `_prepare_turn` / `_handle_tool_call` / `_terminal_gap`，只在「怎么把文本交给用户」上不同——不要在任一侧重新写判据，`tests/unit/test_turn_parity.py` 会挡）、`binding.py` 出口闸门（1400+ 行，改动前先读它的模块 docstring）、`citation.py` 引用装配 |
 | `agents/` | `knowledge.py`：系统提示词 + `ALLOWED_TOOLS` + 缺据声明模板。提示词是第一道约束不是唯一约束 |
 | `tools/` | `registry.py` 注册与 schema 导出，`impl/` 各工具；返回值统一 `ToolResult`，`citations` 是结构化引用而非拼进正文的字符串（要参与出口校验） |
-| `core/mcp_protocol.py` / `mcp_server.py` | MCP `2025-06-18` stdio 协议层与入口；默认复用 Knowledge Agent 的 76 个只读工具，`--tools` 可收窄暴露面。stdout 只能写逐行 JSON-RPC，日志必须走 stderr；EOF 必须关闭 SQLite |
+| `core/mcp_protocol.py` / `mcp_server.py` | MCP `2025-06-18` stdio 协议层与入口；默认复用 Knowledge Agent 的 81 个只读工具，`--tools` 可收窄暴露面。stdout 只能写逐行 JSON-RPC，日志必须走 stderr；EOF 必须关闭 SQLite |
 | `kb/sync.py` / `scripts/sync_knowledge.py` | 过期分类计划、现有采集器编排、事实行快照与版本 diff。默认 CLI 只预览，`--apply` 才执行；记录删除提升为 `attention`。唯一装备不得加入自动集合，直到主列表 + 1,342 页详情补全可原子执行 |
 | `retrieval/` | FTS5、别名、RRF 融合、jieba 分词、领域词表 |
 | `kb/` | `pipeline.py` 采集管线、`sources/` 各来源抽取器、`coverage.py` 知识库自描述层、`conflicts.py` confirmed/review 分类、过滤、游标与聚合，`stat_channels.py` 属性来源渠道注册表、`render*.py` 卡片切片 |
@@ -404,8 +406,8 @@ Craft of Exile 矩阵证据支撑；两条 Citation 不得互相夹带正文。�
   属性需求至今没有可核对的真值来源，所以整维仍未采集，并明确划进 `partial_note`。
   也**不留空列**：留了下一个人会以为它待填，然后把乘数当伤害写进去。
 
-本机 `data/poe.db` 现状（`GET /healthz` 与 `/admin/stats` 可查）：`entity` 5325、
-`mod_affix` 94406、`pob_mod` 25487、`chunk` 18994、`alias` 8382、`game_constant` 543、
+本机 `data/poe.db` 现状（`GET /healthz` 与 `/admin/stats` 可查）：`entity` 5358、
+`mod_affix` 94406、`pob_mod` 25487、`chunk` 19094、`alias` 8382、`game_constant` 543、
 `craft_bench_recipe` 783、`pob_base_item` **1022**（18 个装备类别，PoB × POEDB 逐条桥接，
 覆盖 PoB 侧 96.1%；未桥接的 41 条已按类别登记在台账）、`source_conflict` **547**（`mod_review` 254 + `unique_review` **229** + `spectre_review` 43
 + `spectre` **8** + `gem_review` **9** + `tree_review` 3 + `essence_review` **1**）。
@@ -1006,7 +1008,8 @@ stat id）」——**那句话描述的是错的那一页**：真正的来源是
 节点属性早就入库了，缺的一直是「怎么连的」——树 JSON 本来就在缓存里也一直被解析，
 只是 `in`/`out` 与 `classes` 没被取出来。节点 id 就是 GGG 的 skill id
 （实测 3389/3389 与 JSON 键相等），所以能与天赋卡的 `skill_ids` 对上。
-**只有主天赋树入图**：Atlas 树没有职业起点，点数规则也是另一套。
+主天赋树与 Atlas 树分别入图：Atlas 没有职业起点，只存 JSON 原始连接供
+`/planner/atlas` 展示可核对路径；**不得**套用角色天赋的点数消耗公式或宣称最优配点。
 
 `pob_spectre` **268** 条 PoB 幽魂建模数据（四抗性、护甲/闪避/能量护盾系数、攻击间隔、
 怪物技能 id）。它同时是一份「玩家实际会用」的确认清单，倍率排名只在这 268 个里做——
@@ -1692,3 +1695,35 @@ API Key 后旧响应不能回写。真实 JS DOM 测试覆盖请求、渲染与�
 `textContent`，外链限制可信 HTTPS 域名；输入改变、关窗和 API Key 切换均
 使旧清单与结果失效。真实 JS DOM 测试覆盖请求、分页、漂移与失效路径；
 网页布局未截图核对。
+
+## 第一百三十六轮：单实体问答先冻结唯一证据，再给模型写句子
+
+本机可用 LLM 凭证只放在 Git 忽略的 `.env`，在线 `verify_llm.py` 51 项通过。
+原先“猎首是什么”会把仿品也作为证据，并携 81 个工具 schema 消耗 5 万多 token；
+“猎首有哪些词缀”实测消耗约 1.6 万 token，且非流式有过无据句拦截。
+`_preferred_tool_route` 现在对单实体定义/词缀题先核验唯一别名，代码调用
+`entity_lookup` 后仅保留其一条精确引用，并关闭本轮后续 schema；多实体或比较题
+不走该路径。游戏专名 `POE1/POE2` 内的数字不按游戏数值校验，其它数字仍必须
+出现在证据或工具输出。真实“猎首有哪些词缀”复验为 723 token、单条 POEDB 引用、
+0 条拦截；流式与非流式端到端检查共 61 项。`verify_chat.py` 还区分 PoE2 越界
+和库内查不到，避免把正确拒答误判为失败。
+
+## 第一百三十七轮：Wiki Boss 门槛只能作为有出处的快照对照
+
+`planner/boss_prep.py` 只认 `Recommendations` 章节中完整匹配的 DPS、生命加护盾、
+三元素抗性原句，保留页面 URL、抓取时间、内容哈希和原句。真实库仅 Sirus、Shaper、
+Elder、Uber Elder 这四页得到这三类门槛；Maven、Cortex、Exarch、Eater 均保持未知。
+`POST /boss/guides/{boss_key}/build-check` 接 PoB 分享码，按 `PlayerStat` 字段逐值比较；
+生命与能量护盾缺一不补零，三元素抗性缺一不宣称全满。DPS 只有调用方显式确认当前
+敌人、技能、增益配置适用于该 Boss，且 PoB 保存 Boss 档位时才比较。响应不会把
+`at_or_above` 叫作通关就绪，始终披露回复、药剂及 Wiki 建议当前版本适用性未知。
+
+## 第一百三十八轮：Chat 模型名不能充当 Embedding 模型
+
+2026-10-30 用已配置的本机凭证核验同一网关：`deepseek-v4-1-flash-1017`
+在 `/v1/models` 中，但用它调用 `/v1/embeddings` 返回 HTTP 400
+`Unmapped LLM provider for this endpoint`；模型清单 31 项里没有可识别的
+Embedding 模型。保留向量通道显式关闭，不把聊天模型名写进 `EMBEDDING_MODEL`。
+后续已接通远程 OpenAI 兼容 Embedding 客户端、sqlite-vec 查询、模型绑定的完整回填、
+同内容缓存与检索 RRF 融合；`vector_channel_status` 在扩展、凭证或完整索引缺失时仍拒绝
+把配置请求报告成运行时启用。当前网关没有 Embedding 模型，真实回填与在线向量验收尚未完成。

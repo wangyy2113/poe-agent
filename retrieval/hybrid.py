@@ -1,7 +1,6 @@
 """混合检索：实体精确通道 + BM25，RRF 融合 → 来源优先级加权 → 充分依据判定。
 
-向量通道当前关闭（网关无 embedding 模型），接口已预留：一旦 embedding 可用，
-在 `_gather` 里加一路候选即可，融合与判定逻辑无需改动。
+向量通道需要远程 embedding 与完整的 sqlite-vec 索引；任一缺失时透明降级。
 
 **充分依据判定由代码执行，不交给模型自觉**（需求 1.3）：
 最高分低于 min_score 即返回 evidence_gap，不进入生成。
@@ -28,8 +27,11 @@ import sqlite3
 from dataclasses import dataclass, field
 
 from retrieval import alias as alias_mod
+from retrieval.embedding import EmbeddingClient, EmbeddingError
 from retrieval.fts import Hit, absent_from_corpus, search_fts, term_coverage
+from retrieval.rerank import MAX_DOCUMENT_CHARS, MAX_DOCUMENTS, RerankClient, RerankError
 from retrieval.tokenize import query_content_words
+from retrieval.vector import search_vector
 
 logger = logging.getLogger(__name__)
 
@@ -163,6 +165,40 @@ def _rrf_fuse(
     return fused
 
 
+def _rerank_candidates(
+    query: str, fused: list[Hit], client: RerankClient, priority_decay: float
+) -> list[Hit]:
+    """Reorder a bounded pool while retaining every exact entity candidate.
+
+    The remote model sees only text and returns scores; it never supplies
+    citations or the sufficient-evidence decision.  Exact alias matches are
+    pinned before other results, even if the model assigns them a low score.
+    """
+    aliases = [hit for hit in fused if hit.channel == "alias"]
+    others = [hit for hit in fused if hit.channel != "alias"]
+    candidates = (aliases + others)[:MAX_DOCUMENTS]
+    documents = [
+        (f"{hit.metadata.get('title', '')}\n{hit.text}")[:MAX_DOCUMENT_CHARS]
+        for hit in candidates
+    ]
+    scores = client.rerank(query, documents)
+    ranked = sorted(
+        enumerate(candidates),
+        key=lambda pair: (
+            pair[1].channel != "alias",
+            -scores[pair[0]] * (
+                1.0 - min(priority_decay * max(0, pair[1].source_priority - 1), 0.9)
+            ),
+            pair[1].source_priority,
+            pair[0],
+        ),
+    )
+    selected = {hit.chunk_id for _, hit in ranked}
+    return [hit for _, hit in ranked] + [
+        hit for hit in fused if hit.chunk_id not in selected
+    ]
+
+
 def retrieve(
     conn: sqlite3.Connection,
     query: str,
@@ -174,9 +210,13 @@ def retrieve(
     priority_decay: float = 0.08,
     vector_enabled: bool = False,
     vector_disabled_reason: str = "",
+    embedding_client: EmbeddingClient | None = None,
     rerank_enabled: bool = False,
+    rerank_client: RerankClient | None = None,
+    rerank_disabled_reason: str = "",
     category: str | None = None,
     league: str | None = None,
+    version: str | None = None,
 ) -> RetrievalResult:
     result = RetrievalResult(query=query)
     channels: dict[str, list[Hit]] = {}
@@ -187,7 +227,12 @@ def retrieve(
     # ── 通道 1：实体精确匹配（最快最确定，放最前）──
     entity_ids = alias_mod.lookup(conn, query)
     if entity_ids:
-        alias_hits = alias_mod.hits_for_entities(conn, entity_ids)
+        alias_hits = [
+            hit for hit in alias_mod.hits_for_entities(conn, entity_ids)
+            if (not category or hit.metadata.get("category") == category)
+            and (not league or hit.metadata.get("league") == league)
+            and (not version or hit.metadata.get("version") == version)
+        ]
         if alias_hits:
             # alias 通道由查表命中，本身不经 FTS，覆盖率需在此补算，
             # 否则输出里正确答案显示 0% 而错误候选显示 100%，误导排查。
@@ -202,7 +247,10 @@ def retrieve(
     recall_k = top_k * RECALL_MULTIPLIER
 
     # ── 通道 2：BM25（唯一在所有平台确定可用的通道）──
-    fts_hits = search_fts(conn, query, limit=recall_k, category=category, league=league)
+    fts_hits = search_fts(
+        conn, query, limit=recall_k, category=category, league=league,
+        version=version,
+    )
     if fts_hits:
         channels["fts"] = fts_hits
     result.channels.append("fts")
@@ -218,27 +266,39 @@ def retrieve(
     if _looks_like_mod_query(query):
         mod_hits = search_fts(
             conn, query, limit=recall_k,
+            category=category, league=league, version=version,
             entity_prefix=MOD_LADDER_PREFIX, channel="mod_intent",
         )
         if mod_hits:
             channels["mod_intent"] = mod_hits
             result.channels.append("mod_intent")
 
-    # ── 通道 4：向量（当前关闭）──
-    if vector_enabled:
-        result.channels.append("vector")
+    # ── 通道 4：远程 embedding + 进程内 sqlite-vec ──
+    if vector_enabled and embedding_client is not None:
+        try:
+            vector_hits = search_vector(
+                conn, query, embedding_client, limit=recall_k,
+                category=category, league=league, version=version,
+            )
+            if vector_hits:
+                channels["vector"] = vector_hits
+            result.channels.append("vector")
+        except (EmbeddingError, sqlite3.Error) as exc:
+            result.degraded = True
+            result.note = (
+                f"向量检索已自动降级（{exc}），当前走 BM25 + 实体精确匹配"
+            )
     else:
         result.degraded = True
+        if vector_enabled and embedding_client is None:
+            vector_disabled_reason = "Embedding 客户端未配置"
         if vector_disabled_reason:
             result.note = (
                 f"向量检索已自动降级（{vector_disabled_reason}），"
                 "当前走 BM25 + 实体精确匹配"
             )
         else:
-            result.note = "向量检索与重排未启用（网关无 embedding 模型），当前走 BM25 + 实体精确匹配"
-
-    if not rerank_enabled:
-        result.degraded = True
+            result.note = "向量检索未启用，当前走 BM25 + 实体精确匹配"
 
     if not channels:
         result.sufficient = False
@@ -246,20 +306,37 @@ def retrieve(
         return result
 
     fused = _rrf_fuse(channels, rrf_k, priority_decay)
+    if rerank_enabled:
+        if rerank_client is None:
+            result.degraded = True
+            detail = rerank_disabled_reason or "ReRank 客户端未配置"
+            result.note += ("；" if result.note else "") + f"ReRank 已自动降级（{detail}）"
+        else:
+            try:
+                fused = _rerank_candidates(query, fused, rerank_client, priority_decay)
+                result.channels.append("rerank")
+            except RerankError as exc:
+                result.degraded = True
+                result.note += ("；" if result.note else "") + f"ReRank 已自动降级（{exc}）"
     # 先限流再截断：否则同组近重复会在截断前就把候选名额吃光
     result.hits = fused[:top_k]
     result.top_score = result.hits[0].score if result.hits else 0.0
-    result.top_coverage = max((h.coverage for h in result.hits), default=0.0)
+    # P7 community cards can help a user navigate, but cannot establish a
+    # factual claim.  The gate must therefore evaluate only factual sources.
+    factual_hits = [hit for hit in result.hits if hit.can_support_facts]
+    result.top_coverage = max((h.coverage for h in factual_hits), default=0.0)
 
     # 未被任何候选覆盖的查询词：缺据声明要如实说明缺什么
     covered: set[str] = set()
     all_terms: list[str] = []
-    for h in result.hits:
+    for h in factual_hits:
         covered.update(h.matched_terms)
         for t in h.missing_terms + h.matched_terms:
             if t not in all_terms:
                 all_terms.append(t)
     result.missing_terms = [t for t in all_terms if t not in covered]
+    if not factual_hits:
+        result.missing_terms = q_terms
 
     # ── 充分依据判定：由代码执行，不交给模型（需求 1.3）──
     #
@@ -267,11 +344,14 @@ def retrieve(
     # 用它做阈值等于闸门永不触发；而 bm25 绝对值随查询长度与语料变化，
     # 越界查询与正常查询可以落在同一量级（实测 -8.97 vs -9.99），也无法区分。
     # 覆盖率是绝对量：查询的实义词有多少真的出现在文档里，可解释且可阈值化。
-    exact_hit = any(h.channel == "alias" for h in result.hits)
-    best = max(result.hits, key=lambda h: h.coverage) if result.hits else None
+    exact_hit = any(h.channel == "alias" for h in factual_hits)
+    best = max(factual_hits, key=lambda h: h.coverage) if factual_hits else None
     matched_count = len(best.matched_terms) if best else 0
 
-    if exact_hit:
+    if not factual_hits:
+        result.sufficient = False
+        result.reason = "仅命中不能支撑事实断言的社区资料，缺少可引用的事实来源"
+    elif exact_hit:
         # 别名表命中意味着 Tier A 确实存在该实体条目，是最强证据
         result.sufficient = True
         result.reason = "实体精确命中"

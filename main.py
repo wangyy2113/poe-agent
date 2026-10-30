@@ -25,6 +25,7 @@ from fastapi.staticfiles import StaticFiles
 from api import normalize_base_path
 from api.admin import router as admin_router
 from api.boss import router as boss_router
+from api.boss_guides import router as boss_guides_router
 from api.chat import router as chat_router
 from api.craft import router as craft_router
 from api.conflicts import router as conflicts_router
@@ -33,6 +34,8 @@ from api.build import router as build_router
 from api.calculator import router as calculator_router
 from api.item import router as item_router
 from api.memory import router as memory_router
+from api.patch_notes import router as patch_notes_router
+from api.planner import router as planner_router
 from api.search import router as search_router
 from api.screenshot import router as screenshot_router
 from api.unique_variants import router as unique_variants_router
@@ -41,6 +44,8 @@ from core.config import REPO_ROOT, get_config, get_secrets
 from core.llm import LLMError, get_llm_client
 from core.logging_setup import setup_logging
 from core.version import APP_VERSION
+from retrieval.runtime import vector_runtime as active_vector_runtime
+from retrieval.rerank import configured_rerank_client
 
 # 导入即注册工具（kb_search / entity_lookup）
 import tools.impl  # noqa: F401
@@ -86,6 +91,7 @@ def _warn_if_open() -> None:
 def health() -> dict[str, Any]:
     """反映 SQLite / 向量扩展 / LLM 凭证池 / embedding 通道状态。"""
     out: dict[str, Any] = {"status": "ok", "base_path": BASE_PATH or "/"}
+    conn = None
     try:
         conn = dbmod.get_conn()
         out["db"] = {
@@ -115,7 +121,14 @@ def health() -> dict[str, Any]:
 
     vs = dbmod.vector_status()
     vector_requested = bool(cfg.get("retrieval.vector.enabled", False))
-    vector_runtime = dbmod.vector_channel_status(vector_requested)
+    try:
+        sec = get_secrets()
+        vector_runtime = (
+            active_vector_runtime(conn, vector_requested, sec)[0]
+            if conn is not None else dbmod.vector_channel_status(vector_requested)
+        )
+    except Exception as exc:  # noqa: BLE001  健康检查不能因一个通道失败而整体 500
+        vector_runtime = dbmod.VectorStatus(False, f"向量通道检查失败：{type(exc).__name__}")
     out["vector"] = {
         "extension_available": vs.available,
         "requested": vector_requested,
@@ -123,6 +136,19 @@ def health() -> dict[str, Any]:
         "reason": vector_runtime.reason,
     }
     if vector_requested and not vector_runtime.available:
+        out["status"] = "degraded"
+    rerank_requested = bool(cfg.get("retrieval.rerank.enabled", False))
+    rerank_client, rerank_reason = configured_rerank_client(
+        rerank_requested,
+        timeout_seconds=float(cfg.get("retrieval.timeout_seconds", 8)),
+    )
+    out["rerank"] = {
+        "requested": rerank_requested,
+        "configured": rerank_client is not None,
+        "model": rerank_client.model if rerank_client else None,
+        "reason": rerank_reason,
+    }
+    if rerank_requested and rerank_client is None:
         out["status"] = "degraded"
     out["tools"] = __import__("tools.registry", fromlist=["REGISTRY"]).REGISTRY.names()
     try:
@@ -143,7 +169,10 @@ def health() -> dict[str, Any]:
             out["status"] = "degraded"
             out["llm"]["pool_error"] = str(exc)
         out["embedding"] = {
-            "configured": bool(sec.embedding_base_url and sec.embedding_model),
+            "configured": bool(
+                sec.embedding_base_url and getattr(sec, "embedding_api_key", "")
+                and sec.embedding_model
+            ),
             "model": sec.embedding_model or None,
         }
     except Exception as exc:  # noqa: BLE001
@@ -177,8 +206,11 @@ def create_app() -> FastAPI:
     api.include_router(craft_router)
     api.include_router(conflicts_router)
     api.include_router(boss_router)
+    api.include_router(boss_guides_router)
     api.include_router(item_router)
     api.include_router(memory_router)
+    api.include_router(patch_notes_router)
+    api.include_router(planner_router)
     api.include_router(build_router)
     api.include_router(calculator_router)
     api.include_router(screenshot_router)

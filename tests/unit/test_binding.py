@@ -274,6 +274,14 @@ class TestPassing(unittest.TestCase):
         self.assertEqual(r.blocked, 0)
         self.assertEqual(r.used_labels, ["E1"])
 
+    def test_游戏名称中的一不是装备数值但真实等级仍校验(self):
+        e = [ev("E1", "猎首：唯一装备腰带，底材为皮革腰带，需求等级 40")]
+        good = run("猎首是 POE1 的唯一装备腰带，需求等级 40[[E1]]。", e)
+        bad = run("猎首是 POE1 的唯一装备腰带，需求等级 41[[E1]]。", e)
+        self.assertEqual(0, good.blocked)
+        self.assertEqual(1, bad.blocked)
+        self.assertIn("41", bad.verdicts[0].reason)
+
     def test_证据区间覆盖句中具体值时放行(self):
         """模型从区间 (40-55) 里取具体值 47 是合理表述，不是编造。"""
         e = [ev("E1", "该词缀为 +(40-55) 力量")]

@@ -133,6 +133,12 @@ _FRAMED_LEAD_IN_RE = re.compile(
 
 #: 数值。带千分位与小数，含正负号与百分号。
 _NUM_RE = re.compile(r"[-+]?\d+(?:,\d{3})*(?:\.\d+)?")
+# POE1 / POE2 中的数字是游戏名称的一部分，不是装备或机制数值。
+# 只剥这两个完整专名；T1、ilvl84、3.29 等仍必须逐值回填。
+_GAME_NAME_NUMBER_RE = re.compile(
+    r"(?i)(?<![A-Za-z0-9])(?:poe\s*[12]|path\s+of\s+exile\s*[12])\b|"
+    r"流放之路\s*[12]"
+)
 
 #: 排版用的正负号 → ASCII。**只映射真正的正负号**：
 #: `−`(U+2212 减号)、`＋`/`－`(全角)。连接号 `–`/`—`/`~` 一律不动——
@@ -1662,7 +1668,8 @@ def unsupported_numbers(
         ranges.extend(_ranges_in(normalize_signs(e.text)))
 
     missing: list[str] = []
-    for m in _NUM_RE.finditer(normalize_signs(sentence)):
+    game_label_stripped = _GAME_NAME_NUMBER_RE.sub("POE", sentence)
+    for m in _NUM_RE.finditer(normalize_signs(game_label_stripped)):
         raw = m.group()
         norm = _norm_num(raw)
         if norm in pool:
