@@ -30,7 +30,7 @@ POE1 的机制耦合极深，一个错误的小前提会让整条结论反向。
 | 圣甲虫 | 118 个（效果、堆叠上限、地图装置放置上限）；**掉落来源未采集**；市场价格以 poe.watch 为主、GGG Trade API 在线挂单为备用 |
 | 实时经济价格、趋势、成本与双边价差 | `POST /economy/price` 查询当前快照；`POST /economy/trend` 查询历史；`POST /economy/material-cost` 汇总明确清单；`POST /economy/rare-comparables` 查询稀有装可比挂单，可选逐件核对品质与连接组尺寸；`POST /economy/flip-analysis` 对标准 exchange 条目核验买卖两侧、整单深度、时效与显式费用后计算净利润。SQLite 价格缓存 TTL 30 分钟、历史保留 90 天；主源无缓存时标准条目与唯一装备可显式降级官方 Trade API。**不足两个趋势点不判趋势；单侧过滤后不足 5 条不报代表价；任一侧或费用不完整时利润与 Flip 判断保持 unknown；所有结果都不是成交或收益保证** |
 | Boss 技能伤害、生存校验与防御门槛 | 网页“Boss 命中风险”入口支持显式防御输入、批量风险审计与单技能门槛；10 条 Boss 技能的伤害建模 + 22 个 Boss 的护甲/闪避倍率；`boss_survival_check` 校验同一命中连续 1–100 次，`boss_defence_threshold` 反解最低防御池、抗性/护甲门槛，`boss_sequence_check` 按用户明确顺序逐击累计；`boss_timed_sequence_*` 结算显式时间轴、固定恢复与门槛；`boss_probabilistic_sequence_*` 计算闪避/格挡/压制后的低/高伤害生存分布与风险分位；`boss_layered_sequence_*` 分别推进生命、能量护盾、MoM 式魔力分流、各池回复和护盾回充中断；`boss_recovery_sequence_*` 再结算命中前后瞬回、定时恢复、偷取实例限速与满池溢出；`boss_dot_sequence_*` 用边界解析连续流统一结算显式 DoT 暴露、命中和恢复；`boss_mitigation_sequence_*` 在分层路由前结算显式临时承伤乘数、Guard 容量与精确耗尽；`boss_ward_sequence_*` 再逐击推进 Ward 破裂、恢复和吸收；`boss_risk_audit` 批量排列已收录技能风险。`POST /build` 可直接消费 PoB 基础防御、分池回复及适用概率字段快照。**序列不是真实连招，概率不是保证，审计不是 Boss 难度排行，数值工具不生成打法**；阶段与应对可另查 Wiki 攻略原文；数字是 PoB 建模值，GGG 未公布 |
-| Boss 攻略原文 | `GET /boss/guides` 与 `boss_guide_lookup` 查询八篇白名单 PoE Wiki 页面中阶段、技能、机制、策略及 Uber 变体章节；页面标题、来源 URL、抓取时间和内容哈希可追溯。**这是 P3 可变 Wiki 原文；不自动断定当前版本、药剂配置或玩家 Build 的适用性** |
+| Boss 攻略原文与 Build 对照 | `GET /boss/guides` 与 `boss_guide_lookup` 查询八篇白名单 PoE Wiki 攻略；`POST /boss/guides/{boss_key}/build-check` 只将 Recommendations 中完整匹配的 DPS、生命加护盾和三元素抗性原句与用户 PoB 快照并排。**这是 P3 可变 Wiki 原文；不自动断定当前版本、药剂配置或实战通关** |
 | 官方版本公告 | `scripts/import_ggg_patch_notes.py` 逐篇核对 GGG 官方 Patch Notes 分区、staff 首帖、日期和标题，原文进入 FTS；`/patch-notes/timeline` 与 `patch_note_lookup` 提供逐行英文历史提及，`/patch-notes/build-impact` 对 PoB 英文部件做字面匹配。**字面提及不是已生效版本或实测 Build 数值变化** |
 | Atlas 目标候选与图路线 | `POST /planner/atlas` 按刷图速度、通货收益或特定材料目标找 POEDB 效果原文节点；`POST /planner/atlas-route` 把 1–10 个已选实体连接到 root，复用共同路径并列出新增图节点。两个对应的只读工具可用于问答与 MCP。**节点数不是已核验的点数，逐目标贪心连接不等于全局最优；收益和解锁条件仍未知** |
 | 制作规则（名额与影响力） | 7 条前后缀名额规则（魔法 1+1、稀有 3+3、传奇不受限制、药剂随魔法，另有 PoB 独有的珠宝/Graft 2+2 与「已腐化深渊珠宝回到 3+3」）；`base_influence_profile` 可查 1,022 条具体底材的六类传统影响 `influenceTags`，`check_mod_combination` 在给定具体底材、单一影响与可选物等时，会用 PoB 底材标签和 POEDB 词缀 `spawn_tags` 验证影响词缀适用性。`possible` 只表示词缀能共存，不表示能制作；古灵基底由独立状态机处理。**影响底材获得方式、多影响词缀池组合与完整元词缀状态机仍未采集** |
@@ -1018,6 +1018,15 @@ curl -s -X POST http://127.0.0.1:8787/poe_agent/boss/audit \
 次数。这只是已收录 PoB 技能的累计承伤与防御缺口审计，不是完整技能清单，也不按出现频率、
 命中概率、阶段、真实连招、恢复或打法加权，因此不能解释成 Boss 难度或击杀风险排行榜。
 
+**Wiki Boss 建议与 PoB 快照对照** —— `POST /boss/guides/{boss_key}/build-check`
+接受 PoB 分享码与可选 `same_boss_configuration`。只读取已抓取攻略的 `Recommendations`
+章节里完整匹配的门槛原句，每项保留原文、页面 URL、抓取时间与内容哈希。当前库中
+Sirus、Shaper、Elder 和 Uber Elder 有可结构化的 DPS、生命加护盾与三元素抗性建议；
+其余页面保持 `unknown`。PoB 缺任一组成字段时不补零。DPS 只有用户确认 PoB 当前
+敌人、技能和增益配置适用于所问 Boss，并且 PoB 保存了 Boss 档位，才显示数值相对
+Wiki 门槛的差额。即使显示 `at_or_above`，它也只表示这两个数的关系；回复能力、药剂、
+机制执行和页面建议的当前版本适用性仍列为缺口。
+
 **基础通货状态转移** —— `POST /craft/operation`。支持 10 种已审计基础通货，输入可为
 稀有度与前后缀计数，也可直接给完整装备复制文本；两种状态输入不能混用。
 
@@ -1924,7 +1933,7 @@ PoB 排 P2 而不是 P1：它在数值上更接近一手，但不含中文名与
 .venv/bin/python -m unittest discover -s tests -t .
 ```
 
-目前 2457 项，其中与「无据不答」直接相关的：
+目前 2461 项，其中与「无据不答」直接相关的：
 
 | 组 | 项数 | 重点 |
 | --- | --- | --- |

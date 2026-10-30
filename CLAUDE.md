@@ -151,7 +151,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 2457 项，秒级
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 2461 项，秒级
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选
@@ -1707,3 +1707,13 @@ API Key 后旧响应不能回写。真实 JS DOM 测试覆盖请求、渲染与�
 出现在证据或工具输出。真实“猎首有哪些词缀”复验为 723 token、单条 POEDB 引用、
 0 条拦截；流式与非流式端到端检查共 61 项。`verify_chat.py` 还区分 PoE2 越界
 和库内查不到，避免把正确拒答误判为失败。
+
+## 第一百三十七轮：Wiki Boss 门槛只能作为有出处的快照对照
+
+`planner/boss_prep.py` 只认 `Recommendations` 章节中完整匹配的 DPS、生命加护盾、
+三元素抗性原句，保留页面 URL、抓取时间、内容哈希和原句。真实库仅 Sirus、Shaper、
+Elder、Uber Elder 这四页得到这三类门槛；Maven、Cortex、Exarch、Eater 均保持未知。
+`POST /boss/guides/{boss_key}/build-check` 接 PoB 分享码，按 `PlayerStat` 字段逐值比较；
+生命与能量护盾缺一不补零，三元素抗性缺一不宣称全满。DPS 只有调用方显式确认当前
+敌人、技能、增益配置适用于该 Boss，且 PoB 保存 Boss 档位时才比较。响应不会把
+`at_or_above` 叫作通关就绪，始终披露回复、药剂及 Wiki 建议当前版本适用性未知。
