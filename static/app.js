@@ -89,6 +89,7 @@ async function apiFetch(path, options = {}) {
       window.clearVeiledOperation?.();
       window.clearEconomyWorkbench?.();
       window.clearRareComparables?.();
+      window.clearLeagueStarter?.();
     }
     updateAuthButton(true);
     showAuthDialog(hadKey ? 'API Key 无效或已失效，请重新输入。' : '此服务需要 API Key。');
@@ -140,6 +141,7 @@ async function saveApiKey(event) {
       window.clearVeiledOperation?.();
       window.clearEconomyWorkbench?.();
       window.clearRareComparables?.();
+      window.clearLeagueStarter?.();
     }
     sessionStorage.setItem(AUTH_STORE, key);
     authRequired = false;
@@ -170,6 +172,7 @@ function clearApiKey() {
   window.clearVeiledOperation?.();
   window.clearEconomyWorkbench?.();
   window.clearRareComparables?.();
+  window.clearLeagueStarter?.();
   updateAuthButton(authRequired);
 }
 

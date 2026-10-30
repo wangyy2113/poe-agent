@@ -44,6 +44,8 @@ class PobParseError(ValueError):
 #: 分享码里允许出现的字符。先判形状再解码，能把「粘错了东西」与
 #: 「粘对了但内容坏了」分开报。
 _CODE_RE = re.compile(r"^[A-Za-z0-9\-_=+/]+$")
+MAX_SHARE_CODE_CHARS = 7_000_000
+MAX_DECOMPRESSED_XML_BYTES = 5_000_000
 
 
 @dataclass(frozen=True)
@@ -163,6 +165,8 @@ def decode_share_code(code: str) -> str:
             "`parsers.pob_link.resolve_download_url` 过白名单再抓回原文"
             "（`/build` 端点已经这么做了）"
         )
+    if len(text) > MAX_SHARE_CODE_CHARS:
+        raise PobParseError("分享码超过安全长度上限")
     if not _CODE_RE.match(text):
         raise PobParseError("不是合法的分享码：含 base64 之外的字符，可能是粘贴时混入了别的内容")
     try:
@@ -170,11 +174,16 @@ def decode_share_code(code: str) -> str:
     except (binascii.Error, ValueError) as exc:
         raise PobParseError(f"base64 解码失败：{exc}") from exc
     try:
-        xml = zlib.decompress(raw)
+        decompressor = zlib.decompressobj()
+        xml = decompressor.decompress(raw, MAX_DECOMPRESSED_XML_BYTES + 1)
     except zlib.error as exc:
         raise PobParseError(
             f"zlib 解压失败：{exc}。分享码是 base64 但不是 PoB 的压缩格式"
         ) from exc
+    if len(xml) > MAX_DECOMPRESSED_XML_BYTES or decompressor.unconsumed_tail:
+        raise PobParseError("PoB XML 解压后超过 5 MB 安全上限")
+    if not decompressor.eof or decompressor.unused_data:
+        raise PobParseError("zlib 数据不完整或含有额外内容")
     try:
         return xml.decode("utf-8")
     except UnicodeDecodeError as exc:
@@ -332,6 +341,16 @@ def parse_build(xml: str) -> PobBuild:
                 1 for s in sockets.findall("Socket")
                 if (s.get("itemId") or "0") != "0"
             )
+    missing_sections = [
+        name for name, present in (
+            ("Items", root.find("Items") is not None),
+            ("Skills", root.find("Skills") is not None),
+            ("Tree/Spec", spec is not None),
+        ) if not present
+    ]
+    if missing_sections:
+        out.structure_complete = False
+        out.structure_basis = "PoB XML 缺少 " + "、".join(missing_sections)
     return out
 
 

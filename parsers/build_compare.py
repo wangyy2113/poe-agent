@@ -91,6 +91,10 @@ class BuildScenarioComparison:
 
 
 def _active_skill(build: PobBuild) -> str:
+    # mainSocketGroup is a presentation choice, not proof of the skill used to
+    # calculate PlayerStat.  Without Calcs.skill_number, numeric deltas are unknown.
+    if build.calcs_skill_group is None:
+        return ""
     group = build.calcs_group
     gem = group.calcs_active_gem if group else None
     return gem.name_en.strip() if gem else ""
@@ -207,6 +211,8 @@ def _context_check(
             f"天赋树版本不同：{reference.tree_version} vs {candidate.tree_version}"
         )
 
+    if not reference.config or not candidate.config:
+        unknowns.append("至少一份方案缺少可确认的 PoB 配置快照")
     config_keys = sorted(set(reference.config) | set(candidate.config))
     differing = tuple(
         key for key in config_keys

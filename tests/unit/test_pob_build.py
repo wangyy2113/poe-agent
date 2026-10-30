@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import sys
 import unittest
+import base64
+import zlib
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -66,6 +68,19 @@ class ShareCodeTest(unittest.TestCase):
         with self.assertRaises(PobParseError) as not_zlib:
             decode_share_code("aGVsbG8gd29ybGQ")  # 合法 base64，但不是 zlib
         self.assertIn("zlib", str(not_zlib.exception))
+
+    def test_拒绝解压炸弹与尾随数据(self) -> None:
+        oversized = encode_share_code("x" * 5_000_001)
+        with self.assertRaisesRegex(PobParseError, "5 MB"):
+            decode_share_code(oversized)
+
+        trailing = base64.urlsafe_b64encode(zlib.compress(b"<PathOfBuilding/>") + b"junk").decode()
+        with self.assertRaisesRegex(PobParseError, "额外内容"):
+            decode_share_code(trailing)
+
+        truncated = base64.urlsafe_b64encode(zlib.compress(b"<PathOfBuilding/>")[:-2]).decode()
+        with self.assertRaisesRegex(PobParseError, "不完整"):
+            decode_share_code(truncated)
 
     def test_不是_pob_的_xml_要说清楚(self) -> None:
         with self.assertRaises(PobParseError) as ctx:
