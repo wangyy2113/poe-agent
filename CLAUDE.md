@@ -141,6 +141,8 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 .venv/bin/python scripts/import_pob_skills.py     # 技能石与辅助宝石（中文名取自 POEDB 清单页，缺的再查详情页）
 .venv/bin/python scripts/import_pob_spectres.py   # 幽魂抗性与建模系数，并与 POEDB 侧对账
 .venv/bin/python scripts/import_pob_bosses.py     # Boss 技能的伤害建模（不是打法；--dry-run 只清点与 tooltip 抽验）
+.venv/bin/python scripts/import_boss_guides.py     # 八篇 PoE Wiki Boss 攻略原文预检；--apply 后发布
+.venv/bin/python scripts/import_ggg_patch_notes.py # GGG 官方 PoE1 公告预检；--apply 后发布
 .venv/bin/python scripts/import_pantheon.py       # 万神殿（PoB 出结构 × POEDB 逐神页出中文，--dry-run 只对账）
 .venv/bin/python scripts/verify_pob_mods.py       # 与 POEDB 对账
 .venv/bin/python scripts/verify_essence.py --write # 精华 POEDB × PoB 对账，回填 name_en 并重渲染卡片
@@ -149,7 +151,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 2433 项，秒级
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 2454 项，秒级
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选
@@ -307,7 +309,7 @@ Craft of Exile 矩阵证据支撑；两条 Citation 不得互相夹带正文。�
 | `orchestrator/` | `loop.py` 主循环与轨迹（批量与流式**共用** `_prepare_turn` / `_handle_tool_call` / `_terminal_gap`，只在「怎么把文本交给用户」上不同——不要在任一侧重新写判据，`tests/unit/test_turn_parity.py` 会挡）、`binding.py` 出口闸门（1400+ 行，改动前先读它的模块 docstring）、`citation.py` 引用装配 |
 | `agents/` | `knowledge.py`：系统提示词 + `ALLOWED_TOOLS` + 缺据声明模板。提示词是第一道约束不是唯一约束 |
 | `tools/` | `registry.py` 注册与 schema 导出，`impl/` 各工具；返回值统一 `ToolResult`，`citations` 是结构化引用而非拼进正文的字符串（要参与出口校验） |
-| `core/mcp_protocol.py` / `mcp_server.py` | MCP `2025-06-18` stdio 协议层与入口；默认复用 Knowledge Agent 的 76 个只读工具，`--tools` 可收窄暴露面。stdout 只能写逐行 JSON-RPC，日志必须走 stderr；EOF 必须关闭 SQLite |
+| `core/mcp_protocol.py` / `mcp_server.py` | MCP `2025-06-18` stdio 协议层与入口；默认复用 Knowledge Agent 的 81 个只读工具，`--tools` 可收窄暴露面。stdout 只能写逐行 JSON-RPC，日志必须走 stderr；EOF 必须关闭 SQLite |
 | `kb/sync.py` / `scripts/sync_knowledge.py` | 过期分类计划、现有采集器编排、事实行快照与版本 diff。默认 CLI 只预览，`--apply` 才执行；记录删除提升为 `attention`。唯一装备不得加入自动集合，直到主列表 + 1,342 页详情补全可原子执行 |
 | `retrieval/` | FTS5、别名、RRF 融合、jieba 分词、领域词表 |
 | `kb/` | `pipeline.py` 采集管线、`sources/` 各来源抽取器、`coverage.py` 知识库自描述层、`conflicts.py` confirmed/review 分类、过滤、游标与聚合，`stat_channels.py` 属性来源渠道注册表、`render*.py` 卡片切片 |
@@ -404,8 +406,8 @@ Craft of Exile 矩阵证据支撑；两条 Citation 不得互相夹带正文。�
   属性需求至今没有可核对的真值来源，所以整维仍未采集，并明确划进 `partial_note`。
   也**不留空列**：留了下一个人会以为它待填，然后把乘数当伤害写进去。
 
-本机 `data/poe.db` 现状（`GET /healthz` 与 `/admin/stats` 可查）：`entity` 5325、
-`mod_affix` 94406、`pob_mod` 25487、`chunk` 18994、`alias` 8382、`game_constant` 543、
+本机 `data/poe.db` 现状（`GET /healthz` 与 `/admin/stats` 可查）：`entity` 5358、
+`mod_affix` 94406、`pob_mod` 25487、`chunk` 19094、`alias` 8382、`game_constant` 543、
 `craft_bench_recipe` 783、`pob_base_item` **1022**（18 个装备类别，PoB × POEDB 逐条桥接，
 覆盖 PoB 侧 96.1%；未桥接的 41 条已按类别登记在台账）、`source_conflict` **547**（`mod_review` 254 + `unique_review` **229** + `spectre_review` 43
 + `spectre` **8** + `gem_review` **9** + `tree_review` 3 + `essence_review` **1**）。
@@ -1006,7 +1008,8 @@ stat id）」——**那句话描述的是错的那一页**：真正的来源是
 节点属性早就入库了，缺的一直是「怎么连的」——树 JSON 本来就在缓存里也一直被解析，
 只是 `in`/`out` 与 `classes` 没被取出来。节点 id 就是 GGG 的 skill id
 （实测 3389/3389 与 JSON 键相等），所以能与天赋卡的 `skill_ids` 对上。
-**只有主天赋树入图**：Atlas 树没有职业起点，点数规则也是另一套。
+主天赋树与 Atlas 树分别入图：Atlas 没有职业起点，只存 JSON 原始连接供
+`/planner/atlas` 展示可核对路径；**不得**套用角色天赋的点数消耗公式或宣称最优配点。
 
 `pob_spectre` **268** 条 PoB 幽魂建模数据（四抗性、护甲/闪避/能量护盾系数、攻击间隔、
 怪物技能 id）。它同时是一份「玩家实际会用」的确认清单，倍率排名只在这 268 个里做——

@@ -64,6 +64,10 @@ def main() -> int:
             "/poe_agent/admin/backups/{backup_name}/verify",
             "/poe_agent/unique-variants/search",
             "/poe_agent/unique-variants/compare",
+            "/poe_agent/patch-notes/timeline",
+            "/poe_agent/patch-notes/build-impact",
+            "/poe_agent/planner/atlas",
+            "/poe_agent/boss/guides/{boss_key}",
         }
         missing = required - paths.keys()
         if missing:

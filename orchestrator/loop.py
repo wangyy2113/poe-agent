@@ -845,6 +845,10 @@ _SOURCE_CONFLICT_LOOKUP_INTENTS = (
 
 
 _PREFERRED_TOOL_INTENTS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("atlas_candidates", (
+        "Atlas 天赋规划", "Atlas配点", "Atlas 配点", "图鉴天赋规划",
+        "图鉴天赋怎么点", "Atlas 刷图", "Atlas刷图", "Atlas 通货",
+    )),
     ("unique_variant_history", (
         "历史变体", "旧版词缀", "旧版唯一装备", "唯一装备版本对比",
         "unique variant", "Unique variant",

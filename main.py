@@ -25,6 +25,7 @@ from fastapi.staticfiles import StaticFiles
 from api import normalize_base_path
 from api.admin import router as admin_router
 from api.boss import router as boss_router
+from api.boss_guides import router as boss_guides_router
 from api.chat import router as chat_router
 from api.craft import router as craft_router
 from api.conflicts import router as conflicts_router
@@ -33,6 +34,8 @@ from api.build import router as build_router
 from api.calculator import router as calculator_router
 from api.item import router as item_router
 from api.memory import router as memory_router
+from api.patch_notes import router as patch_notes_router
+from api.planner import router as planner_router
 from api.search import router as search_router
 from api.screenshot import router as screenshot_router
 from api.unique_variants import router as unique_variants_router
@@ -177,8 +180,11 @@ def create_app() -> FastAPI:
     api.include_router(craft_router)
     api.include_router(conflicts_router)
     api.include_router(boss_router)
+    api.include_router(boss_guides_router)
     api.include_router(item_router)
     api.include_router(memory_router)
+    api.include_router(patch_notes_router)
+    api.include_router(planner_router)
     api.include_router(build_router)
     api.include_router(calculator_router)
     api.include_router(screenshot_router)

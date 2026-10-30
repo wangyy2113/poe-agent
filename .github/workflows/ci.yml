@@ -43,3 +43,43 @@ jobs:
         run: python scripts/check_portability.py
       - name: Specification references
         run: python scripts/check_spec_refs.py
+
+  migration-source:
+    name: Linux migration source
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.lock
+      - name: Install dependencies
+        run: python -m pip install --disable-pip-version-check -r requirements.lock
+      - name: Build SQLite and config fixture
+        run: python scripts/migration_smoke.py prepare migration-fixture
+      - uses: actions/upload-artifact@v4
+        with:
+          name: migration-fixture
+          path: migration-fixture/
+          retention-days: 1
+
+  migration-windows:
+    name: Windows real-process migration / Python 3.12
+    needs: migration-source
+    runs-on: windows-latest
+    env:
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Fresh environment setup
+        run: python scripts/setup.py
+      - uses: actions/download-artifact@v4
+        with:
+          name: migration-fixture
+          path: migration-fixture/
+      - name: Copy config and database, start server, query Chinese text
+        run: .\.venv\Scripts\python.exe scripts\migration_smoke.py verify migration-fixture

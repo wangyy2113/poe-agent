@@ -177,6 +177,8 @@ knowledge_sync:
     - essence
     - horticraft
     - monsters
+    - patch_notes
+    - boss_guides
 
 economy:
   # poe.watch 实时价格只作为市场统计快照，不代表保证成交价。

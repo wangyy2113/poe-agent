@@ -29,7 +29,10 @@ POE1 的机制耦合极深，一个错误的小前提会让整条结论反向。
 | 通货 | 113 条（中英文名、堆叠上限、效果原文）；工艺台费用引用的 18 个通货全部能对上；**获取途径与兑换比例未采集**；市场价格以 poe.watch 为主、GGG Trade API 在线挂单为备用 |
 | 圣甲虫 | 118 个（效果、堆叠上限、地图装置放置上限）；**掉落来源未采集**；市场价格以 poe.watch 为主、GGG Trade API 在线挂单为备用 |
 | 实时经济价格、趋势、成本与双边价差 | `POST /economy/price` 查询当前快照；`POST /economy/trend` 查询历史；`POST /economy/material-cost` 汇总明确清单；`POST /economy/rare-comparables` 查询稀有装可比挂单，可选逐件核对品质与连接组尺寸；`POST /economy/flip-analysis` 对标准 exchange 条目核验买卖两侧、整单深度、时效与显式费用后计算净利润。SQLite 价格缓存 TTL 30 分钟、历史保留 90 天；主源无缓存时标准条目与唯一装备可显式降级官方 Trade API。**不足两个趋势点不判趋势；单侧过滤后不足 5 条不报代表价；任一侧或费用不完整时利润与 Flip 判断保持 unknown；所有结果都不是成交或收益保证** |
-| Boss 技能伤害、生存校验与防御门槛 | 网页“Boss 命中风险”入口支持显式防御输入、批量风险审计与单技能门槛；10 条 Boss 技能的伤害建模 + 22 个 Boss 的护甲/闪避倍率；`boss_survival_check` 校验同一命中连续 1–100 次，`boss_defence_threshold` 反解最低防御池、抗性/护甲门槛，`boss_sequence_check` 按用户明确顺序逐击累计；`boss_timed_sequence_*` 结算显式时间轴、固定恢复与门槛；`boss_probabilistic_sequence_*` 计算闪避/格挡/压制后的低/高伤害生存分布与风险分位；`boss_layered_sequence_*` 分别推进生命、能量护盾、MoM 式魔力分流、各池回复和护盾回充中断；`boss_recovery_sequence_*` 再结算命中前后瞬回、定时恢复、偷取实例限速与满池溢出；`boss_dot_sequence_*` 用边界解析连续流统一结算显式 DoT 暴露、命中和恢复；`boss_mitigation_sequence_*` 在分层路由前结算显式临时承伤乘数、Guard 容量与精确耗尽；`boss_ward_sequence_*` 再逐击推进 Ward 破裂、恢复和吸收；`boss_risk_audit` 批量排列已收录技能风险。`POST /build` 可直接消费 PoB 基础防御、分池回复及适用概率字段快照。**序列不是真实连招，概率不是保证，审计不是 Boss 难度排行，不给打法**；不自动推断 DoT/连招/恢复事件、Guard/Ward 当前状态、熵式闪避相关性、幸运/不幸、CI/EB 等池替换、阶段与应对；数字是 PoB 建模值，GGG 未公布 |
+| Boss 技能伤害、生存校验与防御门槛 | 网页“Boss 命中风险”入口支持显式防御输入、批量风险审计与单技能门槛；10 条 Boss 技能的伤害建模 + 22 个 Boss 的护甲/闪避倍率；`boss_survival_check` 校验同一命中连续 1–100 次，`boss_defence_threshold` 反解最低防御池、抗性/护甲门槛，`boss_sequence_check` 按用户明确顺序逐击累计；`boss_timed_sequence_*` 结算显式时间轴、固定恢复与门槛；`boss_probabilistic_sequence_*` 计算闪避/格挡/压制后的低/高伤害生存分布与风险分位；`boss_layered_sequence_*` 分别推进生命、能量护盾、MoM 式魔力分流、各池回复和护盾回充中断；`boss_recovery_sequence_*` 再结算命中前后瞬回、定时恢复、偷取实例限速与满池溢出；`boss_dot_sequence_*` 用边界解析连续流统一结算显式 DoT 暴露、命中和恢复；`boss_mitigation_sequence_*` 在分层路由前结算显式临时承伤乘数、Guard 容量与精确耗尽；`boss_ward_sequence_*` 再逐击推进 Ward 破裂、恢复和吸收；`boss_risk_audit` 批量排列已收录技能风险。`POST /build` 可直接消费 PoB 基础防御、分池回复及适用概率字段快照。**序列不是真实连招，概率不是保证，审计不是 Boss 难度排行，数值工具不生成打法**；阶段与应对可另查 Wiki 攻略原文；数字是 PoB 建模值，GGG 未公布 |
+| Boss 攻略原文 | `GET /boss/guides` 与 `boss_guide_lookup` 查询八篇白名单 PoE Wiki 页面中阶段、技能、机制、策略及 Uber 变体章节；页面标题、来源 URL、抓取时间和内容哈希可追溯。**这是 P3 可变 Wiki 原文；不自动断定当前版本、药剂配置或玩家 Build 的适用性** |
+| 官方版本公告 | `scripts/import_ggg_patch_notes.py` 逐篇核对 GGG 官方 Patch Notes 分区、staff 首帖、日期和标题，原文进入 FTS；`/patch-notes/timeline` 与 `patch_note_lookup` 提供逐行英文历史提及，`/patch-notes/build-impact` 对 PoB 英文部件做字面匹配。**字面提及不是已生效版本或实测 Build 数值变化** |
+| Atlas 目标候选与图路线 | `POST /planner/atlas` 按刷图速度、通货收益或特定材料目标找 POEDB 效果原文节点；`POST /planner/atlas-route` 把 1–10 个已选实体连接到 root，复用共同路径并列出新增图节点。两个对应的只读工具可用于问答与 MCP。**节点数不是已核验的点数，逐目标贪心连接不等于全局最优；收益和解锁条件仍未知** |
 | 制作规则（名额与影响力） | 7 条前后缀名额规则（魔法 1+1、稀有 3+3、传奇不受限制、药剂随魔法，另有 PoB 独有的珠宝/Graft 2+2 与「已腐化深渊珠宝回到 3+3」）；`base_influence_profile` 可查 1,022 条具体底材的六类传统影响 `influenceTags`，`check_mod_combination` 在给定具体底材、单一影响与可选物等时，会用 PoB 底材标签和 POEDB 词缀 `spawn_tags` 验证影响词缀适用性。`possible` 只表示词缀能共存，不表示能制作；古灵基底由独立状态机处理。**影响底材获得方式、多影响词缀池组合与完整元词缀状态机仍未采集** |
 | 独立尝试分布与材料预算 | 网页“独立尝试预算”入口可填写底材、目标、尝试上限与每次材料清单，并显式选择是否查询市场价；`craft_attempt_plan` / `POST /craft/attempt-plan` 在完整、新鲜的胸甲 `normal` 同侧词缀池上计算几何分布的单次条件概率、首次成功期望、P50/P90/P95、上限内成功/耗尽概率、提前停止后的期望消耗与最坏材料预算。**只适用于每次完整重置、独立同分布且每次恰好一次同侧加权选择；不是任何真实通货/工艺的一次成功率，不推断步骤或完整路线；任一材料缺价或联盟/来源/时间口径不一致时不输出部分总成本** |
 | 觉醒者之石状态机 | `awakener_orb_state` / `POST /craft/awakener`：接受供体与目标的两段装备复制文本，或显式物品类别与传统影响；逐字绑定 POEDB 效果，检查同类物品、双方唯一且不同的传统影响，输出供体销毁、目标重铸为稀有并兼有两种影响的条件后状态。**不声称各保留一条影响词缀，不生成重铸后的具体词缀、数量、数值、概率、成本或路线** |
@@ -39,7 +42,7 @@ POE1 的机制耦合极深，一个错误的小前提会让整条结论反向。
 | 地图 | 159 张（等阶、头目、额外目标、命运卡、工艺台配方、图鉴相邻地图）+ 361 条地图词缀；**内部布局未采集** |
 | 星团珠宝 | 3 个尺寸（小 2–3 / 中 4–6 / 大 8–12 个小天赋）+ 55 条小天赋类型 + 308 条核心天赋与基石清单；`cluster_jewel_info` 将同 commit 的类型 tag 与核心天赋词缀正权重连接，当前覆盖 52 个类型、568 条类型—核心关系，并支持物等过滤与双向反查。基础生成权重不冒充单次概率；**掉落与价格未采集** |
 | 天赋树路径 | 连线 3382 条 + 7 个职业起点入库；`passive_path` 按职业算「点到某节点要几点」并给出逐节点路径（总点数 123） |
-| 怪物数据 | 怪物词缀 183 条（有中文文本的）+ 可作幽魂怪物 1948 个与其伤害% / 生命%，其中 268 个另有 PoB 的四抗性与建模系数；倍率排名在这 268 个里做；**Boss 技能机制与打法、掉落、普通怪物技能说明未采集** |
+| 怪物数据 | 怪物词缀 183 条（有中文文本的）+ 可作幽魂怪物 1948 个与其伤害% / 生命%，其中 268 个另有 PoB 的四抗性与建模系数；倍率排名在这 268 个里做；**本数据源不含 Boss 打法、掉落或普通怪物技能说明**；Boss 攻略另见 Wiki 原文 |
 | 跨来源冲突与待核对差异 | 网页“跨来源核对”入口提供概览、筛选、分页与两侧原值详情；`POST /conflicts/lookup` 默认只返回 8 条 active confirmed 幽魂分歧，`GET /conflicts/summary` 将 547 条台账拆成 8 条 confirmed 与 539 条 review，`GET /conflicts/{id}` 精确读取单条。所有 `*_review` 必须显式请求，只能称“待核对差异”，引用不能支撑游戏事实，也绝不进入冲突并列块；游标绑定完整过滤条件，不能跨查询复用 |
 | 元词缀矩阵 | 页面矩阵 134 条（operation × guard，5 个小节）；空白格只进审计、不成为证据 |
 | 基础通货状态机 | `craft_operation_state` / `POST /craft/operation`：按 POEDB 效果原文模拟增幅、崇高、重铸、神圣、剥离、改造、混沌、富豪、机会、点金 10 种基础通货；检查稀有度与前后缀名额，输出三态结论和条件后状态。可选 `metamod_guard` 会把对应 Craft of Exile 矩阵原值作为独立证据并列披露；空白/缺失仍为 unknown，**不解释 YES/NO，不生成结果词缀、成功率、步骤、成本或路线** |
@@ -65,7 +68,7 @@ POE1 的机制耦合极深，一个错误的小前提会让整条结论反向。
 | **流式问答** | `POST /chat/stream`：SSE，**按句**校验通过才下发，未校验内容不外发 |
 | **OpenAI 兼容** | `POST /v1/chat/completions`：支持文本消息、非流式与标准 SSE `[DONE]`；内部仍强制检索与出口校验 |
 | **用户长期记忆** | Web 顶栏或 `POST/GET/PATCH/DELETE /memories` 可显式管理偏好、目标、约束与备注，支持编辑、停用、恢复和删除；按 API Key 的不可逆摘要隔离，**不自动从聊天抽取、不成为知识库证据** |
-| **MCP stdio** | `mcp_server.py`：按 MCP `2025-06-18` 向 Codex、Claude Desktop 等客户端暴露 Knowledge Agent 的 76 个只读工具；支持 `--tools` 白名单，工具结果保留结构化数据、引用、unknown/boundary 与耗时 |
+| **MCP stdio** | `mcp_server.py`：按 MCP `2025-06-18` 向 Codex、Claude Desktop 等客户端暴露 Knowledge Agent 的 81 个只读工具；支持 `--tools` 白名单，工具结果保留结构化数据、引用、unknown/boundary 与耗时 |
 | **知识库自动同步与版本 diff** | `scripts/sync_knowledge.py`：按最后成功采集时间自动选择过期分类，复用现有结构断言与快照数量护栏；同步前后按稳定主键报告逐表新增/删除/修改与版本字段变化，历史可从 `/admin/sync/*` 查询。默认只预览，记录删除时整轮标记 `attention` |
 | **一致性备份与离线恢复** | `scripts/db_backup.py` 使用 SQLite Backup API 从活跃 WAL 连接创建快照，清单固定 SHA-256、schema 指纹、关键表行数与 `quick_check`；恢复默认只预检，拒绝存在 WAL/SHM 的目标，`--apply` 前自动留存当前库。管理端只开放创建、列表和校验，远程恢复刻意不提供 |
 | **鉴权与限流** | 普通接口使用 `API_KEYS` 并按 Key 令牌桶限流；管理接口独立使用 `ADMIN_TOKEN`，可叠加 IP/CIDR 白名单 |
@@ -83,7 +86,9 @@ POE1 的机制耦合极深，一个错误的小前提会让整条结论反向。
 **还没实现**
 
 - 稀有装备的精确成交价/制作价值与按 roll、品质、插槽、链接做价格归一化（已有逐词缀同类挂单比较，品质与连接组尺寸可选精确筛选；「值不值得裂界」仍输出「数据不足」）
-- **完整 Build DPS 自动重算**：显式参数链已经覆盖单技能命中/穿刺/异常/技能 DoT、完整有限窗口，以及 2–10 技能动作轮转、并行来源、强实例/显式地面 DoT 互斥和共享全局封顶；但尚不能从装备、天赋、技能与配置自动汇总全部修正，也不模拟走位、资源耗尽、阶段切换、动态 buff/debuff 快照、召唤物 AI 与未声明特殊来源。伤害转化下的 Max Hit、冰冻时长曲线也还没有
+- 多步制作路线的真实单次成功率、逐步期望成本和预算降级；现有状态机和普通池独立尝试模型没有足够的联合概率来源。
+- 自动开荒阶段路线、Atlas 精确点数与最优配点、Boss 药剂及推荐 DPS 门槛、版本改动的语义判读和 Build 实际收益测算；现有原文与候选路径接口保留这些缺口。
+- 伤害转化下的 Max Hit 与冰冻时长曲线。完整 PoB 伤害引擎重写属于规格明确的非目标。
 
 也就是说：**打开浏览器就能聊，也能直接把装备贴进去**，交互方式见下。
 
@@ -117,6 +122,12 @@ python scripts/setup.py          # Windows: python scripts\setup.py
 #    首次完成唯一装备详情补全后，后续刷新请用下文的完整刷新命令；
 #    主列表单独导入会被拒绝，防止覆盖详情页补出的词条。
 
+# 4b) 可选：预检并发布官方补丁公告与 Wiki Boss 攻略
+.venv/bin/python scripts/import_ggg_patch_notes.py --pages 1
+.venv/bin/python scripts/import_ggg_patch_notes.py --pages 1 --apply
+.venv/bin/python scripts/import_boss_guides.py
+.venv/bin/python scripts/import_boss_guides.py --apply
+
 # 5) 启动服务
 .venv/bin/python main.py
 ```
@@ -143,7 +154,7 @@ Windows 把 `.venv/bin/python` 换成 `.venv\Scripts\python.exe`。
 ### 作为 MCP 工具服务器使用
 
 `mcp_server.py` 是本地 stdio 服务，不需要先启动 Web 服务，也不监听端口。默认暴露
-Knowledge Agent 的 76 个只读工具；需要缩小能力面时传入逗号分隔的白名单：
+Knowledge Agent 的 81 个只读工具；需要缩小能力面时传入逗号分隔的白名单：
 
 ```bash
 .venv/bin/python mcp_server.py --tools kb_coverage,entity_lookup
@@ -212,8 +223,8 @@ MCP JSON-RPC；诊断信息写 stderr。客户端必须保留工具返回的 `un
 管理端提供只读查询：`GET /admin/sync/plan`、`GET /admin/sync/runs`、
 `GET /admin/sync/runs/{sync_id}`，继续受独立 `ADMIN_TOKEN` 与可选 IP 白名单保护。
 
-当前自动集合覆盖词缀、工艺台、元词缀矩阵、天赋树、通货、地图、圣甲虫、精华、收获和
-怪物。唯一装备使用独立的完整刷新流程：
+当前自动集合覆盖词缀、工艺台、元词缀矩阵、天赋树、通货、地图、圣甲虫、精华、收获、
+怪物、GGG 官方公告和 Wiki Boss 攻略。唯一装备使用独立的完整刷新流程：
 
 ```bash
 # 只读状态与本地缓存预检；预检不会修改数据库或发网络请求
@@ -1827,10 +1838,10 @@ BM25 与实体精确检索继续可用。
 | P1 | POEDB | 中文名与页面说明的真源，最高优先级；冲突时推荐采用 |
 | P1 | GGG Trade API | 官方实时在线挂单备用源；仅报过滤后的报价中位数，不代表成交记录 |
 | P2 | Path of Building `src/Data/` | 数值与结构的真源（GGG 客户端 `.dat` 机器导出），无中文名 |
-| P3 | PoE Wiki | 尚未接入 |
+| P3 | PoE Wiki | 已接入八篇终局 Boss 攻略章节；其它 Wiki 领域未接入 |
 | P4 | Craft of Exile | 尚未接入 |
 | P5 | poe.watch | 已接入实时价格快照；统计值不是保证成交价 |
-| P6 | GGG 官方 Patch Notes | 尚未接入 |
+| P6 | GGG 官方 Patch Notes | 已接入白名单论坛首帖核验、版本与日期、逐行原文查询；历史覆盖取决于导入页数 |
 | P7 | Reddit 等社区讨论 | **不得**支撑事实断言，仅可标注为社区观点用于建议 |
 
 PoB 排 P2 而不是 P1：它在数值上更接近一手，但不含中文名与页面说明，
@@ -1850,6 +1861,9 @@ PoB 排 P2 而不是 P1：它在数值上更接近一手，但不含中文名与
 | `scripts/selfcheck.py` | 配置 / 数据库 / FTS5 / 向量扩展 / 凭证 体检 |
 | `scripts/db_backup.py` | WAL 安全的一致性快照、清单列表、深度校验与显式离线恢复 |
 | `scripts/ci_smoke.py` | 无密钥/无真实库的全新 SQLite → 备份 → 恢复 → OpenAPI 发布冒烟 |
+| `scripts/migration_smoke.py` | CI 中 Linux 生成带中文 FTS 的 SQLite 与配置件，Windows 全新安装后复制并启动真实进程验收 |
+| `scripts/import_ggg_patch_notes.py` | GGG 官方 PoE1 公告预检与原子入库，默认不写数据库 |
+| `scripts/import_boss_guides.py` | 八篇 PoE Wiki 终局 Boss 攻略章节预检与原子入库，默认不写数据库 |
 | `scripts/backfill_base_implicits.py preview/apply` | 离线核对现有底材与 POEDB 中文固有隐式；apply 先备份再回填，译名漂移的底材跳过 |
 | `scripts/test_search.py` | 检索链路验证 |
 | `scripts/verify_mods.py` | POEDB 词缀自检：模板往返命中率、T 级不变量 |
@@ -1904,7 +1918,7 @@ PoB 排 P2 而不是 P1：它在数值上更接近一手，但不含中文名与
 .venv/bin/python -m unittest discover -s tests -t .
 ```
 
-目前 2433 项，其中与「无据不答」直接相关的：
+目前 2454 项，其中与「无据不答」直接相关的：
 
 | 组 | 项数 | 重点 |
 | --- | --- | --- |

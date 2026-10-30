@@ -150,6 +150,9 @@ CATEGORY_SPECS: tuple[CategorySpec, ...] = (
             TableSpec("passive_graph_node"),
             TableSpec("passive_graph_edge"),
             TableSpec("passive_tree_meta"),
+            TableSpec("atlas_graph_node"),
+            TableSpec("atlas_graph_edge"),
+            TableSpec("atlas_tree_meta"),
         ),
     ),
     CategorySpec("currency", "currency", (TableSpec("poedb_currency"),)),
@@ -175,6 +178,8 @@ CATEGORY_SPECS: tuple[CategorySpec, ...] = (
         "monsters",
         (TableSpec("poedb_monster_mod"), TableSpec("poedb_spectre")),
     ),
+    CategorySpec("patch_notes", "ggg_patch_notes", (TableSpec("ggg_patch_note"),)),
+    CategorySpec("boss_guides", "boss_guides", (TableSpec("boss_guide"),)),
 )
 SPEC_BY_NAME = {spec.name: spec for spec in CATEGORY_SPECS}
 
@@ -373,6 +378,9 @@ def diff_snapshots(
 def default_runners() -> dict[str, Callable[[bool], int]]:
     """延迟导入采集管线，避免仅查看计划时加载全部抽取器。"""
     from kb import pipeline  # noqa: PLC0415
+    from kb import patch_notes  # noqa: PLC0415
+    from kb import boss_guides  # noqa: PLC0415
+    from core import db as dbmod  # noqa: PLC0415
 
     return {
         "mods": lambda force: pipeline.run_poedb_mods(force=force),
@@ -385,6 +393,8 @@ def default_runners() -> dict[str, Callable[[bool], int]]:
         "essence": lambda force: pipeline.run_poedb_essence(force=force),
         "horticraft": lambda force: pipeline.run_poedb_harvest(force=force),
         "monsters": lambda force: pipeline.run_poedb_monsters(force=force),
+        "patch_notes": lambda force: patch_notes.sync_latest(dbmod.get_conn(), force=force),
+        "boss_guides": lambda force: boss_guides.sync_latest(dbmod.get_conn(), force=force),
     }
 
 
