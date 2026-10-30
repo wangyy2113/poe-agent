@@ -32,6 +32,8 @@ class Secrets(BaseSettings):
     embedding_base_url: str = ""
     embedding_api_key: str = ""
     embedding_model: str = ""
+    rerank_base_url: str = ""
+    rerank_api_key: str = ""
     rerank_model: str = ""
 
     # ── 鉴权 ──

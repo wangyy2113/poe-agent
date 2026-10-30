@@ -2,13 +2,13 @@
   "format_version": 1,
   "case_id": "num_crit_chance_cap",
   "query": "暴击率上限是多少",
-  "recorded_at": "2026-09-03T15:24:49+08:00",
+  "recorded_at": "2026-10-30T19:30:15+08:00",
   "model": "glm-5.2",
   "tokens": {
-    "prompt": 17129,
-    "output": 78,
-    "reasoning": 38,
-    "total": 17207
+    "prompt": 53698,
+    "output": 94,
+    "reasoning": 49,
+    "total": 53792
   },
   "tool_calls": [
     "kb_search",
@@ -18,12 +18,12 @@
   "out_of_scope": false,
   "precision_route": "",
   "gap_answer": "",
-  "final_answer": "〔此处原有一条无据断言，已被拦截：事实句未绑定引用〕Path of Building 在 `CritChanceCap` 中硬编码的基础值就是 100[[E9]]。\n\n> 只算暴击率与**平均伤害倍率**（不需要伤害数值），不算 DPS——这一击有多大要 PoB 的 effectiveness 公式与整条攻击链，本库刻意没有伤害列；也不含幸运暴击、命中判定与暴击对异常的加成\n\n> **括号内的百分比是该档在同组内的生成权重占比**，不等于任何通货或具体工艺的一次使用成功率，也不等于期望消耗。\n\n> 检索以降级通道完成（fts）：向量检索与重排未启用（网关无 embedding 模型），当前走 BM25 + 实体精确匹配",
-  "blocked_claims": 1,
-  "elapsed_ms": 2466,
-  "evidence_fingerprint": "sha256:75c852a716aaf20589cb132fec66e23b",
+  "final_answer": "暴击率上限是 **100%**[[E9]]。PoB 硬编码 `CritChanceCap` 的基础值就是 100，而非社区常说的 95%[[E9]]。\n\n> 只算暴击率与**平均伤害倍率**（不需要伤害数值），不算 DPS——这一击有多大要 PoB 的 effectiveness 公式与整条攻击链，本库刻意没有伤害列；也不含幸运暴击、命中判定与暴击对异常的加成\n\n> **括号内的百分比是该档在同组内的生成权重占比**，不等于任何通货或具体工艺的一次使用成功率，也不等于期望消耗。\n\n> 检索以降级通道完成（fts）：向量检索未启用，当前走 BM25 + 实体精确匹配",
+  "blocked_claims": 0,
+  "elapsed_ms": 5410,
+  "evidence_fingerprint": "sha256:713fa0fa33b82193300bc2922ee546fe",
   "_warning": "raw_answer 是未过出口闸门的模型原文，含可能无据的断言，不得当作事实引用",
-  "raw_answer": "暴击率上限是 **100%**，并非社区常说的 95%。Path of Building 在 `CritChanceCap` 中硬编码的基础值就是 100[[E9]]。",
+  "raw_answer": "暴击率上限是 **100%**[[E9]]。PoB 硬编码 `CritChanceCap` 的基础值就是 100，而非社区常说的 95%[[E9]]。",
   "evidence": [
     {
       "label": "E1",
@@ -33,10 +33,11 @@
       "url": "https://poedb.tw/cn/passive-skill-tree/",
       "source": "POEDB",
       "source_priority": 1,
-      "text": "# 升华节点·暴击率、生命（Critical Strike Chance, Life）\n升华节点 ｜ 暗影 · 暗影大师 ｜ 天赋树 3.29\n\n- 生命上限提高 4%\n- 暴击率提高 15%\n\n来源：POEDB → 天赋树 · 暴击率、生命（Critical Strike Chance, Life）\nhttps://poedb.tw/cn/passive-skill-tree/",
+      "text": "# 升华节点·暴击率、生命（Critical Strike Chance, Life）\n升华节点 ｜ 暗影 · 刺客大师 ｜ 天赋树 3.29\n\n- 生命上限提高 4%\n- 暴击率提高 15%\n\n来源：POEDB → 天赋树 · 暴击率、生命（Critical Strike Chance, Life）\nhttps://poedb.tw/cn/passive-skill-tree/",
       "can_support_facts": true,
       "claim_scope": "general",
-      "claim_data": {}
+      "claim_data": {},
+      "channel": "fts"
     },
     {
       "label": "E2",
@@ -49,7 +50,8 @@
       "text": "# 暴风之语（Choir of the Storm）\n类型：唯一装备 ｜ 底材：海玉护身符 ｜ 分类：其他\n\n**需求**：需求 等级 69\n\n**隐式词缀**\n- [隐式词缀] +(20-30) 智慧\n\n**显式词缀**\n- [显式词缀] 暴击时触发 30 级的雷霆万钧\n- [显式词缀] 魔力上限提高 (10-20)%\n- [显式词缀] -30% 闪电抗性\n- [显式词缀] 暴击率随超量闪电抗性提高\n\n**附加说明**\n- [说明] （当无上限抗性超过抗性上限时，其数值称为超量抗性）\n- [说明] (绝对抗性指假设无视抗性上限时的抗性数值)\n\n**获取途径**\n- 升级配方：暴风之言 + 艾许的祝福\n\n来源：POEDB → 暴风之语（Choir of the Storm）\nhttps://poedb.tw/cn/Choir_of_the_Storm",
       "can_support_facts": true,
       "claim_scope": "general",
-      "claim_data": {}
+      "claim_data": {},
+      "channel": "fts"
     },
     {
       "label": "E3",
@@ -62,7 +64,8 @@
       "text": "# 影殒（Ephemeral Edge）\n类型：唯一装备 ｜ 底材：暮色之刃 ｜ 分类：武器\n\n**需求**：需求 等级 32, 57 力量, 57 敏捷\n\n**隐式词缀**\n- [隐式词缀] 命中值提高 40%\n\n**显式词缀**\n- [显式词缀] +10 智慧\n- [显式词缀] 该装备附加 1 - 75 基础闪电伤害\n- [显式词缀] 全域暴击率提高 50%\n- [显式词缀] 能量护盾上限提高 (40-50)%\n- [显式词缀] 生命上限降低 25%\n- [显式词缀] 该武器的攻击附加相当于玩家能量护盾上限 (10-15)% 的最大闪电伤害\n\n来源：POEDB → 影殒（Ephemeral Edge）\nhttps://poedb.tw/cn/Ephemeral_Edge",
       "can_support_facts": true,
       "claim_scope": "general",
-      "claim_data": {}
+      "claim_data": {},
+      "channel": "fts"
     },
     {
       "label": "E4",
@@ -75,7 +78,8 @@
       "text": "# 普通天赋·匕首暴击率和偷取（Dagger Critical Strike Chance and Leech）\n普通天赋 ｜ 天赋树 3.29\n\n- 匕首攻击的暴击率提高 20%\n- 攻击伤害的 0.8% 转化为生命偷取\n\n> （符文匕首视为匕首）\n> (吸取的生命会随时间逐渐回复。多个吸取效果可以同时发生, 但有一个上限)\n\n来源：POEDB → 天赋树 · 匕首暴击率和偷取（Dagger Critical Strike Chance and Leech）\nhttps://poedb.tw/cn/passive-skill-tree/",
       "can_support_facts": true,
       "claim_scope": "general",
-      "claim_data": {}
+      "claim_data": {},
+      "channel": "fts"
     },
     {
       "label": "E5",
@@ -88,7 +92,8 @@
       "text": "# 暗鸦咒符 · AnimalCharmAdditionalCriticalStrikeChanceAtMaximumPowerCharges\n底材类别：暗鸦咒符 ｜ 词缀组：AnimalCharmAdditionalCriticalStrikeChanceAtMaximumPowerCharges ｜ 类型：前缀 ｜ 来源渠道：1 个\n\n本词缀组在该底材上共 2 条，来自 1 个来源：Base。\n互斥规则：与本组（AnimalCharmAdditionalCriticalStrikeChanceAtMaximumPowerCharges）有相同词缀组的其他词缀不能同时存在于一件装备上。\n\n## Base · 前缀 · 2 档\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/2 | 刺客大师的 | 当暴击球达到上限时，+(0.61-1)% 暴击率 | 60 | 250（0.9244%） |\n| T2/2 | 刺客大师的 | 当暴击球达到上限时，+(0.4-0.6)% 暴击率 | 1 | 500（1.8488%） |\n\n置信度说明：\n- T 级按 POEDB 的算法推导——在同一来源类别与词缀组内，把物品等级去重后降序排名，物品等级最高者为 T1（算法已复刻并通过不变量校验）\n\n来源：POEDB → 暗鸦咒符 · AnimalCharmAdditionalCriticalStrikeChanceAtMaximumPowerCharges\nhttps://poedb.tw/cn/Corvine_Charm#ModifiersCalc",
       "can_support_facts": true,
       "claim_scope": "general",
-      "claim_data": {}
+      "claim_data": {},
+      "channel": "fts"
     },
     {
       "label": "E6",
@@ -101,7 +106,8 @@
       "text": "# 幽狼咒符 · AnimalCharmAdditionalCriticalStrikeChanceAtMaximumPowerCharges\n底材类别：幽狼咒符 ｜ 词缀组：AnimalCharmAdditionalCriticalStrikeChanceAtMaximumPowerCharges ｜ 类型：前缀 ｜ 来源渠道：1 个\n\n本词缀组在该底材上共 2 条，来自 1 个来源：Base。\n互斥规则：与本组（AnimalCharmAdditionalCriticalStrikeChanceAtMaximumPowerCharges）有相同词缀组的其他词缀不能同时存在于一件装备上。\n\n## Base · 前缀 · 2 档\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/2 | 刺客大师的 | 当暴击球达到上限时，+(0.61-1)% 暴击率 | 60 | 250（0.9016%） |\n| T2/2 | 刺客大师的 | 当暴击球达到上限时，+(0.4-0.6)% 暴击率 | 1 | 500（1.8031%） |\n\n置信度说明：\n- T 级按 POEDB 的算法推导——在同一来源类别与词缀组内，把物品等级去重后降序排名，物品等级最高者为 T1（算法已复刻并通过不变量校验）\n\n来源：POEDB → 幽狼咒符 · AnimalCharmAdditionalCriticalStrikeChanceAtMaximumPowerCharges\nhttps://poedb.tw/cn/Lupine_Charm#ModifiersCalc",
       "can_support_facts": true,
       "claim_scope": "general",
-      "claim_data": {}
+      "claim_data": {},
+      "channel": "fts"
     },
     {
       "label": "E7",
@@ -111,10 +117,11 @@
       "url": "https://poedb.tw/cn/passive-skill-tree/",
       "source": "POEDB",
       "source_priority": 1,
-      "text": "# 升华节点·直取咽喉（For the Jugular）\n升华节点 ｜ 暗影 · 暗影大师 ｜ 天赋树 3.29\n\n- 对低血状态敌人的暴击伤害加成 +100%\n- 对低血敌人的暴击率总增 100%\n- 暴击拥有终结能力\n\n> （低血为低于生命上限 50% 以下）\n> ( 对生命等于或少于 10% 生命上限的敌人可以造成终结，敌人将直接死亡 )\n\n来源：POEDB → 天赋树 · 直取咽喉（For the Jugular）\nhttps://poedb.tw/cn/passive-skill-tree/",
+      "text": "# 升华节点·直取咽喉（For the Jugular）\n升华节点 ｜ 暗影 · 刺客大师 ｜ 天赋树 3.29\n\n- 对低血状态敌人的暴击伤害加成 +100%\n- 对低血敌人的暴击率总增 100%\n- 暴击拥有终结能力\n\n> （低血为低于生命上限 50% 以下）\n> ( 对生命等于或少于 10% 生命上限的敌人可以造成终结，敌人将直接死亡 )\n\n来源：POEDB → 天赋树 · 直取咽喉（For the Jugular）\nhttps://poedb.tw/cn/passive-skill-tree/",
       "can_support_facts": true,
       "claim_scope": "general",
-      "claim_data": {}
+      "claim_data": {},
+      "channel": "fts"
     },
     {
       "label": "E8",
@@ -127,7 +134,8 @@
       "text": "# 灵魂之芯（Soul's Wick）\n类型：唯一装备 ｜ 底材：钴蓝珠宝 ｜ 分类：钴蓝珠宝\n\n**需求**：需求 等级 20\n\n**显式词缀**\n- [显式词缀] +2 灵体数量上限\n- [显式词缀] 召唤灵体的魔力消耗降低 (40-50)%\n- [显式词缀] 灵体的暴击率提高 (800-1000)%\n- [显式词缀] 灵体的基础持续时间为 20 秒灵体无法在区域之间转移\n\n来源：POEDB → 灵魂之芯（Soul's Wick）\nhttps://poedb.tw/cn/Souls_Wick",
       "can_support_facts": true,
       "claim_scope": "general",
-      "claim_data": {}
+      "claim_data": {},
+      "channel": "fts"
     },
     {
       "label": "E9",
@@ -139,8 +147,9 @@
       "source_priority": 2,
       "text": "### 暴击怎么算\n\n> 暴击率 =（基础暴击 + 定值加值）×(1 + 增加的暴击率/100)× 更多的暴击率\n\n再夹在 **100%** 上限之内——**不是社区常说的 95%**（PoB 给 `CritChanceCap` 播的基础值就是 100）。\n\n暴击加成基础 **150%**（PoB 内部存成 +50，减过 100）。两者合起来：\n\n> 平均伤害倍率 =(1 − 暴击率)+ 暴击率 × 暴击加成\n\n所以 40% 暴击 + 350% 加成 ⇒ 0.6 + 0.4 × 3.5 = **2.0**，平均伤害翻倍。\n\n**「增加的暴击率」是乘在基础暴击上的**，所以基础越低、百分比加成越不值：6% 基础配 +300% 只有 24%，而 7.5% 基础配同样的加成有 30%。这就是「哪种武器适合暴击流」的算术来源。\n\n给出技能名或武器底材名，可以直接查它的基础暴击率再算。\n\n只算暴击率与**平均伤害倍率**（不需要伤害数值），不算 DPS——这一击有多大要 PoB 的 effectiveness 公式与整条攻击链，本库刻意没有伤害列；也不含幸运暴击、命中判定与暴击对异常的加成。\n\n来源：\n- 暴击率公式（基础 + 定值）×(1 + 增加)× 更多、以及上限：https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Modules/CalcOffence.lua#L2926-L2940\n- 平均伤害倍率 `CritEffect`：https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Modules/CalcOffence.lua#L3090\n- 暴击率上限 100%（硬编码，不在常量表）：https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Modules/CalcSetup.lua#L110\n- 基础暴击加成 150%：characterConstants.base_critical_strike_multiplier（GGG 原始表 Metadata/Characters/Character.ot）https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Data/Misc.lua#L62；PoB 内部存成 +50 的那一行：https://github.com/PathOfBuildingCommunity/PathOfBuilding/blob/9e6ea223e5921abd00bab36f246072e353140a58/src/Modules/CalcSetup.lua#L501\n- 技能每级基础暴击：`pob_skill_level.crit_chance`；武器底材：`pob_base_item.stats.CritChanceBase`",
       "can_support_facts": true,
-      "claim_scope": "general",
-      "claim_data": {}
+      "claim_scope": "calculation",
+      "claim_data": {},
+      "channel": "derived"
     }
   ]
 }

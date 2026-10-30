@@ -226,6 +226,7 @@ def search_vector(
     limit: int = 20,
     category: str | None = None,
     league: str | None = None,
+    version: str | None = None,
 ) -> list[Hit]:
     status = vector_index_status(conn, client.model)
     if not status.available:
@@ -241,7 +242,7 @@ def search_vector(
         "WHERE v.embedding MATCH ? AND v.k=? ORDER BY v.distance",
         (
             _serialize(vector),
-            status.indexed_count if category or league
+            status.indexed_count if category or league or version
             else min(max(limit * 3, limit), status.indexed_count),
         ),
     ).fetchall()
@@ -252,6 +253,8 @@ def search_vector(
         if category and meta.get("category") != category:
             continue
         if league and meta.get("league") != league:
+            continue
+        if version and meta.get("version") != version:
             continue
         distance = float(row["distance"])
         coverage, matched, missing = term_coverage(

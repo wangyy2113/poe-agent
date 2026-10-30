@@ -14,6 +14,7 @@ from core import db as dbmod
 from core.config import get_config
 from entities.taxonomy import MAX_FACTUAL_PRIORITY
 from retrieval.hybrid import retrieve
+from retrieval.rerank import configured_rerank_client
 from retrieval.runtime import configured_vector_runtime as vector_runtime_status
 from tools.registry import REGISTRY, ToolResult
 
@@ -50,18 +51,28 @@ MAX_EVIDENCE_CHARS = 1200
                 "description": "可选，按一级分类过滤。可用值见 enum",
                 "enum": [],
             },
+            "league": {"type": "string", "description": "可选，精确匹配资料的赛季标记"},
+            "version": {"type": "string", "description": "可选，精确匹配资料的游戏版本"},
             "top_k": {"type": "integer", "description": "可选，返回条数，1-20"},
         },
         "required": ["query"],
     },
 )
-def kb_search(query: str, category: str | None = None, top_k: int | None = None) -> ToolResult:
+def kb_search(
+    query: str, category: str | None = None, top_k: int | None = None,
+    league: str | None = None, version: str | None = None,
+) -> ToolResult:
     cfg = get_config()
     k = max(1, min(int(top_k or cfg.get("retrieval.top_k", 20)), 20))
     vector_requested = bool(cfg.get("retrieval.vector.enabled", False))
     conn = dbmod.get_conn()
     vector_runtime, embedding_client = vector_runtime_status(
         conn, vector_requested,
+        timeout_seconds=float(cfg.get("retrieval.timeout_seconds", 8)),
+    )
+    rerank_requested = bool(cfg.get("retrieval.rerank.enabled", False))
+    rerank_client, rerank_reason = configured_rerank_client(
+        rerank_requested,
         timeout_seconds=float(cfg.get("retrieval.timeout_seconds", 8)),
     )
     result = retrieve(
@@ -79,8 +90,12 @@ def kb_search(query: str, category: str | None = None, top_k: int | None = None)
             else ""
         ),
         embedding_client=embedding_client,
-        rerank_enabled=bool(cfg.get("retrieval.rerank.enabled", False)),
+        rerank_enabled=rerank_requested,
+        rerank_client=rerank_client,
+        rerank_disabled_reason=rerank_reason if rerank_requested else "",
         category=category or None,
+        league=league or None,
+        version=version or None,
     )
 
     citations: list[dict[str, Any]] = []

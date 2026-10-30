@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 from core import db as dbmod
 from core.config import get_config
 from retrieval.hybrid import retrieve
+from retrieval.rerank import configured_rerank_client
 from retrieval.runtime import configured_vector_runtime
 
 router = APIRouter(tags=["检索"])
@@ -17,6 +18,8 @@ class SearchRequest(BaseModel):
     query: str = Field(min_length=1, max_length=500)
     top_k: int | None = Field(default=None, ge=1, le=50)
     category: str | None = None
+    league: str | None = None
+    version: str | None = None
 
 
 class HitOut(BaseModel):
@@ -55,6 +58,11 @@ def search(req: SearchRequest) -> SearchResponse:
         conn, vector_requested,
         timeout_seconds=float(cfg.get("retrieval.timeout_seconds", 8)),
     )
+    rerank_requested = bool(cfg.get("retrieval.rerank.enabled", False))
+    rerank_client, rerank_reason = configured_rerank_client(
+        rerank_requested,
+        timeout_seconds=float(cfg.get("retrieval.timeout_seconds", 8)),
+    )
     result = retrieve(
         conn,
         req.query,
@@ -70,8 +78,12 @@ def search(req: SearchRequest) -> SearchResponse:
             else ""
         ),
         embedding_client=embedding_client,
-        rerank_enabled=bool(cfg.get("retrieval.rerank.enabled", False)),
+        rerank_enabled=rerank_requested,
+        rerank_client=rerank_client,
+        rerank_disabled_reason=rerank_reason if rerank_requested else "",
         category=req.category,
+        league=req.league,
+        version=req.version,
     )
     return SearchResponse(
         query=result.query,

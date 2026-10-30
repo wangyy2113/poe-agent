@@ -89,6 +89,9 @@ retrieval:
     # 若手动预建表，必须与该模型维度一致；完整回填前向量通道仍关闭。
     dim: 0
   rerank:
+    # 独立的远程 /v1/rerank 适配器；当前网关没有可用模型，故关闭。
+    # 开启后必须在 .env 配置 RERANK_BASE_URL、RERANK_API_KEY、RERANK_MODEL。
+    # 远端异常或响应不完整时保留 RRF 排序，并在检索元数据标注降级。
     enabled: false
 
   # 事实句判定领域词表：命中这些词的句子视为事实断言，

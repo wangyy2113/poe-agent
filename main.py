@@ -45,6 +45,7 @@ from core.llm import LLMError, get_llm_client
 from core.logging_setup import setup_logging
 from core.version import APP_VERSION
 from retrieval.runtime import vector_runtime as active_vector_runtime
+from retrieval.rerank import configured_rerank_client
 
 # 导入即注册工具（kb_search / entity_lookup）
 import tools.impl  # noqa: F401
@@ -135,6 +136,19 @@ def health() -> dict[str, Any]:
         "reason": vector_runtime.reason,
     }
     if vector_requested and not vector_runtime.available:
+        out["status"] = "degraded"
+    rerank_requested = bool(cfg.get("retrieval.rerank.enabled", False))
+    rerank_client, rerank_reason = configured_rerank_client(
+        rerank_requested,
+        timeout_seconds=float(cfg.get("retrieval.timeout_seconds", 8)),
+    )
+    out["rerank"] = {
+        "requested": rerank_requested,
+        "configured": rerank_client is not None,
+        "model": rerank_client.model if rerank_client else None,
+        "reason": rerank_reason,
+    }
+    if rerank_requested and rerank_client is None:
         out["status"] = "degraded"
     out["tools"] = __import__("tools.registry", fromlist=["REGISTRY"]).REGISTRY.names()
     try:
