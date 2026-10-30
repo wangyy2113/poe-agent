@@ -255,16 +255,13 @@ def _render_sizes(rows: list[sqlite3.Row], skills: dict[str, list[dict[str, Any]
             f"{row['notable_slots']} | {row['socket_slots']} | {len(skills.get(size, []))} |"
         )
     out.append("")
-    # 「星团珠宝上的天赋要花几个天赋点」问的就是这件事：这些天赋**不在主天赋树上**，
-    # 所以没有「从起点走过去要几点」这个数字。不写这句，答案就答不到问题上
-    # （实测录制里模型只复述了尺寸表）。
+    # 星团节点不在主树的可导航路径里；尺寸表也没有逐节点点数消耗。
+    # 两个缺口要分开披露，不能把「没有路径点数」误写成「节点无需点数」。
     out.append(
-        "星团珠宝上的核心天赋与基石**不在主天赋树上**，因此没有「从起点走过去要几个"
-        "天赋点」这个数字：它们靠星团珠宝提供，而珠宝要插在天赋树的珠宝插槽里"
-        "（那个插槽本身要几点，可以用 passive_path 算）。"
+        "星团珠宝节点**不在主天赋树的可导航路径上**，所以没有「从起点走到该节点要"
+        "几点」的路径数。本表仅给每种尺寸可加的节点数量，**未包含逐节点天赋点消耗**，"
+        "不能据此报出点数；珠宝插槽本身的主树路径可以另用 passive_path 计算。"
     )
-    out.append("")
-    out.append(_BOUNDARY + "。")
     out.append("")
     out.append(f"来源：Path of Building {rows[0]['pob_url']}")
     return "\n".join(out)
@@ -574,10 +571,12 @@ def cluster_jewel_info(query: str, item_level: int | None = None) -> ToolResult:
             )
 
     # 4) 兜底：三个尺寸的总览
+    overview = _render_sizes(sizes, skills_by_size)
     return ToolResult(
         ok=True,
         data={"found": True, "kind": "overview", "sizes": len(sizes),
-              "boundary": _BOUNDARY},
-        citations=[_citation(sizes[0], "星团珠宝尺寸总览", _render_sizes(sizes, skills_by_size))],
+              "boundary": _BOUNDARY, "answer": overview,
+              "point_cost_known": False},
+        citations=[_citation(sizes[0], "星团珠宝尺寸总览", overview)],
         meta={"channel": "structured", "table": "pob_cluster_jewel"},
     )

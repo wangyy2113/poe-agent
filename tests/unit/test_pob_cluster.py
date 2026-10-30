@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
 import sys
 import unittest
@@ -293,6 +294,14 @@ class ClusterToolTest(unittest.TestCase):
         self.assertEqual("overview", cluster_jewel_info("星团珠宝怎么用").data["kind"])
         self.assertEqual("overview", cluster_jewel_info("星团珠宝有哪些小天赋类型").data["kind"])
 
+    def test_点数问题保留尺寸证据并明确逐节点点数未知(self) -> None:
+        result = cluster_jewel_info("星团珠宝上的天赋要花几个天赋点")
+        self.assertEqual("overview", result.data["kind"])
+        self.assertFalse(result.data["point_cost_known"])
+        self.assertIn("未包含逐节点天赋点消耗", result.data["answer"])
+        self.assertNotIn("基础生成权重", result.data["answer"])
+        self.assertEqual(result.data["answer"], result.citations[0]["text"])
+
     def test_空查询直接失败(self) -> None:
         self.assertFalse(cluster_jewel_info("  ").ok)
 
@@ -314,6 +323,49 @@ class ClusterRouteTest(unittest.TestCase):
         from orchestrator.loop import _preferred_tool_route
 
         self.assertNotEqual("cluster_jewel_info", _preferred_tool_route("珠宝上有哪些词缀"))
+
+    def test_点数缺口由代码直答且不调用模型(self) -> None:
+        from orchestrator import loop
+        from tools.registry import ToolResult
+
+        question = "星团珠宝上的天赋要花几个天赋点"
+        conn = _tool_conn()
+        real_cluster = cluster_jewel_info
+
+        def call(name, args):
+            if name == "kb_search":
+                return ToolResult(
+                    ok=True, data={"sufficient": False, "reason": "BM25 未覆盖", "missing_terms": []},
+                    meta={"channels": ["fts"], "degraded": False},
+                )
+            self.assertEqual("cluster_jewel_info", name)
+            return real_cluster(json.loads(args)["query"])
+
+        class NoModel:
+            def chat(self, *_args, **_kwargs):
+                raise AssertionError("点数缺口不应调用 LLM")
+
+        try:
+            with (
+                patch("tools.impl.cluster.dbmod.get_conn", return_value=conn),
+                patch.object(loop.REGISTRY, "call", side_effect=call),
+                patch.object(loop, "_apply_dimension_gate", side_effect=lambda _q, data, **_kw: (data, False)),
+                patch.object(loop, "_persist"),
+            ):
+                result = loop.run_turn(question, client=NoModel())
+                events = list(loop.stream_turn(question, client=NoModel()))
+        finally:
+            conn.close()
+        self.assertIn("未包含逐节点天赋点消耗", result.answer)
+        self.assertNotIn("基础生成权重", result.answer)
+        self.assertIn("[[E1]]", result.answer)
+        self.assertEqual(["kb_search", "cluster_jewel_info"], [
+            item["tool"] for item in result.tool_calls
+        ])
+        self.assertEqual(
+            result.answer,
+            "".join(event["text"] for event in events if event["type"] == "sentence"),
+        )
 
 
 if __name__ == "__main__":

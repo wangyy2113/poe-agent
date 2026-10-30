@@ -2983,6 +2983,11 @@ _CODE_INVOKED_TOOLS: dict[str, Any] = {
     "entity_lookup": lambda question: {"name": question},
     # 无参数
     "kb_coverage": lambda question: {},
+    # 逐节点点数没有采集。让模型反复调用尺寸目录会烧光单轮预算；
+    # 仅在这类问句上由代码取结构化总览并直接披露缺口。
+    "cluster_jewel_info": lambda question: (
+        {"query": question} if _cluster_point_cost_query(question) else None
+    ),
     "source_conflict_lookup": _source_conflict_lookup_args,
     "source_conflict_summary": lambda question: {},
     # 参数需要从领域词表里抽，可能抽不出来
@@ -3000,6 +3005,13 @@ _CODE_INVOKED_TOOLS: dict[str, Any] = {
     "attack_speed_calc": _attack_speed_args,
     "hit_dps_calc": _hit_dps_args,
 }
+
+
+def _cluster_point_cost_query(question: str) -> bool:
+    return (
+        "星团" in question and "天赋点" in question
+        and any(term in question for term in ("花", "需要", "消耗", "几个", "多少", "点数"))
+    )
 
 #: 这些工具按设计**不产出引用**（覆盖声明是元信息不是游戏事实）。
 #: 「一条证据都没拿到就走缺据」的兜底要放过它们，否则它们永远进不了生成。
@@ -3801,6 +3813,23 @@ def _prepare_turn(
         needs_model_call=bool(preferred_tool) and preferred_result is None,
         missing_terms=list(data.get("missing_terms") or []),
     )
+    if (
+        preferred_tool == "cluster_jewel_info"
+        and _cluster_point_cost_query(question)
+        and preferred_result is not None and preferred_result.ok
+        and (preferred_result.data or {}).get("kind") == "overview"
+        and (preferred_result.data or {}).get("point_cost_known") is False
+        and preferred_result.citations
+    ):
+        # The PoB size table does not contain point costs.  The direct answer
+        # preserves that boundary and avoids a tool loop for a missing field.
+        result.evidence = number_evidence(preferred_result.citations)
+        setup.evidence = result.evidence
+        setup.final = str((preferred_result.data or {}).get("answer") or "").strip()
+        if setup.final:
+            setup.final += f"\n\n尺寸表来源 [[{result.evidence[0].label}]]。"
+            result.retrieval_meta["evidence_policy"] = "cluster_point_cost_boundary"
+            return setup
     if simple_entity:
         setup.tools = []
         result.retrieval_meta["tool_schema_policy"] = "none_after_single_entity"
