@@ -151,7 +151,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 2490 项，约 20 秒
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 2502 项，约 20 秒
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选
@@ -1013,10 +1013,10 @@ stat id）」——**那句话描述的是错的那一页**：真正的来源是
 
 `pob_spectre` **268** 条 PoB 幽魂建模数据（四抗性、护甲/闪避/能量护盾系数、攻击间隔、
 怪物技能 id）。它同时是一份「玩家实际会用」的确认清单，倍率排名只在这 268 个里做——
-POEDB 那 1948 条里混着开发用怪物（「测试之灵」10000%/10000%）。
+POEDB 当前 1796 行里混着开发用怪物（「测试之灵」10000%/10000%）。
 
 `poedb_monster_mod` **183** 条怪物词缀（传奇 / 魔符 / 惊悸迷雾 / 猎魔 / 罪恶枷锁，
-有中文文本的那些）+ `poedb_spectre` **1948** 个可作幽魂的怪物与倍率。同一张
+有中文文本的那些）+ `poedb_spectre` **1796** 行可作幽魂的怪物与倍率。同一张
 POEDB `/cn/Monsters` 页还有按等级的基础数值表，**刻意不取**——PoB 侧的
 `monsterLifeTable` 等早已在 `game_constant` 里，重复入库等于制造两份可能不一致的真源。
 幽魂那张表**没有卡片**，只有工具 + 意图词路由（理由见 `kb/render_monsters.py`）。

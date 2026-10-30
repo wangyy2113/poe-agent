@@ -74,6 +74,22 @@ class ExtractTest(unittest.TestCase):
         got = extract_currencies(page(card("未知的命运卡", "Stacked_Deck", HASH_HOVER)))
         self.assertEqual("slug:Stacked_Deck", got[0].metadata_id)
 
+    def test_缓存哈希形态保留已验证的元数据身份(self) -> None:
+        html_zh = page(card("混沌石", "Chaos_Orb", HASH_HOVER))
+        html_en = page(card("Chaos Orb", "Chaos_Orb", HASH_HOVER))
+        known = {"Chaos_Orb": "Metadata/Items/Currency/CurrencyRerollRare"}
+        item = extract_currencies(
+            html_zh, html_en, known_keys_by_slug=known
+        )[0]
+        self.assertEqual(known["Chaos_Orb"], item.metadata_id)
+        self.assertEqual("Chaos Orb", item.name_en)
+
+    def test_显式元数据与已知slug冲突时拒绝(self) -> None:
+        with self.assertRaisesRegex(CurrencyStructureError, "身份不一致"):
+            extract_currencies(
+                page(CHAOS), known_keys_by_slug={"Chaos_Orb": "Metadata/Items/Currency/Other"}
+            )
+
     def test_没有效果文本的留空而不是补一句(self) -> None:
         """碎片与命能类在页面上就没有效果说明。自己写「用于合成」是编造。"""
         got = extract_currencies(page(

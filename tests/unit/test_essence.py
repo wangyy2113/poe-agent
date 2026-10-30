@@ -84,6 +84,14 @@ def page(*cards: str, declared: int | None = None, pane: str = "精华",
 
 
 class TestParseEssences(unittest.TestCase):
+    def test_tooltip哈希沿用已验证精华身份(self) -> None:
+        slug = "Whispering_Essence_of_Hatred"
+        html = page(card("憎恨之低语精华", slug, 1))
+        html = html.replace(_HOVER + slug, "https://cdn.poedb.tw/cache/hash")
+        known = {slug: "Metadata/Items/Currency/CurrencyEssenceHatred1"}
+        got = parse_essences(html, known_keys_by_slug=known)
+        self.assertEqual(known[slug], got[0].key)
+
     def test_按标签页_id_取而不是选中态(self) -> None:
         """选中的是 `MinimapIcons`（0 张卡）。按选中态取会得到空，
         按位置取会撞上同页另外三个近似区块。"""

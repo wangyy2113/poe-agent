@@ -84,6 +84,7 @@ def search(req: SearchRequest) -> SearchResponse:
         category=req.category,
         league=req.league,
         version=req.version,
+        timeout_seconds=float(cfg.get("retrieval.timeout_seconds", 8)),
     )
     return SearchResponse(
         query=result.query,

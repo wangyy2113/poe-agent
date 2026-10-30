@@ -24,12 +24,15 @@ from __future__ import annotations
 import logging
 import re
 import sqlite3
-from dataclasses import dataclass, field
+import time
+from dataclasses import dataclass, field, replace
 
 from retrieval import alias as alias_mod
-from retrieval.embedding import EmbeddingClient, EmbeddingError
+from retrieval.embedding import EmbeddingClient, EmbeddingError, EmbeddingTimeout
 from retrieval.fts import Hit, absent_from_corpus, search_fts, term_coverage
-from retrieval.rerank import MAX_DOCUMENT_CHARS, MAX_DOCUMENTS, RerankClient, RerankError
+from retrieval.rerank import (
+    MAX_DOCUMENT_CHARS, MAX_DOCUMENTS, RerankClient, RerankError, RerankTimeout,
+)
 from retrieval.tokenize import query_content_words
 from retrieval.vector import search_vector
 
@@ -217,9 +220,22 @@ def retrieve(
     category: str | None = None,
     league: str | None = None,
     version: str | None = None,
+    timeout_seconds: float | None = None,
 ) -> RetrievalResult:
     result = RetrievalResult(query=query)
     channels: dict[str, list[Hit]] = {}
+    deadline = time.monotonic() + timeout_seconds if timeout_seconds is not None else None
+    timed_out = False
+
+    def remaining() -> float:
+        return max(0.0, deadline - time.monotonic()) if deadline is not None else float("inf")
+
+    def mark_timeout() -> None:
+        nonlocal timed_out
+        timed_out = True
+        result.degraded = True
+        if "检索超时" not in result.note:
+            result.note += ("；" if result.note else "") + "检索超时，已保留完成的通道结果"
 
     # 查询实义词：所有通道的覆盖率都按同一套词计算，输出才可比
     q_terms = query_content_words(query)
@@ -263,7 +279,7 @@ def retrieve(
     #
     # 为什么不用「把领域词写进每张卡的 keywords」来解决：实测那样做会让
     # 全部 24418 张卡都含这些词，IDF 归零，反而失去区分度。
-    if _looks_like_mod_query(query):
+    if _looks_like_mod_query(query) and remaining() > 0:
         mod_hits = search_fts(
             conn, query, limit=recall_k,
             category=category, league=league, version=version,
@@ -272,12 +288,20 @@ def retrieve(
         if mod_hits:
             channels["mod_intent"] = mod_hits
             result.channels.append("mod_intent")
+    elif _looks_like_mod_query(query) and deadline is not None:
+        mark_timeout()
 
     # ── 通道 4：远程 embedding + 进程内 sqlite-vec ──
-    if vector_enabled and embedding_client is not None:
+    if vector_enabled and embedding_client is not None and remaining() > 0:
         try:
+            client = (
+                replace(
+                    embedding_client,
+                    timeout_seconds=min(embedding_client.timeout_seconds, remaining()),
+                ) if isinstance(embedding_client, EmbeddingClient) else embedding_client
+            )
             vector_hits = search_vector(
-                conn, query, embedding_client, limit=recall_k,
+                conn, query, client, limit=recall_k,
                 category=category, league=league, version=version,
             )
             if vector_hits:
@@ -288,6 +312,10 @@ def retrieve(
             result.note = (
                 f"向量检索已自动降级（{exc}），当前走 BM25 + 实体精确匹配"
             )
+            if isinstance(exc, EmbeddingTimeout):
+                mark_timeout()
+    elif vector_enabled and embedding_client is not None:
+        mark_timeout()
     else:
         result.degraded = True
         if vector_enabled and embedding_client is None:
@@ -301,8 +329,10 @@ def retrieve(
             result.note = "向量检索未启用，当前走 BM25 + 实体精确匹配"
 
     if not channels:
+        if deadline is not None and remaining() <= 0:
+            mark_timeout()
         result.sufficient = False
-        result.reason = "检索无任何命中"
+        result.reason = "检索超时，未获得可用结果" if timed_out else "检索无任何命中"
         return result
 
     fused = _rrf_fuse(channels, rrf_k, priority_decay)
@@ -311,11 +341,21 @@ def retrieve(
             result.degraded = True
             detail = rerank_disabled_reason or "ReRank 客户端未配置"
             result.note += ("；" if result.note else "") + f"ReRank 已自动降级（{detail}）"
+        elif remaining() <= 0:
+            mark_timeout()
         else:
             try:
-                fused = _rerank_candidates(query, fused, rerank_client, priority_decay)
+                client = (
+                    replace(
+                        rerank_client,
+                        timeout_seconds=min(rerank_client.timeout_seconds, remaining()),
+                    ) if isinstance(rerank_client, RerankClient) else rerank_client
+                )
+                fused = _rerank_candidates(query, fused, client, priority_decay)
                 result.channels.append("rerank")
             except RerankError as exc:
+                if isinstance(exc, RerankTimeout):
+                    mark_timeout()
                 result.degraded = True
                 result.note += ("；" if result.note else "") + f"ReRank 已自动降级（{exc}）"
     # 先限流再截断：否则同组近重复会在截断前就把候选名额吃光
@@ -374,7 +414,10 @@ def retrieve(
         # 恰是那个 POEDB 上不存在的名字；「流放之路2 的升华机制是什么」靠
         # `升华`+`机制` 过线，未覆盖的 `流放之路2` 恰是「问的是另一款游戏」的标志。
         # 一个词全库为零，答案就不可能在库里——此时其余词覆盖多少都不算依据。
-        absent = absent_from_corpus(conn, _drop_intent_terms(result.missing_terms))
+        absent = (
+            absent_from_corpus(conn, _drop_intent_terms(result.missing_terms))
+            if not timed_out and remaining() > 0 else []
+        )
         if absent:
             result.sufficient = False
             result.reason = (
@@ -395,4 +438,9 @@ def retrieve(
             + (f"，未覆盖：{'、'.join(result.missing_terms[:6])}" if result.missing_terms else "")
         )
 
+    if deadline is not None and remaining() <= 0:
+        mark_timeout()
+    if timed_out and not exact_hit:
+        result.sufficient = False
+        result.reason = "检索超时，候选结果可能不完整；请缩小查询或稍后重试"
     return result

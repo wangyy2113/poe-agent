@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from typing import Mapping
 from urllib.parse import unquote
 
 from selectolax.parser import HTMLParser
@@ -71,7 +72,9 @@ def text_of(node) -> str:  # noqa: ANN001
     return _SPACE_RE.sub(" ", node.text(deep=True)).strip() if node is not None else ""
 
 
-def parse_cards(html: str, selector: str) -> dict[str, ItemCard]:
+def parse_cards(
+    html: str, selector: str, *, known_keys_by_slug: Mapping[str, str] | None = None
+) -> dict[str, ItemCard]:
     """解析一页卡片，返回 ``键 -> ItemCard``。语言无关，中英文页共用。"""
     tree = HTMLParser(html)
     out: dict[str, ItemCard] = {}
@@ -82,7 +85,15 @@ def parse_cards(html: str, selector: str) -> dict[str, ItemCard]:
             continue
         slug = str(link.attributes.get("href") or "").split("?", 1)[0].rstrip("/").rsplit("/", 1)[-1]
         matched = _META_RE.search(unquote(str(link.attributes.get("data-hover") or "")))
-        key = matched.group(1) if matched else (f"slug:{slug}" if slug else "")
+        known_key = (known_keys_by_slug or {}).get(slug)
+        if matched and known_key and matched.group(1) != known_key:
+            raise CardStructureError(
+                f"{slug} 的页面元数据路径与已入库身份不一致，拒绝自动替换"
+            )
+        # POEDB may replace a metadata hover with an opaque tooltip URL.
+        # The slug is stable on the same site, so retain an already verified
+        # metadata ID instead of turning the whole snapshot into new items.
+        key = matched.group(1) if matched else (known_key or (f"slug:{slug}" if slug else ""))
         if not key or key in out:
             continue
         classes = [

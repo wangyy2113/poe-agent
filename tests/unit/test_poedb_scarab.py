@@ -74,6 +74,15 @@ class SharedCardParserTest(unittest.TestCase):
         cards = parse_cards(page(card("甲", "Some_Slug", HASH_HOVER)), SCARAB_SELECTOR)
         self.assertIn("slug:Some_Slug", cards)
 
+    def test_缓存哈希形态沿用已有圣甲虫身份和英文名(self) -> None:
+        slug = "Breach_Scarab_of_the_Hive"
+        known = {slug: "Metadata/Items/MapFragments/BreachHive"}
+        zh = page(card("虫群之裂隙圣甲虫", slug, HASH_HOVER))
+        en = page(card("Breach Scarab of the Hive", slug, HASH_HOVER))
+        scarabs, _ = extract_scarabs(zh, en, known_keys_by_slug=known)
+        self.assertEqual(known[slug], scarabs[0].metadata_id)
+        self.assertEqual("Breach Scarab of the Hive", scarabs[0].name_en)
+
     def test_多条效果用斜杠连接(self) -> None:
         cards = parse_cards(page(card("甲", "A", META, effects=("效果甲", "效果乙"))),
                             SCARAB_SELECTOR)

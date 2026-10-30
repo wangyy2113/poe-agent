@@ -173,14 +173,19 @@ def _split_effect(lines: list[str]) -> tuple[str, int | None, tuple[EssenceMod, 
     return " ".join(head).strip(), level_cap, tuple(mods)
 
 
-def parse_essences(html: str, *, page_url: str = ESSENCE_URL) -> tuple[Essence, ...]:
+def parse_essences(
+    html: str, *, page_url: str = ESSENCE_URL,
+    known_keys_by_slug: Mapping[str, str] | None = None,
+) -> tuple[Essence, ...]:
     """解析精华页的 `精华` 标签页，返回 105 个精华物品。
 
     条数与页面自己声明的 `/105` 对不上就整页拒绝。
     """
     tree = HTMLParser(html)
     pane, declared = _pane(tree)
-    cards = parse_cards(pane.html or "", CARD_SELECTOR)
+    cards = parse_cards(
+        pane.html or "", CARD_SELECTOR, known_keys_by_slug=known_keys_by_slug
+    )
     assert_chinese([c.name for c in cards.values()], what="精华页")
 
     out: list[Essence] = []
@@ -215,3 +220,4 @@ def parse_essences(html: str, *, page_url: str = ESSENCE_URL) -> tuple[Essence, 
         )
     _ = page_url  # 溯源由调用方写进表，这里只做结构校验
     return tuple(out)
+from typing import Mapping
