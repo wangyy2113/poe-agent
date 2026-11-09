@@ -78,8 +78,12 @@ Windows 把 `.venv/bin/python` 换成 `.venv\Scripts\python.exe`。
 改成 `0.0.0.0`（会暴露未加固的管理端点）。
 
 单实例保护靠端口绑定失败判断，不用 PID 文件——端口被占用时启动会直接失败退出。
-注意进程名被 `setproctitle` 改成了 `poe-agent`，所以 `pkill -f main.py` 找不到它；
-要停掉残留实例请按端口找：`lsof -nP -iTCP:8787 -sTCP:LISTEN -t`。
+macOS / Linux 日常重启直接运行仓库根目录的 `./restart.sh`；Mac 也可双击
+`restart.command`。入口支持从其他工作目录调用，读取配置的端口、路由前缀和日志目录，
+核对进程工作目录及启动入口后发送 SIGTERM，再后台启动并等待健康检查。
+服务未运行时直接启动；端口属于其他进程时退出并说明原因，不强制结束进程。
+默认日志为 `logs/console.log`，不会重建知识库或修改 `.env`。Linux 需安装 `lsof`。
+systemd 托管的部署使用 `sudo systemctl restart poe-agent`，不混用本机后台启动脚本。
 
 ### 作为 MCP 工具服务器使用
 

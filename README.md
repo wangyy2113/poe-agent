@@ -16,7 +16,7 @@
 <img alt="MCP stdio" src="https://img.shields.io/badge/MCP-stdio-A99AC3?style=flat-square&amp;labelColor=172126">
 </p>
 
-[能力地图](#capabilities) · [快速启动](#quickstart) · [工作原理](#how-it-works) · [接入方式](#integrations) · [完整文档](docs/README.md)
+[能力地图](#capabilities) · [快速启动](#quickstart) · [一键重启](#restart) · [工作原理](#how-it-works) · [接入方式](#integrations) · [完整文档](docs/README.md)
 
 </div>
 
@@ -142,6 +142,20 @@ ADMIN_TOKEN=your-separate-admin-token
 默认只监听 `127.0.0.1`，路由前缀由 `config.yaml` 的 `server.base_path` 控制。配置 `API_KEYS` 后，在网页的「API 密钥」中填入普通用户 Key；管理操作使用独立 `ADMIN_TOKEN`。对外部署请配置访问控制与 TLS。
 
 [完整安装指南，包括模型迁移、PoB 数据导入和客户端配置 →](docs/setup.md)
+
+<a id="restart"></a>
+
+### ↻ 一键重启 · macOS / Linux
+
+仓库根目录直接运行 **[`restart.sh`](restart.sh)**：
+
+```bash
+./restart.sh
+```
+
+**Mac 也可以双击根目录的 [`restart.command`](restart.command)。** 脚本自动读取 `config.yaml`，核对并停止本项目实例，再后台启动并检查健康状态；未运行时直接启动。日志写入配置的日志目录，默认 `logs/console.log`。不会重建知识库或修改 `.env`。
+
+需要已完成初始化；Linux 需安装 `lsof`。此入口用于本机直接启动的服务，systemd 部署使用 `sudo systemctl restart poe-agent`。Windows 启动入口仍为 `scripts\start.bat`。
 
 <a id="how-it-works"></a>
 
