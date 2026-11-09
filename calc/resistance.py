@@ -30,8 +30,9 @@
 
 * PoB 是从整个 modDB 求和得出 base / inc / more 的；这里把三者当**输入**。
   也就是说本模块复算的是**公式**，不是「读你的 build」——那要等 PoB 导入。
-* `Melding of the Flesh` 一类的 OVERRIDE 用 `max_override` 表达（它绕过 90 上限，
-  PoB 里 `modDB:Override` 就在 `m_min(MaxResistCap, ...)` 之前短路）。
+* `Melding of the Flesh` 一类的 OVERRIDE 用 `max_override` 表达；调用方给出的值
+  必须已满足角色抗性上限。PoB 先求受上限约束的最高最大抗性，再将它复制给其他元素，
+  不能从底层 OVERRIDE 的短路运算推断角色可以达到 95% 抗性。
 * 图腾抗性（`Totem*Resist`）与持续伤害抗性（`*ResistOverTime`）本模块不算：
   PoB 有独立分支，参数也不同，凑一份「看起来对」的比不算更糟。
 """
@@ -137,7 +138,7 @@ def max_resistance(
     extra_max_elemental: float = 0.0,
     max_override: float | None = None,
 ) -> tuple[int, tuple[Step, ...]]:
-    """最大抗性 = ``min(90, 75 + 各项最大抗性加成)``，OVERRIDE 直接短路。
+    """Maximum resistance, accepting only attainable override values.
 
     照 `CalcDefence.lua:581`：
     ``max = modDB:Override(...) or m_min(MaxResistCap, modDB:Sum("BASE", ...))``。
@@ -148,11 +149,11 @@ def max_resistance(
     cap = constants.get(constants.MAX_RESIST_CAP)
 
     if max_override is not None:
-        # OVERRIDE 在 `m_min(MaxResistCap, ...)` **之前**短路，所以它能超过 90
-        # （`Melding of the Flesh` 就是这么工作的）。
+        if not math.isfinite(max_override) or max_override > cap:
+            raise ValueError(f"最大抗性不能超过 {cap:g}%；覆写也不能作为突破上限的依据")
         value = math.trunc(max_override)
         return value, (
-            Step("最大抗性（被覆写）", f"OVERRIDE {max_override:g}%，不再受 {cap:g}% 上限约束", value),
+            Step("最大抗性（明确给出）", f"{max_override:g}%（硬上限 {cap:g}%）", value),
         )
 
     applicable_elemental = extra_max_elemental if is_elemental else 0.0

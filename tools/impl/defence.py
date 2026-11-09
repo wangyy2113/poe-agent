@@ -272,7 +272,7 @@ def _citation(title: str, text: str, url: str) -> dict[str, Any]:
             },
             "max_override": {
                 "type": "number",
-                "description": "最大抗性被唯一装备覆写成的值（如熔铸之魂），会绕过硬上限",
+                "description": "明确给出的最大抗性。不得超过角色最大抗性硬上限；不能据 OVERRIDE 推断可突破上限",
             },
             "enemy_penetration": {
                 "type": "number",
@@ -350,7 +350,7 @@ def resistance_calc(
             max_override=None if max_override is None else float(max_override),
             enemy_penetration=float(enemy_penetration),
         )
-    except res.UnknownElement as exc:
+    except ValueError as exc:
         return ToolResult(ok=False, error=str(exc))
     except constants.MissingConstant as exc:
         return ToolResult(ok=False, error=f"抗性常量未入库：{exc}")

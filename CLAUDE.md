@@ -160,7 +160,7 @@ python scripts/setup.py                    # --recreate 删 .venv 重建
 测试用标准库 `unittest`，**不引入 pytest**，也没有 lint 配置文件（`noqa` 码沿用 ruff 习惯）：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 2526 项，约 20 秒
+.venv/bin/python -m unittest discover -s tests -t .          # 全量，当前 2531 项，约 20 秒
 .venv/bin/python -m unittest tests.unit.test_binding         # 单个模块
 .venv/bin/python -m unittest tests.unit.test_binding.TestVerify.test_xxx   # 单个用例
 .venv/bin/python -m unittest discover -s tests -t . -k tier  # 按名筛选
@@ -1148,6 +1148,14 @@ Lua 后者覆盖前者，解析器同样取后者——**行号锚点也因此�
 （`护甲 /(护甲 + 5 × 伤害)`），反解要解二次方程，再夹在「完全不算护甲」与
 「护甲吃满 90% 减伤上限」之间。10000 护甲 + 5000 池 ⇒ **6,531**，既不是 5000 也不是 10000；
 同一堆护甲对更大的池边际收益更低，这就是「护甲挡不住大招」的算术来源。
+
+承伤输入不能再用邻近数字正则填槽：带数字的问题由 DeepSeek 区分 `total_resist_pct`
+（未封顶总抗）与 `resist_pct`（明确的穿透前生效抗性）。工具复用抗性结算器，按
+最大抗性封顶后再扣穿透；未给最大抗性时声明基础75%的假设，硬上限为90%。
+`max_override` 也不能突破90%，熔铸之魂复制的是已受硬上限约束的最大抗性。
+非法生效值与不能表达的防御条件返回带引用的澄清，本轮不允许通过重新解释输入
+给出确定数值。批量/流式共用工具结果呈现，保留真实模型用量并屏蔽调用前草稿。
+Max Hit 是承伤临界值，不能保证等值命中后存活。
 
 这一维**上游没有可对账的期望值**，所以验证方式是**自洽回代**：把算出来的 Max Hit
 重新走一遍正向链路（`maxhit.taken_from`），结果必须正好打满池子，而且再多打 1% 就撑不住。

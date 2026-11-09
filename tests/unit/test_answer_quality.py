@@ -10,7 +10,7 @@ from unittest.mock import Mock, patch
 
 from agents.knowledge import build_system_prompt
 from core.config import Config
-from core.llm import LLMClient, LLMResponse, StreamEvent, ToolCall, TokenBudgetExceeded, TurnBudget
+from core.llm import LLMClient, LLMResponse, StreamEvent, ToolCall, TokenBudgetExceeded, TurnBudget, Usage
 from orchestrator import loop
 from orchestrator.binding import Evidence, verify
 from orchestrator.entity_answer import render_entity_answer
@@ -121,7 +121,7 @@ class AnswerQualityTest(unittest.TestCase):
     def test_calculator_route_and_parameters_follow_requested_quantity(self):
         question = "5000生命、75%火焰抗性，没有其他减伤，最多能承受多大的单次火焰击中？"
         self.assertEqual("max_hit_calc", loop._preferred_tool_route(question))
-        self.assertEqual({"life": 5000, "resist_pct": 75, "damage_type": "火焰"}, loop._maxhit_args(question))
+        self.assertIsNone(loop._CODE_INVOKED_TOOLS["max_hit_calc"](question))
         self.assertEqual({"suppression_chance": 100}, loop._mitigation_args("法术压制达到100%后，会免疫法术伤害吗？"))
 
     def test_budget_rejects_oversized_context_before_network(self):
@@ -232,6 +232,55 @@ class AnswerQualityTest(unittest.TestCase):
         self.assertNotIn("待核实", emitted)
         self.assertNotIn("P3", emitted)
         self.assertEqual("source_selection", batch.retrieval_meta["answer_mode"])
+
+    def test_calculation_and_clarification_preserve_model_usage_without_second_rewrite(self):
+        from calc import constants
+        from tests.unit.test_maxhit import fixture_conn
+        from tools.impl.maxhit import max_hit_calc
+
+        conn = fixture_conn()
+        self.addCleanup(conn.close)
+        self.addCleanup(constants.reset_cache)
+        constants.load(conn, force=True)
+        usage = Usage(prompt_tokens=1200, completion_tokens=200, reasoning_tokens=80, total_tokens=1400)
+        for args, expected in [
+            ({"total_resist_pct": 99}, "20,000"),
+            ({"resist_pct": 99}, "需要核对计算前提"),
+            ({"total_resist_pct": 99, "unsupported_conditions": ["Mind over Matter"]}, "不能忽略"),
+        ]:
+            with self.subTest(args=args), ExitStack() as stack:
+                call = ToolCall("maxhit", "max_hit_calc", json.dumps({"life": 5000, "damage_type": "火焰", **args}))
+                tool_result = max_hit_calc(**json.loads(call.arguments))
+
+                def chat(*a, budget, **kw):
+                    budget.add(usage)
+                    return LLMResponse(content="未经计算的草稿500000", tool_calls=(call,), model="test", usage=usage)
+
+                def stream(*a, budget, **kw):
+                    budget.add(usage)
+                    yield StreamEvent(kind="content", text="未经计算的草稿500000")
+                    yield StreamEvent(kind="tool_calls", tool_calls=(call,))
+                    yield StreamEvent(kind="usage", usage=usage, model="test")
+
+                client = SimpleNamespace(chat=Mock(side_effect=chat), stream=Mock(side_effect=stream))
+                stack.enter_context(patch.object(loop, "_prepare_turn", side_effect=lambda *a, **k:
+                    loop._TurnSetup(question="承伤问题", preferred_tool="max_hit_calc",
+                                    evidence=[evidence()], needs_model_call=True)))
+                stack.enter_context(patch.object(loop, "_persist"))
+                stack.enter_context(patch.object(loop, "_domain_terms", return_value=()))
+                stack.enter_context(patch.object(loop, "_call_tool", return_value=(tool_result, False)))
+                batch = loop.run_turn("承伤问题", client=client)
+                events = list(loop.stream_turn("承伤问题", client=client))
+                emitted = "".join(e["text"] for e in events if e["type"] == "sentence")
+                self.assertEqual(batch.answer, emitted)
+                self.assertIn(expected, emitted)
+                self.assertNotIn("500000", emitted)
+                self.assertNotIn("猎首", emitted)
+                self.assertEqual(usage.as_dict(), batch.tokens)
+                self.assertEqual(batch.tokens, events[-1]["tokens"])
+                self.assertEqual(1, client.chat.call_count)
+                self.assertEqual(1, client.stream.call_count)
+                self.assertEqual(1, len(batch.citations))
 
 
 if __name__ == "__main__":

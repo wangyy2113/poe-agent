@@ -1032,6 +1032,13 @@ _PREFERRED_TOOL_INTENTS: tuple[tuple[str, tuple[str, ...]], ...] = (
         "Shaper", "Sirus", "Maven", "Atziri", "Exarch", "Eater",
         "boss技能", "Boss 技能", "首领技能",
     )),
+    # Max Hit：一发最多能挨多少。判据专指「一发 / 最多挨 / 会不会被秒」，
+    # 整体承伤问题先于抗性/穿透等分步问题。
+    # 不收裸的「有效生命」——那也可能在问「怎么堆生命」。
+    ("max_hit_calc", (
+        "一发最多", "最多能挨", "能挨多少", "会被秒", "会不会秒", "一发秒",
+        "最大承受", "最多能承受", "单次承伤", "max hit", "Max Hit", "挨得住", "秒吗", "秒掉", "会秒",
+    )),
     # 抗性是**按顺序算**出来的，证据不在任何 chunk 里（常量表只有 75/90/−200 三个数）。
     # 判据要专指「上限 / 超抗 / 减抗 / 穿透 / 承受」这些**结算**问法：
     # 单独的「抗性」会把「哪些唯一装备给抗性」（stat_sources 的活）抢过来。
@@ -1109,12 +1116,6 @@ _PREFERRED_TOOL_INTENTS: tuple[tuple[str, tuple[str, ...]], ...] = (
         "感电多少", "感电上限", "感电强度", "能感电", "异常门槛", "冰缓多少",
         "冰缓上限", "冰缓强度", "焦灼多少", "脆弱多少", "干枯多少",
         "冻住", "冰冻门槛", "多少伤害能冻",
-    )),
-    # Max Hit：一发最多能挨多少。判据专指「一发 / 最多挨 / 会不会被秒」，
-    # 不收裸的「有效生命」——那也可能在问「怎么堆生命」。
-    ("max_hit_calc", (
-        "一发最多", "最多能挨", "能挨多少", "会被秒", "会不会秒", "一发秒",
-        "最大承受", "最多能承受", "单次承伤", "max hit", "Max Hit", "挨得住", "秒吗", "秒掉", "会秒",
     )),
     # 暴击：暴击率上限、平均伤害倍率。判据专指**算**，裸的「暴击」会把
     # 「哪些词缀给暴击」「暴击词缀有几档」抢过来。
@@ -2301,15 +2302,6 @@ def _ailment_args(question: str) -> dict[str, Any] | None:
     return args or None
 
 
-#: Max Hit 的参数槽。抗性那一格只认「抗」字紧邻的数字（火抗 75 / 抗性 75）。
-_MAXHIT_SLOTS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("life", ("生命", "血", "血量")),
-    ("energy_shield", ("护盾", "能量护盾")),
-    ("resist_pct", ("火焰抗性", "冰霜抗性", "闪电抗性", "混沌抗性", "抗性", "火抗", "冰抗", "电抗", "混抗", "抗")),
-    ("armour", ("护甲",)),
-)
-
-
 def _crit_args(question: str) -> dict[str, Any] | None:
     """`crit_calc` 的参数：暴击率 / 加成 / 技能名。没有数字也没有技能名 → 讲规则。"""
     args: dict[str, Any] = {}
@@ -2569,28 +2561,6 @@ def _hit_dps_args(question: str) -> dict[str, Any]:
             skill_dot["instance_multiplier"] = float(instances.group(1))
         args["skill_dot"] = skill_dot
     return args
-
-
-def _maxhit_args(question: str) -> dict[str, Any] | None:
-    """`max_hit_calc` 的参数。没有数字 → 讲规则（无参数）。
-
-    与其它计算器同一条纪律：同一槽位抽到两个不同的值就整体交回模型。
-    """
-    if not _RESIST_NUMBER_RE.search(question):
-        return {}
-    args: dict[str, Any] = {}
-    for slot, keywords in _MAXHIT_SLOTS:
-        values = _slot_values(question, keywords)
-        if len(values) > 1:
-            logger.info("max_hit_calc 的 %s 抽到多个值 %s，交回模型自选", slot, values)
-            return None
-        if values:
-            args[slot] = values.pop()
-    for damage_type in ("物理", "火焰", "冰霜", "闪电", "混沌"):
-        if damage_type in question:
-            args["damage_type"] = damage_type
-            break
-    return args or None
 
 
 def _boss_hit_args(
@@ -2866,7 +2836,7 @@ def _reservation_args(question: str) -> dict[str, Any] | None:
 
 
 def _resistance_args(question: str) -> dict[str, Any] | None:
-    """`resistance_calc` 的参数。
+    """`resistance_calc` / `max_hit_calc` 的参数。
 
     只处理**没有数字**的那一类（「抗性上限是多少」「超抗有什么用」）：那是讲规则，
     不需要参数。带数字的问法留给模型——抗性的输入项有九个
@@ -2969,7 +2939,7 @@ _CODE_INVOKED_TOOLS: dict[str, Any] = {
     "reservation_calc": _reservation_args,
     "ailment_dot_calc": _ailment_args,
     "ailment_threshold_calc": _threshold_args,
-    "max_hit_calc": _maxhit_args,
+    "max_hit_calc": _resistance_args,
     "crit_calc": _crit_args,
     "accuracy_calc": _accuracy_args,
     "attack_speed_calc": _attack_speed_args,
@@ -3662,6 +3632,21 @@ def _prepare_source_selection(setup: _TurnSetup, evidence: list[Evidence]) -> bo
     return True
 
 
+def _calculation_answer(result: TurnResult, tool_result: ToolResult | None) -> str:
+    if not (tool_result is not None and tool_result.ok
+            and tool_result.meta.get("channel") == "derived"
+            and (tool_result.data or {}).get("kind") in {"result", "clarification"}
+            and tool_result.citations):
+        return ""
+    result.retrieval_meta["answer_mode"] = "calculation"
+    result.evidence = number_evidence(tool_result.citations)
+    result.citations = cit.collect(result.evidence, [e.label for e in result.evidence])
+    return "\n\n".join(
+        e.text.split("\n来源：", 1)[0].strip() + f"\n\n[[{e.label}]]"
+        for e in result.evidence if e.can_support_facts
+    )
+
+
 def _prepare_turn(
     question: str, result: TurnResult, *, owner_id: str | None = None,
     conversation_id: str | None = None,
@@ -3813,18 +3798,9 @@ def _prepare_turn(
             result.citations = cit.collect(evidence, [e.label for e in evidence])
             setup.tools = []
             return setup
-    if (preferred_result is not None and preferred_result.ok
-            and preferred_result.meta.get("channel") == "derived"
-            and (preferred_result.data or {}).get("kind") == "result"
-            and preferred_result.citations):
-        result.retrieval_meta["answer_mode"] = "calculation"
-        evidence = number_evidence(preferred_result.citations)
-        result.evidence = setup.evidence = evidence
-        result.citations = cit.collect(evidence, [e.label for e in evidence])
-        setup.final = "\n\n".join(
-            e.text.split("\n来源：", 1)[0].strip() + f"\n\n[[{e.label}]]"
-            for e in evidence if e.can_support_facts
-        )
+    setup.final = _calculation_answer(result, preferred_result)
+    if setup.final:
+        setup.evidence = result.evidence
         return setup
     if (
         preferred_tool == "cluster_jewel_info"
@@ -4160,6 +4136,10 @@ def run_turn(
     try:
         client = client or get_llm_client()
         for round_no in range(max_calls + 1):
+            if not state.precision_tool and len(state.final_results) == 1:
+                result.answer = _calculation_answer(result, next(iter(state.final_results.values())))
+                if result.answer:
+                    break
             if (state.final_results and all(tr.ok and tr.citations for tr in state.final_results.values())
                     and _prepare_source_selection(setup, state.evidence)):
                 messages = setup.messages
@@ -4291,6 +4271,10 @@ def stream_turn(
     try:
         client = client or get_llm_client()
         for _round in range(max_calls + 1):
+            if not state.precision_tool and len(state.final_results) == 1:
+                result.answer = _calculation_answer(result, next(iter(state.final_results.values())))
+                if result.answer:
+                    break
             if (state.final_results and all(tr.ok and tr.citations for tr in state.final_results.values())
                     and _prepare_source_selection(setup, state.evidence)):
                 messages = setup.messages
@@ -4346,6 +4330,13 @@ def stream_turn(
         result.answer = failure + "，本轮未完成，请重试。"
         _end(result, conversation_id, started)
         yield {"type": "error", "message": result.answer}
+        return
+
+    if result.answer:
+        yield {"type": "sentence", "text": result.answer, "kind": "factual",
+               "labels": [c.label for c in result.citations]}
+        yield from _citation_events(result)
+        yield from _finish(result, conversation_id, started)
         return
 
     if setup.passages:

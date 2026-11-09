@@ -58,6 +58,12 @@ def _conn() -> sqlite3.Connection:
             "Path of Building", 2, "https://example.test/pob/defence", "now",
         ),
     )
+    conn.execute(
+        "INSERT INTO game_constant(key,group_name,kind,value_num,source,source_priority,url,updated_at) "
+        "VALUES(?,?,?,?,?,?,?,?)",
+        (constants.MAX_RESIST_CAP, "pobMisc", "scalar", 90, "Path of Building", 2,
+         "https://example.test/pob/defence", "now"),
+    )
     common = (
         1400, None, 0, 0, "Path of Building", 2,
         "https://example.test/pob/boss-skills", "a" * 40, "now",
