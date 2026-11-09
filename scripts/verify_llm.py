@@ -261,7 +261,7 @@ def online(client: m.LLMClient | None = None) -> None:
         except json.JSONDecodeError as exc:
             check("参数是合法 JSON", False, str(exc))
 
-    section("11. max_tokens 给不足时不静默返回空正文")
+    section("11. max_tokens 给不足时不把空正文或截断响应当成功")
     # 绕过 clamp 直接构造极小预算，验证告警/异常路径真的会触发
     original = m.MIN_MAX_TOKENS
     try:
@@ -272,12 +272,12 @@ def online(client: m.LLMClient | None = None) -> None:
                 [{"role": "user", "content": "详细说明流放之路的抗性上限机制。"}],
                 max_tokens=16,
             )
-            # 网关有时在 16 token 内仍会返回一两个正文字符。这里验收的是
-            # “空正文不能静默成功”；非空极短正文不用于事实问答质量判断。
-            check("极小预算未静默返回空正文", bool(short.content.strip()),
+            # Short content is usable only when the upstream finished normally.
+            check("极小预算未静默返回空正文或截断响应",
+                  bool(short.content.strip()) and short.finish_reason == "stop",
                   f"正文字符数={len(short.content)}")
-        except m.EmptyContentError as exc:
-            check("极小预算未静默返回空正文", True, str(exc)[:100])
+        except (m.EmptyContentError, m.IncompleteResponseError) as exc:
+            check("极小预算未静默返回空正文或截断响应", True, str(exc)[:100])
         except m.LLMError as exc:
             check("极小预算未静默返回空正文", False, f"抛的是别的 LLMError：{exc}")
     finally:

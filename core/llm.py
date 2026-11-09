@@ -69,6 +69,10 @@ class EmptyContentError(LLMError):
     """
 
 
+class IncompleteResponseError(LLMError):
+    """The response ended without a successful completion or complete tool call."""
+
+
 # ── 数据结构 ───────────────────────────────────────────────
 
 @dataclass(frozen=True)
@@ -563,7 +567,7 @@ class LLMClient:
     @staticmethod
     def _check_finish(finish: str) -> None:
         if finish not in {"stop", "tool_calls"}:
-            raise LLMError("DeepSeek 响应未完整结束；请重试或检查输出预算")
+            raise IncompleteResponseError("DeepSeek 响应未完整结束；请重试或检查输出预算")
 
     def _check_served_model(self, model: str | None) -> None:
         if model and model != self._default_model:
