@@ -567,8 +567,7 @@ class BossSurvivalFormulaTest(unittest.TestCase):
             "level": 84, "pool": 10000, "hit_count": 2, "cold_resist_pct": 75,
             "chaos_resist_pct": 0, "armour": 10000,
         }, loop._boss_risk_audit_args(question))
-        self.assertIn("boss_risk_audit", loop._CODE_INVOKED_TOOLS)
-        self.assertIn("boss_risk_audit", loop._DETERMINISTIC_DIRECT_TOOLS)
+        self.assertIn("boss_risk_audit", loop.ALLOWED_TOOLS)
         self.assertIsNone(loop._boss_risk_audit_args(
             "84级，所有 Boss 技能哪个最危险"
         ))
@@ -622,8 +621,7 @@ class BossSurvivalFormulaTest(unittest.TestCase):
             "25000血、75冰抗、10000护甲，这套连招扛得住吗"
         )
         self.assertEqual("boss_sequence_check", loop._preferred_tool_route(question))
-        self.assertIn("boss_sequence_check", loop._CODE_INVOKED_TOOLS)
-        self.assertIn("boss_sequence_check", loop._DETERMINISTIC_DIRECT_TOOLS)
+        self.assertIn("boss_sequence_check", loop.ALLOWED_TOOLS)
         self.assertEqual({
             "sequence": [
                 {"skill": "Shaper Ball", "count": 2},

@@ -381,25 +381,5 @@ class ThresholdRouteTest(unittest.TestCase):
         self.assertEqual("", self.route("哪些词缀能造成感电"))
 
 
-class ThresholdArgsTest(unittest.TestCase):
-    def args(self, question: str):  # noqa: ANN201
-        from orchestrator.loop import _threshold_args
-
-        return _threshold_args(question)
-
-    def test_认出异常名与头目(self) -> None:
-        self.assertEqual(
-            {"ailment": "感电", "is_boss": True, "monster_level": 83},
-            self.args("打 83 级头目能感电多少"),
-        )
-
-    def test_不替用户假定等级(self) -> None:
-        """没说打谁就不填等级——工具会说清缺什么，而不是按 83 级算。"""
-        self.assertNotIn("monster_level", self.args("一击 100000 伤害能感电多少"))
-
-    def test_没有异常名就不接这一轮(self) -> None:
-        self.assertIsNone(self.args("83 级怪物有多少生命"))
-
-
 if __name__ == "__main__":
     unittest.main()

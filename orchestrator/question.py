@@ -84,3 +84,25 @@ def unknown_named_item(question: str) -> bool:
         return False
     from core.db import get_conn
     return not any(lookup(get_conn(), name) for name in names)
+
+
+def conversation_context(
+    conn: sqlite3.Connection, question: str, conversation_id: str | None,
+    owner_id: str | None,
+) -> str:
+    """Keep user-supplied conditions across turns, isolated by conversation owner."""
+    if not conversation_id or not owner_id:
+        return ""
+    rows = conn.execute(
+        "SELECT m.content FROM message m JOIN conversation c USING(conversation_id) "
+        "WHERE c.conversation_id=? AND c.owner_id=? AND m.role='user' "
+        "ORDER BY m.created_at DESC, m.rowid DESC LIMIT 7",
+        (conversation_id, owner_id),
+    ).fetchall()
+    previous = [str(row["content"]) for row in rows]
+    if previous and previous[0] == question:
+        previous.pop(0)  # The streaming endpoint saves this message before the turn.
+    if not previous:
+        return ""
+    return ("同一会话此前的用户输入（仅用于指代和条件延续，不是游戏事实依据；本轮修改优先）：\n"
+            + "\n".join(f"- {message[:1500]}" for message in reversed(previous[:6])))

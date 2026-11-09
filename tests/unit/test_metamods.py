@@ -822,7 +822,7 @@ class TestMetamodSemanticReviewRegressions(unittest.TestCase):
         with patch("orchestrator.loop._prepare_tools", return_value=schemas):
             filtered = loop._tools_for_question(question)
         self.assertEqual(
-            [schema["function"]["name"] for schema in filtered], ["kb_search"]
+            [schema["function"]["name"] for schema in filtered], ["kb_search", "entity_lookup", "finish_answer", "select_tools"]
         )
         with patch("orchestrator.loop.REGISTRY.call") as registry_call:
             result, matched = loop._call_tool(
@@ -1015,14 +1015,15 @@ class TestMetamodBlankOrchestratorRegression(unittest.TestCase):
         )
         conn = _populated_conn()
         try:
-            # KB 不充分时直接缺据，不应进入 LLM。
+            # 原句检索无依据时允许模型澄清，但不能进入被用户排除的矩阵工具。
             class NoBatchLLM:
                 def chat(self, *_args, **_kwargs):
-                    raise AssertionError("来源被否定后不应进入 LLM 或矩阵工具")
+                    from core.llm import LLMResponse
+                    return LLMResponse(content="未找到可用依据")
 
             class NoStreamLLM:
                 def stream(self, *_args, **_kwargs):
-                    raise AssertionError("来源被否定后不应进入 LLM 或矩阵工具")
+                    yield StreamEvent(kind="content", text="未找到可用依据")
 
             stack, _base = self._patches(conn)
             with stack:

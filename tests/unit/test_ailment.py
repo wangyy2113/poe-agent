@@ -284,25 +284,6 @@ class AilmentRouteTest(unittest.TestCase):
         self.assertEqual("reservation_calc", self.route("坚定和优雅一共保留多少魔力"))
 
 
-class AilmentArgsTest(unittest.TestCase):
-    def args(self, question: str):  # noqa: ANN201
-        from orchestrator.loop import _ailment_args
-
-        return _ailment_args(question)
-
-    def test_没有数字时只带异常名(self) -> None:
-        self.assertEqual({"ailment": "点燃"}, self.args("点燃每秒打多少伤害"))
-
-    def test_抽出伤害与层数(self) -> None:
-        self.assertEqual(
-            {"ailment": "中毒", "hit_damage": 5000.0, "stacks": 10},
-            self.args("中毒 10 层，一击 5000 伤害"),
-        )
-
-    def test_伤害抽到多个值时整体放弃(self) -> None:
-        self.assertIsNone(self.args("点燃：一击 5000 伤害和 8000 伤害分别打多少"))
-
-
 class AilmentGateTest(unittest.TestCase):
     def test_持续伤害问法不被判成缺口(self) -> None:
         from core import db as dbmod

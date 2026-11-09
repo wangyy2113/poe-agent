@@ -207,7 +207,7 @@ class MemoryPromptTest(unittest.TestCase):
         memory_section = prompt[prompt.index(memory):prompt.index("用户的问题：")]
         self.assertNotIn("[E1]", memory_section)
 
-    def test_retrieval_gap_finishes_before_reading_memory(self) -> None:
+    def test_retrieval_gap_allows_model_to_reformulate_with_context(self) -> None:
         search = ToolResult(
             ok=True,
             data={"sufficient": False, "reason": "缺少依据", "missing_terms": []},
@@ -225,9 +225,9 @@ class MemoryPromptTest(unittest.TestCase):
             patch("orchestrator.loop.build_prompt_memory_context") as build_memory,
         ):
             setup = _prepare_turn("未知问题", result, owner_id="owner-a")
-        self.assertTrue(setup.gap)
-        self.assertTrue(result.evidence_gap)
-        build_memory.assert_not_called()
+        self.assertFalse(setup.gap)
+        self.assertTrue(setup.needs_model_call)
+        self.assertFalse(result.evidence_gap)
 
     def test_model_path_injects_memory_and_memory_failure_is_non_fatal(self) -> None:
         search = ToolResult(ok=True, data={"sufficient": True}, meta={"channels": ["fts"]})

@@ -377,37 +377,6 @@ class RecoveryRouteTest(unittest.TestCase):
         self.assertEqual("mod_tiers", self.route("+50 最大能量护盾这条词缀有几档"))
 
 
-class RecoveryArgsTest(unittest.TestCase):
-    """代码抽参数：没有数字就是讲规则，有数字只认单位词紧邻的写法。"""
-
-    def args(self, question: str):  # noqa: ANN201
-        from orchestrator.loop import _recovery_args
-
-        return _recovery_args(question)
-
-    def test_没有数字就是讲规则(self) -> None:
-        for question in ("偷取上限是多少", "魔力再生怎么算", "护盾多久回满"):
-            with self.subTest(question=question):
-                self.assertEqual({}, self.args(question))
-
-    def test_抽护盾与魔力(self) -> None:
-        self.assertEqual({"energy_shield": 5000.0}, self.args("5000 护盾多久回满"))
-        self.assertEqual({"mana": 1000.0}, self.args("1000 魔力每秒再生多少"))
-
-    def test_偷取要同时抽到池与偷取比例(self) -> None:
-        self.assertEqual(
-            {"hit_damage": 3000.0, "leech_pct": 2.0, "pool": 4000.0, "pool_name": "生命"},
-            self.args("我 4000 生命，2% 偷取，一击 3000 伤害，每秒回多少"),
-        )
-
-    def test_没提偷取时不把生命当池(self) -> None:
-        """「4000 生命」在别的语境里不是偷取的池。"""
-        self.assertNotIn("pool", self.args("4000 生命 5000 护盾多久回满") or {})
-
-    def test_同一槽位两个值就整体放弃(self) -> None:
-        self.assertIsNone(self.args("5000 护盾和 8000 护盾差多少"))
-
-
 class RecoveryGateTest(unittest.TestCase):
     def test_回复问法不被判成缺口(self) -> None:
         from core import db as dbmod

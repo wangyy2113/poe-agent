@@ -363,16 +363,6 @@ class ToolApiAndRenderTest(unittest.TestCase):
         self.assertEqual(unknown.data["pricing"]["status"], "incomplete")
         service.material_cost.assert_not_called()
 
-    def test_code_direct_exact_plan_binds_pool_bridge_and_calculation(self) -> None:
-        result = self.call_tool()
-        evidence = number_evidence(result.citations)
-        answer = loop._direct_tool_answer(  # noqa: SLF001 - 直接出口契约
-            result, tool_name="craft_attempt_plan", evidence=evidence
-        )
-        checked = verify(answer, evidence)
-        self.assertEqual(checked.blocked, 0)
-        self.assertEqual(set(checked.used_labels), {"E1", "E2", "E3", "E4"})
-        self.assertIn("[[E4]]", answer)
 
     def test_economy_outage_keeps_quantity_plan_but_not_partial_cost(self) -> None:
         service = Mock()
@@ -430,8 +420,7 @@ class RouteBoundaryTest(unittest.TestCase):
         }
         self.assertEqual(loop._craft_attempt_plan_args(QUESTION), expected)
         self.assertEqual(loop._preferred_tool_route(QUESTION), "craft_attempt_plan")
-        self.assertIs(loop._CODE_INVOKED_TOOLS["craft_attempt_plan"], loop._craft_attempt_plan_args)
-        self.assertIn("craft_attempt_plan", loop._DETERMINISTIC_DIRECT_TOOLS)
+        self.assertIn("craft_attempt_plan", loop.ALLOWED_TOOLS)
 
     def test_missing_reset_single_selection_material_or_cap_never_routes(self) -> None:
         invalid = (
@@ -460,11 +449,11 @@ class RouteBoundaryTest(unittest.TestCase):
         with patch("orchestrator.loop._prepare_tools", return_value=schemas):
             self.assertEqual(
                 [item["function"]["name"] for item in loop._tools_for_question("制作成本")],
-                ["kb_search"],
+                ["kb_search", "entity_lookup", "finish_answer", "select_tools"],
             )
             self.assertEqual(
                 [item["function"]["name"] for item in loop._tools_for_question(QUESTION)],
-                ["craft_attempt_plan"],
+                ["kb_search", "entity_lookup", "finish_answer", "select_tools"],
             )
         with patch("orchestrator.loop.REGISTRY.call") as call:
             result, matched = loop._call_tool(
@@ -473,17 +462,6 @@ class RouteBoundaryTest(unittest.TestCase):
         self.assertFalse(result.ok)
         self.assertFalse(matched)
         call.assert_not_called()
-
-    def test_direct_orchestration_returns_code_rendered_answer_without_model(self) -> None:
-        tool_result = ToolResult(ok=True, data={"answer": "确定性计划"})
-        turn = Mock(tool_calls=[])
-        with patch("orchestrator.loop.REGISTRY.call", return_value=tool_result) as call:
-            result = loop._invoke_preferred_tool(QUESTION, "craft_attempt_plan", turn)
-        self.assertIs(result, tool_result)
-        called_args = json.loads(call.call_args.args[1])
-        self.assertEqual(called_args["base_type"], "铁制背心")
-        self.assertEqual(called_args["max_attempts"], 20)
-        self.assertEqual(loop._direct_tool_answer(tool_result), "确定性计划")
 
 
 class MilestoneNumericalEdgeTest(unittest.TestCase):

@@ -233,7 +233,6 @@ class EconomyProfitTest(unittest.TestCase):
 
     def test_profit_intent_is_exposed_and_routes_before_plain_price(self) -> None:
         self.assertIn("economy_flip_analysis", ALLOWED_TOOLS)
-        self.assertIn("economy_flip_analysis", loop._DETERMINISTIC_DIRECT_TOOLS)
         self.assertEqual(
             "economy_flip_analysis",
             loop._preferred_tool_route("神圣石倒卖利润是多少"),

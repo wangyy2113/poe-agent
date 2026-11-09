@@ -347,29 +347,5 @@ class MaxHitRouteTest(unittest.TestCase):
         self.assertEqual("", self.route("有效生命怎么堆"))
 
 
-class MaxHitArgsTest(unittest.TestCase):
-    def args(self, question: str):  # noqa: ANN201
-        from orchestrator.loop import _CODE_INVOKED_TOOLS
-
-        return _CODE_INVOKED_TOOLS["max_hit_calc"](question)
-
-    def test_resistance_meaning_is_left_to_the_model(self) -> None:
-        self.assertEqual(
-            None,
-            self.args("我 5000 血 75 火抗，一发最多能挨多少火焰伤害"),
-        )
-
-    def test_physical_inputs_are_also_interpreted_by_the_model(self) -> None:
-        """实测踩过：「10000 护甲 5000 血」里 `护甲 5000` 也能匹配「数字在后」的写法，
-        于是护甲槽同时抽到两个值、整条判定作废。"""
-        self.assertEqual(
-            None,
-            self.args("10000 护甲 5000 血会被物理秒吗"),
-        )
-
-    def test_没有数字就是讲规则(self) -> None:
-        self.assertEqual({}, self.args("一发最多能挨多少"))
-
-
 if __name__ == "__main__":
     unittest.main()

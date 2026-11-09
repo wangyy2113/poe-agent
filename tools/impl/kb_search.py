@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import logging
 from typing import Any
+import hashlib
+import re
 
 from core import db as dbmod
 from core.config import get_config
@@ -28,10 +30,10 @@ MAX_EVIDENCE_CHARS = 1200
 @REGISTRY.register(
     name="kb_search",
     description=(
-        "检索 POE1 知识库。任何关于游戏机制、数值、词缀、装备、制作的事实性问题，"
-        "都必须先调用本工具，禁止凭记忆回答。\n"
-        "返回的 sufficient 字段是关键：为 false 时说明知识库没有足够依据，"
-        "此时**不得**基于返回内容作答，应输出缺据声明。"
+        "按关键词检索 POE1 知识库，寻找原文或候选实体。"
+        "已知实体用entity_lookup，计算与上限判断用对应计算器，无需先全文搜索。\n"
+        "sufficient 为 false 仅表示本次检索不充分，不能据此断言知识库没有相关信息。"
+        "先改写关键词或精确核对候选实体；未查证的候选不得作为答案。"
     ),
     parameters={
         "type": "object",
@@ -39,7 +41,7 @@ MAX_EVIDENCE_CHARS = 1200
             "query": {
                 "type": "string",
                 "description": "检索词。专名（如「猎首」「Headhunter」）直接给，"
-                "描述性问题给关键词组合（如「偷取 词缀 腰带」）",
+                "描述性问题先明确动作和作用对象，再用对应机制名或候选实体名，不要只取泛词",
             },
             # 枚举值**在运行时按实际有数据的分类填充**（见本模块末尾）。
             # 先前这里固定写着六个一级分类，而其中四类一条数据都没有——
@@ -62,8 +64,9 @@ def kb_search(
 ) -> ToolResult:
     cfg = get_config()
     k = max(1, min(int(top_k or cfg.get("retrieval.top_k", 20)), 20))
+    conn = dbmod.get_conn()
     result = configured_retrieve(
-        dbmod.get_conn(), query, top_k=k,
+        conn, query, top_k=k,
         category=category or None, league=league or None, version=version or None,
     )
 
@@ -85,9 +88,16 @@ def kb_search(
             "channel": h.channel,
         })
 
+    exact = [i for i, c in enumerate(citations) if c["channel"] == "alias"]
+    if len(exact) == 1:
+        i = exact[0]
+        citations[i] = _field_citation(conn, query, citations[i])
+
     return ToolResult(
         ok=True,
         data={
+            "query": result.query,
+            "search_query": result.search_query,
             "sufficient": result.sufficient,
             "reason": result.reason,
             "missing_terms": result.missing_terms,
@@ -137,17 +147,19 @@ def sync_category_enum(conn: Any = None) -> list[str]:
     name="entity_lookup",
     description=(
         "按名称精确查一个实体（唯一装备等），返回其规范卡片。"
-        "已知确切名称时用它，比 kb_search 更准。支持中文名、英文名与社区俗称。"
+        "已知确切名称时用它，比 kb_search 更准。支持中文名、英文名与已收录俗称。"
+        "需要查询装备的特定字段、数值范围端点或获取途径时，把原问题同时填入question，返回可核对的字段结论。"
     ),
     parameters={
         "type": "object",
         "properties": {
             "name": {"type": "string", "description": "实体名，如「猎首」或「Headhunter」"},
+            "question": {"type": "string", "description": "可选，用户关于该实体字段的原问题；查询上限等字段时提供，不添加假设"},
         },
         "required": ["name"],
     },
 )
-def entity_lookup(name: str) -> ToolResult:
+def entity_lookup(name: str, question: str = "") -> ToolResult:
     from retrieval.alias import lookup as alias_lookup  # 延迟导入，避免循环依赖
 
     conn = dbmod.get_conn()
@@ -155,7 +167,7 @@ def entity_lookup(name: str) -> ToolResult:
     if not entity_ids:
         return ToolResult(
             ok=True,
-            data={"found": False, "reason": f"别名表里没有「{name}」，知识库无此条目"},
+            data={"found": False, "reason": f"别名表未精确匹配「{name}」；可核对规范中文名、英文名或改用全文检索，不代表知识库没有此实体"},
             citations=[],
         )
 
@@ -184,12 +196,29 @@ def entity_lookup(name: str) -> ToolResult:
             "channel": "alias",
         })
 
+    if question and len(citations) == 1:
+        citations[0] = _field_citation(conn, question, citations[0])
+
     return ToolResult(
         ok=True,
         data={"found": bool(citations), "entity_ids": entity_ids,
               "evidence_count": len(citations)},
         citations=citations,
     )
+
+
+def _field_citation(conn: Any, question: str, citation: dict[str, Any]) -> dict[str, Any]:
+    """Search and entity lookup expose the same source-backed field projection."""
+    from orchestrator.binding import number_evidence
+    from orchestrator.entity_answer import render_entity_answer
+
+    answer = render_entity_answer(conn, question, number_evidence([citation]))
+    if not answer:
+        return citation
+    return {**citation,
+            "chunk_id": citation["chunk_id"] + ":field:" + hashlib.sha256(question.encode()).hexdigest()[:12],
+            "text": re.sub(r"\[\[E\d+\]\]", "", answer),
+            "claim_scope": "excerpt", "channel": "derived"}
 
 
 # ── 获取途径（第五十四轮）─────────────────────────────────────
