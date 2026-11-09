@@ -45,8 +45,6 @@ from core.llm import LLMError, get_llm_client
 from core.logging_setup import setup_logging
 from core.version import APP_VERSION
 from core.model_policy import AUXILIARY_MODEL_REASON, DEEPSEEK_MODEL, capabilities
-from retrieval.runtime import vector_runtime as active_vector_runtime
-from retrieval.rerank import configured_rerank_client
 
 # 导入即注册工具（kb_search / entity_lookup）
 import tools.impl  # noqa: F401
@@ -63,12 +61,7 @@ async def _lifespan(_app: FastAPI):
     dim = int(cfg.get("retrieval.vector.dim", 0) or 0)
     dbmod.init_db(cfg.db_path, vector_dim=dim)
     logger.info("数据库就绪：%s", cfg.db_path)
-    vector_requested = bool(cfg.get("retrieval.vector.enabled", False))
-    vector_runtime, _ = active_vector_runtime(dbmod.get_conn(), vector_requested, None)
-    if vector_requested and not vector_runtime.available:
-        logger.warning("向量通道已自动禁用：%s", vector_runtime.reason)
-    else:
-        logger.info("向量通道：%s", vector_runtime)
+    logger.info("检索通道：BM25 + 实体精确匹配 + 词缀意图")
     _warn_if_open()
     try:
         yield
@@ -122,34 +115,18 @@ def health() -> dict[str, Any]:
 
     vs = dbmod.vector_status()
     vector_requested = bool(cfg.get("retrieval.vector.enabled", False))
-    try:
-        sec = get_secrets()
-        vector_runtime = (
-            active_vector_runtime(conn, vector_requested, sec)[0]
-            if conn is not None else dbmod.vector_channel_status(vector_requested)
-        )
-    except Exception as exc:  # noqa: BLE001  健康检查不能因一个通道失败而整体 500
-        vector_runtime = dbmod.VectorStatus(False, f"向量通道检查失败：{type(exc).__name__}")
     out["vector"] = {
         "extension_available": vs.available,
         "requested": vector_requested,
-        "enabled": vector_runtime.available,
-        "reason": vector_runtime.reason,
+        "enabled": False,
+        "reason": AUXILIARY_MODEL_REASON,
     }
-    if vector_requested and not vector_runtime.available:
-        out["status"] = "degraded"
     rerank_requested = bool(cfg.get("retrieval.rerank.enabled", False))
-    rerank_client, rerank_reason = configured_rerank_client(
-        rerank_requested,
-        timeout_seconds=float(cfg.get("retrieval.timeout_seconds", 8)),
-    )
     out["rerank"] = {
-        "requested": rerank_requested,
-        "configured": rerank_client is not None,
-        "model": rerank_client.model if rerank_client else None,
-        "reason": rerank_reason,
+        "requested": rerank_requested, "configured": False,
+        "model": None, "reason": AUXILIARY_MODEL_REASON,
     }
-    if rerank_requested and rerank_client is None:
+    if vector_requested or rerank_requested:
         out["status"] = "degraded"
     out["tools"] = __import__("tools.registry", fromlist=["REGISTRY"]).REGISTRY.names()
     try:
@@ -160,7 +137,7 @@ def health() -> dict[str, Any]:
             "base_url_configured": bool(sec.llm_base_url),
             "model": DEEPSEEK_MODEL,
             "capabilities": capabilities(),
-            "credentials": len(sec.credential_specs()),
+            "credentials": len(sec.credential_keys()),
         }
         # 凭证池状态（脱敏）：能看出哪个 Key 在冷却、为什么冷却。
         # 建客户端不发请求，所以不产生费用，也不代表 Key 真的可用。

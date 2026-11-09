@@ -949,21 +949,11 @@ def main() -> int:
         args.min_coverage if args.min_coverage is not None
         else float(cfg.get("retrieval.min_coverage", 0.5))
     )
-    vector_requested = bool(cfg.get("retrieval.vector.enabled", False))
-    vector_runtime = dbmod.vector_channel_status(vector_requested)
     params = {
         "top_k": int(cfg.get("retrieval.top_k", 20)),
-        "min_score": float(cfg.get("retrieval.min_score", 0.35)),
         "min_coverage": min_coverage,
         "rrf_k": int(cfg.get("retrieval.rrf_k", 60)),
         "priority_decay": float(cfg.get("retrieval.priority_decay", 0.08)),
-        "vector_enabled": vector_runtime.available,
-        "vector_disabled_reason": (
-            vector_runtime.reason
-            if vector_requested and not vector_runtime.available
-            else ""
-        ),
-        "rerank_enabled": bool(cfg.get("retrieval.rerank.enabled", False)),
     }
 
     counts = {
@@ -976,7 +966,7 @@ def main() -> int:
     print(f"  用例 {len(cases)} 条 | 库内 entity {counts['entity']} / "
           f"chunk {counts['chunk']} / mod_affix {counts['mod_affix']}")
     print(f"  min_coverage={min_coverage:.2f} top_k={params['top_k']} "
-          f"vector={params['vector_enabled']} rerank={params['rerank_enabled']}")
+          "channels=lexical/entity")
 
     if args.sweep:
         values = [float(x) for x in args.sweep.split(",") if x.strip()]

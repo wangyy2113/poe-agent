@@ -1,9 +1,9 @@
 """混合检索：实体精确通道 + BM25，RRF 融合 → 来源优先级加权 → 充分依据判定。
 
-向量通道需要远程 embedding 与完整的 sqlite-vec 索引；任一缺失时透明降级。
+检索只使用本地词法与实体通道，不依赖模型或远程服务。
 
 **充分依据判定由代码执行，不交给模型自觉**（需求 1.3）：
-最高分低于 min_score 即返回 evidence_gap，不进入生成。
+查询词覆盖率不足且无实体精确命中时返回 evidence_gap，不进入生成。
 
 ## 曾经有过、现已删除的两个补偿层
 
@@ -21,22 +21,14 @@
 
 from __future__ import annotations
 
-import logging
 import re
 import sqlite3
 import time
 from dataclasses import dataclass, field, replace
 
 from retrieval import alias as alias_mod
-from retrieval.embedding import EmbeddingClient, EmbeddingError, EmbeddingTimeout
 from retrieval.fts import Hit, absent_from_corpus, search_fts, term_coverage
-from retrieval.rerank import (
-    MAX_DOCUMENT_CHARS, MAX_DOCUMENTS, RerankClient, RerankError, RerankTimeout,
-)
 from retrieval.tokenize import query_content_words
-from retrieval.vector import search_vector
-
-logger = logging.getLogger(__name__)
 
 #: 构成充分依据所需的最少命中词数（在无实体精确命中的情况下）。
 #: 单个词的共现不构成依据——一篇文档与查询只共用一个词，
@@ -154,7 +146,7 @@ def _rrf_fuse(
 
     fused: list[Hit] = []
     for chunk_id, rrf in scores.items():
-        hit = best[chunk_id]
+        hit = replace(best[chunk_id])
         # 优先级衰减：priority 1 不衰减，每级递减
         penalty = priority_decay * max(0, hit.source_priority - 1)
         hit.score = max(0.0, min(1.0, hit.score)) * (1.0 - min(penalty, 0.9))
@@ -168,55 +160,14 @@ def _rrf_fuse(
     return fused
 
 
-def _rerank_candidates(
-    query: str, fused: list[Hit], client: RerankClient, priority_decay: float
-) -> list[Hit]:
-    """Reorder a bounded pool while retaining every exact entity candidate.
-
-    The remote model sees only text and returns scores; it never supplies
-    citations or the sufficient-evidence decision.  Exact alias matches are
-    pinned before other results, even if the model assigns them a low score.
-    """
-    aliases = [hit for hit in fused if hit.channel == "alias"]
-    others = [hit for hit in fused if hit.channel != "alias"]
-    candidates = (aliases + others)[:MAX_DOCUMENTS]
-    documents = [
-        (f"{hit.metadata.get('title', '')}\n{hit.text}")[:MAX_DOCUMENT_CHARS]
-        for hit in candidates
-    ]
-    scores = client.rerank(query, documents)
-    ranked = sorted(
-        enumerate(candidates),
-        key=lambda pair: (
-            pair[1].channel != "alias",
-            -scores[pair[0]] * (
-                1.0 - min(priority_decay * max(0, pair[1].source_priority - 1), 0.9)
-            ),
-            pair[1].source_priority,
-            pair[0],
-        ),
-    )
-    selected = {hit.chunk_id for _, hit in ranked}
-    return [hit for _, hit in ranked] + [
-        hit for hit in fused if hit.chunk_id not in selected
-    ]
-
-
 def retrieve(
     conn: sqlite3.Connection,
     query: str,
     *,
     top_k: int = 20,
-    min_score: float = 0.35,
     min_coverage: float = 0.5,
     rrf_k: int = 60,
     priority_decay: float = 0.08,
-    vector_enabled: bool = False,
-    vector_disabled_reason: str = "",
-    embedding_client: EmbeddingClient | None = None,
-    rerank_enabled: bool = False,
-    rerank_client: RerankClient | None = None,
-    rerank_disabled_reason: str = "",
     category: str | None = None,
     league: str | None = None,
     version: str | None = None,
@@ -258,8 +209,7 @@ def retrieve(
             channels["alias"] = alias_hits
             result.channels.append("alias")
 
-    # 召回阶段取比 top_k 更多的候选，留出被限流剔除的余量——否则同组近重复
-    # 在进入融合前就把名额吃光，限流再怎么筛也变不出没召回到的卡。
+    # 每路多召回候选，再统一融合并截断。
     recall_k = top_k * RECALL_MULTIPLIER
 
     # ── 通道 2：BM25（唯一在所有平台确定可用的通道）──
@@ -291,43 +241,6 @@ def retrieve(
     elif _looks_like_mod_query(query) and deadline is not None:
         mark_timeout()
 
-    # ── 通道 4：远程 embedding + 进程内 sqlite-vec ──
-    if vector_enabled and embedding_client is not None and remaining() > 0:
-        try:
-            client = (
-                replace(
-                    embedding_client,
-                    timeout_seconds=min(embedding_client.timeout_seconds, remaining()),
-                ) if isinstance(embedding_client, EmbeddingClient) else embedding_client
-            )
-            vector_hits = search_vector(
-                conn, query, client, limit=recall_k,
-                category=category, league=league, version=version,
-            )
-            if vector_hits:
-                channels["vector"] = vector_hits
-            result.channels.append("vector")
-        except (EmbeddingError, sqlite3.Error) as exc:
-            result.degraded = True
-            result.note = (
-                f"向量检索已自动降级（{exc}），当前走 BM25 + 实体精确匹配"
-            )
-            if isinstance(exc, EmbeddingTimeout):
-                mark_timeout()
-    elif vector_enabled and embedding_client is not None:
-        mark_timeout()
-    else:
-        result.degraded = True
-        if vector_enabled and embedding_client is None:
-            vector_disabled_reason = "Embedding 客户端未配置"
-        if vector_disabled_reason:
-            result.note = (
-                f"向量检索已自动降级（{vector_disabled_reason}），"
-                "当前走 BM25 + 实体精确匹配"
-            )
-        else:
-            result.note = "向量检索未启用，当前走 BM25 + 实体精确匹配"
-
     if not channels:
         if deadline is not None and remaining() <= 0:
             mark_timeout()
@@ -336,29 +249,6 @@ def retrieve(
         return result
 
     fused = _rrf_fuse(channels, rrf_k, priority_decay)
-    if rerank_enabled:
-        if rerank_client is None:
-            result.degraded = True
-            detail = rerank_disabled_reason or "ReRank 客户端未配置"
-            result.note += ("；" if result.note else "") + f"ReRank 已自动降级（{detail}）"
-        elif remaining() <= 0:
-            mark_timeout()
-        else:
-            try:
-                client = (
-                    replace(
-                        rerank_client,
-                        timeout_seconds=min(rerank_client.timeout_seconds, remaining()),
-                    ) if isinstance(rerank_client, RerankClient) else rerank_client
-                )
-                fused = _rerank_candidates(query, fused, client, priority_decay)
-                result.channels.append("rerank")
-            except RerankError as exc:
-                if isinstance(exc, RerankTimeout):
-                    mark_timeout()
-                result.degraded = True
-                result.note += ("；" if result.note else "") + f"ReRank 已自动降级（{exc}）"
-    # 先限流再截断：否则同组近重复会在截断前就把候选名额吃光
     result.hits = fused[:top_k]
     result.top_score = result.hits[0].score if result.hits else 0.0
     # P7 community cards can help a user navigate, but cannot establish a

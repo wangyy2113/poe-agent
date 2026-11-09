@@ -111,12 +111,15 @@ POE1 的机制耦合极深，一个错误的小前提会让整条结论反向。
 会在修改数据库前拒绝。`scripts/probe_gateway.py` 只使用本项目配置验证固定模型，
 不再读取其他工具或项目的凭证，也不再允许命令行改模型/改网关。
 
+流式问答只有收到完整结束信号才保存为会话答案。模型中断、输出截断或用户取消时关闭上游流，
+丢弃未完成缓冲；已经收到的 token 用量仍计入本轮预算。网页端与 OpenAI 兼容接口统一报告失败。
+POE2 边界声明、缺据声明等确定性路径不创建 LLM 客户端。
+
 历史黄金录制中的模型标识是原始证据，继续保留；它们只用于离线回放，不参与运行时路由。
 
 ## 快速开始
 
-需要 Python 3.12（最低 3.10）。用 python.org 官方版或 Homebrew 版，
-**不要用 macOS 自带的 Python**（它编译时关掉了 SQLite 扩展加载，向量通道会不可用）。
+需要 Python 3.12（最低 3.10），推荐 python.org 官方版或 Homebrew 版。检索不依赖 SQLite 向量扩展。
 
 ```bash
 # 1) 初始化：建 .venv、装依赖、建 data/ 与 logs/、从模板生成 .env
@@ -540,7 +543,7 @@ curl -s -X POST http://127.0.0.1:8787/poe_agent/chat \
 - +(40-55) 力量[[E1]]
 - 当你击败稀有怪物时，会获得该怪物属性修正 60 秒[[E1]]
 ...
-> 检索以降级通道完成（alias, fts, mod_intent）：向量检索与重排未启用
+正常检索使用 `alias`、`fts`、`mod_intent`，不会因为未启用远程模型而显示降级提示。
 
 引用
 [E1] 来源：POEDB → 猎首（Headhunter）
@@ -1875,11 +1878,11 @@ ASGI 服务器看到的 TCP peer，刻意不信任 `X-Forwarded-For`。如果前
 `retrieval.vector.enabled` 和 `retrieval.rerank.enabled` 保持 `false`。
 误设为 `true` 时，运行时仍阻止任何远程向量/重排调用，并在 `/healthz` 披露策略原因；
 正常检索继续使用 BM25、实体精确与关键词，引用与充分依据闸门保持不变。
-旧索引与纯本地向量算法保留用于检查和离线测试，不能据此激活其他模型。
+旧索引数据保留，`scripts/backfill_vectors.py` 只读检查其维度、数量和失效标记；远程适配器及向量查询/回填算法已移除。
 整轮检索超时仍保留已完成候选，对没有实体精确命中的候选关闭充分依据闸门。
 
-`POST /search` 及 `kb_search` 的 `category`、`league`、`version` 精确过滤同时作用于实体匹配、
-BM25 和向量候选；没有对应元数据的切片不会混入指定版本的结果。
+`POST /search` 及 `kb_search` 的 `category`、`league`、`version` 精确过滤同时作用于
+BM25、实体精确和词缀意图候选；没有对应元数据的切片不会混入指定版本的结果。
 
 ---
 

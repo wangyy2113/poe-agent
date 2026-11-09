@@ -230,6 +230,29 @@ class RunSyncTest(unittest.TestCase):
         self.assertEqual(1, len(result["diffs"]))
         self.assertEqual("failed", result["diffs"][0]["status"])
 
+    def test_failure_codes_and_coverage_errors_never_commit_partial_data(self) -> None:
+        def partial(*_args):
+            self.conn.execute(
+                "INSERT INTO mod_affix(uid,text_zh,game_version,updated_at) "
+                "VALUES ('partial','不应提交','3.30','now')"
+            )
+            return 2
+
+        def raised():
+            partial()
+            raise RuntimeError("coverage failed")
+
+        for stage in ("ingest", "coverage", "coverage_exception"):
+            with self.subTest(stage=stage):
+                result = run_sync(
+                    self.conn, ("mods",),
+                    runners={"mods": partial if stage == "ingest" else lambda _: 0},
+                    refresh_coverage=raised if stage == "coverage_exception" else partial if stage == "coverage" else None,
+                )
+                self.assertEqual("failed", result["status"])
+                self.assertEqual(0, self.conn.execute("SELECT count(*) FROM mod_affix").fetchone()[0])
+                self.assertFalse(self.conn.in_transaction)
+
     def test_recent_running_sync_blocks_overlap(self) -> None:
         self.conn.execute(
             "INSERT INTO knowledge_sync_run(sync_id,mode,requested,planned,status,started_at) "

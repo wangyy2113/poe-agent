@@ -16,7 +16,7 @@ from typing import Any, Iterator, Literal, Sequence
 from openai import APIConnectionError, APIStatusError, APITimeoutError, OpenAI
 
 from core.config import Config, Secrets, get_config, get_secrets, mask
-from core.model_policy import ModelPolicyError, require_model
+from core.model_policy import DEEPSEEK_MODEL, ModelPolicyError, require_model
 
 logger = logging.getLogger(__name__)
 
@@ -92,6 +92,12 @@ class Usage:
             reasoning_tokens=self.reasoning_tokens + other.reasoning_tokens,
             total_tokens=self.total_tokens + other.total_tokens,
         )
+
+    def as_dict(self) -> dict[str, int]:
+        return {
+            "prompt": self.prompt_tokens, "output": self.completion_tokens,
+            "reasoning": self.reasoning_tokens, "total": self.total_tokens,
+        }
 
     @property
     def reasoning_ratio(self) -> float:
@@ -176,8 +182,6 @@ class TurnBudget:
 class _Credential:
     index: int
     key: str
-    #: Every credential is normalized to the same pinned model.
-    model: str = ""
     cooldown_until: float = 0.0
     reason: str = ""
     failures: int = 0
@@ -199,16 +203,15 @@ class CredentialPool:
 
     def __init__(
         self,
-        specs: Sequence[tuple[str, str]],
+        keys: Sequence[str],
         *,
         budget_cooldown: float,
         auth_cooldown: float,
     ) -> None:
-        if not specs:
+        if not keys:
             raise LLMError("未配置任何 LLM 凭证：请在 .env 设置 LLM_API_KEY 或 LLM_API_KEYS")
         self._creds = [
-            _Credential(index=i, key=key, model=require_model(model or None))
-            for i, (key, model) in enumerate(specs)
+            _Credential(index=i, key=key) for i, key in enumerate(keys)
         ]
         self._budget_cooldown = budget_cooldown
         self._auth_cooldown = auth_cooldown
@@ -253,7 +256,7 @@ class CredentialPool:
                 {
                     "index": c.index,
                     "key": mask(c.key),
-                    "model": c.model or "(沿用默认)",
+                    "model": DEEPSEEK_MODEL,
                     "healthy": c.available(now),
                     "cooldown_seconds": max(0, round(c.cooldown_until - now)),
                     "reason": c.reason,
@@ -324,7 +327,7 @@ class LLMClient:
         self._base_url = _normalize_base_url(self._sec.llm_base_url)
         try:
             self._default_model = require_model(self._sec.llm_model)
-            specs = self._sec.credential_specs()
+            keys = self._sec.credential_keys()
             # Reject obsolete alternate routing, even if a caller never reaches it.
             for value in (self._cfg.get("llm.model_aliases", {}) or {}).values():
                 require_model(value)
@@ -340,7 +343,7 @@ class LLMClient:
         )
         self._max_tokens = _clamp_max_tokens(int(self._cfg.get("llm.max_tokens", 8192)))
         self._pool = CredentialPool(
-            specs,
+            keys,
             budget_cooldown=float(self._cfg.get("llm.cooldown_budget_seconds", 1800)),
             auth_cooldown=float(self._cfg.get("llm.cooldown_auth_seconds", 3600)),
         )
@@ -372,13 +375,11 @@ class LLMClient:
         max_tokens: int | None = None,
         temperature: float | None = None,
         budget: TurnBudget | None = None,
-        allow_empty_content: bool = False,
     ) -> LLMResponse:
         """一次非流式调用。
 
         Pure tool_call replies are valid. An HTTP success with neither content
-        nor tools always raises EmptyContentError. allow_empty_content remains
-        as a compatibility argument; it cannot authorize a resultless reply.
+        nor tools always raises EmptyContentError.
         """
         started = time.monotonic()
         raw, model_used = self._invoke(
@@ -392,12 +393,14 @@ class LLMClient:
         )
         elapsed_ms = int((time.monotonic() - started) * 1000)
 
+        usage = _usage_of(raw)
+        if budget is not None:
+            budget.add(usage)
         self._check_served_model(getattr(raw, "model", ""))
         choice = raw.choices[0] if raw.choices else None
         msg = getattr(choice, "message", None)
         content = (getattr(msg, "content", "") or "").strip()
         reasoning = _extra(msg, "reasoning_content") or ""
-        usage = _usage_of(raw)
         calls = tuple(
             ToolCall(
                 id=tc.id or "",
@@ -407,6 +410,7 @@ class LLMClient:
             for tc in (getattr(msg, "tool_calls", None) or [])
         )
         finish = getattr(choice, "finish_reason", "") or ""
+        self._check_finish(finish)
 
         logger.info(
             "LLM 调用完成：模型=%s 耗时=%dms finish=%s token=%d(正文%d/推理%d) "
@@ -415,11 +419,9 @@ class LLMClient:
             usage.completion_tokens - usage.reasoning_tokens, usage.reasoning_tokens,
             len(content), len(calls),
         )
-        if budget is not None:
-            budget.add(usage)
         self._check_empty(
             content, calls, usage, finish, model_used,
-            self._effective_max_tokens(max_tokens), allow_empty_content,
+            self._effective_max_tokens(max_tokens),
         )
 
         return LLMResponse(
@@ -471,6 +473,7 @@ class LLMClient:
         served_model = ""
         #: 流式 tool_calls 按 index 分片到达，需要在此拼装
         partial: dict[int, dict[str, str]] = {}
+        failure = ""
 
         try:
             for chunk in raw:
@@ -512,10 +515,26 @@ class LLMClient:
                             slot["name"] = fn.name
                         if getattr(fn, "arguments", None):
                             slot["arguments"] += fn.arguments
+            self._check_finish(finish)
         except Exception as exc:  # noqa: BLE001
             _, detail = classify_failure(exc)
-            logger.error("流式输出中断（已产出 %d 字正文）：%s", content_chars, _scrub(detail, self._pool))
-            yield StreamEvent(kind="error", detail=_scrub(detail, self._pool))
+            failure = self._sanitize(detail)
+            logger.error("流式输出中断（已产出 %d 字正文）：%s", content_chars, failure)
+        finally:
+            # Also runs on downstream cancellation. Never emit from this block.
+            try:
+                close = getattr(raw, "close", None)
+                if close is not None:
+                    close()
+            finally:
+                if budget is not None:
+                    try:
+                        budget.add(usage)
+                    except TokenBudgetExceeded as exc:
+                        failure = str(exc)
+
+        if failure:
+            yield StreamEvent(kind="error", detail=failure)
             return
 
         if partial:
@@ -534,14 +553,17 @@ class LLMClient:
             served_model or model_used, elapsed_ms, finish, usage.total_tokens,
             usage.reasoning_tokens, content_chars, reasoning_chars, len(partial),
         )
-        if budget is not None:
-            budget.add(usage)
         yield StreamEvent(kind="usage", usage=usage, model=served_model or model_used)
         if not content_chars and not partial:
             yield StreamEvent(
                 kind="error",
                 detail="DeepSeek 未返回正文或工具调用；请重试或检查输出预算",
             )
+
+    @staticmethod
+    def _check_finish(finish: str) -> None:
+        if finish not in {"stop", "tool_calls"}:
+            raise LLMError("DeepSeek 响应未完整结束；请重试或检查输出预算")
 
     def _check_served_model(self, model: str | None) -> None:
         if model and model != self._default_model:
@@ -591,7 +613,7 @@ class LLMClient:
                 return self._client_for(cred).chat.completions.create(**payload), model_used
             except Exception as exc:  # noqa: BLE001
                 kind, detail = classify_failure(exc)
-                detail = _scrub(detail, self._pool).replace(self._base_url, "[gateway]").replace(self._sec.llm_base_url.rstrip("/"), "[gateway]")
+                detail = self._sanitize(detail)
 
                 if kind == "fatal":
                     # 「这个模型不支持某个采样参数」不该让整次调用失败：
@@ -623,6 +645,11 @@ class LLMClient:
 
                 # budget / auth：冷却当前 Key 并换下一个
                 self._pool.penalize(cred, kind, detail)
+
+    def _sanitize(self, detail: str) -> str:
+        return (_scrub(detail, self._pool)
+                .replace(self._base_url, "[gateway]")
+                .replace(self._sec.llm_base_url.strip().rstrip("/"), "[gateway]"))
 
     def _effective_max_tokens(self, max_tokens: int | None) -> int:
         return _clamp_max_tokens(max_tokens) if max_tokens else self._max_tokens
@@ -664,7 +691,6 @@ class LLMClient:
         finish: str,
         model: str,
         max_tokens: int,
-        allow_empty: bool,
     ) -> None:
         if content or calls:
             return

@@ -14,7 +14,7 @@
   - **不用 `claude` CLI 子进程模式**——拿不到增量流会破坏断言绑定校验，且会把 Node 依赖引回来。有些接法配 `ANTHROPIC_BASE_URL` 是因为 CLI 只会说 Anthropic 协议，那是 CLI 的约束不是网关的
   - **不要照搬 `ANTHROPIC_CUSTOM_MODEL_OPTION` / `_NAME` / `_DESCRIPTION`**——那是 Claude Code CLI 模型选择器的 UI 标签，直连 HTTP 时无意义。只需 `base_url` + `api_key` + `model` 三个值
 - 所有生成调用（文本、工具、截图）共用 `core/model_policy.py` 中的固定模型、网关与凭证。禁止配置其他供应商、独立视觉模型或逐 Key 模型回退。
-- Embedding / ReRank：固定模型的接口契约未验证可用，远程适配器直接拒绝调用；旧索引保留，检索使用 BM25 + 实体精确 + `search_keywords`。不能仅通过旧配置重新开启。
+- Embedding / ReRank：固定模型的接口契约未验证可用，远程适配器已移除；旧索引数据保留，检索使用 BM25 + 实体精确 + `search_keywords`。不能仅通过旧配置重新开启。
 
 ### DeepSeek 响应契约
 
@@ -24,7 +24,7 @@
 4. 流式拼接完整工具参数后才执行；多轮工具续答沿用同一固定模型。
 - 存储：**单文件 SQLite（WAL）** `data/poe.db`，承载实体库、FTS 索引、向量、会话、轨迹、缺口台账
 - BM25：SQLite **FTS5 + 内置 `bm25()`**（已实测可用），写入前用 `jieba` 预分词成空格分隔词序列
-- 向量：**`sqlite-vec`** 扩展，与实体同库；装不上则 int8 量化 + numpy 暴力检索兜底，或按配置关闭
+- 旧向量数据：保留在原 SQLite 中，只提供元数据检查；不参与检索，不引入本地推理或暴力向量兜底。
 - 嵌入 / 重排：单模型模式关闭远程请求，保留原有词法和实体检索。
 - 前端：**单页静态**（`static/` 下 HTML + 原生 JS），FastAPI `StaticFiles` 托管。无 Node 运行时、无构建步骤、无框架
 - 配置：`.env`（pydantic-settings 读密钥）+ `config.yaml`（声明式行为）

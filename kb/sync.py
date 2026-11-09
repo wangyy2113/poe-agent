@@ -489,6 +489,7 @@ def run_sync(
         try:
             code = actual_runners[category](force)
             if code != 0:
+                conn.rollback()
                 error = f"采集器退出码 {code}"
         except Exception as exc:  # noqa: BLE001
             # 采集器若在事务中途抛错，不能让下面写 diff 的 commit 顺带提交半成品。
@@ -513,8 +514,10 @@ def run_sync(
         try:
             coverage_code = refresh_coverage()
             if coverage_code != 0:
+                conn.rollback()
                 failed_error = f"coverage: 刷新退出码 {coverage_code}"
         except Exception as exc:  # noqa: BLE001
+            conn.rollback()
             failed_error = f"coverage: {type(exc).__name__}: {exc}"
 
     summary = {

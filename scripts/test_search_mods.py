@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from core import db as dbmod  # noqa: E402
 from core.config import get_config  # noqa: E402
 from core.logging_setup import setup_logging  # noqa: E402
-from retrieval.hybrid import retrieve  # noqa: E402
+from retrieval.runtime import configured_retrieve  # noqa: E402
 
 REFUSE = "REFUSE"
 
@@ -92,8 +92,6 @@ def main() -> int:
     cfg = get_config()
     setup_logging(cfg.logs_dir, "WARNING")
     conn = dbmod.init_db(cfg.db_path)
-    vector_requested = bool(cfg.get("retrieval.vector.enabled", False))
-    vector_runtime = dbmod.vector_channel_status(vector_requested)
 
     n_mod = conn.execute(
         "SELECT count(*) FROM chunk WHERE entity_id LIKE 'mod_ladder:%'"
@@ -108,21 +106,7 @@ def main() -> int:
     passed = failed = leak = wrong_refuse = wrong_class = missed_recall = 0
     wrong_facet = 0
     for query, expect, want_in_title, must_recall, note, facet_has in CASES:
-        r = retrieve(
-            conn, query,
-            top_k=int(cfg.get("retrieval.top_k", 20)),
-            min_score=float(cfg.get("retrieval.min_score", 0.35)),
-            min_coverage=float(cfg.get("retrieval.min_coverage", 0.5)),
-            rrf_k=int(cfg.get("retrieval.rrf_k", 60)),
-            priority_decay=float(cfg.get("retrieval.priority_decay", 0.08)),
-            vector_enabled=vector_runtime.available,
-            vector_disabled_reason=(
-                vector_runtime.reason
-                if vector_requested and not vector_runtime.available
-                else ""
-            ),
-            rerank_enabled=bool(cfg.get("retrieval.rerank.enabled", False)),
-        )
+        r = configured_retrieve(conn, query)
         top = r.hits[0] if r.hits else None
         kind = ""
         if top and top.entity_id:

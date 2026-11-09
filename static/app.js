@@ -763,21 +763,27 @@ async function send(text) {
     let carry = '';
     let done = null;
 
-    while (true) {
-      const { value, done: finished } = await reader.read();
-      if (finished) break;
-      carry += decoder.decode(value, { stream: true });
-      // SSE 帧以空行分隔
-      const frames = carry.split('\n\n');
-      carry = frames.pop();
-      for (const frame of frames) {
-        const line = frame.split('\n').find((l) => l.startsWith('data:'));
-        if (!line) continue;
-        let ev;
-        try { ev = JSON.parse(line.slice(5).trim()); } catch { continue; }
-        await handleEvent(ev, msg);
-        if (ev.type === 'done') done = ev;
+    try {
+      while (!done) {
+        const { value, done: finished } = await reader.read();
+        if (finished) break;
+        carry += decoder.decode(value, { stream: true });
+        // SSE 帧以空行分隔
+        const frames = carry.split('\n\n');
+        carry = frames.pop();
+        for (const frame of frames) {
+          const line = frame.split('\n').find((l) => l.startsWith('data:'));
+          if (!line) continue;
+          let ev;
+          try { ev = JSON.parse(line.slice(5).trim()); } catch { continue; }
+          await handleEvent(ev, msg);
+          if (ev.type === 'done') { done = ev; break; }
+        }
       }
+      if (!done) throw new Error('回答未完成，连接已中断，请重试。');
+    } finally {
+      await reader.cancel().catch(() => {});
+      reader.releaseLock();
     }
     msg.finish(done);
   } catch (err) {
@@ -821,8 +827,7 @@ async function handleEvent(ev, msg) {
       msg.appendNote(ev.text);
       break;
     case 'error':
-      msg.appendError(ev.message || '未知错误');
-      break;
+      throw new Error(ev.message || '生成失败');
   }
 }
 

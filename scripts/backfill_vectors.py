@@ -14,7 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from core.config import get_config  # noqa: E402
 from core.model_policy import AUXILIARY_MODEL_REASON  # noqa: E402
-from retrieval.vector import vector_index_status  # noqa: E402
+from retrieval.vector import vector_index_metadata  # noqa: E402
 
 
 def main() -> int:
@@ -32,10 +32,10 @@ def main() -> int:
     conn = sqlite3.connect(cfg.db_path.resolve().as_uri() + "?mode=ro", uri=True)
     conn.row_factory = sqlite3.Row
     try:
-        status = vector_index_status(conn, "")
+        metadata = vector_index_metadata(conn)
         print(json.dumps({
             "chunks": int(conn.execute("SELECT count(*) FROM chunk").fetchone()[0]),
-            "index_available": status.available, "index_reason": status.reason,
+            "index": metadata,
             "runtime_enabled": False, "reason": AUXILIARY_MODEL_REASON,
         }, ensure_ascii=False))
         return 0

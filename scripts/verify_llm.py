@@ -124,7 +124,7 @@ def offline() -> None:
 
     section("6. 凭证池：粘性选择 + 分级冷却 + 脱敏")
     pool = m.CredentialPool(
-        [("sk-aaaaaaaaaaaaaaaaaaaa", "deepseek-v4-1-flash-1017"), ("sk-bbbbbbbbbbbbbbbbbbbb", "")],
+        ["sk-aaaaaaaaaaaaaaaaaaaa", "sk-bbbbbbbbbbbbbbbbbbbb"],
         budget_cooldown=1800, auth_cooldown=3600,
     )
     first = pool.acquire()
@@ -133,7 +133,7 @@ def offline() -> None:
     pool.penalize(first, "auth", "invalid api key")
     second = pool.acquire()
     check("首个冷却后转到下一个", second.index == 1)
-    check("换 Key 后仍为同一 DeepSeek 模型", first.model == second.model == DEEPSEEK_MODEL)
+    check("换 Key 后仍为同一 DeepSeek 模型", all(item["model"] == DEEPSEEK_MODEL for item in pool.snapshot()))
     pool.penalize(second, "budget", "quota exceeded")
     try:
         pool.acquire()
@@ -226,7 +226,6 @@ def online(client: m.LLMClient | None = None) -> None:
             {"role": "user", "content": "猎首（Headhunter）的词缀是什么？"},
         ],
         tools=tools,
-        allow_empty_content=True,  # 期待纯 tool_call 回复
     )
     check("模型发起了工具调用", len(tool_resp.tool_calls) > 0,
           f"finish={tool_resp.finish_reason}")
