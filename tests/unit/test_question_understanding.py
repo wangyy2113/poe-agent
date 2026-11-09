@@ -80,6 +80,29 @@ class AnswerContractTest(unittest.TestCase):
 
 
 class QuestionPreparationTest(unittest.TestCase):
+    def test_terminology_candidates_preserve_the_full_question_and_need_model_review(self):
+        question = "不要偷取词缀的腰带，要生命偷取的腰带"
+        search = ToolResult(ok=True, data={"sufficient": True}, citations=[{
+            "chunk_id": "item", "title": "候选", "text": "候选原文", "source": "POEDB",
+            "url": "https://poedb.tw/cn/Headhunter", "claim_scope": "excerpt"}])
+        with patch.object(loop.REGISTRY, "call", return_value=search) as invoke:
+            result = loop.TurnResult("test", question, "")
+            setup = loop._prepare_turn(question, result)
+        self.assertEqual({"query": question}, json.loads(invoke.call_args.args[1]))
+        self.assertEqual("", result.answer)
+        self.assertFalse(setup.done)
+        self.assertIn(question, setup.messages[1]["content"])
+        self.assertIn("候选原文", setup.messages[1]["content"])
+        self.assertEqual("excerpt", setup.evidence[0].claim_scope)
+
+    def test_failed_terminology_search_still_allows_model_tools(self):
+        with patch.object(loop.REGISTRY, "call", return_value=ToolResult(ok=False, error="unavailable")):
+            result = loop.TurnResult("test", "偷取词缀的珠宝", "")
+            setup = loop._prepare_turn(result.question, result)
+        self.assertFalse(setup.done)
+        self.assertEqual([], setup.evidence)
+        self.assertIn("尚未提供事实依据", setup.messages[1]["content"])
+
     def test_initial_retrieval_is_a_candidate_list_not_an_automatic_answer(self):
         search = ToolResult(ok=True, data={"sufficient": False}, citations=[{"title": "候选装备", "entity_id": "candidate", "text": "候选不是结论"}])
         for question in ("不是问猎首，法血有哪些词缀？", "5%基础暴击，增加100%，最终暴击率多少？", "词缀怎么偷取？"):
@@ -87,11 +110,12 @@ class QuestionPreparationTest(unittest.TestCase):
                 result = loop.TurnResult("test", question, "")
                 setup = loop._prepare_turn(question, result)
             self.assertFalse(setup.done)
-            self.assertEqual(0, invoke.call_count)
+            is_calculation = "暴击" in question
+            self.assertEqual(0 if is_calculation else 1, invoke.call_count)
             self.assertEqual(question, setup.question)
-            self.assertEqual([], setup.evidence)
+            self.assertEqual(0 if is_calculation else 1, len(setup.evidence))
             self.assertIn(question, setup.messages[1]["content"])
-            self.assertIn("尚未提供事实依据", setup.messages[1]["content"])
+            self.assertIn("尚未提供事实依据" if is_calculation else "已按原问题检索候选", setup.messages[1]["content"])
             self.assertIn("select_tools", [s["function"]["name"] for s in setup.tools])
 
     def test_tool_selection_is_per_turn_and_limited_to_allowed_tools(self):
@@ -116,6 +140,18 @@ class QuestionPreparationTest(unittest.TestCase):
         self.assertIn("5000", text); self.assertIn("99%", text); self.assertIn("90%", text)
         self.assertNotIn("25%", text)
         self.assertEqual("", conversation_context(conn, "追问", "chat", "bob"))
+
+    def test_followup_is_understood_with_history_before_search_rewriting(self):
+        with patch.object(loop, "conversation_context", return_value="上轮用户问猎首词缀"), \
+             patch.object(loop.dbmod, "get_conn"), \
+             patch.object(loop, "build_prompt_memory_context", return_value=SimpleNamespace(text="", count=0, truncated=False)), \
+             patch.object(loop.REGISTRY, "call") as invoke:
+            result = loop.TurnResult("test", "它怎么获得？", "")
+            setup = loop._prepare_turn(result.question, result, owner_id="alice", conversation_id="chat")
+        invoke.assert_not_called()
+        self.assertIn("上轮用户问猎首词缀", setup.messages[1]["content"])
+        self.assertIn("它怎么获得", setup.messages[1]["content"])
+        self.assertFalse(setup.done)
 
 
 class ModelLoopTest(unittest.TestCase):

@@ -1015,7 +1015,7 @@ class TestMetamodBlankOrchestratorRegression(unittest.TestCase):
         )
         conn = _populated_conn()
         try:
-            # KB 不充分时直接缺据，不应进入 LLM。
+            # 原句检索无依据时允许模型澄清，但不能进入被用户排除的矩阵工具。
             class NoBatchLLM:
                 def chat(self, *_args, **_kwargs):
                     from core.llm import LLMResponse
@@ -1030,7 +1030,7 @@ class TestMetamodBlankOrchestratorRegression(unittest.TestCase):
                 result = loop.run_turn(question, client=NoBatchLLM())
             self.assertTrue(result.evidence_gap)
             self.assertNotIn("precision_route", result.retrieval_meta)
-            self.assertEqual([call["tool"] for call in result.tool_calls], [])
+            self.assertEqual([call["tool"] for call in result.tool_calls], ["kb_search"])
 
             stack, _base = self._patches(conn)
             with stack:

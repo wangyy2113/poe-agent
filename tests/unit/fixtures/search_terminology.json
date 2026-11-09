@@ -1,0 +1,38 @@
+[
+  {
+    "chunk_id": "mod_ladder:Belts:FlaskChargeOnCrit#56b3fc425c2ede46",
+    "entity_id": "mod_ladder:Belts:FlaskChargeOnCrit",
+    "text": "# 腰带 · FlaskChargeOnCrit\n底材类别：腰带 ｜ 词缀组：FlaskChargeOnCrit ｜ 类型：前缀 ｜ 来源渠道：1 个\n标签：暴击\n\n本词缀组在该底材上共 1 条，来自 1 个来源：狩猎者。\n互斥规则：与本组（FlaskChargeOnCrit）有相同词缀组的其他词缀不能同时存在于一件装备上。\n\n## 狩猎者 · 前缀 · 1 条\n\n| T 级 | 词缀名 | 词缀文本 | 物品等级 | 生成权重 |\n| --- | --- | --- | --- | --- |\n| T1/1 | 狩猎者的 | 暴击时获得 1 充能 | 75 | 250（9.0909%） |\n\n置信度说明：\n- T 级按 POEDB 的算法推导——在同一来源类别与词缀组内，把物品等级去重后降序排名，物品等级最高者为 T1（算法已复刻并通过不变量校验）\n\n来源：POEDB → 腰带 · FlaskChargeOnCrit\nhttps://poedb.tw/cn/Belts#ModifiersCalc",
+    "metadata": "{\"title\":\"腰带 · FlaskChargeOnCrit\",\"category\":\"制作系统\",\"subcategory\":\"显式词缀\",\"source\":\"POEDB\",\"source_priority\":1,\"url\":\"https://poedb.tw/cn/Belts#ModifiersCalc\",\"league\":null,\"version\":null,\"language\":\"zh-CN\",\"tags\":[\"腰带\",\"前缀\",\"FlaskChargeOnCrit\",\"暴击\"],\"facets\":{\"item_class\":\"腰带\",\"item_class_page\":\"Belts\",\"mod_group\":\"FlaskChargeOnCrit\",\"gen\":\"前缀\",\"mod_sources\":\"狩猎者\",\"source_count\":\"1\",\"weight_available\":\"all\",\"tier_source\":\"derived\",\"ambiguous\":\"false\"},\"fetched_at\":\"2026-10-26T12:00:03+00:00\"}"
+  },
+  {
+    "chunk_id": "unique_item:Headhunter#0#456e5079b32c619a",
+    "entity_id": "unique_item:Headhunter",
+    "text": "# 猎首（Headhunter）\n类型：唯一装备 ｜ 底材：皮革腰带 ｜ 分类：其他\n\n**需求**：需求 等级 40\n\n**隐式词缀**\n- [隐式词缀] +(25-40) 最大生命\n\n**显式词缀**\n- [显式词缀] +(40-55) 力量\n- [显式词缀] +(40-55) 敏捷\n- [显式词缀] +(50-60) 最大生命\n- [显式词缀] 击中伤害对稀有怪物提高 (20-30)%\n- [显式词缀] 当你击败稀有怪物时，会获得该怪物属性修正 60 秒\n\n**附加说明**\n- [说明] ( 当你进入迷踪状态时, 你将不会被敌人所阻挡 )\n\n**获取途径**\n- 命运卡：疯医\n- 命运卡：劣魔\n- 命运卡：女之武神\n- 命运卡：无畏者\n- 命运卡：恶魔\n\n来源：POEDB → 猎首（Headhunter）\nhttps://poedb.tw/cn/Headhunter",
+    "metadata": "{\"title\":\"猎首（Headhunter）\",\"category\":\"装备\",\"subcategory\":\"唯一装备\",\"source\":\"POEDB\",\"source_priority\":1,\"url\":\"https://poedb.tw/cn/Headhunter\",\"league\":\"2026-08-04\",\"version\":null,\"language\":\"zh-CN\",\"tags\":[\"皮革腰带\",\"其他\"],\"facets\":{},\"fetched_at\":\"2026-08-04T09:00:57+00:00\"}"
+  },
+  {
+    "chunk_id": "unique_item:Inspired_Learning#0#15aa7614c202ecf8",
+    "entity_id": "unique_item:Inspired_Learning",
+    "text": "# 求知的热情（Inspired Learning）\n类型：唯一装备 ｜ 底材：赤红珠宝 ｜ 分类：其他\n\n**需求**：需求 等级 20\n\n**显式词缀**\n- [显式词缀] 若范围内配置了 4 个关键天赋点，当你击败稀有怪物时，你会获得该怪物的 1 属性修正 20 秒\n\n**获取途径**\n- 命运卡：兵法家\n- 命运卡：学院派\n\n来源：POEDB → 求知的热情（Inspired Learning）\nhttps://poedb.tw/cn/Inspired_Learning",
+    "metadata": "{\"title\":\"求知的热情（Inspired Learning）\",\"category\":\"装备\",\"subcategory\":\"唯一装备\",\"source\":\"POEDB\",\"source_priority\":1,\"url\":\"https://poedb.tw/cn/Inspired_Learning\",\"league\":\"2026-08-04\",\"version\":null,\"language\":\"zh-CN\",\"tags\":[\"赤红珠宝\",\"其他\"],\"facets\":{},\"fetched_at\":\"2026-08-04T09:00:57+00:00\"}"
+  },
+  {
+    "chunk_id": "unique_item:Replica_Headhunter#0#1496799ce8df344f",
+    "entity_id": "unique_item:Replica_Headhunter",
+    "text": "# 猎首【仿品】（Replica Headhunter）\n类型：唯一装备 ｜ 底材：皮革腰带 ｜ 分类：其他\n\n**需求**：需求 等级 40\n\n**隐式词缀**\n- [隐式词缀] +(25-40) 最大生命\n\n**显式词缀**\n- [显式词缀] +(40-55) 力量\n- [显式词缀] +(40-55) 敏捷\n- [显式词缀] +(50-60) 最大生命\n- [显式词缀] 对抗魔法怪物时，击中伤害提高 (20-30)%\n- [显式词缀] 有 20% 几率在你击杀一个魔法怪物时获得其词缀，持续 60 秒。\n\n来源：POEDB → 猎首【仿品】（Replica Headhunter）\nhttps://poedb.tw/cn/Replica_Headhunter",
+    "metadata": "{\"title\":\"猎首【仿品】（Replica Headhunter）\",\"category\":\"装备\",\"subcategory\":\"唯一装备\",\"source\":\"POEDB\",\"source_priority\":1,\"url\":\"https://poedb.tw/cn/Replica_Headhunter\",\"league\":\"2026-08-04\",\"version\":null,\"language\":\"zh-CN\",\"tags\":[\"皮革腰带\",\"其他\"],\"facets\":{},\"fetched_at\":\"2026-08-04T09:00:57+00:00\"}"
+  },
+  {
+    "chunk_id": "unique_item:The_Retch#0#028b2c5ac1e390fc",
+    "entity_id": "unique_item:The_Retch",
+    "text": "# 呕吐（The Retch）\n类型：唯一装备 ｜ 底材：素布腰带 ｜ 分类：其他\n\n**需求**：需求 等级 44\n\n**隐式词缀**\n- [隐式词缀] 全局物理伤害提高 (12-24)%\n\n**显式词缀**\n- [显式词缀] +(60-80) 最大生命\n- [显式词缀] +(30-40)% 冰霜抗性\n- [显式词缀] 物理攻击伤害的 0.4% 会转化为生命偷取\n- [显式词缀] 药剂效果的持续时间延长 60%\n- [显式词缀] 药剂持续期间，获得的充能数降低 30%\n- [显式词缀] 对敌人造成等同于 200% 生命偷取的混沌伤害\n- [显式词缀] 药剂持续期间，移动速度加快 15%\n\n**附加说明**\n- [说明] (吸取的生命会随时间逐渐回复。多个吸取效果可以同时发生, 但有一个上限)\n\n**获取途径**\n- 命运卡：冷淡\n\n来源：POEDB → 呕吐（The Retch）\nhttps://poedb.tw/cn/The_Retch",
+    "metadata": "{\"title\":\"呕吐（The Retch）\",\"category\":\"装备\",\"subcategory\":\"唯一装备\",\"source\":\"POEDB\",\"source_priority\":1,\"url\":\"https://poedb.tw/cn/The_Retch\",\"league\":\"2026-08-04\",\"version\":null,\"language\":\"zh-CN\",\"tags\":[\"素布腰带\",\"其他\"],\"facets\":{},\"fetched_at\":\"2026-08-04T09:00:57+00:00\"}"
+  },
+  {
+    "chunk_id": "unique_item:Wurms_Molt#0#8e7e863449d67ca9",
+    "entity_id": "unique_item:Wurms_Molt",
+    "text": "# 龙蜕之带（Wurm's Molt）\n类型：唯一装备 ｜ 底材：皮革腰带 ｜ 分类：其他\n\n**需求**：需求 等级 8\n\n**隐式词缀**\n- [隐式词缀] +(25-40) 最大生命\n\n**显式词缀**\n- [显式词缀] +(20-30) 力量\n- [显式词缀] +(20-30) 智慧\n- [显式词缀] +(20-30)% 冰霜抗性\n- [显式词缀] 物理攻击伤害的 2% 会转化为生命偷取\n- [显式词缀] 物理攻击伤害的 2% 转化为魔力偷取\n- [显式词缀] 生命偷取的每秒总恢复量提高 (500-1000)%\n- [显式词缀] 从魔力偷取中获得的每秒总恢复量提高 (500-1000)%\n\n**附加说明**\n- [说明] (吸取的魔力会随时间逐渐回复。多个吸取效果可以同时发生, 但有一个上限)\n- [说明] (吸取的生命会随时间逐渐回复。多个吸取效果可以同时发生, 但有一个上限)\n\n来源：POEDB → 龙蜕之带（Wurm's Molt）\nhttps://poedb.tw/cn/Wurms_Molt",
+    "metadata": "{\"title\":\"龙蜕之带（Wurm's Molt）\",\"category\":\"装备\",\"subcategory\":\"唯一装备\",\"source\":\"POEDB\",\"source_priority\":1,\"url\":\"https://poedb.tw/cn/Wurms_Molt\",\"league\":\"2026-08-04\",\"version\":null,\"language\":\"zh-CN\",\"tags\":[\"皮革腰带\",\"其他\"],\"facets\":{},\"fetched_at\":\"2026-08-04T09:00:57+00:00\"}"
+  }
+]

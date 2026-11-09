@@ -151,8 +151,8 @@ cases:
   - id: desc_steal_mods_belt
     query: 偷取词缀的腰带
     kind: description
-    expect_any_hit: true
-    note: 描述性·走词缀意图通道
+    expect_slug: Headhunter
+    note: 完整术语检索；不能把普通腰带词缀命中算正确
 
   - id: desc_spell_damage_staff
     query: 法术伤害提高 最大魔力 法杖

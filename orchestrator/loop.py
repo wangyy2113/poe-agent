@@ -28,6 +28,7 @@ from orchestrator.question import (
 from orchestrator import tool_selection
 from orchestrator import answer as answer_contract
 from orchestrator.excerpts import expand_quotes
+from retrieval.terminology import search_query
 from core.user_memory import build_prompt_memory_context
 from core.config import get_config
 from core.llm import LLMClient, LLMError, TurnBudget, get_llm_client
@@ -2961,16 +2962,15 @@ def _prepare_turn(
     precision = _precision_tool_route(question)
     if precision:
         result.retrieval_meta["precision_route"] = precision
-    evidence = []
-    setup = _TurnSetup(
-        question=question, evidence=evidence, precision_tool=precision,
-        tools=_tools_for_question(question),
-        needs_model_call=True,
-    )
+    tools = _tools_for_question(question)
+    calculators = [s["function"]["name"] for s in tools if s["function"]["name"].endswith("_calc")]
+    requirements = build_clarification(question)
     context = ""
+    has_history = False
     if owner_id:
         try:
             context = conversation_context(dbmod.get_conn(), question, conversation_id, owner_id)
+            has_history = bool(context)
             memory = build_prompt_memory_context(dbmod.get_conn(), owner_id=owner_id)
             context += "\n" + memory.text
             result.retrieval_meta["memory_count"] = memory.count
@@ -2978,15 +2978,33 @@ def _prepare_turn(
         except Exception as exc:  # noqa: BLE001
             result.retrieval_meta["memory_error"] = type(exc).__name__
             logger.warning("会话上下文读取失败：%s", type(exc).__name__)
+    evidence = []
+    normalized_query = search_query(question)
+    # Retrieve the original question before model rewriting can lose conditions.
+    # Candidates are evidence to inspect, never an automatic answer or refusal.
+    # Follow-ups need the model to resolve owned history before choosing a query.
+    if not precision and not calculators and not requirements and not has_history:
+        search = REGISTRY.call("kb_search", json.dumps({"query": question}, ensure_ascii=False))
+        result.tool_calls.append(_tool_record("kb_search", {"query": question}, search))
+        evidence = number_evidence(search.citations or [])
+        result.evidence = evidence
+        result.retrieval_meta["initial_search"] = search.data
+    setup = _TurnSetup(
+        question=question, evidence=evidence, precision_tool=precision,
+        tools=tools,
+        needs_model_call=True,
+    )
     retrieval_note = (
-        "先理解对象、动作、否定和全部条件。尚未提供事实依据，不能凭记忆作答。"
+        "先理解对象、动作、否定和全部条件。"
+        + ("已按原问题检索候选，请核对它们是否满足原问题，不能把搜索别名当事实。" if evidence else
+           "尚未提供事实依据，不能凭记忆作答。")
         + (f"本题须先使用精确工具{precision}，核对参数归属。" if precision else
            "直接调用适用的已开放工具；需要其他工具时用select_tools加载参数契约。")
     )
-    calculators = [s["function"]["name"] for s in setup.tools if s["function"]["name"].endswith("_calc")]
     if calculators:
         retrieval_note += "\n已开放计算器契约：" + "、".join(calculators) + "。计算器输出也是事实依据，可直接核对输入、公式和上限，无需先做全文检索。"
-    requirements = build_clarification(question)
+    if not precision and normalized_query != question:
+        retrieval_note += "\n检索术语归一后的原问题：" + normalized_query + "。此处只映射检索用语；事实、物品类型、触发条件和否定仍须按原问题与来源核对。"
     if requirements:
         retrieval_note += "\n方案所需输入指引（已给的信息不要重复询问）：" + requirements
     setup.messages = [
@@ -3064,8 +3082,8 @@ def _handle_tool_call(state: _ToolLoopState, result: TurnResult, tc: Any) -> dic
             raw, binding = answer_contract.compose(args, state.evidence, reports=reports)
             if binding.blocked:
                 raise ValueError("；".join(v.reason + "：" + v.text[:100] for v in binding.verdicts if not v.ok)[:1000]
-                                 + "。澄清请用ask；保留原问题的目标，补调规则或计算工具，不可删除结论只贴摘录。"
-                                 + " 可核对工具：" + (_preferred_tool_route(state.question) or "select_tools"))
+                                 + "。摘录证据的事实只用quote选择直接回答目标的原文/计算结论，不用text复述；"
+                                 + "缺资料用gap，缺输入用ask。仅当已有证据不能解答目标时补调工具。")
             result.raw_answer = raw
             result.binding = binding
             result.answer = binding.public_text

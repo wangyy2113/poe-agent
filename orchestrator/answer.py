@@ -11,8 +11,9 @@ SCHEMA = {
     "type": "function", "function": {
         "name": FINISH_TOOL,
         "description": (
-            "完成本轮回答。必须直接给出原问题的结论，不能删掉待解问题而只贴几段相关资料。"
-            "用quote选择工具给出的结论、条件和原文字段；需要补充解释时用text和citations，系统会绑定引用并校验。"
+            "完成本轮回答，覆盖原问题各个目标。"
+            "原文摘录证据只能用quote选择直接解答目标的字段或计算结果，不能用text改写。"
+            "不输出无关候选及其淘汰原因。只有未限定为原文摘录的证据才可用text和citations解释。"
             "澄清用ask，只填需要用户补充/确认的信息名称，不写游戏结论。缺口用text。不能把没查到改成不存在。"
             "整题缺乏资料时直接status=gap、blocks=[]，系统会给出缺据说明，无需编写解释或附无关资料。"
             "工具结果未覆盖的条件须明确说明，不能以简化结果冒充完整答案。"
@@ -25,7 +26,7 @@ SCHEMA = {
                                "ask": {"type": "string", "description": "需用户补充或确认的信息，例如当前赛季、职业与升华、等级、目标；仅用于clarification，不包含游戏事实解释。"},
                                "report": {"type": "string", "description": "可信工具报告ID（仅工具明确返回的report），与quote、text互斥"},
                                "quote": {"type": "string", "description": "完整原文段落ID，如Q1.2；与text二选一"},
-                               "text": {"type": "string", "description": "回答的一个段落；不手写引用标记"},
+                               "text": {"type": "string", "description": "缺据说明或有非摘录证据支持的解释；摘录事实使用quote，不手写引用标记"},
                                "citations": {"type": "array", "items": {"type": "string"},
                                              "description": "text依据的证据编号，如[E1,E2]；仅标题或澄清可为空"},
                            }, "additionalProperties": False}},

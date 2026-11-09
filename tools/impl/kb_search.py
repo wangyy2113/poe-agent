@@ -90,6 +90,8 @@ def kb_search(
     return ToolResult(
         ok=True,
         data={
+            "query": result.query,
+            "search_query": result.search_query,
             "sufficient": result.sufficient,
             "reason": result.reason,
             "missing_terms": result.missing_terms,

@@ -29,6 +29,7 @@ from dataclasses import dataclass, field, replace
 from retrieval import alias as alias_mod
 from retrieval.fts import Hit, absent_from_corpus, search_fts, term_coverage
 from retrieval.tokenize import query_content_words
+from retrieval.terminology import search_query
 
 #: 构成充分依据所需的最少命中词数（在无实体精确命中的情况下）。
 #: 单个词的共现不构成依据——一篇文档与查询只共用一个词，
@@ -111,6 +112,7 @@ class RetrievalResult:
     """检索结果。`sufficient` 为 False 时上层必须走缺据声明路径。"""
 
     query: str
+    search_query: str = ""
     hits: list[Hit] = field(default_factory=list)
     sufficient: bool = False
     #: 相对相关度最高分，**仅供排序参考，不作判据**
@@ -173,7 +175,8 @@ def retrieve(
     version: str | None = None,
     timeout_seconds: float | None = None,
 ) -> RetrievalResult:
-    result = RetrievalResult(query=query)
+    result = RetrievalResult(query=query, search_query=search_query(query))
+    query = result.search_query
     channels: dict[str, list[Hit]] = {}
     deadline = time.monotonic() + timeout_seconds if timeout_seconds is not None else None
     timed_out = False
@@ -192,7 +195,7 @@ def retrieve(
     q_terms = query_content_words(query)
 
     # ── 通道 1：实体精确匹配（最快最确定，放最前）──
-    entity_ids = alias_mod.lookup(conn, query)
+    entity_ids = alias_mod.lookup(conn, result.query)
     if entity_ids:
         alias_hits = [
             hit for hit in alias_mod.hits_for_entities(conn, entity_ids)
