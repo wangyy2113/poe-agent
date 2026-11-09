@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="248" viewBox="0 0 1280 248" fill="none" role="img" aria-labelledby="title desc">
+<title id="title">From question to verified answer</title>
+<desc id="desc">A question is retrieved against local sources, optionally resolved with deterministic tools, generated with DeepSeek, and checked sentence by sentence before delivery. Missing evidence is reported explicitly.</desc>
+<defs><linearGradient id="bg" x2="1280" y2="248" gradientUnits="userSpaceOnUse"><stop stop-color="#131A21"/><stop offset="1" stop-color="#10251F"/></linearGradient></defs>
+<rect width="1280" height="248" rx="14" fill="url(#bg)"/>
+<g font-family="Arial,Helvetica,sans-serif">
+<text x="35" y="37" fill="#D8BC85" font-size="11" letter-spacing="3">THE EVIDENCE PATH</text>
+<text x="1245" y="37" text-anchor="end" fill="#728D81" font-size="11">Rules in code. Sources in every answer.</text>
+<g stroke="#364C42"><path d="M241 116H262L255 111M262 116L255 121M487 116H508L501 111M508 116L501 121M733 116H754L747 111M754 116L747 121M979 116H1000L993 111M1000 116L993 121"/></g>
+<g fill="#111C20" stroke="#2D413A"><rect x="35" y="62" width="206" height="105" rx="8"/><rect x="281" y="62" width="206" height="105" rx="8"/><rect x="527" y="62" width="206" height="105" rx="8"/><rect x="773" y="62" width="206" height="105" rx="8"/></g>
+<rect x="1019" y="62" width="226" height="105" rx="8" fill="#17352B" stroke="#51816C"/>
+<g font-size="11" letter-spacing="2" fill="#BAA272"><text x="53" y="85">01 / INPUT</text><text x="299" y="85">02 / RETRIEVAL</text><text x="545" y="85">03 / TOOLS</text><text x="791" y="85">04 / MODEL</text><text x="1037" y="85">05 / GATE</text></g>
+<g font-size="22" fill="#E3E9DD"><text x="53" y="119">Ask</text><text x="299" y="119">Find sources</text><text x="545" y="119">Compute</text><text x="791" y="119">Compose</text><text x="1037" y="119">Verify → Deliver</text></g>
+<g font-size="12" fill="#8CA398"><text x="53" y="145">Question / item / build</text><text x="299" y="145">Entities + FTS5 + intent</text><text x="545" y="145">Explicit inputs, when needed</text><text x="791" y="145">One DeepSeek model</text><text x="1037" y="145">Sentence-level checks</text></g>
+<path d="M383 177V204H976" stroke="#A68A5D" stroke-opacity=".5" stroke-dasharray="4 6"/>
+<rect x="478" y="188" width="520" height="32" rx="16" fill="#24251E"/>
+<text x="738" y="208" text-anchor="middle" fill="#BDAD8B" font-size="12">Missing evidence stays unknown. Partial answers stay partial.</text>
+</g>
+</svg>

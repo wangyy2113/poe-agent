@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="540" viewBox="0 0 1280 540" fill="none" role="img" aria-labelledby="title desc">
+<title id="title">POE1-Agent — Every claim, a source.</title>
+<desc id="desc">An obsidian and gold field guide for Path of Exile. A teal constellation surrounds a geometric portal representing evidence, computation and verification.</desc>
+<defs>
+  <linearGradient id="bg" x1="0" y1="0" x2="1280" y2="540" gradientUnits="userSpaceOnUse"><stop stop-color="#141921"/><stop offset=".5" stop-color="#0D1319"/><stop offset="1" stop-color="#092522"/></linearGradient>
+  <linearGradient id="gold" x1="72" y1="190" x2="670" y2="270" gradientUnits="userSpaceOnUse"><stop stop-color="#F6EAD2"/><stop offset=".5" stop-color="#D7B87D"/><stop offset="1" stop-color="#A47740"/></linearGradient>
+  <linearGradient id="gem" x1="925" y1="168" x2="1030" y2="350" gradientUnits="userSpaceOnUse"><stop stop-color="#BCF9E5"/><stop offset=".45" stop-color="#52BC9F"/><stop offset="1" stop-color="#13534D"/></linearGradient>
+  <radialGradient id="halo"><stop stop-color="#50CBA6" stop-opacity=".19"/><stop offset="1" stop-color="#50CBA6" stop-opacity="0"/></radialGradient>
+  <pattern id="grid" width="48" height="48" patternUnits="userSpaceOnUse"><path d="M48 0H0V48" stroke="#AEC3BC" stroke-opacity=".04"/></pattern>
+</defs>
+<rect width="1280" height="540" rx="18" fill="url(#bg)"/>
+<rect width="1280" height="540" rx="18" fill="url(#grid)"/>
+<rect x="16.5" y="16.5" width="1247" height="507" rx="10" stroke="#D0B278" stroke-opacity=".18"/>
+<path d="M16 76V16H76M1204 16H1264V76M16 464V524H76M1204 524H1264V464" stroke="#D0B278" stroke-opacity=".55"/>
+<circle cx="982" cy="274" r="257" fill="url(#halo)"/>
+<g font-family="Arial,Helvetica,sans-serif">
+  <path d="M72 66L81 57L90 66L81 75Z" stroke="#D7B87D"/><path d="M81 61V71M76 66H86" stroke="#D7B87D"/>
+  <text x="105" y="71" fill="#D7B87D" font-size="13" letter-spacing="3.5">THE EXILE’S FIELD GUIDE</text>
+  <text x="72" y="155" fill="#88A299" font-size="12" letter-spacing="3">KNOWLEDGE. CALCULATION. CONVICTION.</text>
+  <text x="67" y="252" fill="url(#gold)" font-family="Georgia,'Times New Roman',serif" font-size="88" letter-spacing="-4">POE1-AGENT</text>
+  <text x="73" y="308" fill="#E4EBE6" font-size="28" letter-spacing=".3">Every claim, a source.</text>
+  <text x="73" y="343" fill="#859A95" font-size="16">Your evidence-first companion for Path of Exile 1.</text>
+  <g font-size="11" letter-spacing="1.5">
+    <rect x="73" y="390" width="130" height="32" rx="4" fill="#D4B47A" fill-opacity=".09" stroke="#D4B47A" stroke-opacity=".28"/><text x="93" y="410" fill="#DDC393">DEEPSEEK</text>
+    <rect x="213" y="390" width="155" height="32" rx="4" fill="#6FD2B4" fill-opacity=".06" stroke="#6FD2B4" stroke-opacity=".22"/><text x="232" y="410" fill="#91C9B8">LOCAL SQLITE</text>
+    <rect x="378" y="390" width="145" height="32" rx="4" stroke="#647B74" stroke-opacity=".35"/><text x="398" y="410" fill="#A3B7AF">WEB · API · MCP</text>
+  </g>
+  <path d="M73 465H570" stroke="#D0B278" stroke-opacity=".16"/>
+  <text x="73" y="493" fill="#647D73" font-size="10" letter-spacing="2.5">BUILT TO EXPLAIN. DESIGNED TO VERIFY.</text>
+</g>
+<!-- A hand-drawn atlas: connected evidence nodes, an open portal, and a verified core. -->
+<g transform="translate(978 270)">
+  <circle r="173" stroke="#87CCB7" stroke-opacity=".12"/>
+  <circle r="151" stroke="#B8A172" stroke-opacity=".3" stroke-dasharray="2 12"/>
+  <circle r="126" stroke="#78BCAA" stroke-opacity=".28"/>
+  <path d="M-39 -168A173 173 0 0 1 167 -44M39 168A173 173 0 0 1 -167 44" stroke="#C6B281" stroke-width="2"/>
+  <path d="M0 -199V-182M0 182V199M-199 0H-182M182 0H199" stroke="#AC9971"/>
+  <path d="M0 -126L109 -63V63L0 126L-109 63V-63Z" stroke="#79BCA6" stroke-opacity=".35"/>
+  <path d="M0 -126L109 63H-109ZM0 126L-109 -63H109Z" stroke="#70AD9E" stroke-opacity=".18"/>
+  <path d="M-164 -55L-213 -91H-246M108 -62L162 -106H199M102 66L165 126H209M-70 105L-123 168H-174" stroke="#A8C1AA" stroke-opacity=".5"/>
+  <path d="M-164 -55L-109 -63M-70 105L0 126" stroke="#D3B579" stroke-opacity=".5"/>
+  <g fill="#112822" stroke="#D3B579"><circle cx="-164" cy="-55" r="6"/><circle cx="108" cy="-62" r="6"/><circle cx="102" cy="66" r="6"/><circle cx="-70" cy="105" r="6"/></g>
+  <g fill="#D7BB82"><circle cx="0" cy="-173" r="3"/><circle cx="173" cy="0" r="3"/><circle cx="0" cy="173" r="3"/><circle cx="-173" cy="0" r="3"/></g>
+  <path d="M0 -91L58 -37L46 39L0 86L-46 39L-58 -37Z" fill="#173F36" stroke="#B5E8D5" stroke-opacity=".65"/>
+  <path d="M0 -91L30 -27L0 86L-30 -27Z" fill="url(#gem)"/>
+  <path d="M0 -91L58 -37L30 -27ZM30 -27L46 39L0 86Z" fill="#307564"/>
+  <path d="M-58 -37L-30 -27L0 86L-46 39Z" fill="#204B42"/>
+  <path d="M0 -91L30 -27L0 86M-58 -37L-30 -27L0 -91M-30 -27H30L58 -37" stroke="#BAECD8" stroke-opacity=".48"/>
+  <path d="M-10 -7L-2 1L14 -15" stroke="#E9FFF5" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<g fill="#89AFA0" font-family="Arial,Helvetica,sans-serif" font-size="10" letter-spacing="2">
+  <text x="714" y="164">SOURCES</text><text x="1151" y="153">FACTS</text>
+  <text x="1146" y="417">PROOF</text><text x="763" y="461">TOOLS</text>
+</g>
+<g fill="#97BDAC" opacity=".5"><circle cx="697" cy="305" r="1.5"/><circle cx="1106" cy="70" r="1.5"/><circle cx="1217" cy="293" r="1.5"/><circle cx="772" cy="78" r="1.5"/><circle cx="854" cy="483" r="1.5"/></g>
+</svg>
