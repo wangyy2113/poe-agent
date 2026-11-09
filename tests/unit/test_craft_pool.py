@@ -606,7 +606,7 @@ class TestAffixPoolToolBindingAndRoute(unittest.TestCase):
         with patch("orchestrator.loop._prepare_tools", return_value=schemas):
             self.assertEqual(
                 [s["function"]["name"] for s in loop._tools_for_question("最大生命是什么？")],
-                ["kb_search"],
+                ["kb_search", "entity_lookup", "finish_answer", "select_tools"],
             )
             self.assertEqual(
                 [s["function"]["name"] for s in loop._tools_for_question(QUESTION)],

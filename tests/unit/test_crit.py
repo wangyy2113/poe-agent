@@ -304,22 +304,5 @@ class CritRouteTest(unittest.TestCase):
         self.assertEqual("resistance_calc", self.route("抗性上限是多少"))
 
 
-class CritArgsTest(unittest.TestCase):
-    def args(self, question: str):  # noqa: ANN201
-        from orchestrator.loop import _crit_args
-
-        return _crit_args(question)
-
-    def test_把暴击加成的值从暴击率候选里剔掉(self) -> None:
-        """「350% 暴击伤害」里的 350 也匹配裸的「暴击」，不剔就会抽到两个值。"""
-        self.assertEqual(
-            {"multi_pct": 350.0, "base_chance": 40.0},
-            self.args("我 40% 暴击率 350% 暴击伤害，平均伤害提升多少"),
-        )
-
-    def test_没有数字时讲规则(self) -> None:
-        self.assertEqual({}, self.args("暴击率上限是多少"))
-
-
 if __name__ == "__main__":
     unittest.main()

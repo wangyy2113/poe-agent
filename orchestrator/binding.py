@@ -499,7 +499,13 @@ def render_evidence_block(evidence: list[Evidence]) -> str:
         if e.claim_scope == "calculation" or e.channel == "derived":
             tags.append("确定性计算器输出；数值派生结论必须逐值匹配本证据")
         tag = f"（{'；'.join(tags)}）" if tags else ""
-        parts.append(f"[{e.label}] 来源：{e.source} → {e.title}{tag}\n{e.text}")
+        if e.claim_scope == "excerpt":
+            from orchestrator.excerpts import source_quotes
+            blocks = source_quotes([e])
+            content = "\n".join(f"[[{key}]] {p.heading}\n{p.text}" for key, p in blocks.items())
+        else:
+            content = e.text
+        parts.append(f"[{e.label}] 来源：{e.source} → {e.title}{tag}\n{content}")
     return "\n\n".join(parts)
 
 
@@ -1647,7 +1653,8 @@ def classify(
     has_hedge = any(w in s for w in _HEDGE_WORDS)
     # 缺据声明：断言的是信息缺失，无法也不该绑定证据。
     # 但必须同时不含模糊限定语——否则「证据里没写，一般来说是 100」会整句蒙过去。
-    if _DISCLOSURE_RE.search(_EMPHASIS_RE.sub("", s)) and not has_hedge:
+    asserts_absence = re.search(r"(?:物品|装备|机制|词缀|技能)不存在|查无此物", s)
+    if _DISCLOSURE_RE.search(_EMPHASIS_RE.sub("", s)) and not has_hedge and not asserts_absence:
         return "narrative"
     # 面向用户的操作指引。要求不含数字：带数字的是建议或事实，不是指引。
     if _META_INSTRUCTION_RE.search(s) and not has_hedge and not _NUM_RE.search(s):

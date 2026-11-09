@@ -25,66 +25,6 @@ _SOURCES = {"精华", "工艺工作台", "隐匿"}
 _OTHER = {"力量", "敏捷", "火焰伤害", "生命偷取", "力量和敏捷", "最大生命"}
 
 
-class SimpleEntityCostTest(unittest.TestCase):
-    def test_single_entity_definition_uses_precise_route_and_no_more_schemas(self) -> None:
-        question = "猎首是什么？请用中文回答并附来源。"
-        with patch("retrieval.alias.lookup", return_value=["unique_item:Headhunter"]), patch.object(
-            loop.dbmod, "get_conn", return_value=object()
-        ):
-            self.assertEqual("entity_lookup", loop._preferred_tool_route(question))
-            self.assertEqual("entity_lookup", loop._preferred_tool_route(
-                "猎首（Headhunter）有哪些词缀？"
-            ))
-        result = ToolResult(ok=True, citations=[{"url": "https://poedb.tw/cn/Headhunter"}])
-        self.assertTrue(loop._can_finish_from_entity(question, "entity_lookup", result))
-        self.assertTrue(loop._can_finish_from_entity(
-            "猎首（Headhunter）有哪些词缀？", "entity_lookup", result
-        ))
-        self.assertFalse(loop._can_finish_from_entity(
-            "猎首是什么，和仿品有何区别？", "entity_lookup", result
-        ))
-        self.assertFalse(loop._can_finish_from_entity(
-            "猎首和仿品是什么？", "entity_lookup", result
-        ))
-        self.assertFalse(loop._can_finish_from_entity(
-            question, "entity_lookup", ToolResult(ok=True, citations=[])
-        ))
-
-    def test_preparation_limits_simple_answer_to_exact_entity_evidence(self) -> None:
-        question = "猎首是什么？请用中文回答并附来源。"
-        original = {
-            "chunk_id": "unique_item:Headhunter:0", "entity_id": "unique_item:Headhunter",
-            "title": "猎首", "url": "https://poedb.tw/cn/Headhunter",
-            "source": "POEDB", "source_priority": 1, "can_support_facts": True,
-            "text": "猎首是一件唯一装备，需求等级 40。",
-        }
-        replica = {**original, "chunk_id": "unique_item:Replica:0",
-                   "entity_id": "unique_item:Replica", "title": "猎首【仿品】"}
-        search = ToolResult(
-            ok=True, data={"sufficient": True}, citations=[original, replica],
-            meta={"channels": ["alias", "fts"]},
-        )
-        exact = ToolResult(ok=True, data={"found": True}, citations=[original])
-
-        def call(name: str, _args: str) -> ToolResult:
-            return search if name == "kb_search" else exact
-
-        result = loop.TurnResult(trace_id="test", question=question, answer="")
-        with patch("retrieval.alias.lookup", return_value=["unique_item:Headhunter"]), patch.object(
-            loop.dbmod, "get_conn", return_value=object()
-        ), patch.object(loop.REGISTRY, "call", side_effect=call), patch.object(
-            loop, "_apply_dimension_gate", return_value=({"sufficient": True}, False)
-        ), patch.object(loop, "_tools_for_question", return_value=[{"function": {"name": "x"}}]), patch.object(
-            loop, "render_entity_answer", return_value=""
-        ):
-            setup = loop._prepare_turn(question, result)
-        self.assertEqual([], setup.tools)
-        self.assertEqual(1, len(result.evidence))
-        self.assertEqual("猎首", result.evidence[0].title)
-        self.assertEqual("exact_single_entity", result.retrieval_meta["evidence_policy"])
-        self.assertIn("只返回 JSON 数组", setup.messages[0]["content"])
-
-
 def _scan(text: str) -> list[str]:
     """极大匹配：长词优先，被更长词包含的短词丢弃（与真实实现同一语义）。"""
     found = sorted(_CLASSES | _GEN | _SOURCES | _OTHER, key=len, reverse=True)
@@ -97,62 +37,6 @@ def _scan(text: str) -> list[str]:
 
 def _kind(kind: str) -> set[str]:
     return {"item_class": _CLASSES, "gen": _GEN, "mod_source": _SOURCES}.get(kind, set())
-
-
-class ModTiersArgsTest(unittest.TestCase):
-    """参数抽取：抽不出唯一解就必须返回 None，交回模型。"""
-
-    def setUp(self) -> None:
-        patcher = patch.dict(
-            "sys.modules",
-            {"retrieval.vocab": _FakeVocab()},  # type: ignore[dict-item]
-        )
-        patcher.start()
-        self.addCleanup(patcher.stop)
-
-    def test_extracts_class_and_mod_query(self) -> None:
-        self.assertEqual(
-            {"item_class": "腰带", "mod_query": "力量"},
-            loop._mod_tiers_args("腰带上的力量词缀一共有几档，每档要求什么物品等级"),
-        )
-
-    def test_single_char_item_class(self) -> None:
-        """单字类别「弓」必须认出来——jieba 会把「弓上」粘成一个词，
-        这正是领域词表存在的理由。"""
-        self.assertEqual(
-            {"item_class": "弓", "mod_query": "火焰伤害"},
-            loop._mod_tiers_args("弓上的火焰伤害前缀有哪些等级"),
-        )
-
-    def test_gen_and_source_labels_are_not_the_mod_query(self) -> None:
-        """「前缀」「精华」是限定词不是词缀内容，不能当查询串。"""
-        got = loop._mod_tiers_args("腰带上精华来源的最大生命后缀有几档")
-        self.assertEqual({"item_class": "腰带", "mod_query": "最大生命"}, got)
-
-    def test_no_item_class_gives_up(self) -> None:
-        self.assertIsNone(loop._mod_tiers_args("这条词缀有几档"))
-
-    def test_two_item_classes_give_up(self) -> None:
-        """两个类别时不猜：猜错了得到的是另一个底材的档位，而那种错在答案里看不出来。"""
-        self.assertIsNone(loop._mod_tiers_args("腰带和项链上的力量词缀分别有几档"))
-
-    def test_two_mod_candidates_give_up(self) -> None:
-        self.assertIsNone(loop._mod_tiers_args("腰带上的力量与敏捷词缀各有几档"))
-
-    def test_compound_mod_wins_over_its_parts(self) -> None:
-        """极大匹配偏向「库里真实存在的最长词」。
-
-        `+X 力量和敏捷` 是真词缀（实测 221 行，腰带上 6 档），所以
-        「力量和敏捷词缀有几档」抽成一个复合词缀是对的，不是把两条词缀粘在了一起。
-        """
-        self.assertEqual(
-            {"item_class": "腰带", "mod_query": "力量和敏捷"},
-            loop._mod_tiers_args("腰带上的力量和敏捷词缀有几档"),
-        )
-
-    def test_vocab_unavailable_gives_up(self) -> None:
-        with patch.dict("sys.modules", {"retrieval.vocab": None}):
-            self.assertIsNone(loop._mod_tiers_args("腰带上的力量词缀有几档"))
 
 
 class _FakeVocab:
@@ -274,18 +158,6 @@ class PreferredRouteTest(unittest.TestCase):
         self.assertTrue(args["item_text"].startswith("物品类别: 项链"))
         self.assertTrue(args["item_text"].endswith("+107 最大生命"))
 
-    def test_price_trend_routes_before_current_price(self) -> None:
-        cases = {
-            "猎首过去7天价格趋势": 168,
-            "神圣石最近24小时涨跌": 24,
-            "The Apothecary 过去一个月行情走势": 720,
-        }
-        for question, hours in cases.items():
-            with self.subTest(question=question):
-                self.assertEqual(
-                    "economy_price_trend", loop._preferred_tool_route(question)
-                )
-                self.assertEqual(hours, loop._economy_trend_args(question)["window_hours"])
 
     def test_crafting_cost_is_not_claimed_by_snapshot_lookup(self) -> None:
         self.assertNotEqual(

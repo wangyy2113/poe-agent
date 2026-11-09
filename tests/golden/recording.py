@@ -102,7 +102,7 @@ class Recording:
     raw_answer: str
     evidence: list[Evidence] = field(default_factory=list)
     evidence_fingerprint: str = ""
-    #: 缺据路径（不经模型）也录：它同样要回归，且 tokens 必须为空
+    #: Record gaps as well as answers; only the early POE2 boundary uses no model.
     evidence_gap: bool = False
     #: 是否走的是 **POE1/POE2 越界**声明（`orchestrator.loop.poe2_marker` 命中）。
     #: 与缺据声明分开记：两者的契约不同——越界**不能**说「查不到」，
@@ -122,6 +122,7 @@ class Recording:
     #: 按 `binding.text` 判就永远缺失。答案内容类契约一律按这一版判。
     final_answer: str = ""
     answer_mode: str = ""
+    answer_payload: dict[str, Any] = field(default_factory=dict)
     model: str = ""
     tokens: dict[str, int] = field(default_factory=dict)
     tool_calls: list[str] = field(default_factory=list)
@@ -147,6 +148,7 @@ class Recording:
             "gap_answer": self.gap_answer,
             "final_answer": self.final_answer,
             "answer_mode": self.answer_mode,
+            "answer_payload": self.answer_payload,
             "blocked_claims": self.blocked_claims,
             "elapsed_ms": self.elapsed_ms,
             "evidence_fingerprint": self.evidence_fingerprint,
@@ -174,6 +176,7 @@ class Recording:
             gap_answer=str(d.get("gap_answer") or ""),
             final_answer=str(d.get("final_answer") or ""),
             answer_mode=str(d.get("answer_mode") or ""),
+            answer_payload=dict(d.get("answer_payload") or {}),
             model=str(d.get("model") or ""),
             tokens=dict(d.get("tokens") or {}),
             tool_calls=list(d.get("tool_calls") or []),

@@ -324,48 +324,23 @@ class ClusterRouteTest(unittest.TestCase):
 
         self.assertNotEqual("cluster_jewel_info", _preferred_tool_route("珠宝上有哪些词缀"))
 
-    def test_点数缺口由代码直答且不调用模型(self) -> None:
+    def test_point_cost_gap_is_left_for_model_to_explain(self):
         from orchestrator import loop
         from tools.registry import ToolResult
-
+        from tools.impl.cluster import cluster_jewel_info
         question = "星团珠宝上的天赋要花几个天赋点"
         conn = _tool_conn()
-        real_cluster = cluster_jewel_info
-
-        def call(name, args):
-            if name == "kb_search":
-                return ToolResult(
-                    ok=True, data={"sufficient": False, "reason": "BM25 未覆盖", "missing_terms": []},
-                    meta={"channels": ["fts"], "degraded": False},
-                )
-            self.assertEqual("cluster_jewel_info", name)
-            return real_cluster(json.loads(args)["query"])
-
-        class NoModel:
-            def chat(self, *_args, **_kwargs):
-                raise AssertionError("点数缺口不应调用 LLM")
-
         try:
-            with (
-                patch("tools.impl.cluster.dbmod.get_conn", return_value=conn),
-                patch.object(loop.REGISTRY, "call", side_effect=call),
-                patch.object(loop, "_apply_dimension_gate", side_effect=lambda _q, data, **_kw: (data, False)),
-                patch.object(loop, "_persist"),
-            ):
-                result = loop.run_turn(question, client=NoModel())
-                events = list(loop.stream_turn(question, client=NoModel()))
+            with patch("tools.impl.cluster.dbmod.get_conn", return_value=conn):
+                result = cluster_jewel_info(query=question)
+            self.assertIn("未包含逐节点天赋点消耗", result.data["answer"])
+            with patch.object(loop.REGISTRY, "call", return_value=ToolResult(ok=True, data={"sufficient": False})), patch.object(loop, "_apply_dimension_gate", side_effect=lambda _q, data, **_kw: (data, False)):
+                setup = loop._prepare_turn(question, loop.TurnResult("test", question, ""))
+            self.assertTrue(setup.needs_model_call)
+            self.assertFalse(setup.done)
+            self.assertEqual(["kb_search", "entity_lookup", "finish_answer", "select_tools"], [s["function"]["name"] for s in setup.tools])
         finally:
             conn.close()
-        self.assertIn("未包含逐节点天赋点消耗", result.answer)
-        self.assertNotIn("基础生成权重", result.answer)
-        self.assertIn("[[E1]]", result.answer)
-        self.assertEqual(["kb_search", "cluster_jewel_info"], [
-            item["tool"] for item in result.tool_calls
-        ])
-        self.assertEqual(
-            result.answer,
-            "".join(event["text"] for event in events if event["type"] == "sentence"),
-        )
 
 
 if __name__ == "__main__":

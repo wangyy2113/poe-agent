@@ -88,3 +88,28 @@ def render_selection(raw: str, items: list[Passage]) -> tuple[str, list[str]]:
         if p.evidence.label not in labels:
             labels.append(p.evidence.label)
     return "\n\n".join(parts), labels
+
+
+def source_quotes(evidence: list[Evidence]) -> dict[str, Passage]:
+    """Stable source block IDs; appending evidence never changes earlier IDs."""
+    return {
+        f"Q{item.label[1:]}.{index}": passage
+        for item in evidence if item.claim_scope == "excerpt"
+        for index, passage in enumerate(passages([item]), 1)
+    }
+
+
+def expand_quotes(raw: str, evidence: list[Evidence]) -> str:
+    """Restore selected whole source blocks before the existing binding gate."""
+    import re
+
+    quotes = source_quotes(evidence)
+
+    def replace(match: re.Match) -> str:
+        key = match.group(1)
+        if key not in quotes:
+            return "（所选资料段落不存在，无法核实。）"
+        passage = quotes[key]
+        return f"\n\n{passage.text}[[{passage.evidence.label}]]\n\n"
+
+    return re.sub(r"\[\[(Q\d+\.\d+)\]\]", replace, raw)

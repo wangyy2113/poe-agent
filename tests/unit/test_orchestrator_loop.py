@@ -443,7 +443,7 @@ class TestPrecisionRoute(unittest.TestCase):
         with self._patches(registry_call):
             result = loop.run_turn(BENCH_QUESTION, client=client)
 
-        self.assertEqual(calls, ["kb_search", "bench_recipe_catalog"])
+        self.assertEqual(calls, ["bench_recipe_catalog"])
         self.assertFalse(result.evidence_gap)
         self.assertEqual(result.retrieval_meta["precision_route"], "bench_recipe_catalog")
         self.assertEqual([e.chunk_id for e in result.evidence], ["bench_recipe:bench:test"])
@@ -573,7 +573,7 @@ class TestPrecisionRoute(unittest.TestCase):
         with self._patches(registry_call):
             result = loop.run_turn(BENCH_QUESTION, client=client)
 
-        self.assertEqual(calls, ["kb_search"])
+        self.assertEqual(calls, [])
         self.assertTrue(result.evidence_gap)
         self.assertIn("不陈述工艺台目录事实", result.answer)
         self.assertNotIn("不属于问题", result.answer)
@@ -594,7 +594,7 @@ class TestPrecisionRoute(unittest.TestCase):
         with self._patches(registry_call):
             result = loop.run_turn(QUESTION, client=client)
 
-        self.assertEqual(calls, ["kb_search", "check_mod_combination"])
+        self.assertEqual(calls, ["check_mod_combination"])
         self.assertFalse(result.evidence_gap)
         self.assertEqual(result.retrieval_meta["precision_route"], "check_mod_combination")
         self.assertEqual([e.chunk_id for e in result.evidence], ["craft_solver:Amulets:1"])
@@ -681,7 +681,7 @@ class TestPrecisionRoute(unittest.TestCase):
         with self._patches(registry_call):
             result = loop.run_turn(QUESTION, client=client)
 
-        self.assertEqual(calls, ["kb_search"])
+        self.assertEqual(calls, [])
         self.assertTrue(result.evidence_gap)
         self.assertIn("不作组合判断", result.answer)
         self.assertFalse(result.tool_calls[-1]["ok"])
@@ -780,7 +780,7 @@ class TestPrecisionRoute(unittest.TestCase):
         with self._patches(registry_call):
             events = list(loop.stream_turn(QUESTION, client=client))
 
-        self.assertEqual(calls, ["kb_search"])
+        self.assertEqual(calls, [])
         self.assertFalse(
             any(event["type"] in {"sentence", "blocked", "citations"} for event in events)
         )

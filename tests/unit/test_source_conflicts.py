@@ -366,8 +366,7 @@ class ConflictToolAndApiTest(unittest.TestCase):
 
     def test_chat_conflict_tools_are_code_invoked_and_direct(self) -> None:
         for name in ("source_conflict_lookup", "source_conflict_summary"):
-            self.assertIn(name, loop._CODE_INVOKED_TOOLS)
-            self.assertIn(name, loop._DETERMINISTIC_DIRECT_TOOLS)
+            self.assertIn(name, loop.ALLOWED_TOOLS)
             self.assertNotIn(name, loop._TOOLS_WITHOUT_CITATIONS)
 
     def test_tool_rejects_cursor_reused_with_other_filter(self) -> None:

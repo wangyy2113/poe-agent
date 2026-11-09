@@ -293,6 +293,13 @@ class MitigationToolTest(MitigationTestCase):
             self.assertIn(section, text)
         self.assertIn("结算顺序", text)
 
+    def test_压制结果区分几率与减伤比例(self) -> None:
+        result = self.tool(suppression_chance=100)
+        text = result.citations[0]["text"]
+        self.assertIn("压制几率 100%", text)
+        self.assertIn("每次触发减 40%", text)
+        self.assertIn("不等于免疫", text)
+
     def test_只给最大格挡加成也答上限本身(self) -> None:
         result = self.tool(extra_max_block=5)
         self.assertEqual(80, result.data["block"]["max_block"])
@@ -374,63 +381,6 @@ class MitigationRouteTest(unittest.TestCase):
 
     def test_没有专指结算的问法不抢(self) -> None:
         self.assertEqual("", self.route("哪些底材护甲最高"))
-
-
-class CodeInvokedArgsTest(unittest.TestCase):
-    """代码抽参数：抽得准就抽，抽不准就整体交回模型。
-
-    为什么计算器必须由代码调用（第二十一轮实测）：schema 裁剪只能让模型
-    「只有这一个工具可调」，拦不住它**一个都不调**——5 条新录制里 3 条如此，
-    其中一条还「碰巧」拒答对了，但理由是「工具没返回证据」而不是
-    工具想说的「你没给这一击的伤害」。契约过了、机制是坏的。
-    """
-
-    def args(self, question: str):  # noqa: ANN201
-        from orchestrator.loop import _mitigation_args
-
-        return _mitigation_args(question)
-
-    def test_没有数字就是讲规则不需要参数(self) -> None:
-        for question in ("格挡上限是多少", "护甲有什么用", "法术压制触发时减多少伤害"):
-            with self.subTest(question=question):
-                self.assertEqual({}, self.args(question))
-
-    def test_两种语序都认(self) -> None:
-        self.assertEqual({"armour": 10000.0}, self.args("我有 10000 护甲，能减多少伤害"))
-        self.assertEqual({"suppression_chance": 100.0}, self.args("法术压制 100% 减多少"))
-
-    def test_护甲与入射伤害一起抽(self) -> None:
-        self.assertEqual(
-            {"armour": 10000.0, "hit_damage": 1000.0},
-            self.args("10000 护甲面对一次 1000 的物理打击能减多少伤害"),
-        )
-
-    def test_闪避与怪物等级一起抽(self) -> None:
-        self.assertEqual(
-            {"evasion": 10000.0, "monster_level": 85},
-            self.args("我有 10000 闪避，85 级怪物打我能躲开多少"),
-        )
-
-    def test_元素伤害不当成护甲的入射伤害(self) -> None:
-        """护甲默认只减物理。把「5000 火焰伤害」当入射伤害算出一个物理减伤，
-        是一个带着推导表的错数字——宁可让工具说缺参数。"""
-        self.assertEqual({"armour": 10000.0}, self.args("10000 护甲对 5000 火焰伤害减多少"))
-
-    def test_同一槽位两个值就整体放弃(self) -> None:
-        self.assertIsNone(self.args("护甲 10000 和护甲 20000 差多少"))
-
-    def test_抗性带数字时不代码调用(self) -> None:
-        """抗性有九个输入项，从中文里判断某个数属于哪一项代码做不可靠。"""
-        from orchestrator.loop import _resistance_args
-
-        self.assertEqual({}, _resistance_args("抗性上限是多少"))
-        self.assertIsNone(_resistance_args("我火抗 120 是不是浪费了"))
-
-    def test_两个计算器都在代码调用表里(self) -> None:
-        from orchestrator.loop import _CODE_INVOKED_TOOLS
-
-        self.assertIn("mitigation_calc", _CODE_INVOKED_TOOLS)
-        self.assertIn("resistance_calc", _CODE_INVOKED_TOOLS)
 
 
 class MitigationGateTest(unittest.TestCase):

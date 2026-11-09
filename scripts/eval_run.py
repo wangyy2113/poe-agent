@@ -163,17 +163,8 @@ def run_case(conn, case: Case, params: dict) -> CaseOutcome:
     r = retrieve(conn, case.query, **params)
     top = r.hits[0] if r.hits else None
 
-    # 与线上**同一个函数**：`orchestrator/loop._apply_dimension_gate`。
-    # 评测必须量到线上真正生效的那条路径——各测一半会让指标与线上行为分叉。
-    #
-    # 这句话先前是**假的**（第四十七轮 review 抓到）：那个函数当时是死代码、
-    # 线上内联了另一份，而这里又自己调 `dimension_gap` 并且**外面套了
-    # `if sufficient:`**——也就是停在第十八轮修复之前的语义（线上从那轮起
-    # 无论充分与否都问覆盖层）。三份实现、两种行为，而注释声称是一份。
-    #
-    # 别名精确命中的实体也要一起传：领域识别有两条通道（意图词 + 点名了库里的实体），
-    # 少传这一个参数，凡是靠专名识别领域的用例都会在评测里显示为漏出，
-    # 而线上其实拦住了（2026-08-19 实测三条宝石用例就是这么假报的）。
+    # Legacy lexical retrieval benchmark. Runtime question understanding chooses
+    # tools before retrieval; use verify_answer_quality.py for end-to-end quality.
     gate_data, gated = _apply_dimension_gate(
         case.query,
         {"sufficient": r.sufficient, "reason": r.reason},
@@ -439,6 +430,7 @@ def record_case(case: Case) -> Recording:
         gap_answer=r.answer if r.evidence_gap else "",
         final_answer=r.answer,
         answer_mode=str(r.retrieval_meta.get("answer_mode") or ""),
+        answer_payload=dict(r.retrieval_meta.get("answer_payload") or {}),
         model=r.model,
         tokens=dict(r.tokens),
         # 键是 `tool` 不是 `name`（见 `orchestrator.loop._tool_record`）。
@@ -468,7 +460,16 @@ def replay_case(conn, case: Case, rec: Recording, params: dict) -> GateOutcome:
         except StaleRecording as exc:
             out.stale = str(exc)
 
-    if rec.evidence_gap:
+    if rec.answer_mode == "grounded_blocks":
+        from orchestrator.answer import compose
+        try:
+            raw, out.binding = compose(rec.answer_payload.get("arguments"), rec.evidence,
+                                       reports=rec.answer_payload.get("reports", {}))
+            if raw != rec.raw_answer or not rec.final_answer.startswith(out.binding.public_text):
+                out.gap_contract.append("结构化回答无法从录制证据重建")
+        except (TypeError, ValueError) as exc:
+            out.gap_contract.append(f"结构化回答契约无效：{exc}")
+    elif rec.evidence_gap:
         # 两条不作答路径的契约**不同**，分开查。混在一起会逼着越界声明去说「查不到」，
         # 而项目自己的规定是那句话不能说——它会让用户以为游戏里没这东西。
         if rec.tokens.get("total") and rec.answer_mode != "source_selection":
@@ -580,7 +581,7 @@ def _strip_thousands(text: str) -> str:
 
 def summarize_gate(outs: list[GateOutcome]) -> dict:
     generated = [o for o in outs if not o.rec.evidence_gap]
-    streamed = [o for o in generated if o.rec.raw_answer and o.rec.answer_mode != "source_selection"]
+    streamed = [o for o in generated if o.rec.raw_answer and o.rec.answer_mode not in {"source_selection", "grounded_blocks"}]
     gaps = [o for o in outs if o.rec.evidence_gap]
     factual = [v for o in generated for v in o.factual]
     blocked = [v for o in generated for v in o.blocked]

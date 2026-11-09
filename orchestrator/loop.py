@@ -1,14 +1,6 @@
-"""Orchestrator 主循环（任务 3.3）。
-
-单轮流程：
-
-    强制检索 → 依据是否充分？
-      不充分 → 由代码生成缺据声明，**不进入生成**
-      充分   → 编号证据 → LLM（可继续调工具）→ 出口绑定校验 → 装配引用
-
-两个「由代码而非模型决定」的地方是这套设计的要点：
-  1. 依据充分性判定在检索侧，不充分就根本不给模型机会编答案（需求 1.3、3.10）。
-  2. 出口绑定校验在生成之后，模型不听话就拦截（需求 1.7、15.2）。
+"""Understand the full question, choose tools and preserve conditions,
+then validate the complete answer before emitting it. Batch and streaming share
+preparation, tool execution, answer composition and evidence checks.
 """
 
 from __future__ import annotations
@@ -28,14 +20,14 @@ from agents.knowledge import (
     ALLOWED_TOOLS,
     EVIDENCE_TEMPLATE,
     build_system_prompt,
-    render_gap,
 )
 from core import db as dbmod
 from orchestrator.question import (
-    without_style, entity_question, resolve_followup, build_clarification, unknown_named_item,
+    without_style, entity_question, conversation_context, build_clarification,
 )
-from orchestrator.entity_answer import render_entity_answer
-from orchestrator.excerpts import Passage, passages, selection_messages, render_selection
+from orchestrator import tool_selection
+from orchestrator import answer as answer_contract
+from orchestrator.excerpts import expand_quotes
 from core.user_memory import build_prompt_memory_context
 from core.config import get_config
 from core.llm import LLMClient, LLMError, TurnBudget, get_llm_client
@@ -66,14 +58,14 @@ class TurnResult:
     #: **绝不外发。** `api/chat.py` 的 `ChatResponse` 不含这个字段，也不要加进去——
     #: 它里面正是可能无据的断言。与 `reasoning_content` 同等对待。
     raw_answer: str = ""
-    #: 依据不足而未进入生成
+    #: 本轮缺据、越界或生成未完成
     evidence_gap: bool = False
     citations: list[cit.RenderedCitation] = field(default_factory=list)
     evidence: list[Evidence] = field(default_factory=list)
     binding: BindingResult | None = None
     tool_calls: list[dict[str, Any]] = field(default_factory=list)
     retrieval_meta: dict[str, Any] = field(default_factory=dict)
-    #: 实际使用的模型。故障转移会切模型，不记下来排查时会误判推理 token 行为。
+    #: 实际使用的固定模型。凭证故障转移不切换模型。
     model: str = ""
     tokens: dict[str, int] = field(default_factory=dict)
     elapsed_ms: int = 0
@@ -107,12 +99,16 @@ def _prepare_tools() -> list[dict[str, Any]]:
 
 
 def _tools_for_question(question: str) -> list[dict[str, Any]]:
-    """按本轮精确来源授权裁剪 schema；执行层仍会做第二次检查。"""
-    selected = _precision_tool_route(question) or _preferred_tool_route(question)
-    names = {selected} if selected else {"kb_search", "entity_lookup", "kb_coverage"}
-    return [schema for schema in _prepare_tools()
-            if schema["function"]["name"] in names]
-
+    _prepare_tools()  # Refresh runtime category enums.
+    precision = _precision_tool_route(question)
+    if precision:
+        return tool_selection.schemas([precision], precision=True)
+    hint = _preferred_tool_route(question)
+    # Preload a calculator contract, never infer its parameters or execute it.
+    # Other interpretations remain reachable through select_tools.
+    calculator = hint.endswith("_calc")
+    return tool_selection.schemas([hint] if calculator else list(tool_selection.SEARCH_TOOLS),
+                                  initial=not calculator)
 
 
 #: 《流放之路 2》（Path of Exile 2 / 流放之路：降临）的标记词。
@@ -169,33 +165,6 @@ def _out_of_scope_answer(question: str, marker: str) -> str:
     )
 
 
-def _gap_answer(question: str, data: dict[str, Any]) -> tuple[str, str]:
-    """依据不足时生成缺据声明，并给出台账分类。
-
-    返回 (答案文本, 台账 guessed_category)。归因失败不影响主流程——
-    退化成没有归因的缺据声明，仍然是安全侧。
-    """
-    reason = str(data.get("reason") or "检索未命中足够依据")
-    missing_terms = list(data.get("missing_terms") or [])
-    attribution = ""
-    urls: list[str] = []
-    category = "unknown"
-    try:
-        from kb.coverage import attribute_gap  # noqa: PLC0415  延迟导入避免循环
-
-        attr = attribute_gap(dbmod.get_conn(), question)
-        attribution = attr.explain()
-        urls = [d.spec.authority_url for d in attr.missing_domains]
-        category = attr.category_label()
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("缺据归因失败，退化为无归因声明：%s", exc)
-    return (
-        render_gap(question, missing_terms, reason,
-                   attribution=attribution, authority_urls=urls),
-        category,
-    )
-
-
 def _exact_entity_ids(citations: list[dict[str, Any]]) -> list[str]:
     """别名通道命中的实体 id —— 维度闸门的第二条领域识别信号。
 
@@ -211,12 +180,7 @@ def _exact_entity_ids(citations: list[dict[str, Any]]) -> list[str]:
 
 
 def _dimension_verdict(question: str, citations: list[dict[str, Any]] | None):  # noqa: ANN202
-    """覆盖层对「被问的维度有没有数据」的判决。探测失败返回 None（不阻塞问答）。
-
-    **与检索是否充分无关**：先前只在 `sufficient=True` 时才问它，于是
-    「BM25 命不中 + 偏好工具路由」这条路上它根本没被咨询过——第十八轮曾用当时尚未
-    接通的「大星团珠宝的斧剑伤害能开出哪些核心天赋」验证这个入口缺陷。
-    """
+    """Legacy retrieval benchmark: check coverage of the requested dimension."""
     try:
         from kb.coverage import dimension_gap  # noqa: PLC0415  延迟导入避免循环
 
@@ -233,28 +197,10 @@ def _dimension_verdict(question: str, citations: list[dict[str, Any]] | None):  
 def _apply_dimension_gate(
     question: str, data: dict[str, Any], *, citations: list[dict[str, Any]] | None = None
 ) -> tuple[dict[str, Any], bool]:
-    """充分性判定之后的第二道：**被问的维度**有没有数据（见 `kb.coverage.dimension_gap`）。
+    """Apply the legacy dimension check in offline retrieval benchmarks.
 
-    返回 `(补充覆盖结论后的 data, 是否整轮改判为缺据)`。
-
-    **这个函数一度是死代码**（第四十七轮 review 发现）：`_prepare_turn` 里内联了一份
-    等价实现，而这里带着这道闸门最权威的 docstring——读到的人会以为它在生效。
-    更糟的是 `scripts/eval_run.py` 的注释写着「与它同一道闸门、同一个函数」，
-    而那句话两半都是假的。现在它是**唯一**实现，`_prepare_turn` 与评测都调它。
-
-    别名精确命中只证明「这个实体在库里」，不证明「被问的那一面有数据」。实测
-    「猎首现在值多少混沌石」命中猎首即判依据充分，而价格维度一个字都没有；
-    「点到某节点要花几点」命中天赋节点即判充分，而天赋点消耗未入库；
-    「冰霜脉冲的伤害是多少」命中宝石即判充分，而伤害数值本轮明确未入库。
-
-    只做一个方向的改判（充分 → 不足）：放宽依据需要新证据，这里没有引入任何新证据。
-    同时有 covered / uncovered 且检索本身充分时不改判，只把部分缺口交给出口代码附注；
-    探测失败时按检索判定继续——覆盖层不可用不该让问答停摆。
-
-    **无条件问覆盖层，不看 `data['sufficient']`。**「这一维有没有数据」与
-    「这次 BM25 有没有命中」是两个问题；第十八轮实测：先前只在充分时问，
-    于是偏好工具那条路上它从没被咨询过。调用方不要再在外面加 `if sufficient`——
-    评测那一侧就是这么与线上分叉了近三十轮的。
+    Runtime answers now let the model inspect tool evidence before deciding
+    what can be answered; retrieval sufficiency alone never ends a turn.
     """
     verdict = _dimension_verdict(question, citations)
     if verdict is None:
@@ -775,14 +721,9 @@ def _affix_pool_precision_query(
     return raw, base, level, side, target
 
 
-#: 问哪类信息 → 该由哪个精确工具回答。判据是**意图词**，与 `_precision_tool_route`
-#: 的区别在强度：那个要求参数能从问题里逐字冻结、工具不成功就整轮拒答；这个只
-#: 「强制第一次调用走这个工具」，参数仍由模型填，失败就把错误回传让它换个问法。
-#:
-#: 为什么要用代码判：`agents/knowledge.py` 的提示词已经逐条写了选工具规则，
-#: 而 2026-08-17 的评测实测 6 条路由用例只命中 3 条——`mod_tiers`、`entity_lookup`、
-#: `kb_coverage` 三类问题模型仍退回 `kb_search`。提示词约束不住，就落到代码。
-#: 强制手段是协议层的 `tool_choice`，不是再写一句「请务必调用」。
+# Legacy routing hints remain useful to preload a calculator contract and to
+# compare offline retrieval benchmarks. They never fill ordinary chat inputs
+# or force a first tool call; exact crafting authorization is separate.
 #: 枚举类问句：问的是「这东西能从哪来」。它描述的是**问句形式**而不是话题，
 #: 所以在与「话题类」判据冲突时它更可信（见 `_YIELDS_TO_ENUMERATION`）。
 _ENUMERATION_INTENTS = (
@@ -1149,19 +1090,6 @@ _ENTITY_LOOKUP_INTENTS = (
 )
 
 
-
-def _can_finish_from_entity(
-    question: str, preferred_tool: str, preferred_result: ToolResult | None,
-) -> bool:
-    return bool(
-        preferred_tool == "entity_lookup"
-        and entity_question(question)
-        and preferred_result is not None
-        and preferred_result.ok
-        and len(preferred_result.citations) == 1
-    )
-
-
 #: 「带着具体数字问抗性」= 要算，不是要查。意图词表列不完这种问法
 #: （「火抗 120 是不是浪费了」「-60% 抗性的图我还剩多少」都没有固定说法），
 #: 所以用「抗性词 + 数字」判。
@@ -1320,23 +1248,6 @@ def _craft_attempt_plan_args(question: str) -> dict[str, Any] | None:
             "市场成本", "实时成本", "当前成本", "市场价",
         )),
     }
-
-
-def _economy_trend_args(question: str) -> dict[str, Any]:
-    """保留原问句做精确实体解析，并提取显式历史窗口。"""
-    args: dict[str, Any] = {"query": question, "category": "auto"}
-    match = re.search(r"(?:过去|最近|近)?\s*(\d{1,3})\s*(小时|天|周)", question)
-    if match:
-        amount = int(match.group(1))
-        multiplier = {"小时": 1, "天": 24, "周": 24 * 7}[match.group(2)]
-        hours = amount * multiplier
-        if 1 <= hours <= 2160:
-            args["window_hours"] = hours
-    elif "过去一个月" in question or "最近一个月" in question:
-        args["window_hours"] = 24 * 30
-    elif "过去一周" in question or "最近一周" in question:
-        args["window_hours"] = 24 * 7
-    return args
 
 
 _CRAFT_OPERATION_SIGNALS = (
@@ -1954,7 +1865,7 @@ def _rare_comparable_args(question: str) -> dict[str, Any] | None:
 
 
 def _preferred_tool_route(question: str) -> str:
-    """Choose the relevant tool; unresolved intent keeps only retrieval tools."""
+    """Suggest a tool contract; runtime never executes this hint or infers inputs."""
     # 有唯一别名命中的单实体定义/词缀题优先于类目词缀汇总。
     # 否则“猎首有哪些词缀”会被“有哪些词缀”抢到 mod_class_summary，
     # 明明实体已知却让模型携 81 个 schema 重新搜索，还容易混入仿品。
@@ -2114,39 +2025,6 @@ def _preferred_tool_route(question: str) -> str:
 #: `auto` / `required` / 指定函数名三种写法都不产生工具调用（`tools=[get_weather]` +
 #: 「随便聊两句」时 `tool_calls` 恒为 0）。所以「强制调用」在这个网关上只能靠
 #: 代码自己调，或者靠裁剪 schema 把别的选项拿掉。
-def _mod_tiers_args(question: str) -> dict[str, str] | None:
-    """从问题里抽 `mod_tiers` 的参数。抽不出**唯一解**就返回 None，交回模型。
-
-    两个参数都从 `retrieval/vocab.py` 生成的领域词表里逐字取，不做同义词猜测：
-
-        底材类别   `item_class` kind 的 74 个词（含单字「弓」「爪」，
-                   正因为 jieba 会把「弓上」粘成一个词才需要这份词表）
-        词缀查询   其余领域词，剔掉前后缀标签与来源标签这类**不是词缀内容**的词
-
-    任一侧不唯一就放弃：`mod_tiers` 的返回是精确的 T 级梯度，参数猜错了得到的是
-    另一个底材类别的档位，而那种错误在答案里看不出来——宁可退回让模型自己选工具。
-    """
-    try:
-        from retrieval.vocab import scan_terms, terms_of_kind  # noqa: PLC0415
-
-        terms = scan_terms(question)
-        classes = terms_of_kind("item_class")
-        gen_labels = terms_of_kind("gen")
-        sources = terms_of_kind("mod_source")
-    except Exception as exc:  # noqa: BLE001  词表不可用就交回模型
-        logger.debug("词表不可用，mod_tiers 不走代码路由：%s", exc)
-        return None
-
-    hit_classes = [t for t in terms if t in classes]
-    if len(hit_classes) != 1:
-        return None
-    candidates = [
-        t for t in terms
-        if t not in classes and t not in gen_labels and t not in sources
-    ]
-    if len(candidates) != 1:
-        return None
-    return {"item_class": hit_classes[0], "mod_query": candidates[0]}
 
 
 #: 计算器的参数槽：`槽位 -> 单位词`。抽参数只认**数字与单位词紧邻**的写法，
@@ -2156,14 +2034,6 @@ def _mod_tiers_args(question: str) -> dict[str, str] | None:
 #: 当成入射伤害算出一个物理减伤百分比，是一个带着引用的错数字。
 _CALC_NUMBER = r"(\d+(?:\.\d+)?)"
 _ELEMENT_WORDS = ("火焰", "冰霜", "闪电", "混沌", "元素")
-_MITIGATION_SLOTS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("armour", ("护甲",)),
-    ("evasion", ("闪避",)),
-    ("monster_level", ("级怪物", "级的怪物", "级怪", "级敌人", "级 boss", "级 Boss")),
-    ("hit_damage", ("物理伤害", "物理打击", "物理攻击", "一击", "点伤害", "的伤害")),
-    ("block_chance", ("格挡",)),
-    ("suppression_chance", ("法术压制", "压制")),
-)
 def _slot_values(question: str, keywords: tuple[str, ...]) -> set[float]:
     """问题里与这些单位词紧邻的数字。两种语序都认：`10000 护甲` 与 `护甲有 10000`。
 
@@ -2189,138 +2059,7 @@ def _slot_values(question: str, keywords: tuple[str, ...]) -> set[float]:
     return forward or backward
 
 
-def _slot_values_by_shape(
-    question: str, keywords: tuple[str, ...], *, percent: bool
-) -> set[float]:
-    """与 `_slot_values` 同样的两种语序，但**按数字形状分流**：带 `%` 的与不带的。
-
-    为什么需要它（第三十三轮实测）：攻速那一维同一个词后面既可能跟基础值也可能跟
-    百分比——「攻速 1.55 的武器加 60% 攻速」里两个数都贴着「攻速」，
-    不按形状分开就会在同一个槽位抽到两个值、整条判定作废。命中率那边同理
-    （「1500 命中」是命中值，「90% 命中率」是目标命中率）。
-    """
-    tail = r"\s*[%％]" if percent else r"(?!\s*[%％])"
-    forward: set[float] = set()
-    backward: set[float] = set()
-    for keyword in keywords:
-        kw = re.escape(keyword)
-        forward.update(
-            float(m.group(1))
-            for m in re.finditer(rf"{_CALC_NUMBER}{tail}\s*(?:的)?\s*{kw}", question)
-        )
-        backward.update(
-            float(m.group(1))
-            for m in re.finditer(
-                rf"{kw}\s*(?:是|有|为|达到|到|加|加快|提高)?\s*{_CALC_NUMBER}{tail}", question
-            )
-        )
-    return forward or backward
-
-
-def _mitigation_args(question: str) -> dict[str, Any] | None:
-    """从问题里抽 `mitigation_calc` 的参数。
-
-    没有数字 → 返回 `{}`：那就是「讲规则」，工具本来就不需要参数
-    （「格挡上限是多少」「护甲有什么用」「法术压制减多少伤害」都属于这一类）。
-
-    有数字 → 只取单位词紧邻的那些；同一个槽位抽到两个不同的数就整体放弃，
-    交回模型。拿猜出来的参数去算，得到的是一个**带着推导表的错数字**，
-    比查不到糟得多。
-    """
-    if not _RESIST_NUMBER_RE.search(question):
-        return {}
-    args: dict[str, Any] = {}
-    for slot, keywords in _MITIGATION_SLOTS:
-        if slot == "hit_damage" and any(w in question for w in _ELEMENT_WORDS):
-            # 「5000 火焰伤害」不是护甲的入射伤害口径，宁可让工具说缺参数
-            continue
-        values = _slot_values(question, keywords)
-        if len(values) > 1:
-            logger.info("mitigation_calc 的 %s 抽到多个值 %s，交回模型自选", slot, values)
-            return None
-        if values:
-            value = values.pop()
-            args[slot] = int(value) if slot == "monster_level" else value
-    return args or None
-
-
 #: 回复的参数槽。与受击同一条纪律：数字与单位词紧邻才取，同槽两个值就整体放弃。
-_RECOVERY_SLOTS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("energy_shield", ("护盾", "能量护盾", "es")),
-    ("mana", ("魔力", "蓝")),
-    ("hit_damage", ("伤害", "一击")),
-    ("leech_pct", ("偷取", "偷血")),
-    ("instances", ("个实例", "层偷取", "个偷取")),
-)
-
-
-def _recovery_args(question: str) -> dict[str, Any] | None:
-    """`recovery_calc` 的参数。没有数字 → 讲规则（无参数）。
-
-    偷取那一段还要**池大小**，而「池」在问法里可能是生命/魔力/护盾三者之一：
-    只有当问题里出现「偷取」且能抽到生命值时才填 `pool`，否则交给工具说缺什么。
-    """
-    if not _RESIST_NUMBER_RE.search(question):
-        return {}
-    args: dict[str, Any] = {}
-    for slot, keywords in _RECOVERY_SLOTS:
-        values = _slot_values(question, keywords)
-        if len(values) > 1:
-            logger.info("recovery_calc 的 %s 抽到多个值 %s，交回模型自选", slot, values)
-            return None
-        if values:
-            value = values.pop()
-            args[slot] = int(value) if slot == "instances" else value
-    life = _slot_values(question, ("生命", "血量", "最大生命"))
-    if len(life) == 1 and ("偷取" in question or "偷血" in question):
-        args["pool"] = life.pop()
-        args["pool_name"] = "生命"
-    return args or None
-
-
-def _ailment_args(question: str) -> dict[str, Any] | None:
-    """`ailment_dot_calc` 的参数：认出异常名与「这一击的伤害」。
-
-    没有数字 → `{}`（讲规则）。有数字则只认与「伤害」紧邻的那个——
-    「点燃持续几秒」里的秒数不是伤害。
-    """
-    ailment = next((w for w in _AILMENT_WORDS if w in question), "")
-    if not _RESIST_NUMBER_RE.search(question):
-        return {"ailment": ailment} if ailment else {}
-    args: dict[str, Any] = {}
-    if ailment:
-        args["ailment"] = ailment
-    damage = _slot_values(question, ("伤害", "一击", "点火焰", "打了"))
-    if len(damage) > 1:
-        logger.info("ailment_dot_calc 的伤害抽到多个值 %s，交回模型自选", damage)
-        return None
-    if damage:
-        args["hit_damage"] = damage.pop()
-    stacks = _slot_values(question, ("层", "叠"))
-    if len(stacks) == 1:
-        args["stacks"] = int(stacks.pop())
-    return args or None
-
-
-def _crit_args(question: str) -> dict[str, Any] | None:
-    """`crit_calc` 的参数：暴击率 / 加成 / 技能名。没有数字也没有技能名 → 讲规则。"""
-    args: dict[str, Any] = {}
-    multi = _slot_values(question, ("暴击伤害", "暴击加成", "爆伤"))
-    # 先抽加成，再把它的值从暴击率候选里**剔掉**：「350% 暴击伤害」里的 350
-    # 同时也匹配裸的「暴击」，不剔就会让暴击率槽抽到两个值、整条判定作废（实测）。
-    chance = _slot_values(question, ("暴击率", "暴击")) - multi
-    if len(multi) == 1:
-        args["multi_pct"] = multi.pop()
-    if len(chance) == 1:
-        value = chance.pop()
-        # 「暴击率 40%」既可能是基础也可能是最终值。当成**基础**去乘增幅会算大，
-        # 所以按用户报的那个数直接当暴击率用：不填 increased_pct。
-        args["base_chance"] = value
-    elif len(chance) > 1:
-        return None
-    if not args and not _RESIST_NUMBER_RE.search(question):
-        return {}
-    return args or None
 
 
 #: 命中率的两个槽位共用「命中」这个词，靠**形状**分流：带 % 的是目标命中率，
@@ -2336,63 +2075,8 @@ _ENEMY_LEVEL_RE = re.compile(
 )
 
 
-def _accuracy_args(question: str) -> dict[str, Any] | None:
-    """`accuracy_calc` 的参数。没有任何数字 → 讲规则（无参数）。
-
-    与其它计算器一致的三条：同一槽位两个值就交回模型；敌方等级只认专指敌方的写法；
-    「90% 命中率」抽成反解目标而不是命中值（判据是数字形状，不是动词表——
-    动词表漏一个写法就会把目标当成命中值，实测「要多少命中才能 90% 命中率」
-    在动词表那一版里就抽错了）。
-    """
-    if not _RESIST_NUMBER_RE.search(question):
-        return {}
-    args: dict[str, Any] = {}
-    target = _slot_values_by_shape(question, _ACCURACY_WORDS, percent=True)
-    accuracy = _slot_values_by_shape(question, _ACCURACY_WORDS, percent=False)
-    if len(target) == 1:
-        args["target_chance"] = int(target.pop())
-    elif len(target) > 1:
-        return None
-    if len(accuracy) == 1:
-        args["accuracy"] = accuracy.pop()
-    elif len(accuracy) > 1:
-        logger.info("accuracy_calc 的命中值抽到多个 %s，交回模型自选", accuracy)
-        return None
-    level = _ENEMY_LEVEL_RE.search(question)
-    if level:
-        args["enemy_level"] = int(level.group(1) or level.group(2))
-    for slot, keywords in (("enemy_evasion", ("闪避",)), ("enemy_block_pct", ("格挡",))):
-        values = _slot_values(question, keywords)
-        if len(values) > 1:
-            return None
-        if values:
-            args[slot] = values.pop()
-    if "无法被闪避" in question or "必定命中" in question:
-        args["cannot_be_evaded"] = True
-    return args or None
-
-
 #: 攻速的两个槽位同样共用一个词（「攻速 1.55」vs「攻速加快 60%」），按形状分流。
 _SPEED_WORDS = ("基础攻速", "攻速", "攻击速度")
-
-
-def _attack_speed_args(question: str) -> dict[str, Any] | None:
-    """`attack_speed_calc` 的参数。没有数字 → 讲规则。"""
-    if not _RESIST_NUMBER_RE.search(question):
-        return {}
-    args: dict[str, Any] = {}
-    increased = _slot_values_by_shape(question, _SPEED_WORDS, percent=True)
-    base = _slot_values_by_shape(question, _SPEED_WORDS, percent=False)
-    if len(increased) == 1:
-        args["increased_pct"] = increased.pop()
-    elif len(increased) > 1:
-        return None
-    if len(base) == 1:
-        args["base_rate"] = base.pop()
-    elif len(base) > 1:
-        logger.info("attack_speed_calc 的基础攻速抽到多个 %s，交回模型自选", base)
-        return None
-    return args or None
 
 
 _DPS_RANGE_RE = re.compile(
@@ -2400,167 +2084,6 @@ _DPS_RANGE_RE = re.compile(
     r"(物理|闪电|冰霜|火焰|混沌)(?:基础)?伤害"
 )
 _DPS_TYPE_KEYS = {"物理": "physical", "闪电": "lightning", "冰霜": "cold", "火焰": "fire", "混沌": "chaos"}
-
-
-def _hit_dps_args(question: str) -> dict[str, Any]:
-    """保守抽取最常见的一类单伤害 DPS 问法；复杂链交给工具 JSON/API。"""
-    args: dict[str, Any] = {}
-    ranges = _DPS_RANGE_RE.findall(question)
-    if ranges:
-        base: dict[str, list[float]] = {}
-        for low, high, kind in ranges:
-            key = _DPS_TYPE_KEYS[kind]
-            if key in base:
-                return {}
-            base[key] = [float(low), float(high)]
-        args["base_damage"] = base
-    rate = re.search(r"每秒\s*(?:攻击|施法|击中)?\s*(\d+(?:\.\d+)?)\s*次", question)
-    if rate:
-        args["action_rate"] = float(rate.group(1))
-    patterns = (
-        ("increased_damage_pct", r"(?:伤害(?:提高|增加)|(?:提高|增加)(?:的)?伤害)\s*(\d+(?:\.\d+)?)%"),
-        ("hit_chance_pct", r"命中率\s*(\d+(?:\.\d+)?)%"),
-        ("crit_chance_pct", r"暴击率\s*(\d+(?:\.\d+)?)%"),
-        ("crit_multiplier_pct", r"(?:暴击伤害加成|暴击加成)\s*(\d+(?:\.\d+)?)%"),
-    )
-    for key, pattern in patterns:
-        match = re.search(pattern, question)
-        if match:
-            args[key] = float(match.group(1))
-    more = re.findall(r"(\d+(?:\.\d+)?)%\s*更多伤害", question)
-    if more:
-        args["more_damage_multipliers"] = [1 + float(value) / 100 for value in more]
-    resistance: dict[str, float] = {}
-    penetration: dict[str, float] = {}
-    resist_names = {"物理": "physical", "闪电": "lightning", "电": "lightning", "冰霜": "cold", "冰": "cold", "火焰": "fire", "火": "fire", "混沌": "chaos", "混": "chaos"}
-    for zh, key in resist_names.items():
-        resist_match = re.search(rf"敌人{zh}(?:抗性|抗)\s*(-?\d+(?:\.\d+)?)%", question)
-        pen_match = re.search(rf"{zh}(?:抗性)?穿透\s*(\d+(?:\.\d+)?)%", question)
-        if resist_match:
-            resistance[key] = float(resist_match.group(1))
-        if pen_match:
-            penetration[key] = float(pen_match.group(1))
-    if resistance:
-        args["enemy_resistance"] = resistance
-    if penetration:
-        args["penetration"] = penetration
-    conversions = []
-    for percent, source, target in re.findall(
-        r"(\d+(?:\.\d+)?)%\s*(物理|闪电|冰霜|火焰)伤害转化为(闪电|冰霜|火焰|混沌)", question
-    ):
-        conversions.append({
-            "source": _DPS_TYPE_KEYS[source], "target": _DPS_TYPE_KEYS[target],
-            "percent": float(percent), "kind": "global",
-        })
-    if conversions:
-        args["conversions"] = conversions
-    if "伤害特别幸运" in question or "伤害极幸运" in question:
-        args["damage_roll_chance_pct"] = 100.0
-        args["extreme_luck"] = True
-    elif "伤害幸运" in question:
-        args["damage_roll_chance_pct"] = 100.0
-    elif "伤害不幸" in question:
-        args["damage_roll_chance_pct"] = -100.0
-    advanced_patterns = (
-        ("double_damage_chance_pct", r"(\d+(?:\.\d+)?)%\s*(?:几率|概率)?造成双倍伤害"),
-        ("triple_damage_chance_pct", r"(\d+(?:\.\d+)?)%\s*(?:几率|概率)?造成三倍伤害"),
-        ("overwhelm_physical_reduction_pct", r"压倒\s*(\d+(?:\.\d+)?)%\s*物理伤害减免"),
-        ("physical_reduction_ignore_chance_pct", r"(\d+(?:\.\d+)?)%\s*(?:几率|概率)?忽略敌人物理伤害减免"),
-        ("enemy_damage_taken_increased_pct", r"敌人受到的伤害(?:提高|增加)\s*(\d+(?:\.\d+)?)%"),
-        ("cooldown_seconds", r"冷却(?:时间)?\s*(\d+(?:\.\d+)?)\s*秒"),
-        ("burst_hit_count", r"一轮(?:总共)?\s*(\d+(?:\.\d+)?)\s*次击中"),
-        ("repeat_damage_multiplier", r"重复伤害倍率\s*(\d+(?:\.\d+)?)%"),
-        ("ruthless_blow_every_hits", r"每\s*(\d+)\s*次(?:攻击|击中).*?无情一击"),
-        ("ruthless_blow_hit_multiplier", r"无情一击造成\s*(\d+(?:\.\d+)?)%\s*伤害"),
-        ("fist_of_war_more_damage_pct", r"战争之拳\s*(\d+(?:\.\d+)?)%\s*更多伤害"),
-        ("fist_of_war_cooldown_seconds", r"战争之拳(?:效果)?冷却\s*(\d+(?:\.\d+)?)\s*秒"),
-        ("exerted_attack_more_damage_pct", r"(?:增助攻击|战吼增助)\s*(\d+(?:\.\d+)?)%\s*更多伤害"),
-        ("exerted_attack_uptime_pct", r"(?:增助攻击|战吼增助)(?:的)?覆盖率\s*(\d+(?:\.\d+)?)%"),
-        ("impale_chance_pct", r"穿刺几率\s*(\d+(?:\.\d+)?)%"),
-        ("impale_stacks", r"(?:敌人身上)?\s*(\d+(?:\.\d+)?)\s*层穿刺"),
-        ("impale_effect_increased_pct", r"穿刺效果(?:提高|增加)\s*(\d+(?:\.\d+)?)%"),
-        ("impale_duration_seconds", r"穿刺持续(?:时间)?\s*(\d+(?:\.\d+)?)\s*秒"),
-        ("enemy_armour", r"敌人(?:有|的)?\s*(\d+(?:\.\d+)?)\s*(?:点)?护甲"),
-        ("combat_duration_seconds", r"(?:战斗持续|战斗时长)\s*(\d+(?:\.\d+)?)\s*秒"),
-        ("cull_percent", r"(?:终结|扑杀)\s*(\d+(?:\.\d+)?)%"),
-        ("server_tick_seconds", r"服务器\s*tick\s*(\d+(?:\.\d+)?)\s*秒"),
-    )
-    for key, pattern in advanced_patterns:
-        source = question
-        if key == "cooldown_seconds":
-            source = re.sub(
-                r"战争之拳(?:效果)?冷却\s*\d+(?:\.\d+)?\s*秒", "", source
-            )
-        match = re.search(pattern, source)
-        if match:
-            value = float(match.group(1))
-            args[key] = value / 100 if key in {
-                "repeat_damage_multiplier", "ruthless_blow_hit_multiplier"
-            } else value
-    if "触发" in question and "cooldown_seconds" in args:
-        args["triggered"] = True
-    ailments: list[dict[str, Any]] = []
-    for zh, en in (("点燃", "ignite"), ("中毒", "poison"), ("流血", "bleed")):
-        source = re.search(
-            rf"(?:{zh}(?:的)?(?:源伤害|异常源伤害)|用于{zh}的伤害)\s*"
-            rf"(\d+(?:\.\d+)?)\s*(?:到|至|[-~～—])\s*(\d+(?:\.\d+)?)",
-            question,
-        )
-        if source is None:
-            continue
-        item: dict[str, Any] = {
-            "name": en,
-            "source_damage": [float(source.group(1)), float(source.group(2))],
-        }
-        ailment_patterns = (
-            ("chance_on_hit_pct", rf"{zh}(?:几率|概率)\s*(\d+(?:\.\d+)?)%"),
-            ("chance_on_crit_pct", rf"暴击时{zh}(?:几率|概率)\s*(\d+(?:\.\d+)?)%"),
-            ("dot_multiplier_pct", rf"{zh}(?:持续)?伤害加成\s*(\d+(?:\.\d+)?)%"),
-            ("duration_increased_pct", rf"{zh}持续时间(?:提高|增加)\s*(\d+(?:\.\d+)?)%"),
-            ("faster_damage_pct", rf"{zh}(?:伤害|生效)(?:加快|加速)\s*(\d+(?:\.\d+)?)%"),
-            ("stack_limit", rf"最多\s*(\d+(?:\.\d+)?)\s*层{zh}"),
-            ("stacks_per_application", rf"每次(?:命中)?施加\s*(\d+(?:\.\d+)?)\s*层{zh}"),
-        )
-        for key, pattern in ailment_patterns:
-            match = re.search(pattern, question)
-            if match:
-                item[key] = float(match.group(1))
-        ailments.append(item)
-    if ailments:
-        args["damaging_ailments"] = ailments
-    skill_dot_base: dict[str, float] = {}
-    for kind, amount in re.findall(
-        r"(物理|闪电|冰霜|火焰|混沌)(?:技能)?(?:持续伤害|\s*DoT|DOT)"
-        r"(?:基础)?(?:每秒)?\s*(\d+(?:\.\d+)?)",
-        question,
-    ):
-        key = _DPS_TYPE_KEYS[kind]
-        if key in skill_dot_base:
-            return {}
-        skill_dot_base[key] = float(amount)
-    if skill_dot_base:
-        skill_dot: dict[str, Any] = {"base_damage_per_second": skill_dot_base}
-        dot_inc = re.search(
-            r"技能(?:自身)?持续伤害(?:提高|增加)\s*(\d+(?:\.\d+)?)%", question
-        )
-        dot_multi = re.search(r"持续伤害加成\s*(\d+(?:\.\d+)?)%", question)
-        duration = re.search(r"技能(?:持续伤害)?持续\s*(\d+(?:\.\d+)?)\s*秒", question)
-        stack_limit = re.search(r"技能持续伤害最多\s*(\d+(?:\.\d+)?)\s*层", question)
-        instances = re.search(r"同时(?:生效|存在)\s*(\d+(?:\.\d+)?)\s*个实例", question)
-        if dot_inc:
-            skill_dot["increased_damage_pct"] = float(dot_inc.group(1))
-        if dot_multi:
-            skill_dot["dot_multiplier_pct"] = float(dot_multi.group(1))
-        if "可叠层" in question or "可以叠层" in question:
-            skill_dot["can_stack"] = True
-        if duration:
-            skill_dot["duration_seconds"] = float(duration.group(1))
-        if stack_limit:
-            skill_dot["stack_limit"] = float(stack_limit.group(1))
-        if instances:
-            skill_dot["instance_multiplier"] = float(instances.group(1))
-        args["skill_dot"] = skill_dot
-    return args
 
 
 def _boss_hit_args(
@@ -2767,31 +2290,6 @@ def _boss_sequence_args(question: str) -> dict[str, Any] | None:
     return args
 
 
-def _threshold_args(question: str) -> dict[str, Any] | None:
-    """`ailment_threshold_calc` 的参数：异常名、这一击的伤害、目标等级与是否头目。
-
-    **不替用户假定等级**：问题没说打谁就不填 `monster_level`，工具会说清缺什么。
-    「头目 / boss / 守护者」这类词出现才算头目。
-    """
-    ailment = next((w for w in _THRESHOLD_AILMENT_WORDS if w in question), "")
-    if not ailment:
-        return None
-    args: dict[str, Any] = {"ailment": ailment}
-    if any(word in question for word in ("头目", "boss", "BOSS", "Boss", "守护者", "终局")):
-        args["is_boss"] = True
-    if not _RESIST_NUMBER_RE.search(question):
-        return args
-    damage = _slot_values(question, ("伤害", "一击", "打了"))
-    if len(damage) > 1:
-        return None
-    if damage:
-        args["hit_damage"] = damage.pop()
-    levels = _slot_values(question, ("级怪物", "级的怪物", "级头目", "级 boss", "级"))
-    if len(levels) == 1:
-        args["monster_level"] = int(levels.pop())
-    return args
-
-
 def _reservation_args(question: str) -> dict[str, Any] | None:
     """`reservation_calc` 的参数：从问题里认出**库里有保留数据的技能名**与池大小。
 
@@ -2833,17 +2331,6 @@ def _reservation_args(question: str) -> dict[str, Any] | None:
     if len(pool) == 1:
         args["pool"] = pool.pop()
     return args
-
-
-def _resistance_args(question: str) -> dict[str, Any] | None:
-    """`resistance_calc` / `max_hit_calc` 的参数。
-
-    只处理**没有数字**的那一类（「抗性上限是多少」「超抗有什么用」）：那是讲规则，
-    不需要参数。带数字的问法留给模型——抗性的输入项有九个
-    （该抗性 / 全元素 / 减抗 / 剧情惩罚 / 最大抗性加成 / 穿透…），
-    从中文里判断某个数属于哪一项，代码做不可靠，而错配的代价是一个错数字。
-    """
-    return {} if not _RESIST_NUMBER_RE.search(question) else None
 
 
 _CONFLICT_REVIEW_MARKERS = ("待核对", "_review", "review")
@@ -2890,152 +2377,7 @@ def _source_conflict_lookup_args(question: str) -> dict[str, Any]:
     return args
 
 
-#: 参数解析器。返回 None 表示抽不出唯一解 → 不代码调用，退回 schema 裁剪。
-#:
-#: **为什么计算器也要进这张表**（第二十一轮实测）：schema 裁剪只能让模型「只有这一个
-#: 工具可调」，拦不住它**一个都不调**。实测 5 条新录制里 3 条如此——
-#: 「格挡上限是多少」直接拿检索到的 chunk 答了（路由观测 0/1），
-#: 「法术压制触发时减多少伤害」零证据进了兜底缺据，而
-#: 「我有 10000 护甲能减多少伤害」**碰巧**也拒答了，但拒答理由是「工具没返回证据」
-#: 而不是工具想说的「你没给这一击的伤害」——契约过了、机制却是坏的。
-_CODE_INVOKED_TOOLS: dict[str, Any] = {
-    "boss_risk_audit": _boss_risk_audit_args,
-    "boss_sequence_check": _boss_sequence_args,
-    "boss_defence_threshold": _boss_defence_threshold_args,
-    "boss_survival_check": _boss_survival_args,
-    "awakener_orb_state": _awakener_orb_args,
-    "craft_operation_state": _craft_operation_args,
-    "essence_operation_state": _essence_operation_args,
-    "eldritch_operation_state": _eldritch_operation_args,
-    "veiled_operation_state": _veiled_operation_args,
-    "fossil_operation_state": _fossil_operation_args,
-    "base_influence_profile": _base_influence_args,
-    "harvest_reforge_state": _harvest_reforge_args,
-    "harvest_modifier_state": _harvest_modifier_args,
-    "harvest_quality_enchant_state": _harvest_quality_enchant_args,
-    "harvest_exchange_state": _harvest_exchange_args,
-    "craft_attempt_plan": _craft_attempt_plan_args,
-    "economy_material_cost": _material_cost_args,
-    "economy_price_trend": _economy_trend_args,
-    "economy_price_lookup": lambda question: {"query": question, "category": "auto"},
-    "economy_rare_comparables": _rare_comparable_args,
-    # 路由时已确认该名字在别名表里命中，参数就是问题本身
-    "entity_lookup": lambda question: {"name": question},
-    # 无参数
-    "kb_coverage": lambda question: {},
-    # 逐节点点数没有采集。让模型反复调用尺寸目录会烧光单轮预算；
-    # 仅在这类问句上由代码取结构化总览并直接披露缺口。
-    "cluster_jewel_info": lambda question: (
-        {"query": question} if _cluster_point_cost_query(question) else None
-    ),
-    "source_conflict_lookup": _source_conflict_lookup_args,
-    "source_conflict_summary": lambda question: {},
-    # 参数需要从领域词表里抽，可能抽不出来
-    "mod_tiers": _mod_tiers_args,
-    # 计算器：没有数字就是讲规则（无参数），有数字则只认单位词紧邻的那些
-    "mitigation_calc": _mitigation_args,
-    "resistance_calc": _resistance_args,
-    "recovery_calc": _recovery_args,
-    "reservation_calc": _reservation_args,
-    "ailment_dot_calc": _ailment_args,
-    "ailment_threshold_calc": _threshold_args,
-    "max_hit_calc": _resistance_args,
-    "crit_calc": _crit_args,
-    "accuracy_calc": _accuracy_args,
-    "attack_speed_calc": _attack_speed_args,
-    "hit_dps_calc": _hit_dps_args,
-}
-
-
-def _cluster_point_cost_query(question: str) -> bool:
-    return (
-        "星团" in question and "天赋点" in question
-        and any(term in question for term in ("花", "需要", "消耗", "几个", "多少", "点数"))
-    )
-
-#: 这些工具按设计**不产出引用**（覆盖声明是元信息不是游戏事实）。
-#: 「一条证据都没拿到就走缺据」的兜底要放过它们，否则它们永远进不了生成。
 _TOOLS_WITHOUT_CITATIONS = frozenset({"kb_coverage"})
-_DETERMINISTIC_DIRECT_TOOLS = frozenset({
-    "craft_attempt_plan", "economy_flip_analysis", "economy_price_lookup", "economy_price_trend", "economy_material_cost",
-    "economy_rare_comparables", "boss_risk_audit", "boss_sequence_check", "boss_defence_threshold",
-    "boss_survival_check",
-    "awakener_orb_state",
-    "craft_operation_state",
-    "essence_operation_state",
-    "eldritch_operation_state",
-    "veiled_operation_state",
-    "fossil_operation_state",
-    "base_influence_profile",
-    "harvest_reforge_state",
-    "harvest_modifier_state",
-    "harvest_quality_enchant_state",
-    "harvest_exchange_state",
-    "source_conflict_lookup",
-    "source_conflict_summary",
-    "hit_dps_calc",
-})
-
-
-def _direct_tool_answer(
-    tool_result: ToolResult, *, tool_name: str = "",
-    evidence: list[Evidence] | None = None,
-) -> str:
-    """确定性工具由代码生成答案，防止模型改写数值、状态或边界限定。"""
-    answer = str((tool_result.data or {}).get("answer") or "").strip()
-    if tool_name != "craft_attempt_plan" or (tool_result.data or {}).get("status") != "exact":
-        return answer
-    # 精确池完整性闸门要求 P2 底材、跨源映射和 P1 条件池三张证据实际参与回答。
-    # 分布与材料预算又引入了新数值，须同时绑定本工具的确定性计算证据。
-    by_kind = {
-        str(item.claim_data.get("kind") or ""): item.label
-        for item in evidence or []
-        if item.claim_scope in {"affix_pool_odds", "calculation"}
-    }
-    required = ("pob_base", "base_mapping", "pool_odds", "craft_attempt_plan")
-    if not all(kind in by_kind for kind in required):
-        return answer  # 缺证据由出口闸门拦截，不能合成假编号
-    pool = (tool_result.data or {}).get("pool") or {}
-    base = pool.get("base") or {}
-    distribution = (tool_result.data or {}).get("distribution") or {}
-    pob, mapping, odds, calculation = (by_kind[kind] for kind in required)
-    source_summary = (
-        f"底材“{base.get('name_zh')}”（{base.get('name_en')}）映射到 POEDB 词缀页"
-        f"“{base.get('modifier_page')}”[[{pob}]][[{mapping}]]。\n"
-        f"在 normal 来源、物品等级 {pool.get('item_level')}、"
-        f"{'前缀' if pool.get('generation_side') == 'prefix' else '后缀'}侧且未应用"
-        f"已有词缀 family 排除的条件下，有效池总权重为 {pool.get('total_weight')}，"
-        f"目标词缀组“{pool.get('target_group')}”"
-        f"权重为 {pool.get('target_weight')}，条件概率为 "
-        f"{distribution.get('single_attempt_probability_numerator')}/"
-        f"{distribution.get('single_attempt_probability_denominator')}"
-        f"（{distribution.get('single_attempt_probability')}）"
-        f"[[{pob}]][[{mapping}]][[{odds}]]。"
-    )
-    calc_marker = f"[[{calculation}]]"
-    bound_lines: list[str] = []
-    in_table = False
-    for line in answer.splitlines():
-        stripped = line.strip()
-        if stripped.startswith("|"):
-            bound_lines.append(line)
-            in_table = True
-            continue
-        if in_table:
-            # 表格后独占一行的 Citation marker 对整块生效，避免每行重复编号。
-            bound_lines.append(calc_marker)
-            in_table = False
-        if not stripped:
-            bound_lines.append(line)
-        else:
-            # 分句在句号/分号处结束；标记必须位于标点之前，不能独占下一句。
-            marked = re.sub(r"([。；])", calc_marker + r"\1", line)
-            if not marked.endswith(("。", "；")):
-                marked += calc_marker
-            bound_lines.append(marked)
-    if in_table:
-        bound_lines.append(calc_marker)
-    return source_summary + "\n\n" + "\n".join(bound_lines)
 
 
 def _coverage_answer(tool_result: ToolResult) -> str:
@@ -3053,25 +2395,6 @@ def _coverage_answer(tool_result: ToolResult) -> str:
     if isinstance(total, int) and isinstance(usable, int):
         head += f"：共声明 {total} 个领域，其中 {usable} 个已有数据可作为依据"
     return f"{head}。\n\n{manifest}"
-
-
-def _invoke_preferred_tool(
-    question: str, tool: str, result: TurnResult
-) -> ToolResult | None:
-    """由代码直接调用偏好工具。不可代码调用的返回 None，交回模型（schema 已裁剪）。"""
-    resolver = _CODE_INVOKED_TOOLS.get(tool)
-    if resolver is None:
-        return None
-    args = resolver(question)
-    if args is None:
-        # 参数抽不出唯一解。宁可交回模型，也不拿猜出来的参数去查精确工具
-        logger.info("偏好工具 %s 的参数无法从问题唯一确定，交回模型自选", tool)
-        return None
-    tr = REGISTRY.call(tool, json.dumps(args, ensure_ascii=False))
-    result.tool_calls.append(_tool_record(tool, args, tr))
-    if not tr.ok:
-        logger.warning("偏好工具 %s 代码调用失败：%s", tool, tr.error)
-    return tr
 
 
 def _precision_tool_route(question: str) -> str:
@@ -3461,11 +2784,23 @@ def _call_tool(
                 "完整重置前提、每次材料与尝试上限，拒绝执行 craft_attempt_plan"
             ),
         ), False
+    if name not in ALLOWED_TOOLS:
+        return ToolResult(ok=False, error="当前助手未开放此工具"), False
     parsed = _safe_json(raw_arguments)
     if precision_tool and name == precision_tool:
         reason = _validate_precision_call(question, name, parsed)
         if reason:
             return ToolResult(ok=False, error=f"精确工具参数与当前问题不一致：{reason}"), False
+    if name.endswith("_calc") and name != "max_hit_calc" and isinstance(parsed, dict):
+        unsupported = parsed.pop("unsupported_conditions", [])
+        if not isinstance(unsupported, list) or any(not isinstance(c, str) for c in unsupported):
+            return ToolResult(ok=False, error="unsupported_conditions必须是文本数组"), False
+        if unsupported:
+            return ToolResult(ok=True, data={"kind": "clarification", "report": name,
+                "reason": "当前计算器不能表达题目的全部条件，本轮未执行计算。",
+                "unsupported_conditions": unsupported,
+                "answer_hint": "以clarification状态，用report块原样报告限制；不要再查相似机制或提供替代算例。"}), False
+        raw_arguments = json.dumps(parsed, ensure_ascii=False)
     result = REGISTRY.call(name, raw_arguments)
     matched = bool(
         precision_tool
@@ -3486,6 +2821,8 @@ def _initial_user_content(
         f"---\n\n{memory_context}\n"
         if memory_context else ""
     )
+    if not precision_tool and not evidence:
+        return f"{memory}用户的问题：{question}"
     if not precision_tool:
         return EVIDENCE_TEMPLATE.format(
             evidence=render_evidence_block(evidence), memory=memory, question=question
@@ -3583,15 +2920,7 @@ def _precision_failure_answer(tool_name: str) -> str:
     )
 
 
-# ── 两条路径共享的流水线 ──────────────────────────────────
-#
-# `run_turn` 与 `stream_turn` 曾各写一遍这条流水线（各约 300 行）。代价是实测出来的：
-# 表格继承那次改动让流式与批量判定从 32/32 掉到 18/32；更糟的是**结构性漏改**——
-# 「偏好工具零证据兜底」只写在批量路径里，流式下同样的问题会带着零条证据进闸门、
-# 每个事实句被拦，而批量那段注释本身就写着这种结果「比一句查不到更糟」。
-#
-# 所以准备阶段、单次工具调用、确定性收尾三段都提到这里，**两条路径只允许在
-# 「怎么把文本交给用户」上不同**：批量一次性 `verify()`，流式逐句 `StreamingGate`。
+# Shared preparation, tool execution and answer validation for both transports.
 
 
 @dataclass
@@ -3604,15 +2933,11 @@ class _TurnSetup:
     """
 
     question: str = ""
-    passages: list[Passage] = field(default_factory=list)
     evidence: list[Evidence] = field(default_factory=list)
     precision_tool: str = ""
-    preferred_tool: str = ""
     messages: list[dict[str, Any]] = field(default_factory=list)
     tools: list[dict[str, Any]] = field(default_factory=list)
     needs_model_call: bool = False
-    #: 检索侧的 `missing_terms`，偏好工具兜底时要原样带进缺据声明
-    missing_terms: list[str] = field(default_factory=list)
     gap: str = ""
     final: str = ""
 
@@ -3621,265 +2946,53 @@ class _TurnSetup:
         return bool(self.gap or self.final)
 
 
-def _prepare_source_selection(setup: _TurnSetup, evidence: list[Evidence]) -> bool:
-    if (not evidence or setup.precision_tool
-            or any(e.claim_scope not in ("excerpt", "general") for e in evidence)):
-        return False
-    setup.evidence = evidence
-    setup.passages = passages(evidence)
-    setup.messages = selection_messages(setup.question, setup.passages)
-    setup.tools = []
-    return True
-
-
-def _calculation_answer(result: TurnResult, tool_result: ToolResult | None) -> str:
-    if not (tool_result is not None and tool_result.ok
-            and tool_result.meta.get("channel") == "derived"
-            and (tool_result.data or {}).get("kind") in {"result", "clarification"}
-            and tool_result.citations):
-        return ""
-    result.retrieval_meta["answer_mode"] = "calculation"
-    result.evidence = number_evidence(tool_result.citations)
-    result.citations = cit.collect(result.evidence, [e.label for e in result.evidence])
-    return "\n\n".join(
-        e.text.split("\n来源：", 1)[0].strip() + f"\n\n[[{e.label}]]"
-        for e in result.evidence if e.can_support_facts
-    )
-
-
 def _prepare_turn(
     question: str, result: TurnResult, *, owner_id: str | None = None,
     conversation_id: str | None = None,
 ) -> _TurnSetup:
-    """POE2 边界 → 强制检索 → 路由 → 维度闸门 → 编号证据 → 代码调偏好工具。
-
-    只写 `result`，不落库、不发事件——收尾动作由调用方按自己的形态做。
-    """
-    question = without_style(question)
-    if conversation_id and owner_id:
-        question, clarification = resolve_followup(
-            dbmod.get_conn(), question, conversation_id, owner_id
-        )
-        if clarification:
-            return _TurnSetup(final=clarification)
+    """Preserve the question and owned context before any model-directed retrieval."""
     marker = poe2_marker(question)
     if marker:
-        # 放在检索**之前**：越界问题不该消耗检索，更不该产生任何可能被当作依据的证据
         result.evidence_gap = True
         result.retrieval_meta["out_of_scope"] = marker
-        # kind 必须是 `out_of_scope` 而不是 `retrieval_gap`：POE2 **永远不会被采集**，
-        # 记成检索缺口会让它坐在采集优先级第一位（实测 20 次命中、排第一，
-        # 而且还被归到了 not_recalled/ascendancy）。台账是用来定优先级的。
-        _record_gaps(
-            question, [f"越界：《流放之路 2》问题（标记「{marker}」），本库只覆盖 POE1"],
-            category="out_of_scope/poe2", kind="out_of_scope",
-        )
+        _record_gaps(question, [f"越界：POE2（{marker}）"], category="out_of_scope/poe2", kind="out_of_scope")
         return _TurnSetup(gap=_out_of_scope_answer(question, marker))
 
-    clarification = build_clarification(question)
-    if clarification:
-        return _TurnSetup(final=clarification)
-
-    if unknown_named_item(question):
-        result.evidence_gap = True
-        _record_gaps(question, ["装备名称未命中，请核对名称"], category="input_clarification/entity")
-        return _TurnSetup(gap=(
-            "知识库中查不到这件装备。请核对名称，或粘贴游戏内 Ctrl+C 复制的装备文本。"
-            "也可在 [POEDB](https://poedb.tw/cn/) 核对名称。"
-        ))
-
-    # 强制检索。不让模型决定「要不要查」
-    first = REGISTRY.call("kb_search", json.dumps({"query": question}, ensure_ascii=False))
-    result.tool_calls.append(_tool_record("kb_search", {"query": question}, first))
-    result.retrieval_meta = dict(first.meta)
-    if question != result.question:
-        result.retrieval_meta["resolved_question"] = question
-    if not first.ok:
-        result.evidence_gap = True
-        return _TurnSetup(
-            gap=f"检索不可用（{first.error}），无法确认依据，本轮不作答。"
-        )
-
-    data = first.data or {}
-    precision_tool = _precision_tool_route(question)
-    # 代码决定的偏好工具（见 `_preferred_tool_route`）。它和精确路由一样要**豁免
-    # 检索不足**：这几类问题的证据本来就不在 chunk 里——「你的库覆盖哪些领域」
-    # 由 kb_coverage 回答、「某属性从哪来」由 stat_sources 逐渠道枚举，
-    # BM25 命不中是正常的。不豁免的话整轮在进生成前就被判缺据，工具根本没机会调。
-    # 兜底在 `_terminal_gap`：跑完若一条证据都没拿到，仍然走缺据声明。
-    preferred_tool = "" if precision_tool else _preferred_tool_route(question)
-    if preferred_tool:
-        result.retrieval_meta["preferred_tool"] = preferred_tool
-    gate_refused = False
-    if precision_tool:
-        result.retrieval_meta["precision_route"] = precision_tool
-    elif preferred_tool not in _DETERMINISTIC_DIRECT_TOOLS:
-        # 精确路由不过这道闸：那类问题的维度由工具自己的缺据字段负责声明。
-        # 其余情况一律走 `_apply_dimension_gate`（它内部无条件问覆盖层）。
-        # **这里曾内联过一份等价实现**，而那个函数就在同一个文件里、还带着这道闸门
-        # 最权威的 docstring——第四十七轮 review 才发现它是死代码。
-        data, gate_refused = _apply_dimension_gate(
-            question, data, citations=first.citations)
-        if gate_refused:
-            result.retrieval_meta["dimension_gate"] = True
-        elif data.get("partial_dimension_gap"):
-            result.partial_gap_note = str(data.get("partial_gap_note") or "")
-            missing = list(data.get("partial_gap_missing_terms") or [])
-            result.retrieval_meta["partial_dimension_gap"] = True
-            result.retrieval_meta["partial_gap_missing_terms"] = missing
-            _record_gaps(
-                question,
-                missing,
-                category=str(data.get("partial_gap_category") or ""),
-            )
-
-    # 偏好工具**只豁免「BM25 命不中」，不豁免维度闸门**。
-    # 两者是不同的判断：前者说「证据不在 chunk 里」（那正是工具要去查的），
-    # 后者说「这一维根本没有数据」——工具也造不出没有的数据。
-    #
-    # 实测（2026-08-19 第十八轮）：当时「大星团珠宝的斧剑伤害能开出哪些核心天赋」
-    # 尚未接通，维度闸门判了缺据，但「星团」命中偏好工具后整轮被豁免、进了模型，
-    # 结果模型写了 12 句、被出口闸门拦掉 11 句——用户看到一篇拦截说明。
-    # 该拦的地方是入口，不是出口。
-    if not data.get("sufficient") and not precision_tool and (
-        not preferred_tool or gate_refused
-    ):
-        # 依据不足且没有确定性精确工具路由 → 由代码生成缺据声明，模型完全不参与
-        result.evidence_gap = True
-        answer, gap_category = _gap_answer(question, data)
-        _record_gaps(
-            question, [str(data.get("reason") or "依据不足")], category=gap_category
-        )
-        return _TurnSetup(gap=answer)
-
-    named = _exact_entity_ids(first.citations)
-    if named and not precision_tool and preferred_tool in ("", "entity_lookup"):
-        first.citations = [c for c in first.citations if c.get("entity_id") in named]
-
-    # BM25 不充分时不能把「最不差」的命中当证据；精确路由只给模型调用工具的机会。
-    evidence = number_evidence(
-        [] if precision_tool else (first.citations if data.get("sufficient") else [])
-    )
-    result.evidence = evidence
-
-    # 参数可在代码里推导的偏好工具直接由代码调用（见 `_CODE_INVOKED_TOOLS`）。
-    # 网关忽略 tool_choice，交给模型「请调用」是不可靠的。
-    preferred_result = _invoke_preferred_tool(question, preferred_tool, result)
-    if preferred_result is not None and preferred_result.ok and preferred_result.citations:
-        evidence = number_evidence(preferred_result.citations)
-        result.evidence = evidence
-    simple_entity = _can_finish_from_entity(question, preferred_tool, preferred_result)
-    if simple_entity:
-        # “是什么”只问一个已唯一解析的实体。用该实体的精确证据收口，避免
-        # 相关度检索把仿品/旧版等相似卡带进答案，也减少无关 token。
-        evidence = number_evidence(preferred_result.citations)
-        result.evidence = evidence
-        result.retrieval_meta["evidence_policy"] = "exact_single_entity"
-    if first.meta.get("degraded"):
-        result.degraded_note = (
-            f"检索以降级通道完成（{', '.join(first.meta.get('channels') or [])}）："
-            f"{first.meta.get('note') or '向量与重排未启用'}"
-        )
-
+    precision = _precision_tool_route(question)
+    if precision:
+        result.retrieval_meta["precision_route"] = precision
+    evidence = []
     setup = _TurnSetup(
-        question=question,
-        evidence=evidence,
-        precision_tool=precision_tool,
-        preferred_tool=preferred_tool,
-        tools=([] if preferred_result is not None and preferred_result.ok
-               else _tools_for_question(question)),
-        needs_model_call=bool(preferred_tool) and preferred_result is None,
-        missing_terms=list(data.get("missing_terms") or []),
+        question=question, evidence=evidence, precision_tool=precision,
+        tools=_tools_for_question(question),
+        needs_model_call=True,
     )
-    if simple_entity:
-        setup.final = render_entity_answer(dbmod.get_conn(), question, evidence)
-        if setup.final:
-            result.retrieval_meta["answer_mode"] = "entity_fields"
-            result.citations = cit.collect(evidence, [e.label for e in evidence])
-            setup.tools = []
-            return setup
-    setup.final = _calculation_answer(result, preferred_result)
-    if setup.final:
-        setup.evidence = result.evidence
-        return setup
-    if (
-        preferred_tool == "cluster_jewel_info"
-        and _cluster_point_cost_query(question)
-        and preferred_result is not None and preferred_result.ok
-        and (preferred_result.data or {}).get("kind") == "overview"
-        and (preferred_result.data or {}).get("point_cost_known") is False
-        and preferred_result.citations
-    ):
-        # The PoB size table does not contain point costs.  The direct answer
-        # preserves that boundary and avoids a tool loop for a missing field.
-        result.evidence = number_evidence(preferred_result.citations)
-        setup.evidence = result.evidence
-        setup.final = str((preferred_result.data or {}).get("answer") or "").strip()
-        if setup.final:
-            setup.final += f"\n\n尺寸表来源 [[{result.evidence[0].label}]]。"
-            result.retrieval_meta["evidence_policy"] = "cluster_point_cost_boundary"
-            return setup
-    # 覆盖声明走代码生成路径，直接答完（理由见 `_coverage_answer`）
-    if (
-        preferred_tool == "kb_coverage"
-        and preferred_result is not None
-        and preferred_result.ok
-    ):
-        setup.final = _coverage_answer(preferred_result)
-        return setup
-    if preferred_tool in _DETERMINISTIC_DIRECT_TOOLS and preferred_result is not None:
-        if preferred_result.ok:
-            setup.final = _direct_tool_answer(
-                preferred_result, tool_name=preferred_tool, evidence=evidence
-            )
-        else:
-            result.evidence_gap = True
-            setup.gap = (
-                f"实时经济价格不可用（{preferred_result.error}）。"
-                "没有可用快照时不猜测价格，请稍后重试。"
-            )
-        return setup
-
-    # 偏好工具已由代码调过、却一条证据都没给出，且检索侧也没有 → **不进生成**。
-    # 这一步以前在生成之后（`_terminal_gap` 里那段兜底），等于明知无据还先烧一次
-    # 模型调用、再把整篇答案拦掉。判据在进生成前就成立，就该在这里判：
-    # 缺据声明由代码生成、完全可预测，也不花 token。
-    #
-    # 只在**代码已调过**（`preferred_result is not None`）时才提前判。模型自己去调
-    # 那个工具的情形（`needs_model_call`）必须给它机会，兜底仍留在 `_terminal_gap`。
-    if (
-        preferred_tool
-        and preferred_result is not None
-        and not evidence
-        and preferred_tool not in _TOOLS_WITHOUT_CITATIONS
-    ):
-        result.evidence_gap = True
-        setup.gap = _preferred_tool_gap(question, preferred_tool, setup.missing_terms)
-        return setup
-
-    if not setup.needs_model_call and _prepare_source_selection(setup, evidence):
-        return setup
-
-    memory_text = ""
+    context = ""
     if owner_id:
         try:
-            memory = build_prompt_memory_context(
-                dbmod.get_conn(), owner_id=owner_id
-            )
-            memory_text = memory.text
+            context = conversation_context(dbmod.get_conn(), question, conversation_id, owner_id)
+            memory = build_prompt_memory_context(dbmod.get_conn(), owner_id=owner_id)
+            context += "\n" + memory.text
             result.retrieval_meta["memory_count"] = memory.count
             result.retrieval_meta["memory_truncated"] = memory.truncated
-        except Exception as exc:  # noqa: BLE001 - 个性化失败不能阻断核心问答
-            logger.warning("长期记忆注入失败，继续无记忆问答：%s", type(exc).__name__)
+        except Exception as exc:  # noqa: BLE001
             result.retrieval_meta["memory_error"] = type(exc).__name__
+            logger.warning("会话上下文读取失败：%s", type(exc).__name__)
+    retrieval_note = (
+        "先理解对象、动作、否定和全部条件。尚未提供事实依据，不能凭记忆作答。"
+        + (f"本题须先使用精确工具{precision}，核对参数归属。" if precision else
+           "直接调用适用的已开放工具；需要其他工具时用select_tools加载参数契约。")
+    )
+    calculators = [s["function"]["name"] for s in setup.tools if s["function"]["name"].endswith("_calc")]
+    if calculators:
+        retrieval_note += "\n已开放计算器契约：" + "、".join(calculators) + "。计算器输出也是事实依据，可直接核对输入、公式和上限，无需先做全文检索。"
+    requirements = build_clarification(question)
+    if requirements:
+        retrieval_note += "\n方案所需输入指引（已给的信息不要重复询问）：" + requirements
     setup.messages = [
         {"role": "system", "content": build_system_prompt()},
-        {
-            "role": "user",
-            "content": _initial_user_content(
-                question, evidence, precision_tool, memory_text
-            ),
-        },
+        {"role": "user", "content": _initial_user_content(question, evidence, precision, context)
+         + "\n\n" + retrieval_note},
     ]
     return setup
 
@@ -3900,6 +3013,10 @@ class _ToolLoopState:
     source_blank: ToolResult | None = None
     affix_unknown: ToolResult | None = None
     final_results: dict[str, ToolResult] = field(default_factory=dict)
+    tools: list[dict[str, Any]] = field(default_factory=list)
+    search_calls: int = 0
+    invalid_calculators: set[str] = field(default_factory=set)
+    planned_tools: set[str] = field(default_factory=set)
 
     @classmethod
     def start(cls, setup: _TurnSetup, question: str) -> _ToolLoopState:
@@ -3908,6 +3025,7 @@ class _ToolLoopState:
             precision_tool=setup.precision_tool,
             evidence=setup.evidence,
             succeeded=not bool(setup.precision_tool),
+            tools=list(setup.tools),
         )
 
 
@@ -3918,7 +3036,67 @@ def _handle_tool_call(state: _ToolLoopState, result: TurnResult, tc: Any) -> dic
     批量路径忽略它即可。
     """
     precision = state.precision_tool
-    if precision and tc.name == precision and state.succeeded:
+    if not precision:
+        # The initial catalogue is only for discovery; do not resend it with
+        # every tool result. Keep the enabled parameter contracts available.
+        state.tools = tool_selection.schemas([
+            s["function"]["name"] for s in state.tools
+            if s["function"]["name"] in ALLOWED_TOOLS
+        ])
+    if tc.name == answer_contract.FINISH_TOOL and not precision:
+        args = _safe_json(tc.arguments)
+        try:
+            if not isinstance(args, dict):
+                raise ValueError("参数必须是JSON对象")
+            pending = state.planned_tools - state.final_results.keys()
+            if args.get("status") == "answer" and pending:
+                raise ValueError("尚未执行所选工具：" + "、".join(sorted(pending))
+                                 + "。请先核对完整问题；不能删除待核对的结论、只贴相关原文就结束。")
+            if state.invalid_calculators and args.get("status") == "answer":
+                raise ValueError("计算器已指出输入矛盾或有未覆盖条件，本轮须先澄清，不能改写前提后给确定结果")
+            reports = {name: _coverage_answer(tr) for name, tr in state.final_results.items()
+                       if name == "kb_coverage" and tr.ok}
+            reports.update({name: str(tr.data["reason"]) + "\n\n尚不能处理的条件："
+                            + "；".join(str(c) for c in tr.data["unsupported_conditions"])
+                            for name, tr in state.final_results.items()
+                            if tr.ok and isinstance(tr.data, dict) and tr.data.get("report") == name
+                            and tr.data.get("kind") == "clarification"})
+            raw, binding = answer_contract.compose(args, state.evidence, reports=reports)
+            if binding.blocked:
+                raise ValueError("；".join(v.reason + "：" + v.text[:100] for v in binding.verdicts if not v.ok)[:1000]
+                                 + "。澄清请用ask；保留原问题的目标，补调规则或计算工具，不可删除结论只贴摘录。"
+                                 + " 可核对工具：" + (_preferred_tool_route(state.question) or "select_tools"))
+            result.raw_answer = raw
+            result.binding = binding
+            result.answer = binding.public_text
+            result.citations = cit.collect(state.evidence, binding.used_labels)
+            result.evidence_gap = args["status"] == "gap"
+            result.retrieval_meta["answer_mode"] = "grounded_blocks"
+            result.retrieval_meta["answer_payload"] = {"arguments": args, "reports": reports}
+            if result.evidence_gap:
+                _record_gaps(state.question, [result.answer], category="not_recalled/model_search")
+            tr = ToolResult(ok=True, data={"completed": True})
+        except (ValueError, TypeError) as exc:
+            tr = ToolResult(ok=False, error=str(exc))
+        result.tool_calls.append(_tool_record(tc.name, args, tr))
+        return {"message": {"role": "tool", "tool_call_id": tc.id, "content": tr.for_model()},
+                "evidence_changed": False}
+    if tc.name == tool_selection.SELECT_TOOL and not precision:
+        tr = tool_selection.select(_safe_json(tc.arguments))
+        if tr.ok:
+            state.planned_tools.update(tr.data["enabled"])
+            state.tools = tool_selection.schemas([*tool_selection.SEARCH_TOOLS, *tr.data["enabled"]])
+            result.retrieval_meta["selected_tools"] = tr.data["enabled"]
+        result.tool_calls.append(_tool_record(tc.name, _safe_json(tc.arguments), tr))
+        return {"message": {"role": "tool", "tool_call_id": tc.id, "content": tr.for_model()},
+                "evidence_changed": False}
+    if tc.name == "kb_search":
+        state.search_calls += 1
+    if state.invalid_calculators and tc.name.endswith("_calc"):
+        tr, precision_match = ToolResult(ok=False, error="本轮计算前提尚待用户确认，不允许改用另一计算器或重新解释参数给出替代结果"), False
+    elif tc.name == "kb_search" and state.search_calls > 3:
+        tr, precision_match = ToolResult(ok=False, error="本轮检索改写已达3次，请核对已有候选实体或明确歧义/缺口，不再重复全文搜索"), False
+    elif precision and tc.name == precision and state.succeeded:
         state.invalidated = True
         tr = ToolResult(
             ok=False, error="精确工具已成功完成；本轮再次改参会使证据归属不唯一"
@@ -3928,6 +3106,16 @@ def _handle_tool_call(state: _ToolLoopState, result: TurnResult, tc: Any) -> dic
         tr, precision_match = _call_tool(state.question, precision, tc.name, tc.arguments)
 
     data = tr.data or {}
+    if tc.name.endswith("_calc"):
+        # Calculated values and their premises form one claim. A paraphrase with
+        # the same numbers can still reverse their meaning; retain whole fields.
+        tr.citations = [{**c, "claim_scope": "excerpt"}
+                        if c.get("claim_scope", "general") in {"general", "calculation"} else c
+                        for c in tr.citations]
+    if tc.name == "kb_coverage" and tr.ok:
+        tr.data = {**data, "report": "kb_coverage", "answer_hint": "用finish_answer的report块引用此完整报告，无需手抄"}
+    if tc.name.endswith("_calc") and data.get("kind") == "clarification":
+        state.invalid_calculators.add(tc.name)
     if precision == "metamod_interaction_matrix" and tc.name == precision and tr.ok \
             and bool(data.get("source_blank")):
         state.source_blank = tr
@@ -3936,7 +3124,8 @@ def _handle_tool_call(state: _ToolLoopState, result: TurnResult, tc: Any) -> dic
         state.affix_unknown = tr
 
     result.tool_calls.append(_tool_record(tc.name, _safe_json(tc.arguments), tr))
-    state.final_results[tc.name] = tr
+    if tc.name not in state.invalid_calculators or data.get("kind") == "clarification":
+        state.final_results[tc.name] = tr
 
     evidence_changed = False
     if precision_match:
@@ -3970,12 +3159,30 @@ def _assistant_tool_message(tool_calls: list[Any], content: str | None = None) -
 
 
 def _evidence_refresh_message(evidence: list[Evidence]) -> dict[str, Any]:
-    """证据集变了就把最新编号重新给模型，否则它会引用旧编号。"""
+    """Append only newly numbered evidence; previously sent labels stay stable."""
     return {
         "role": "user",
-        "content": "当前可用证据（编号已更新，请据此标注）：\n\n"
+        "content": "新增可用证据（既有编号仍有效）：\n\n"
                    + render_evidence_block(evidence),
     }
+
+
+def _draft_feedback(state: _ToolLoopState, text: str) -> str:
+    """Repair invalid prose within the same turn instead of publishing fragments."""
+    if state.precision_tool or not state.evidence:
+        return ""
+    checked = verify(expand_quotes(text, state.evidence), state.evidence)
+    if (not checked.blocked and checked.used_labels and not state.invalid_calculators
+            and not (state.planned_tools - state.final_results.keys())):
+        return ""
+    reasons = "；".join(v.reason for v in checked.verdicts if not v.ok)
+    return (
+        "草稿尚未完成引用或条件核对，未向用户发送。请使用finish_answer完成回答；"
+        "原文使用quote，解释与计算填text和citations。不能静默省略问题的一部分。"
+        + ("存在尚未确认的计算前提，须用clarification并说明，不得改参给替代算例。" if state.invalid_calculators else "")
+        + "尚待核对的已选工具：" + "、".join(sorted(state.planned_tools - state.final_results.keys()))
+        + reasons[:1000]
+    )
 
 
 def _terminal_gap(state: _ToolLoopState, setup: _TurnSetup) -> str:
@@ -4000,31 +3207,12 @@ def _terminal_gap(state: _ToolLoopState, setup: _TurnSetup) -> str:
     if not state.succeeded or state.invalidated:
         return _precision_failure_answer(state.precision_tool)
 
-    # 偏好工具豁免了「检索不足」，模型自己去调那个工具却什么也没拿到时兜在这里。
-    # 代码已调过工具的情形在 `_prepare_turn` 里就判掉了，不会走到这。
-    # 不兜的话答案会带着零条证据进闸门，每个事实句都被拦，用户看到一篇拦截说明——
-    # 那比一句「查不到」更糟，而且掩盖了「本轮其实无据」这个事实。
-    preferred = setup.preferred_tool
-    if preferred and not state.evidence and preferred not in _TOOLS_WITHOUT_CITATIONS:
-        return _preferred_tool_gap(question, preferred, setup.missing_terms)
+    # No cited facts are publishable when tools produced no evidence.
+    if not state.evidence and not any(name in _TOOLS_WITHOUT_CITATIONS for name in state.final_results):
+        _record_gaps(question, ["检索与工具核对后未找到可引用依据"], category="not_recalled/semantic_search")
+        return "本轮检索与工具核对后仍没有可引用依据，请补充准确名称、效果原文或计算所需条件。"
 
     return ""
-
-
-def _preferred_tool_gap(question: str, preferred: str, missing_terms: list[str]) -> str:
-    """偏好工具零证据的缺据声明。进生成前后各有一个判点，措辞必须同一处产生。"""
-    answer, gap_category = _gap_answer(question, {
-        "reason": (
-            f"已按问题类型改由精确工具 `{preferred}` 回答，"
-            "但该工具本轮未返回任何可引用证据"
-        ),
-        "missing_terms": list(missing_terms),
-    })
-    _record_gaps(
-        question, [f"[{preferred}] 精确工具未返回可引用证据"],
-        category=gap_category, kind="tool_gap",
-    )
-    return answer
 
 
 #: `calc/derive.render_steps()` 渲染的推导表表头。逐字取自那个函数——
@@ -4090,8 +3278,12 @@ def _apply_notes(result: TurnResult, evidence: list[Evidence]) -> list[str]:
         notes.append(result.partial_gap_note)
     used = {c.label for c in result.citations}
     evidence = [e for e in evidence if e.label in used]
-    for note in _answer_notes(result.tool_calls, evidence):
-        if note not in notes:
+    used_ids = {e.chunk_id for e in evidence}
+    reports = result.retrieval_meta.get("answer_payload", {}).get("reports", {})
+    relevant_calls = [c for c in result.tool_calls
+                      if used_ids.intersection(c.get("evidence_ids", [])) or c["tool"] in reports]
+    for note in _answer_notes(relevant_calls, evidence):
+        if note not in notes and note not in result.answer:
             notes.append(note)
     for note in notes:
         result.answer += f"\n\n> {note}"
@@ -4136,15 +3328,10 @@ def run_turn(
     try:
         client = client or get_llm_client()
         for round_no in range(max_calls + 1):
-            if not state.precision_tool and len(state.final_results) == 1:
-                result.answer = _calculation_answer(result, next(iter(state.final_results.values())))
-                if result.answer:
-                    break
-            if (state.final_results and all(tr.ok and tr.citations for tr in state.final_results.values())
-                    and _prepare_source_selection(setup, state.evidence)):
-                messages = setup.messages
+            if result.answer:
+                break
             # A completed tool result needs an answer, not another search loop.
-            round_tools = setup.tools if not state.final_results else []
+            round_tools = [] if state.precision_tool and state.succeeded else state.tools
             resp = client.chat(
                 messages,
                 tools=round_tools,
@@ -4152,24 +3339,41 @@ def run_turn(
             )
             result.model = resp.model
             if not resp.tool_calls:
+                feedback = _draft_feedback(state, resp.content)
+                if feedback:
+                    messages.extend([{"role": "assistant", "content": resp.content},
+                                     {"role": "user", "content": feedback}])
+                    continue
                 answer_text = resp.content
                 break
 
+            prior_labels = {e.label for e in state.evidence}
             messages.append(_assistant_tool_message(resp.tool_calls, resp.content))
             for tc in resp.tool_calls:
                 messages.append(_handle_tool_call(state, result, tc)["message"])
-            messages.append(_evidence_refresh_message(state.evidence))
+                if result.answer:
+                    break
+            new_evidence = [e for e in state.evidence if e.label not in prior_labels]
+            if new_evidence:
+                messages.append(_evidence_refresh_message(new_evidence))
         else:
-            logger.warning("工具调用达到上限 %d，用现有内容作答", max_calls)
+            if not result.answer:
+                result.evidence_gap = True
+                result.retrieval_meta["generation_error"] = "tool_limit"
+                result.answer = "本轮未能在调用上限内完成核对，请缩小问题范围后重试。"
     except LLMError as exc:
         # 必须记下具体原因：只报异常类型的话，线上出问题时无从下手。
         # 消息已由 core/llm.py 脱敏，可安全写日志。
         logger.error("生成失败（trace=%s）：%s", trace_id, exc)
-        result.answer = f"生成失败（{type(exc).__name__}），本轮不作答以免输出无据内容。"
+        result.evidence_gap = True
+        result.retrieval_meta["generation_error"] = type(exc).__name__
+        result.answer = f"生成失败（{type(exc).__name__}），本轮未完成，请重试。"
     finally:
         result.tokens = budget.used.as_dict()
 
     if result.answer:
+        _record_final_tool_result_gaps(question, state.final_results)
+        _apply_notes(result, state.evidence)
         return _end(result, conversation_id, started)
 
     gap = _terminal_gap(state, setup)
@@ -4181,14 +3385,9 @@ def run_turn(
     evidence = state.evidence
     _record_final_tool_result_gaps(question, state.final_results)
 
-    if setup.passages:
-        _selected_answer(result, setup, answer_text)
-        if not result.evidence_gap:
-            _apply_notes(result, setup.evidence)
-        return _end(result, conversation_id, started)
-
     # ── 出口闸门 ──
     result.raw_answer = answer_text
+    answer_text = expand_quotes(answer_text, evidence)
     binding = verify(
         answer_text,
         evidence,
@@ -4238,8 +3437,7 @@ def stream_turn(
     result = TurnResult(trace_id=trace_id, question=question, answer="")
     yield {"type": "meta", "trace_id": trace_id, "conversation_id": conversation_id}
 
-    # 准备阶段与非流式**同一个函数**（`_prepare_turn`）：POE2 边界、强制检索、路由、
-    # 维度闸门、代码调偏好工具。这里只负责把它的结论翻译成事件。
+    # Shared preparation preserves scope and owned context before generation.
     setup = _prepare_turn(question, result, owner_id=owner_id, conversation_id=conversation_id)
     if setup.gap:
         result.answer = setup.gap
@@ -4271,16 +3469,11 @@ def stream_turn(
     try:
         client = client or get_llm_client()
         for _round in range(max_calls + 1):
-            if not state.precision_tool and len(state.final_results) == 1:
-                result.answer = _calculation_answer(result, next(iter(state.final_results.values())))
-                if result.answer:
-                    break
-            if (state.final_results and all(tr.ok and tr.citations for tr in state.final_results.values())
-                    and _prepare_source_selection(setup, state.evidence)):
-                messages = setup.messages
+            if result.answer:
+                break
             pending: list[Any] = []
             round_content: list[str] = []
-            round_tools = setup.tools if not state.final_results else []
+            round_tools = [] if state.precision_tool and state.succeeded else state.tools
             with closing(client.stream(messages, tools=round_tools, budget=budget)) as upstream:
                 for event in upstream:
                     if event.kind == "thinking":
@@ -4288,12 +3481,7 @@ def stream_turn(
                             announced_thinking = True
                             yield {"type": "thinking"}
                     elif event.kind == "content":
-                        if setup.precision_tool or setup.passages or setup.needs_model_call:
-                            # 精确路径整轮缓冲：直到确认该轮没有后续工具调用，正文才进闸门。
-                            round_content.append(event.text)
-                        else:
-                            for verdict in gate.feed(event.text):
-                                yield _sentence_event(verdict)
+                        round_content.append(event.text)
                     elif event.kind == "tool_calls":
                         pending = list(event.tool_calls)
                     elif event.kind == "usage" and event.usage is not None:
@@ -4302,13 +3490,15 @@ def stream_turn(
                     elif event.kind == "error":
                         raise LLMError(event.detail)
             if not pending:
-                if state.succeeded and not state.invalidated and not setup.passages:
-                    for piece in round_content:
-                        for verdict in gate.feed(piece):
-                            yield _sentence_event(verdict)
+                feedback = _draft_feedback(state, "".join(round_content))
+                if feedback:
+                    messages.extend([{"role": "assistant", "content": "".join(round_content)},
+                                     {"role": "user", "content": feedback}])
+                    continue
                 break
 
             # 模型要调工具：执行后开新的一轮流
+            prior_labels = {e.label for e in state.evidence}
             messages.append(_assistant_tool_message(pending))
             for tc in pending:
                 yield {"type": "tool", "name": tc.name}
@@ -4317,9 +3507,14 @@ def stream_turn(
                     # 编号是追加式的，旧编号不变，所以只需把新证据补进闸门的映射
                     gate.add_evidence(state.evidence)
                 messages.append(handled["message"])
-            messages.append(_evidence_refresh_message(state.evidence))
+                if result.answer:
+                    break
+            new_evidence = [e for e in state.evidence if e.label not in prior_labels]
+            if new_evidence:
+                messages.append(_evidence_refresh_message(new_evidence))
         else:
-            logger.warning("流式工具调用达到上限 %d", max_calls)
+            if not result.answer:
+                failure = "本轮未能在调用上限内完成核对"
     except LLMError as exc:
         logger.error("流式生成失败（trace=%s）：%s", trace_id, exc)
         failure = f"生成失败（{type(exc).__name__}）"
@@ -4327,31 +3522,22 @@ def stream_turn(
         result.tokens = budget.used.as_dict()
 
     if failure:
+        result.evidence_gap = True
+        result.retrieval_meta["generation_error"] = failure
         result.answer = failure + "，本轮未完成，请重试。"
         _end(result, conversation_id, started)
         yield {"type": "error", "message": result.answer}
         return
 
     if result.answer:
-        yield {"type": "sentence", "text": result.answer, "kind": "factual",
+        _record_final_tool_result_gaps(question, state.final_results)
+        _apply_notes(result, state.evidence)
+        yield {"type": "gap" if result.evidence_gap else "sentence", "text": result.answer, "kind": "factual",
                "labels": [c.label for c in result.citations]}
         yield from _citation_events(result)
         yield from _finish(result, conversation_id, started)
         return
 
-    if setup.passages:
-        _selected_answer(result, setup, "".join(round_content))
-        yield {"type": "gap" if result.evidence_gap else "sentence",
-               "text": result.answer, "kind": "factual",
-               "labels": [c.label for c in result.citations]}
-        yield from _citation_events(result)
-        if not result.evidence_gap:
-            for note in _apply_notes(result, setup.evidence):
-                yield {"type": "note", "text": note}
-        yield from _finish(result, conversation_id, started)
-        return
-
-    # 四种确定性拒答与非流式**同一个函数**（`_terminal_gap`），含偏好工具零证据兜底
     gap = _terminal_gap(state, setup)
     if gap:
         result.evidence_gap = True
@@ -4362,6 +3548,9 @@ def stream_turn(
 
     evidence = state.evidence
     _record_final_tool_result_gaps(question, state.final_results)
+    result.raw_answer = "".join(round_content)
+    for verdict in gate.feed(expand_quotes(result.raw_answer, evidence)):
+        yield _sentence_event(verdict)
     for verdict in gate.flush():
         yield _sentence_event(verdict)
 
@@ -4382,20 +3571,6 @@ def stream_turn(
         _record_binding_gaps(question, binding)
 
     yield from _finish(result, conversation_id, started)
-
-
-def _selected_answer(result: TurnResult, setup: _TurnSetup, raw: str) -> None:
-    result.raw_answer = raw
-    result.retrieval_meta["answer_mode"] = "source_selection"
-    result.answer, labels = render_selection(raw, setup.passages)
-    result.citations = cit.collect(setup.evidence, labels)
-    if not result.answer:
-        result.evidence_gap = True
-        _record_gaps(result.question, ["检索资料中未选出直接回答问题的原文"], category="not_recalled/source_selection")
-        result.answer = (
-            "知识库中查不到可直接回答本轮问题的依据，请补充具体对象或所需字段，"
-            "或在 [POEDB](https://poedb.tw/cn/) 核对原文。"
-        )
 
 
 def _citation_events(result: TurnResult) -> Iterator[dict[str, Any]]:
@@ -4488,6 +3663,7 @@ def _tool_record(name: str, args: Any, result: ToolResult) -> dict[str, Any]:
         "error": result.error,
         "elapsed_ms": result.elapsed_ms,
         "evidence_count": len(result.citations),
+        "evidence_ids": [c.get("chunk_id", "") for c in result.citations],
         "data": result.data,
         "meta": result.meta,
     }
@@ -4670,7 +3846,7 @@ def _persist(result: TurnResult, conversation_id: str | None) -> None:
                 result.trace_id,
                 conversation_id,
                 "knowledge_qa",
-                "强制检索 → 充分性判定 → 生成 → 绑定校验",
+                "理解完整问题 → 选择工具与核对条件 → 组装回答 → 引用校验",
                 json.dumps(result.tool_calls, ensure_ascii=False, default=str),
                 json.dumps(
                     {

@@ -3,8 +3,7 @@
     python scripts/verify_chat.py --gap-only   # 只测缺据路径，**不需要可用凭证**
     python scripts/verify_chat.py              # 全部（需要可用 LLM 凭证）
 
-缺据路径不调用 LLM：检索判定依据不足时，缺据声明由代码生成。这条路径必须
-完全可预测，所以刻意不经模型（见 orchestrator/loop.py）。
+POE2 越界路径不调用 LLM；普通问答先理解问题、检索核对，再由统一出口校验。
 
 需要服务已启动：python main.py
 """
@@ -23,6 +22,7 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from api import normalize_base_path  # noqa: E402
 from core.config import get_config
+from core.model_policy import DEEPSEEK_MODEL
 
 PASS = FAIL = 0
 
@@ -111,7 +111,6 @@ def main() -> int:
     section("1. 缺据路径（不调用 LLM）")
     for q in (
         "流放之路2 的升华机制是什么",
-        "请你猜一下下个赛季会加什么新机制",
     ):
         try:
             d = post(base, "/chat", {"message": q})
@@ -186,7 +185,7 @@ def main() -> int:
         print(f"\n{'=' * 74}\n结果：{PASS} 通过，{FAIL} 失败")
         return 0 if FAIL == 0 else 1
 
-    section("3. 实体字段直出（不调用模型）")
+    section("3. 实体问答（模型理解后查证）")
     q = "猎首（Headhunter）有哪些词缀？"
     try:
         d = post(base, "/chat", {"message": q})
@@ -218,11 +217,8 @@ def main() -> int:
           and d["citations"][0]["url"] == "https://poedb.tw/cn/Headhunter")
     check("单实体问答未混入仿品且无拦截",
           "仿品" not in d["answer"] and d["blocked_claims"] == 0)
-    check("单实体问答不发送全量工具 schema",
-          d["tokens"].get("prompt", 0) < 3000,
-          f"prompt_tokens={d['tokens'].get('prompt', 0)}")
-    check("实体字段直出不消耗模型 Token", not d["tokens"].get("total", 0))
-    check("直出不冒充模型生成", not d["model"])
+    check("使用当前固定模型", d["model"] == DEEPSEEK_MODEL)
+    check("真实调用模型且未耗尽轮次预算", 0 < d["tokens"].get("total", 0) < get_config().get("llm.max_tokens_per_turn", 60000))
     check("答案里没有模型自写的来源行（引用由代码装配）",
           "来源：" not in d["answer"])
     if d["blocked_claims"]:
@@ -260,7 +256,7 @@ def main() -> int:
     check("正文非空", bool(stream_text.strip()), f"{len(stream_text)} 字")
     check("两条路径都不是缺据声明",
           not d["evidence_gap"] and not done.get("evidence_gap"))
-    check("两条路径均为实体字段直出", not done.get("model") and not d.get("model"))
+    check("两条路径均使用固定模型", done.get("model") == d.get("model") == DEEPSEEK_MODEL)
 
     section("6. 缺据路径的流式呈现")
     gap_frames = sse(base, "/chat/stream", {"message": "流放之路2 的升华机制是什么"})

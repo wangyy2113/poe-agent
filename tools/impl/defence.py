@@ -527,6 +527,8 @@ def _suppression_section(result: mit.SuppressionResult) -> list[str]:
         f"压制几率 {result.chance:g}%、每次触发减 {result.effect:g}% 法术伤害，"
         f"**平均减伤 {result.average_reduction:g}%**。"
     )
+    if result.effect < 100:
+        body.append("压制几率决定触发频率，不是每次的减伤比例；上述压制效果不等于免疫法术伤害。")
     return body
 
 
