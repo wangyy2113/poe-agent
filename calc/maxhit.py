@@ -93,6 +93,13 @@ def _bounds(
     return no_dr, max_dr
 
 
+def _resistance_multiplier(resist_pct: float) -> float:
+    cap = constants.get(constants.MAX_RESIST_CAP)
+    if not math.isfinite(resist_pct) or resist_pct > cap:
+        raise ValueError(f"生效抗性不能超过 {cap:g}%；总抗性必须先结算最大抗性与穿透")
+    return 1 - resist_pct / 100
+
+
 def max_hit(
     pool: float,
     *,
@@ -113,7 +120,7 @@ def max_hit(
     * `overwhelm_pct`：敌方的「压制」（无视物理减伤）。
     """
     reduction_cap = constants.get(constants.MAX_PHYS_DAMAGE_REDUCTION)
-    resist_mult = 1 - resist_pct / 100
+    resist_mult = _resistance_multiplier(resist_pct)
     flat_dr = flat_reduction_pct / 100
 
     steps = [
@@ -218,7 +225,7 @@ def taken_from(
     照 `CalcDefence.lua:1971-2050` 的顺序：抗性 → 护甲/减伤 → 定值承伤 → 乘算修正。
     """
     reduction_cap = constants.get(constants.MAX_PHYS_DAMAGE_REDUCTION)
-    after_resist = raw_damage * (1 - resist_pct / 100)
+    after_resist = raw_damage * _resistance_multiplier(resist_pct)
     reduction = flat_reduction_pct
     if armour > 0 and after_resist > 0:
         reduction += armour / (armour + 5 * after_resist) * 100

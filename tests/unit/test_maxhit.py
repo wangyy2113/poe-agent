@@ -24,14 +24,12 @@ from tests.unit.test_resistance import (  # noqa: E402
     BLOB,
     CONSTANT_SCHEMA,
     POB_ROOT_ENV,
+    fixture_conn as resistance_fixture_conn,
 )
 
 
 def fixture_conn() -> sqlite3.Connection:
-    conn = sqlite3.connect(":memory:")
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys=OFF")
-    conn.executescript(CONSTANT_SCHEMA)
+    conn = resistance_fixture_conn()
     conn.execute(
         "INSERT INTO game_constant VALUES (?,?,?,0,'scalar',?,NULL,'Path of Building',2,?,"
         "'PoB 2.66.2 / tree 3.29','3.29',datetime('now'))",
@@ -155,11 +153,10 @@ class BoundaryTest(MaxHitTestCase):
     def test_池子为零时不报错也不给数(self) -> None:
         self.assertEqual(0.0, mh.max_hit(0, resist_pct=75).max_hit)
 
-    def test_抗性百分之百时能挨无限(self) -> None:
-        """抗性 100% ⇒ 抗性倍率为 0，两个边界都是 0（PoB 同样退化）。
-        这一支现实里到不了（上限 90%），但不能崩。"""
-        result = mh.max_hit(5000, resist_pct=100)
-        self.assertEqual(0.0, result.without_armour)
+    def test_unattainable_effective_resistance_is_rejected(self) -> None:
+        for value in (91, 99, 100, float("nan"), float("inf")):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                mh.max_hit(5000, resist_pct=value)
 
     def test_常量缺失时抛异常(self) -> None:
         constants.reset_cache()
@@ -224,6 +221,62 @@ class MaxHitToolTest(MaxHitTestCase):
 
         self.tool = max_hit_calc
 
+    def test_total_resistance_is_capped_before_max_hit(self) -> None:
+        cases = [({}, 75, 20000), ({"maximum_resist_pct": 80}, 80, 25000),
+                 ({"maximum_resist_pct": 90}, 90, 50000),
+                 ({"extra_max_resist_pct": 5}, 80, 25000)]
+        for extra, effective, threshold in cases:
+            with self.subTest(extra=extra):
+                result = self.tool(life=5000, total_resist_pct=99, damage_type="火焰", **extra)
+                self.assertEqual("result", result.data["kind"])
+                self.assertEqual(effective, result.data["effective_resist_pct"])
+                self.assertAlmostEqual(threshold, result.data["max_hit"])
+                text = result.citations[0]["text"]
+                self.assertIn("临界值", text)
+                self.assertIn("耗尽池子", text)
+                if not extra:
+                    self.assertIn("未提供最大抗性加成", text)
+                    self.assertIn("硬上限为 90%", text)
+
+    def test_penetration_follows_cap_and_cannot_be_offset_by_overcap(self) -> None:
+        for total in (99, 120):
+            result = self.tool(life=5000, total_resist_pct=total,
+                               enemy_penetration=25, damage_type="火焰")
+            self.assertEqual(50, result.data["effective_resist_pct"])
+            self.assertEqual(10000, result.data["max_hit"])
+        result = self.tool(life=5000, resist_pct=90, enemy_penetration=25, damage_type="火焰")
+        self.assertEqual(65, result.data["effective_resist_pct"])
+
+    def test_invalid_or_unsupported_premises_produce_cited_clarification(self) -> None:
+        cases = [
+            {"resist_pct": 99}, {"resist_pct": 100}, {"resist_pct": float("nan")},
+            {"total_resist_pct": 99, "maximum_resist_pct": 95},
+            {"total_resist_pct": 99, "resist_pct": 75},
+            {"resist_pct": 75, "armour": 10000},
+            {"resist_pct": 75, "flat_reduction_pct": 10},
+            {"resist_pct": 75, "enemy_penetration": -25},
+            {"resist_pct": 75, "unsupported_conditions": ["伤害转化", "Mind over Matter"]},
+            {"resist_pct": 75, "unsupported_conditions": ["Mind over Matter 分流42%伤害"]},
+            {"damage_type": "物理", "total_resist_pct": 0},
+            {"damage_type": "物理", "resist_pct": 75},
+            {"damage_type": "物理", "flat_reduction_pct": -10},
+            {"damage_type": "混沌", "energy_shield": 3000, "resist_pct": 75},
+        ]
+        for case in cases:
+            with self.subTest(case=case):
+                result = self.tool(**{"life": 5000, "damage_type": "火焰", **case})
+                self.assertEqual("clarification", result.data["kind"])
+                self.assertNotIn("max_hit", result.data)
+                self.assertTrue(result.citations)
+                self.assertIn("本轮不提供承伤数值", result.citations[0]["text"])
+                self.assertNotIn("42%", result.citations[0]["text"])
+
+    def test_missing_resistance_is_not_zero(self) -> None:
+        result = self.tool(life=5000, damage_type="火焰")
+        self.assertEqual("rules", result.data["kind"])
+        self.assertIn("该伤害类型的总抗性或明确的生效抗性", result.data["missing_inputs"])
+        self.assertNotIn("max_hit", result.data)
+
     def test_没给池子时讲规则(self) -> None:
         result = self.tool()
         self.assertEqual("rules", result.data["kind"])
@@ -276,6 +329,9 @@ class MaxHitRouteTest(unittest.TestCase):
             "我 5000 血 75 火抗，一发最多能挨多少火焰伤害",
             "10000 护甲 5000 血会被 20000 物理秒吗",
             "一发最多能挨多少",
+            "5000生命，总火抗99%，最大抗性90%，一发最多能挨多少火焰伤害",
+            "5000生命，总火抗99%，没有最大抗性加成，敌人25%火焰穿透，一发最多能挨多少",
+            "5000生命、护甲10000，护甲减伤后最多能承受多大的物理击中",
         ):
             with self.subTest(question=question):
                 self.assertEqual("max_hit_calc", self.route(question))
@@ -293,21 +349,21 @@ class MaxHitRouteTest(unittest.TestCase):
 
 class MaxHitArgsTest(unittest.TestCase):
     def args(self, question: str):  # noqa: ANN201
-        from orchestrator.loop import _maxhit_args
+        from orchestrator.loop import _CODE_INVOKED_TOOLS
 
-        return _maxhit_args(question)
+        return _CODE_INVOKED_TOOLS["max_hit_calc"](question)
 
-    def test_抽出生命抗性与伤害类型(self) -> None:
+    def test_resistance_meaning_is_left_to_the_model(self) -> None:
         self.assertEqual(
-            {"life": 5000.0, "resist_pct": 75.0, "damage_type": "火焰"},
+            None,
             self.args("我 5000 血 75 火抗，一发最多能挨多少火焰伤害"),
         )
 
-    def test_数字在前的写法优先(self) -> None:
+    def test_physical_inputs_are_also_interpreted_by_the_model(self) -> None:
         """实测踩过：「10000 护甲 5000 血」里 `护甲 5000` 也能匹配「数字在后」的写法，
         于是护甲槽同时抽到两个值、整条判定作废。"""
         self.assertEqual(
-            {"life": 5000.0, "armour": 10000.0, "damage_type": "物理"},
+            None,
             self.args("10000 护甲 5000 血会被物理秒吗"),
         )
 

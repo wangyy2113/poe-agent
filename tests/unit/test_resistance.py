@@ -121,10 +121,10 @@ class ReconcileWithPoB(ResistanceTestCase):
         self.assertEqual(90, capped.max_resist)
         self.assertEqual(90, capped.final)
 
-    def test_覆写最大抗性可以突破硬上限(self) -> None:
-        """`Melding of the Flesh` 那类 OVERRIDE 在 `m_min(MaxResistCap, ...)` 之前短路。"""
-        result = res.resistance("火焰", base_specific=200, max_override=95)
-        self.assertEqual(95, result.max_resist)
+    def test_override_does_not_invent_unattainable_resistance(self) -> None:
+        with self.assertRaises(ValueError):
+            res.resistance("火焰", base_specific=200, max_override=95)
+        self.assertEqual(90, res.resistance("火焰", base_specific=200, max_override=90).final)
 
     def test_混沌不吃元素类加成(self) -> None:
         """把「+48% 全部元素抗性」「+4% 最大元素抗性」算到混沌上，是这一块最常见的错。"""
