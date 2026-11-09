@@ -10,8 +10,8 @@ logs/
 
 # 密钥
 .env
-.env.bot
-.env.local
+.env.*
+!.env.example
 
 # Python
 __pycache__/

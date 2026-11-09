@@ -14,6 +14,7 @@ from pydantic import ValidationError
 from api.build import ScreenshotBuildRequest, analyze_screenshot_build
 from api.screenshot import ScreenshotRequest, screenshot_recognize
 from core.config import Config
+from core.model_policy import DEEPSEEK_MODEL
 from core.llm import LLMResponse
 from parsers.build_report import build_health_report
 from parsers.screenshot import (
@@ -34,6 +35,8 @@ PNG = _data_url("image/png", b"\x89PNG\r\n\x1a\nprobe")
 
 
 class _StubClient:
+    default_model = DEEPSEEK_MODEL
+
     def __init__(self, content: str) -> None:
         self.content = content
         self.messages = None
@@ -42,7 +45,7 @@ class _StubClient:
     def chat(self, messages, **kwargs):  # noqa: ANN001
         self.messages = messages
         self.kwargs = kwargs
-        return LLMResponse(content=self.content, model="vision-test")
+        return LLMResponse(content=self.content, model=DEEPSEEK_MODEL)
 
 
 class _NoQueryConnection:
@@ -73,14 +76,26 @@ class ScreenshotInputTest(unittest.TestCase):
 
     def test_api_returns_503_without_constructing_llm_client(self) -> None:
         with (
-            patch("api.screenshot.get_config", return_value=Config(raw={})),
+            patch("api.screenshot.get_config", return_value=Config(raw={"llm": {"vision_enabled": False}})),
             patch("api.screenshot.get_llm_client") as get_client,
             self.assertRaises(HTTPException) as cm,
         ):
             screenshot_recognize(ScreenshotRequest(data_url=PNG), caller="test")
         self.assertEqual(cm.exception.status_code, 503)
-        self.assertEqual(cm.exception.detail["error"], "vision_model_not_configured")
+        self.assertEqual(cm.exception.detail["error"], "vision_disabled")
         get_client.assert_not_called()
+
+    def test_default_api_uses_the_common_deepseek_client(self) -> None:
+        client = _StubClient('{"kind":"item","transcript":"Rarity: Rare","build":{},"uncertain":[]}')
+        with (
+            patch("api.screenshot.get_config", return_value=Config(raw={})),
+            patch("api.screenshot.get_llm_client", return_value=client) as factory,
+        ):
+            result = screenshot_recognize(ScreenshotRequest(data_url=PNG), caller="test")
+        self.assertEqual(result.model, DEEPSEEK_MODEL)
+        self.assertTrue(result.requires_confirmation)
+        self.assertEqual(client.kwargs["model"], DEEPSEEK_MODEL)
+        factory.assert_called_once()
 
 
 class ScreenshotRecognitionTest(unittest.TestCase):
@@ -105,14 +120,14 @@ class ScreenshotRecognitionTest(unittest.TestCase):
             "uncertain": ["主技能名称边缘模糊"],
         })
         client = _StubClient(content)
-        result = recognize_screenshot(PNG, client=client, model="vision-model")
+        result = recognize_screenshot(PNG, client=client, model=DEEPSEEK_MODEL)
 
         self.assertEqual(result.kind, "build")
         self.assertEqual(result.build.player_stats, {"FullDPS": 12345.0, "FireResist": 75.0})
         self.assertEqual(result.build.player_stat_text, {"ChainMaxString": "+2"})
         self.assertEqual(result.build.enemy_is_boss, "Pinnacle")
-        self.assertEqual(result.model, "vision-test")
-        self.assertEqual(client.kwargs["model"], "vision-model")
+        self.assertEqual(result.model, DEEPSEEK_MODEL)
+        self.assertEqual(client.kwargs["model"], DEEPSEEK_MODEL)
         image = client.messages[1]["content"][1]
         self.assertEqual(image["type"], "image_url")
         self.assertEqual(image["image_url"]["url"], PNG)
@@ -137,7 +152,7 @@ class ScreenshotRecognitionTest(unittest.TestCase):
         client = _StubClient("{}")
         with self.assertRaises(ScreenshotError) as cm:
             recognize_screenshot(PNG, client=client, model="")
-        self.assertEqual(cm.exception.code, "vision_model_not_configured")
+        self.assertEqual(cm.exception.code, "vision_model_not_allowed")
         self.assertEqual(cm.exception.status_code, 503)
 
     def test_poe2_marker_is_rejected_even_if_model_calls_it_build(self) -> None:

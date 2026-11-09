@@ -8,6 +8,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 单进程、单 SQLite 文件、零外部服务。规格真源是 `.kiro/specs/poe1-agent/`
 （requirements / design / tasks），工程约定真源是 `.kiro/steering/project-conventions.md`。
 
+## 当前模型策略（2026-11-09）
+
+所有生成入口统一使用 `deepseek-v4-1-flash-1017`，真源为 `core/model_policy.py`。
+文本、工具续答和截图转录共用网关和凭证；多 Key 仅切凭证，不切模型。
+网关地址与 Key 只放在本机忽略的配置。探测脚本只读取本项目配置，不读取其他工具或项目。
+推理字段允许缺失/零，正文及工具调用均为空必须报错。Embedding / ReRank 远程调用被策略禁用；
+旧索引保留，`--apply` 回填拒绝。下面按轮次记载的历史验收与旧黄金录制保留原模型标签，
+不得误当成当前运行配置或把旧录制改名成 DeepSeek 验收。
+
 ## 大前提：只覆盖《流放之路 1》
 
 **POE1，不是 POE2（流放之路：降临 / Path of Exile 2）。** 两款游戏大量概念同名

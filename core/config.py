@@ -14,6 +14,8 @@ from typing import Any
 import yaml
 from pydantic_settings import BaseSettings
 
+from core.model_policy import DEEPSEEK_MODEL, ModelPolicyError, require_model
+
 # 仓库根目录 = 本文件的上一级。配置里的相对路径都相对它解析，
 # 这样无论从哪个目录启动，data/ 与 logs/ 都落在仓库内。
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -25,10 +27,10 @@ class Secrets(BaseSettings):
     # ── LLM ──
     llm_base_url: str
     llm_api_key: str = ""
-    llm_api_keys: str = ""  # 多 Key：key[:model] 逗号分隔，按优先级排列
-    llm_model: str = "glm-5.2"
+    llm_api_keys: str = ""  # 多 Key：逗号分隔，所有凭证只服务同一个模型
+    llm_model: str = DEEPSEEK_MODEL
 
-    # ── Embedding / ReRank（独立于 LLM，允许指向同一网关）──
+    # ── Legacy values accepted for migration; no remote adapter consumes them ──
     embedding_base_url: str = ""
     embedding_api_key: str = ""
     embedding_model: str = ""
@@ -49,28 +51,32 @@ class Secrets(BaseSettings):
         "env_file_encoding": "utf-8",
         "extra": "ignore",
         "case_sensitive": False,
+        "hide_input_in_errors": True,
     }
 
     def credential_specs(self) -> list[tuple[str, str]]:
-        """解析出 [(key, 绑定模型或空), ...]，按优先级排列。
+        """Resolve credentials without permitting per-key model routing.
 
-        `LLM_API_KEYS` 优先于 `LLM_API_KEY`。
+        The old ``key:model`` format is accepted only when it names the pinned
+        model. Invalid entries fail before any network call, without echoing keys.
         """
+        model = require_model(self.llm_model)
+        raw = self.llm_api_keys.strip() or self.llm_api_key.strip()
         specs: list[tuple[str, str]] = []
-        raw = self.llm_api_keys.strip()
-        if raw:
-            for item in raw.split(","):
-                item = item.strip()
-                if not item:
-                    continue
-                # key 本身不含冒号，`:model` 才含
-                if ":" in item:
-                    key, _, model = item.partition(":")
-                    specs.append((key.strip(), model.strip()))
-                else:
-                    specs.append((item, ""))
-        elif self.llm_api_key.strip():
-            specs.append((self.llm_api_key.strip(), ""))
+        seen: set[str] = set()
+        for item in raw.split(","):
+            item = item.strip()
+            if not item:
+                continue
+            key, sep, bound = item.partition(":")
+            key = key.strip()
+            if sep:
+                require_model(bound)
+            if not key:
+                raise ModelPolicyError("LLM 凭证条目为空；请检查本机配置")
+            if key not in seen:
+                seen.add(key)
+                specs.append((key, model))
         return specs
 
 
@@ -123,15 +129,8 @@ class Config:
         return int(self.source_priority.get(source, 99))
 
     def resolve_model(self, alias: str) -> str:
-        """模型别名 → 完整模型 ID；已是完整 ID 则原样返回。"""
-        aliases = dict(self.get("llm.model_aliases", {}) or {})
-        key = alias.strip()
-        if key in aliases:
-            return aliases[key]
-        low = key.lower()
-        if low in aliases:
-            return aliases[low]
-        return key
+        """Compatibility entry point; arbitrary aliases no longer route models."""
+        return require_model(alias)
 
 
 def load_config(path: Path | None = None) -> Config:

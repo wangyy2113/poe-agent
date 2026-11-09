@@ -27,6 +27,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from openai import APIConnectionError, APIStatusError, APITimeoutError  # noqa: E402
 
 from core import llm as m  # noqa: E402
+from core.model_policy import DEEPSEEK_MODEL
 from core.config import get_config  # noqa: E402
 from core.logging_setup import setup_logging  # noqa: E402
 
@@ -85,7 +86,7 @@ def offline() -> None:
     check("未知异常 → fatal", m.classify_failure(ValueError("x"))[0] == "fatal")
 
     section("2. 429 的两义性（最容易踩的分类错误）")
-    limit_kind, _ = m.classify_failure(_FakeStatusError(429, "Rate limit reached for glm-5.2"))
+    limit_kind, _ = m.classify_failure(_FakeStatusError(429, "Rate limit reached for deepseek-v4-1-flash-1017"))
     quota_kind, _ = m.classify_failure(_FakeStatusError(429, "insufficient_quota"))
     check("同为 429，限流与额度耗尽被区分开", limit_kind != quota_kind,
           f"限流={limit_kind} 额度={quota_kind}")
@@ -123,7 +124,7 @@ def offline() -> None:
 
     section("6. 凭证池：粘性选择 + 分级冷却 + 脱敏")
     pool = m.CredentialPool(
-        [("sk-aaaaaaaaaaaaaaaaaaaa", "glm-5.2"), ("sk-bbbbbbbbbbbbbbbbbbbb", "")],
+        [("sk-aaaaaaaaaaaaaaaaaaaa", "deepseek-v4-1-flash-1017"), ("sk-bbbbbbbbbbbbbbbbbbbb", "")],
         budget_cooldown=1800, auth_cooldown=3600,
     )
     first = pool.acquire()
@@ -132,7 +133,7 @@ def offline() -> None:
     pool.penalize(first, "auth", "invalid api key")
     second = pool.acquire()
     check("首个冷却后转到下一个", second.index == 1)
-    check("绑定模型随 Key 切换", first.model == "glm-5.2" and second.model == "")
+    check("换 Key 后仍为同一 DeepSeek 模型", first.model == second.model == DEEPSEEK_MODEL)
     pool.penalize(second, "budget", "quota exceeded")
     try:
         pool.acquire()
@@ -162,9 +163,9 @@ def offline() -> None:
 
 # ── 在线 ───────────────────────────────────────────────────
 
-def online() -> None:
+def online(client: m.LLMClient | None = None) -> None:
     section("8. 真实网关：非流式")
-    client = m.LLMClient()
+    client = client or m.LLMClient()
     print(f"  模型={client.default_model} 凭证={len(client.credential_status())}")
     for s in client.credential_status():
         print(f"    - {s['key']} 模型={s['model']} 健康={s['healthy']}")
@@ -178,8 +179,9 @@ def online() -> None:
     print(f"  token: 输入{resp.usage.prompt_tokens} 输出{resp.usage.completion_tokens} "
           f"(推理{resp.usage.reasoning_tokens}) 合计{resp.usage.total_tokens}")
     check("拿到非空正文", bool(resp.content), resp.content[:40])
-    check("记录了推理 token", resp.usage.reasoning_tokens > 0,
-          f"占输出 {resp.usage.reasoning_ratio:.1%} —— 这就是 max_tokens 必须给足的原因")
+    check("只调用固定 DeepSeek 模型", resp.model == DEEPSEEK_MODEL)
+    check("用量包含有效总量且不重复累计推理", resp.usage.total_tokens > 0
+          and 0 <= resp.usage.reasoning_tokens <= resp.usage.completion_tokens)
     check("预算已累计", budget.used.total_tokens == resp.usage.total_tokens)
     check("响应不携带推理正文", not hasattr(resp, "reasoning_content"),
           f"仅记录字符数 {resp.reasoning_chars}")
@@ -194,7 +196,7 @@ def online() -> None:
     print(f"  事件 {len(events)} 个：正文分片 {kinds.count('content')}，thinking {thinking}")
     print(f"  正文：{content[:80]}...")
     check("产出多个正文分片（足够按句缓冲）", kinds.count("content") > 1)
-    check("推理阶段发出 thinking 事件", thinking >= 1, "前端据此显示「思考中」")
+    check("推理事件最多一次，模型不返回推理时允许为零", thinking <= 1)
     check("thinking 事件不含任何文本",
           all(not e.text for e in events if e.kind == "thinking"))
     check("末尾给出 usage（含推理）", kinds[-1] == "usage" and events[-1].usage is not None,
@@ -229,6 +231,28 @@ def online() -> None:
     check("模型发起了工具调用", len(tool_resp.tool_calls) > 0,
           f"finish={tool_resp.finish_reason}")
     if tool_resp.tool_calls:
+        continuation = [
+            {"role": "user", "content": "调用 kb_search 查猎首，然后只复述工具结果。"},
+            {"role": "assistant", "content": tool_resp.content or None,
+             "tool_calls": [{"id": tc.id, "type": "function", "function": {
+                 "name": tc.name, "arguments": tc.arguments,
+             }} for tc in tool_resp.tool_calls]},
+            *[{"role": "tool", "tool_call_id": tc.id,
+               "content": "测试知识库返回：猎首是传奇腰带。"} for tc in tool_resp.tool_calls],
+        ]
+        followup = client.chat(continuation)
+        check("工具结果可续答且保持固定模型", bool(followup.content)
+              and followup.model == DEEPSEEK_MODEL)
+        tool_events = list(client.stream(
+            [{"role": "user", "content": "必须先调用 kb_search 查询猎首。"}], tools=tools,
+        ))
+        streamed_calls = [tc for e in tool_events for tc in e.tool_calls]
+        check("流式工具参数拼接为合法 JSON", bool(streamed_calls) and all(
+            isinstance(json.loads(tc.arguments), dict) for tc in streamed_calls
+        ))
+        check("流式只报告固定模型", all(
+            e.model == DEEPSEEK_MODEL for e in tool_events if e.kind == "usage"
+        ))
         call = tool_resp.tool_calls[0]
         print(f"  调用 {call.name}({call.arguments})")
         check("工具名正确", call.name == "kb_search")

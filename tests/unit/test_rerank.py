@@ -22,69 +22,20 @@ def _hit(chunk_id: str, channel: str, *, coverage: float = 1.0) -> Hit:
 
 
 class RerankClientTest(unittest.TestCase):
-    def test_unsorted_complete_response_is_returned_in_input_order(self) -> None:
-        response = SimpleNamespace(
-            status_code=200,
-            json=lambda: {"results": [
-                {"index": 1, "relevance_score": 0.9},
-                {"index": 0, "relevance_score": 0.1},
-            ]},
-        )
-        with patch("retrieval.rerank.httpx.post", return_value=response) as post:
-            scores = RerankClient("https://example.test/v1", "test-key", "bge-reranker").rerank(
-                "猎首", ["甲", "乙"]
-            )
-        self.assertEqual([0.1, 0.9], scores)
-        self.assertEqual("https://example.test/v1/rerank", post.call_args.args[0])
-        self.assertEqual("bge-reranker", post.call_args.kwargs["json"]["model"])
+    def test_remote_rerank_cannot_bypass_single_model_policy(self) -> None:
+        for model in ("deepseek-v4-1-flash-1017", "bge-reranker"):
+            with self.subTest(model=model), patch("httpx.post") as post:
+                with self.assertRaisesRegex(RerankError, "DeepSeek 单模型") as caught:
+                    RerankClient("https://example.test", "private-token", model).rerank("猎首", ["装备"])
+                self.assertNotIn("private-token", str(caught.exception))
+                post.assert_not_called()
 
-    def test_incomplete_duplicate_or_nonfinite_response_is_rejected(self) -> None:
-        client = RerankClient("https://example.test", "private-token", "reranker")
-        for results in (
-            [{"index": 0, "relevance_score": 0.5}],
-            [{"index": 0, "relevance_score": 0.5},
-             {"index": 0, "relevance_score": 0.7}],
-            [{"index": 0, "relevance_score": 0.5},
-             {"index": 1, "relevance_score": float("nan")}],
-            [{"index": 0, "relevance_score": 0.5},
-             {"index": 1, "relevance_score": "0.7"}],
-        ):
-            response = SimpleNamespace(status_code=200, json=lambda: {"results": results})
-            with patch("retrieval.rerank.httpx.post", return_value=response):
-                with self.assertRaises(RerankError) as caught:
-                    client.rerank("猎首", ["甲", "乙"])
-            self.assertNotIn("private-token", str(caught.exception))
-
-    def test_transient_failure_retries_and_permanent_failure_does_not(self) -> None:
-        failed = SimpleNamespace(status_code=503)
-        success = SimpleNamespace(
-            status_code=200,
-            json=lambda: {"results": [{"index": 0, "relevance_score": 0.8}]},
-        )
-        client = RerankClient("https://example.test", "token", "reranker")
-        with (
-            patch("retrieval.rerank.httpx.post", side_effect=[failed, success]) as post,
-            patch("retrieval.rerank.time.sleep") as sleep,
-        ):
-            self.assertEqual([0.8], client.rerank("猎首", ["甲"]))
-        self.assertEqual(2, post.call_count)
-        sleep.assert_called_once_with(0.25)
-        with patch("retrieval.rerank.httpx.post", return_value=SimpleNamespace(status_code=400)) as post:
-            with self.assertRaisesRegex(RerankError, "HTTP 400"):
-                client.rerank("猎首", ["甲"])
-        post.assert_called_once()
-
-    def test_disabled_does_not_load_secrets_and_enabled_requires_own_credentials(self) -> None:
+    def test_legacy_config_never_loads_another_models_credentials(self) -> None:
         with patch("core.config.get_secrets", side_effect=AssertionError("unexpected")):
             self.assertEqual((None, "配置关闭"), configured_rerank_client(False))
-        secrets = SimpleNamespace(
-            rerank_base_url="https://rerank.test", rerank_api_key="key",
-            rerank_model="model",
-        )
-        with patch("core.config.get_secrets", return_value=secrets):
             client, reason = configured_rerank_client(True)
-        self.assertIsInstance(client, RerankClient)
-        self.assertIn("尚未验证", reason)
+        self.assertIsNone(client)
+        self.assertIn("DeepSeek 单模型", reason)
 
 
 class HybridRerankTest(unittest.TestCase):

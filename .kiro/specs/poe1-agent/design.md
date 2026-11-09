@@ -114,7 +114,7 @@ graph TB
 | 运行时 | Python 3.12（最低 3.10），Windows / macOS / Linux 通用 | 解释器路径不硬编码，由启动层解析 |
 | 依赖管理 | `pip` + `venv`，`requirements.txt` + `requirements.lock` | 不引入 uv / poetry / conda |
 | 后端框架 | FastAPI + Pydantic v2 + uvicorn（**进程内启动**） | 需求 5.1/6.x 要求 HTTP 与流式；单进程内跑，不额外起服务 |
-| LLM 接入 | `openai` SDK 直连内部 LiteLLM 网关 `/v1/chat/completions`，模型 **`glm-5.2`**（见 3.2） | 网关已提供 OpenAI 兼容协议，无需引入第二个 SDK |
+| LLM 接入 | `openai` SDK 直连内部 LiteLLM 网关 `/v1/chat/completions`，模型固定为 **`deepseek-v4-1-flash-1017`**（见 3.2） | 网关已提供 OpenAI 兼容协议，无需引入第二个 SDK |
 | Embedding / ReRank | **同一网关** `/v1/embeddings`、`/v1/rerank`，同一 token（见 3.3） | 省掉第二个供应商与第二套凭证 |
 | 全文与 BM25 | **SQLite FTS5 + 内置 `bm25()` 排序** | 零依赖、进程内。已实测：sqlite 3.51.2 编译含 FTS5，`bm25()` 可用 |
 | 向量检索 | **`sqlite-vec` 扩展，向量与实体同库** | pip 可装（含 macOS arm64 / linux wheel），无独立服务；装不上时退化为 numpy 暴力检索 |
@@ -148,112 +148,52 @@ graph TB
 
 **注意区分**：不用 `claude` **CLI 子进程**，不等于不能用这个网关。
 
-### 3.2.1 网关实际形态（已实测）
+### 3.2.1 网关形态
 
-内部网关（实际地址配置在 `.env` 的 `LLM_BASE_URL`，本文档一律以
-`https://your-llm-gateway.example.com` 占位）是 **LiteLLM 1.82.3 代理**
-（根路径为其 Swagger UI，`/openapi.json` 共 522 个端点）。它同时暴露多套协议，以下端点均已确认存在（无凭证访问返回标准 `401 auth_error`，说明路由存在只是需要鉴权）：
-
-| 端点 | 协议 | 用途 |
-| --- | --- | --- |
-| `/v1/chat/completions` | OpenAI 兼容 | **poe-agent 用这个** |
-| `/v1/messages` | Anthropic 兼容 | poe-agent 不走这条 |
-| `/v1/embeddings` | OpenAI 兼容 | 向量通道 |
-| `/v1/rerank`、`/v2/rerank` | LiteLLM rerank | 重排通道 |
-| `/v1/models`、`/v1/model/info` | — | 查网关上实际可用的模型 |
-
-结论有两个：
-
-1. **不需要 `anthropic` SDK。** 网关已经提供 OpenAI 兼容协议，`openai` SDK 直连即可，少一个依赖。会看到有些接法配 `ANTHROPIC_BASE_URL`，那是因为它们走 `claude` CLI，而 CLI 只会说 Anthropic 协议——那是 CLI 的约束，不是网关的约束。
-2. **模型与协议解耦。** 用户示例里 `ANTHROPIC_CUSTOM_MODEL_OPTION: glm-5.2` 说明网关背后可挂非 Claude 模型。poe-agent 指定模型 **`glm-5.2`**。
-
-**用户示例中有三项是 Claude Code CLI 专用的，不要带进 poe-agent 配置**：`ANTHROPIC_CUSTOM_MODEL_OPTION_NAME` 与 `ANTHROPIC_CUSTOM_MODEL_OPTION_DESCRIPTION` 只是 CLI 模型选择器里的显示标签，`ANTHROPIC_CUSTOM_MODEL_OPTION` 也是 CLI 的注册机制。poe-agent 不用 CLI，只需要三个值：`base_url` + `api_key` + `model`。
+通过 `openai` SDK 使用 `/v1/chat/completions`。地址和凭证来自本机 `.env` /
+`.env.local` 或 `LLM_*` 环境变量；不读取 CLI 工具配置或其他项目文件。
+文档使用 `https://your-llm-gateway.example.com` 占位，实际地址不入库。
 
 ### 3.2.2 客户端设计
 
-保留 LLM 客户端接口抽象（便于将来换网关或换供应商），但**只实现 OpenAI 兼容一种**——不为假想的可移植性提前写第二套实现。
+`core/model_policy.py` 的 `DEEPSEEK_MODEL` 是唯一模型真源，当前固定为
+`deepseek-v4-1-flash-1017`。聊天、工具调用、多轮续答和截图转录均使用它。
+`LLM_MODEL` 只接受该 ID 或 `deepseek` 别名，运行时覆盖、旧别名表、独立守门/视觉模型、
+逐 Key 模型绑定都不能切到其他模型。检测到冲突配置时在联网前拒绝，错误不回显配置值。
 
-```
-LLM_PROVIDER   = openai
-LLM_BASE_URL   = https://your-llm-gateway.example.com
-LLM_API_KEY    = <LiteLLM virtual key>
-LLM_MODEL      = glm-5.2
-```
-
-鉴权走标准 `Authorization: Bearer <key>`（LiteLLM virtual key），不需要 `ANTHROPIC_AUTH_TOKEN` 加 CLI settings 那套绕行——那个绕行是为了解决 CLI 读取凭证的优先级问题，我们直连 HTTP 不存在该问题。
-
-### 3.2.3 实测结论（2026-08-04，脚本 `scripts/probe_gateway.py`，11/13 通过）
-
-架构地基的两项关键能力**均已验证可用**：
-
-| 能力 | 结果 | 实测细节 |
-| --- | --- | --- |
-| 模型清单 | 通过 | 网关共 19 个模型，`glm-5.2` 在列 |
-| 基础 chat | 通过 | 4.3s 返回 |
-| **tool calling** | **通过** | 正确调用 `kb_search`，参数为合法 JSON：`{"query": "Headhunter 猎首", "category": "unique_item"}` |
-| **多轮 tool calling** | **通过** | 回传工具结果后基于其生成 523 字，并主动提及来源 POEDB |
-| **流式 SSE** | **通过** | 正文 13 个增量分片，粒度足够按句缓冲 |
-| embeddings | **不可用** | 网关未注册任何 embedding 模型 |
-| rerank | **不可用** | 网关未注册任何 rerank 模型 |
-
-结论：**编排器设计不需要改动**，`openai` SDK + tool calling + 流式这条路可用。
-
-### 3.2.4 GLM 5.2 是推理模型——四条必须遵守的约定
-
-实测发现 GLM 5.2 返回 `reasoning_tokens` 与 `reasoning_content`，属推理模型。这带来四个具体约束：
-
-**1. `max_tokens` 必须留足推理预算。** 实测「只回答两个字：收到」这种极简任务，消耗 `completion_tokens=117`，其中 `reasoning_tokens=114`，正文仅 2 字。若 `max_tokens` 设小（首次测试设 64），推理会吃光预算导致**正文为空且不报错**——这是最隐蔽的失败模式。因此配置项 `llm.max_tokens` 的下限要显著高于对正文长度的估计，并在正文为空但 `reasoning_tokens > 0` 时记录明确告警。
-
-**2. Token 计量必须计入 reasoning tokens。** 上例中推理占总输出的 98%。需求 16.4 的成本上限若只统计正文，会严重低估实际消耗。
-
-**3. 推理流与正文流分离，按句校验只处理正文。** 实测流式返回中，`reasoning_content` 有 116 个分片且**全部出现在正文之前**，与 `content` 字段完全分离。因此 11.1 的按句缓冲只消费 `delta.content`，`reasoning_content` 不参与断言绑定校验。
-
-**4. 推理内容绝不可作为答案展示。** 这条是安全要求而非工程偏好：推理过程正是模型动用参数记忆做猜测的地方，而那恰恰是「无据不答」要拦截的东西。若把 `reasoning_content` 透给用户，等于绕过全部六道闸门。前端可以显示「思考中」状态，但不得渲染推理正文。
-
-**首字节延迟的连带影响**：推理 116 个分片全在正文之前，意味着用户需等待完整推理结束才看到第一个字。需求 16.3 的「首字节 5 秒」指标在推理模型下应按**正文首字节**衡量，并通过前端的「思考中」状态提示填补等待期，而不是靠放宽指标掩盖。
-
-**四项已在生产里踩过坑的工程实践**（直接沿用，不重新发明）：
-
-1. **多 Key 故障转移 + 按失败类型分级冷却。** 用一个凭证池：Key 按优先级排列、粘性选择第一个健康的；额度耗尽类冷却 30 分钟（`COOLDOWN_BUDGET`，因为额度是带外补充的，值得定期重试），鉴权/模型权限类冷却 60 分钟（`COOLDOWN_AUTH`，配置错误不会自愈但也别写死到进程结束）；5xx / 429 等瞬时错误**只重试不降级 Key**。配置格式沿用 `key[:model]` 逗号分隔——因为受限 Key 访问别的模型只会返回 401，切 Key 必须同时切模型。
-2. **模型别名表。** 用 `opus / sonnet / haiku` 这类短名映射到完整模型 ID，让配置与运行时切换都不必写全名。
-3. **分级退避重试。** `[1, 2, 4, 8, 15]` 秒，429 单独识别。
-4. **便宜模型做二次守门。** 「回答是否切题」这类二次判断交给廉价模型，成本远低于主模型。poe-agent 的事实句分类（11.1 中判定「这句是不是事实断言」）是同类场景，同样用小模型或规则前置，不占用主模型预算。
-
-**日志安全**：Key 一律脱敏后输出（`mask()`：`前7位…后4位`），完整 Key 不得进日志。
-
-### 3.3 Embedding / ReRank 走同一网关
-
-向量通道没有现成配置可照抄，需要自己定。网关这边是现成的：LiteLLM 的 `/v1/embeddings` 与 `/v1/rerank` 已确认存在，因此 embedding 与 rerank 可以复用**同一 base_url + 同一 token**，不必引入第二个供应商、第二套凭证。
-
-配置上仍保持为独立的三元组（便于将来指向别处），但默认与 LLM 指向同一网关：
-
-```
-EMBEDDING_BASE_URL = https://your-llm-gateway.example.com
-EMBEDDING_API_KEY  = <同一 virtual key>
-EMBEDDING_MODEL    = <取决于网关配置，需查 /v1/models>
-RERANK_MODEL       = <同上>
+```dotenv
+LLM_BASE_URL=https://your-llm-gateway.example.com
+LLM_API_KEY=<virtual key>
+LLM_MODEL=deepseek-v4-1-flash-1017
 ```
 
-**实测结论（2026-08-04）**：`/v1/embeddings` 与 `/v1/rerank` 端点存在，**但网关上未注册任何 embedding 或 rerank 模型**（19 个模型全部是对话模型：Claude 系列、GPT 系列、DeepSeek、GLM）。
+`LLM_API_KEYS` 可配置多个 Key，但故障转移只切凭证。旧 `key:model` 语法仅在
+模型与固定模型一致时兼容。额度/鉴权分级冷却和瞬时错误退避继续生效。
+HTTP 兼容接口的 `model` 是客户端逻辑名称，不能覆盖服务端固定上游。
 
-因此 **V1 确定关闭向量通道**：
+### 3.2.3 网关验证
 
-```yaml
-retrieval:
-  vector: { enabled: false }   # 网关无 embedding 模型
-  rerank: { enabled: false }   # 网关无 rerank 模型
-```
+`scripts/probe_gateway.py` 与 `scripts/verify_llm.py` 使用同一生产客户端验证
+非流式、流式、工具调用、工具结果续答和流式参数拼接，不探测或调用其他供应商。
+2026-11-09 的目标模型初验通过多轮工具续答和合成数字图片转录；Embedding 返回
+HTTP 400，ReRank 返回 HTTP 500，不能视为能力可用。
 
-检索退化为 **BM25（FTS5）+ 实体精确匹配 + `search_keywords` 补偿**。这条路径的能力边界见 3.4：专名查询不受影响，描述性查询依赖 `search_keywords` 的覆盖质量。
+### 3.2.4 响应、预算与安全约束
 
-要启用向量通道有两条路，都不阻塞 V1：
+1. 推理字段允许缺失或为零；`total_tokens` 已含输出 token，不再次累计推理。
+2. `max_tokens` 保留输出空间；正文和工具调用均为空时抛出明确错误，HTTP 200 不等于有效答案。
+3. 流式只外发正文；推理只计字符数，不进入 API、轨迹或工具续答消息。
+4. 工具参数按 index 拼接为完整 JSON，流中断不能重放已发出的片段。
+5. 网关返回模型 ID 与固定模型不一致时，在正文外发前拒绝响应。
+6. 网关地址不出现在健康响应；Key 和错误消息继续脱敏。
 
-1. 请网关运维在 LiteLLM 上注册一个 embedding 模型（如 `bge-m3`、`text-embedding-3-small`）。这是最省事的方式——注册后 poe-agent 只需改配置，代码无需改动。
-2. 单独接一个提供 embedding 的供应商，配置项本就独立（`EMBEDDING_BASE_URL` 等），改指向即可。
+### 3.3 Embedding / ReRank 策略
 
-**维度不预设**：一旦有了 embedding 模型，建索引前先探测其实际输出维度再建 `chunk_vec` 表，不要写死 1024（`bge-m3` 是 1024 维，但网关上未来注册的模型可能不同）。
-
-**顺带的运维发现**：探测时 `~/.claude/settings.json` 里的 token 已于 2026-07-31 15:59 UTC 过期，换用备用 Key 列表里的第二个才可用。这实证了多 Key 故障转移设计的价值——也是 poe-agent 沿用该设计的直接理由（见 3.2）。
+DeepSeek 单模型模式禁用远程 Embedding / ReRank。不能把聊天模型名当成向量模型，
+也不能因旧配置启用请求而调用另一供应商。适配器保留兼容类型并在 HTTP 请求前拒绝；
+`retrieval/runtime.py` 为 HTTP 和 Knowledge/MCP 入口返回同一禁用原因。
+`scripts/backfill_vectors.py` 只读检查旧索引，`--apply` 在打开数据库前明确拒绝。
+已有索引、缓存和向量算法保留；生产检索继续走 BM25、实体精确与关键词。
 
 ### 3.4 去掉三个独立服务后的连带影响
 
@@ -633,7 +573,7 @@ class Claim(BaseModel):
 
 **与流式输出的冲突**：出口校验要求「先验证后输出」，而流式要求「边生成边推送」——已经推送给用户的句子无法撤回。解决方式是**按句缓冲**：以句子边界为单位累积，校验通过才下发该句。代价是首字节延迟从 token 级退化到句级，这个代价是必要的——把未校验内容先推给用户，等于闸门失效。首字节延迟指标（需求 16.3）按此口径衡量。
 
-**只消费正文流**：GLM 5.2 为推理模型，流式返回中 `delta.reasoning_content` 与 `delta.content` 分离且推理分片全在正文之前（见 3.2.4）。按句缓冲**只处理 `delta.content`**；`reasoning_content` 不参与绑定校验，也**不得渲染给用户**——推理过程正是模型动用参数记忆猜测的地方，透出去等于绕过全部闸门。
+**只消费正文流**：DeepSeek 若返回推理字段，`delta.reasoning_content` 与 `delta.content` 分离（见 3.2.4）。按句缓冲**只处理 `delta.content`**；`reasoning_content` 不参与绑定校验，也**不得渲染给用户**——推理过程正是模型动用参数记忆猜测的地方，透出去等于绕过全部闸门。
 
 **已知代价**：句子级事实判定会有误判。误判为事实断言（过严）导致合法的建议句被拦，误判为非事实（过松）导致推断漏出。因此该分类器的行为必须纳入黄金问答集评测，与错误拒答率一并监控（需求 16.7），并支持在配置中调整领域词表。
 

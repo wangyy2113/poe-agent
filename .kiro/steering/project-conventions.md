@@ -9,25 +9,23 @@
 - 运行时：Python 3.12（最低 3.10），Windows / macOS / Linux 通用。用 python.org 官方版或 Homebrew Python，**不要用系统自带 Python**
 - 依赖：`pip` + `venv`，`requirements.txt` + `requirements.lock`。**不用 uv / poetry / conda**，不建 `pyproject.toml`
 - 后端：FastAPI + Pydantic v2 + uvicorn，在 `main.py` 进程内启动，默认只绑 `127.0.0.1`
-- LLM：`openai` SDK 直连内部 LiteLLM 网关的 `/v1/chat/completions`，模型 **`glm-5.2`**，鉴权 `Authorization: Bearer <virtual key>`。网关地址由 `.env` 的 `LLM_BASE_URL` 提供，**不写进版本库**
+- LLM：`openai` SDK 直连内部 LiteLLM 网关的 `/v1/chat/completions`，模型固定为 **`deepseek-v4-1-flash-1017`**，鉴权 `Authorization: Bearer <virtual key>`。网关地址由 `.env` 的 `LLM_BASE_URL` 提供，**不写进版本库**
   - **不引入 `anthropic` SDK**——该网关（LiteLLM 1.82.3）已同时提供 OpenAI 与 Anthropic 两套协议，我们用 OpenAI 那套即可
   - **不用 `claude` CLI 子进程模式**——拿不到增量流会破坏断言绑定校验，且会把 Node 依赖引回来。有些接法配 `ANTHROPIC_BASE_URL` 是因为 CLI 只会说 Anthropic 协议，那是 CLI 的约束不是网关的
   - **不要照搬 `ANTHROPIC_CUSTOM_MODEL_OPTION` / `_NAME` / `_DESCRIPTION`**——那是 Claude Code CLI 模型选择器的 UI 标签，直连 HTTP 时无意义。只需 `base_url` + `api_key` + `model` 三个值
-- Embedding / ReRank：端点存在但**网关当前未注册任何 embedding / rerank 模型**（2026-08-04 实测），故 `vector.enabled=false`、`rerank.enabled=false`，检索走 BM25 + 实体精确 + `search_keywords`。将来若运维在 LiteLLM 上注册了 embedding 模型，只需改配置，代码无需改动
-- 向量维度**不要写死**：建 `chunk_vec` 表前先探测 embedding 模型实际输出维度
+- 所有生成调用（文本、工具、截图）共用 `core/model_policy.py` 中的固定模型、网关与凭证。禁止配置其他供应商、独立视觉模型或逐 Key 模型回退。
+- Embedding / ReRank：固定模型的接口契约未验证可用，远程适配器直接拒绝调用；旧索引保留，检索使用 BM25 + 实体精确 + `search_keywords`。不能仅通过旧配置重新开启。
 
-### GLM 5.2 是推理模型——四条必须遵守的约定
+### DeepSeek 响应契约
 
-实测（`scripts/probe_gateway.py`）：`reasoning_tokens` 占输出总量可达 98%，`reasoning_content` 与 `content` 字段分离，推理分片全部出现在正文之前。
-
-1. **`max_tokens` 必须留足推理预算。** 实测「只回答两个字」消耗 117 输出 token，其中 114 是推理。设小了会**正文为空且不报错**——最隐蔽的失败模式。正文为空而推理 token 大于零时必须记告警。
-2. **Token 计量计入 `reasoning_tokens`**，否则成本严重低估。
-3. **流式只消费 `delta.content`**；`reasoning_content` 不参与断言绑定校验。
-4. **绝不把推理内容展示给用户。** 这是安全要求：推理过程正是模型动用参数记忆猜测的地方，而那恰是「无据不答」要拦的东西。透出去等于绕过全部六道闸门。前端只显示「思考中」状态。
+1. `max_tokens` 给工具 JSON 与可能的推理留预算。正文和工具调用均为空时必须明确失败，即使推理 token 为零。
+2. 推理用量字段允许缺失或为零；只累计 `total_tokens`，不要将推理 token 再加一遍。
+3. 流式只消费 `delta.content`；`reasoning_content` 不参与断言绑定校验、不写轨迹、不作为答案外发。
+4. 流式拼接完整工具参数后才执行；多轮工具续答沿用同一固定模型。
 - 存储：**单文件 SQLite（WAL）** `data/poe.db`，承载实体库、FTS 索引、向量、会话、轨迹、缺口台账
 - BM25：SQLite **FTS5 + 内置 `bm25()`**（已实测可用），写入前用 `jieba` 预分词成空格分隔词序列
 - 向量：**`sqlite-vec`** 扩展，与实体同库；装不上则 int8 量化 + numpy 暴力检索兜底，或按配置关闭
-- 嵌入 / 重排：远程 OpenAI 兼容接口调用，**可配置关闭**；不在本机常驻模型进程
+- 嵌入 / 重排：单模型模式关闭远程请求，保留原有词法和实体检索。
 - 前端：**单页静态**（`static/` 下 HTML + 原生 JS），FastAPI `StaticFiles` 托管。无 Node 运行时、无构建步骤、无框架
 - 配置：`.env`（pydantic-settings 读密钥）+ `config.yaml`（声明式行为）
 - 部署：`scripts/setup.sh` 初始化 + systemd unit（生产）+ `nohup`（开发兜底）
@@ -62,11 +60,11 @@
 
 ## 沿用的工程实践（别重新发明）
 
-- **多 Key 故障转移**：凭证按优先级粘性选择第一个健康的；额度耗尽类冷却 30 分钟，鉴权/模型权限类冷却 60 分钟；5xx / 429 只重试**不降级** Key；切 Key 时同步切换其绑定模型（受限 Key 访问别的模型只会 401）。配置格式 `key[:model]` 逗号分隔。
-- **Key 脱敏**：日志只输出 `前7位…后4位`，完整 Key 绝不进日志或错误响应。
-- **分级退避**：`[1, 2, 4, 8, 15]` 秒，429 单独识别。
-- **模型别名表**：别名 → 完整模型 ID，配置和运行时切换都用别名。
-- **廉价模型做守门**：需要二次判断的场景（如事实句分类）用小模型，不占主模型预算；能用规则判的优先用规则。
+- **多 Key 故障转移**：按优先级粘性选择健康凭证；额度类冷却 30 分钟，鉴权类冷却 60 分钟；5xx / 普通 429 只重试。仅切 Key，绝不切模型。
+- **配置迁移**：`LLM_API_KEYS` 使用逗号分隔 Key。旧 `key:model` 只有模型与固定 DeepSeek 一致时才兼容；其他旧模型配置在联网前拒绝，不回显凭证。
+- **Key 脱敏**：完整 Key 与内部网关地址不得进入仓库或验收报告；探测脚本只读取本项目 `.env` / `.env.local` 和 `LLM_*` 环境变量。
+- **分级退避**：`[1, 2, 4, 8, 15]` 秒，429 单独识别。可选采样参数被网关拒绝时可移除该参数重试，但仍使用同一模型。
+- **事实守门**：继续用规则、引用绑定和数值校验，不引入独立守门模型。
 
 ## 目录约定
 

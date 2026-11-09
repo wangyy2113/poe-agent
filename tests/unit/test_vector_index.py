@@ -37,67 +37,13 @@ class FakeClient:
 
 
 class EmbeddingClientTest(unittest.TestCase):
-    def test_response_is_sorted_by_index_and_validated(self) -> None:
-        class Response:
-            status_code = 200
-
-            @staticmethod
-            def json():
-                return {"data": [
-                    {"index": 1, "embedding": [0, 1]},
-                    {"index": 0, "embedding": [1, 0]},
-                ]}
-
-        with patch("retrieval.embedding.httpx.post", return_value=Response()) as post:
-            vectors = EmbeddingClient("https://example.test/v1", "test-key", "bge-m3").embed(
-                ["Alpha", "Beta"]
-            )
-        self.assertEqual([[1.0, 0.0], [0.0, 1.0]], vectors)
-        self.assertEqual("https://example.test/v1/embeddings", post.call_args.args[0])
-        self.assertNotIn("test-key", str(vectors))
-
-    def test_bad_status_or_nonfinite_vector_fails_without_echoing_key(self) -> None:
-        class Response:
-            status_code = 400
-
-        client = EmbeddingClient("https://example.test", "private-token", "wrong-model")
-        with patch("retrieval.embedding.httpx.post", return_value=Response()):
-            with self.assertRaisesRegex(EmbeddingError, "HTTP 400") as caught:
-                client.embed(["query"])
-        self.assertNotIn("private-token", str(caught.exception))
-
-        class NonFinite:
-            status_code = 200
-
-            @staticmethod
-            def json():
-                return {"data": [{"index": 0, "embedding": [float("nan")]}]}
-
-        with patch("retrieval.embedding.httpx.post", return_value=NonFinite()):
-            with self.assertRaisesRegex(EmbeddingError, "非有限"):
-                client.embed(["query"])
-
-    def test_transient_http_failure_retries_with_bounded_backoff(self) -> None:
-        class Response:
-            def __init__(self, status_code: int):
-                self.status_code = status_code
-
-            @staticmethod
-            def json():
-                return {"data": [{"index": 0, "embedding": [1, 0]}]}
-
-        with (
-            patch("retrieval.embedding.httpx.post", side_effect=[
-                Response(503), Response(200),
-            ]) as post,
-            patch("retrieval.embedding.time.sleep") as sleep,
-        ):
-            result = EmbeddingClient("https://example.test", "token", "bge-m3").embed(
-                ["query"]
-            )
-        self.assertEqual([[1.0, 0.0]], result)
-        self.assertEqual(2, post.call_count)
-        sleep.assert_called_once_with(0.25)
+    def test_remote_embedding_cannot_bypass_single_model_policy(self) -> None:
+        for model in ("deepseek-v4-1-flash-1017", "bge-m3"):
+            with self.subTest(model=model), patch("httpx.post") as post:
+                with self.assertRaisesRegex(EmbeddingError, "DeepSeek 单模型") as caught:
+                    EmbeddingClient("https://example.test", "private-token", model).embed(["query"])
+                self.assertNotIn("private-token", str(caught.exception))
+                post.assert_not_called()
 
 
 class VectorIndexTest(unittest.TestCase):
@@ -136,7 +82,7 @@ class VectorIndexTest(unittest.TestCase):
         self.conn.close()
 
     def test_disabled_vector_path_does_not_require_llm_secrets(self) -> None:
-        with patch("retrieval.runtime.get_secrets", side_effect=AssertionError("unexpected")):
+        with patch("core.config.get_secrets", side_effect=AssertionError("unexpected")):
             status, client = configured_vector_runtime(self.conn, False)
         self.assertFalse(status.available)
         self.assertIsNone(client)
@@ -168,25 +114,17 @@ class VectorIndexTest(unittest.TestCase):
         self.assertFalse(status.available)
         self.assertIn("尚未回填", status.reason)
 
-    def test_runtime_enables_only_matching_complete_index_and_credentials(self) -> None:
+    def test_complete_legacy_index_cannot_activate_another_model(self) -> None:
         backfill_vectors(self.conn, FakeClient())
-        secrets = SimpleNamespace(
-            embedding_base_url="https://example.test",
-            embedding_api_key="token",
-            embedding_model=FakeClient.model,
-        )
-        with (
-            patch.object(dbmod, "_conn", self.conn),
-            patch.object(dbmod, "_vector_status", dbmod.VectorStatus(True, "sqlite-vec test")),
-        ):
+        secrets = SimpleNamespace(embedding_base_url="https://example.test",
+                                  embedding_api_key="key", embedding_model=FakeClient.model)
+        with patch("httpx.post") as post:
             status, client = vector_runtime(self.conn, True, secrets)
-            self.assertTrue(status.available)
-            self.assertIsNotNone(client)
-            secrets.embedding_model = "other-model"
-            status, client = vector_runtime(self.conn, True, secrets)
-            self.assertFalse(status.available)
-            self.assertIsNone(client)
-            self.assertIn("模型", status.reason)
+        self.assertFalse(status.available)
+        self.assertIsNone(client)
+        self.assertIn("DeepSeek 单模型", status.reason)
+        self.assertTrue(vector_index_status(self.conn, FakeClient.model).available)
+        post.assert_not_called()
 
     def test_hybrid_falls_back_on_remote_error(self) -> None:
         class FailedClient(FakeClient):

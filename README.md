@@ -79,7 +79,7 @@ POE1 的机制耦合极深，一个错误的小前提会让整条结论反向。
 | **词缀 T 级** | 按底材类别 + 数值区间定档；查不到就标「未匹配」并说明原因 |
 | **装备分析** | `POST /item`：基础信息、词缀档位、前后缀容量、可制作方向，全程不调 LLM |
 | **Build 体检、成长规划与方案比较** | PoB 分享码、白名单托管链接、官方天赋树、GGG OAuth 角色 API 或截图 → 核心体检、防御来源、输出分析、双档建议与显式目标成长里程碑；`POST /build/compare` 可在严格相同的 Calcs 技能、配置、树版本和 PlayerStat 字段口径下比较 2–5 份 PoB；`POST /planner/league-starter` 把当前 PoB 与 1–5 份用户提供的阶段快照排成可复核路线，网页有对应入口。截图先经视觉模型转录并由用户确认；缺失或不可比项保持「未知」 |
-| LLM 客户端 | 直连 LiteLLM 网关，多 Key 故障转移、分级冷却、推理模型适配 |
+| LLM 客户端 | 固定 DeepSeek 网关调用，同模型多 Key 故障转移、分级冷却、文本/工具/图片共用客户端 |
 | 缺口台账 | `knowledge_gap` 按频次排序即采集优先级；**评测流量与永久越界（POE2）不计入**（否则前两名会是本该拒答的黄金用例），`/admin/stats` 同时列出被排除的条目数 |
 | 执行轨迹 | 每轮落库，含拦截原因与 Token 明细，`/admin/traces` 可追溯 |
 
@@ -93,6 +93,25 @@ POE1 的机制耦合极深，一个错误的小前提会让整条结论反向。
 也就是说：**打开浏览器就能聊，也能直接把装备贴进去**，交互方式见下。
 
 ---
+
+## DeepSeek 单模型配置
+
+所有文本问答、流式生成、工具续答和截图转录统一使用 `deepseek-v4-1-flash-1017`。
+模型真源是 `core/model_policy.py`；旧的其他模型别名、独立视觉模型或逐 Key 绑定模型
+会在联网前被拒绝。多 Key 仅用于同一模型的凭证故障转移。
+
+升级时在本机 `.env` 设置 `LLM_MODEL=deepseek-v4-1-flash-1017`，并填入自己的
+`LLM_BASE_URL` 与 `LLM_API_KEY`。如使用 `LLM_API_KEYS`，请改为逗号分隔的 Key；
+检查 `.env.local` 与环境变量是否仍覆盖了旧值。网关地址和 Key 不进入版本库。
+`config.yaml` 删除了旧模型别名表和 `gate_model` / `vision_model`；截图开关改为
+`llm.vision_enabled`，默认开启并复用同一模型。
+
+远程 Embedding / ReRank 已禁用；旧配置无法重新开启，旧向量索引保留。
+检索继续使用 BM25、实体精确匹配与关键词。`scripts/backfill_vectors.py --apply`
+会在修改数据库前拒绝。`scripts/probe_gateway.py` 只使用本项目配置验证固定模型，
+不再读取其他工具或项目的凭证，也不再允许命令行改模型/改网关。
+
+历史黄金录制中的模型标识是原始证据，继续保留；它们只用于离线回放，不参与运行时路由。
 
 ## 快速开始
 
@@ -309,9 +328,8 @@ http://127.0.0.1:8787/poe_agent/
 - **句子是逐句冒出来的**，不是逐字。因为校验单位是句子——一句话是不是事实断言、
   绑定编号有效不有效、句里的数值能不能溯源，都得等这句说完才能判。逐字推送等于
   把未校验内容先给了用户，之后撤不回来。打字机效果是前端补的观感，不是真的逐字流
-- **正文出现前会显示「思考中」**。`glm-5.2` 是推理模型，推理 token 能占输出的 98%，
-  这段时间正文一个字都没有。推理内容**绝不外发**——模型正是在推理里动用参数记忆做
-  猜测的，而那恰好是「无据不答」要拦的东西，透出去等于绕过全部闸门
+- **正文出现前会显示「思考中」**。DeepSeek 的推理字段可能缺失或为零；如果返回了
+  推理内容，也只统计用量和字符数，绝不作为答案外发或写入轨迹。
 - **句末的上标数字**是证据角标，点一下跳到底部来源列表并高亮，来源条目带优先级
   标签（P1 POEDB / P2 PoB / …），一眼看出这句话的证据有多硬
 - **琥珀色分区**是缺据声明：查不到什么、判定依据、去哪查。它由代码生成、不经模型，
@@ -608,8 +626,7 @@ curl -s -X DELETE http://127.0.0.1:8787/poe_agent/memories/<memory_id> \
 未通过的句子被替换为拦截说明，并计入响应的 `blocked_claims`。这个字段大于 0
 说明模型试图输出无据内容而被挡下，可用 `trace_id` 查具体原因。
 
-响应里的 `model` 字段是实际使用的模型——网关背后挂着多个模型，多 Key 故障转移
-可能切到别的模型，而不同模型的推理 token 行为不同。
+响应里的 `model` 字段固定为实际请求的 `deepseek-v4-1-flash-1017`；多 Key 故障转移不切换模型。
 
 **依据不足时不会调用 LLM**：
 
@@ -1715,13 +1732,12 @@ curl -s -X POST http://127.0.0.1:8787/poe_agent/planner/league-starter \
 ```
 
 **截图识别** —— 聊天页点击“上传截图”，支持不超过 5 MB 的 PNG、JPEG 与 WebP。
-先在 `config.yaml` 的 `llm.vision_model` 填入网关中实际支持 OpenAI `image_url` 消息的
-视觉模型；留空时 `POST /screenshot/recognize` 明确返回 503。图片只在该次请求内转给
-视觉模型，不写磁盘、不进数据库。模型只负责转录：装备截图会显示可编辑原文，确认后
-进入 `/item`；Build 截图会列出白名单内的可见字段，确认后进入 `/build/screenshot`。
-没有出现在截图中的药剂、诅咒、珠宝、天赋和 PlayerStat 一律标为“未知”，不会因为
-画面没拍到就判成“没有”，也不会从职业或技能补全数值。当前没有已配置视觉模型的
-真实截图基准，因此本轮只以模拟视觉响应验证契约，实际识别质量取决于所选模型。
+`llm.vision_enabled` 默认开启，使用与聊天相同的 DeepSeek 模型、网关和凭证；
+关闭时 `POST /screenshot/recognize` 明确返回 503。图片只在该次请求内转给模型，
+不写磁盘、不进数据库。装备截图先显示可编辑原文，用户确认后进入 `/item`；Build
+截图只保留白名单内可见字段，确认后进入 `/build/screenshot`，缺失项保持未知。
+已用合成数字图片验证目标模型的视觉输入；这不等于真实游戏截图识别准确率基准，
+模糊、裁切与同名物品仍需用户复核。
 
 **检索知识库** —— 调试与评测用，返回原始命中。
 
@@ -1822,7 +1838,7 @@ curl -s http://127.0.0.1:8787/poe_agent/healthz
 status = ok
 db     = entities 1341 / chunks 25759 / aliases 2691, journal_mode=wal
 vector = extension_available true, requested false, enabled false, reason="配置关闭"
-llm    = glm-5.2, credentials 1
+llm    = deepseek-v4-1-flash-1017, credentials 1
          pool[0] key=sk-…  healthy=true  cooldown_seconds=0
 ```
 
@@ -1855,31 +1871,12 @@ ASGI 服务器看到的 TCP peer，刻意不信任 `X-Forwarded-For`。如果前
 
 ### 检索结果里的 `degraded=true` 是什么意思
 
-配置主动关闭时不是故障。2026-10-30 实测网关未注册任何 embedding / rerank 模型，所以
-`config.yaml` 里 `retrieval.vector.enabled` 与 `rerank.enabled` 都是 `false`，
-检索走 BM25 + 实体精确 + 词缀意图三路，`degraded` 标记的是「向量通道未参与」。
-`/healthz` 会分开报告配置请求值 `requested` 与运行时有效值 `enabled`。即使配置误设为
-`true`，扩展不可加载、Embedding 凭证缺失、`chunk_vec` 未建立或当前模型的索引未完整回填时
-也会自动按关闭处理，在健康检查和检索附注中写明原因，不会把一个未执行的 `vector`
-通道列进元数据；
-BM25 与实体精确检索继续可用。
-
-`retrieval/embedding.py` 已实现远程 OpenAI 兼容 Embedding 响应校验；
-`retrieval/vector.py` 将完整索引与模型绑定，在 sqlite-vec 中查询并与其它通道 RRF 融合。
-`scripts/backfill_vectors.py` 默认只读预览；将来有可用的 Embedding 模型后，在本机 `.env`
-填写 `EMBEDDING_BASE_URL`、`EMBEDDING_API_KEY`、`EMBEDDING_MODEL`，执行
-`.venv/bin/python scripts/backfill_vectors.py --apply` 完整回填，再打开 `vector.enabled`。
-回填按模型与原文 SHA-256 复用已算向量；任一知识切片更新会将索引标脏，远程查询失败也会
-在该轮退回 BM25 与实体精确匹配。当前没有可用模型，因此未执行真实回填或线上向量验收。
-
-`retrieval/rerank.py` 已接入可选的 `/v1/rerank` 远程重排，凭证与 Embedding、LLM 分开配置：
-`RERANK_BASE_URL`、`RERANK_API_KEY`、`RERANK_MODEL`。请求和响应都有数量、长度、完整序号与
-有限分数校验；重排只改变候选顺序，实体精确命中保留在候选前列，充分依据仍由代码判定，
-社区来源不能单独打开事实闸门。远端失败时保留 RRF 排序并在 `channels` / `note` 中如实标注。
-远程 Embedding 与 ReRank 的重试共用 `retrieval.timeout_seconds` 总时限；整轮检索到期时
-保留已完成通道的候选、跳过尚未开始的可选通道，并对没有实体精确命中的候选关闭充分依据闸门。
-`/healthz` 的 `rerank.configured` 只表示本机配置齐全，**不表示远端模型已验收可用**。
-现有网关没有 ReRank 模型，因此此通道仍关闭，尚无在线重排验收。
+配置主动关闭时不是故障。单 DeepSeek 模式不启用远程 Embedding / ReRank，
+`retrieval.vector.enabled` 和 `retrieval.rerank.enabled` 保持 `false`。
+误设为 `true` 时，运行时仍阻止任何远程向量/重排调用，并在 `/healthz` 披露策略原因；
+正常检索继续使用 BM25、实体精确与关键词，引用与充分依据闸门保持不变。
+旧索引与纯本地向量算法保留用于检查和离线测试，不能据此激活其他模型。
+整轮检索超时仍保留已完成候选，对没有实体精确命中的候选关闭充分依据闸门。
 
 `POST /search` 及 `kb_search` 的 `category`、`league`、`version` 精确过滤同时作用于实体匹配、
 BM25 和向量候选；没有对应元数据的切片不会混入指定版本的结果。
@@ -2122,9 +2119,8 @@ SHA-256、大小、schema SHA-256、SQLite/app 版本、页信息和关键表行
 - **角色 API 需要用户自己的 GGG OAuth token。** 当前只支持 PoE1 PC realm，且不会
   自动刷新 token；`POE_OAUTH_USER_AGENT` 必须符合 GGG 的
   `OAuth clientId/version (contact: contact)` 格式。
-- **截图识别需要单独指定视觉模型。** `config.yaml` 的 `llm.vision_model` 默认留空；
-  未经真实模型验证前不替用户选择一个名字。视觉模型只转录可见内容，用户确认后的字段
-  才进入确定性分析；图片不落盘，单张上限 5 MB。
+- **截图识别共用 DeepSeek 模型。** 可用 `llm.vision_enabled` 关闭；模型只转录可见内容，
+  用户确认后才进入确定性分析。图片不落盘，单张上限 5 MB。
 - **升级前的旧会话无法自动确定所有者。** 数据库迁移会保留它们但不放进任何调用方的
   服务端列表；持有原随机会话 ID 的浏览器可首次认领。没有该 ID 时不会猜测归属或跨用户
   展示。新会话从创建起按 API Key 摘要隔离；未配置 Key 的本机模式统一属于 `anonymous`。
@@ -2139,7 +2135,7 @@ SHA-256、大小、schema SHA-256、SQLite/app 版本、页信息和关键表行
 - **数值计算派生只接受本地计算器结果。** 带“因此/合计/换算”等标记的数值结论必须
   绑定确定性计算器输出，且逐值精确匹配；模型自行心算、换算或从证据区间任选一点都会
   被拦截。尚无对应计算器的领域因此不能给派生数值。
-- **向量通道关闭。** 查询适配器与回填流程已实现，但网关没有 embedding 模型，尚未真实回填或在线验收；描述性查询仍依赖 `search_keywords` 的覆盖质量。
+- **向量与远程重排通道关闭。** 单模型模式不调用独立的 Embedding / ReRank 模型；描述性查询仍依赖 `search_keywords` 的覆盖质量。
 - **普通复制的混合词缀分组仍有边界。** 中文相邻两至三行可在 POEDB 整条词缀
   唯一匹配时合并；四行以上、英文普通复制、来源或底材档位/方向有歧义、多个候选分组
   共用一行时都不会自动合并。普通复制本身不标记词缀边界，即使完整组合与库吻合，

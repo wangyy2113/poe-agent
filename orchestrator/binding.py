@@ -679,6 +679,15 @@ class StreamingGate:
             # 实测（第二十二轮）：缓冲区刚写到 `|\n\n[` 时就放行，一致率掉到 64/66。
             # 只等一行：newline 一到，两边看到的片段就完全一样了。
             return None, buf
+        # A bare full stop may be followed by a postfix citation in the next
+        # token. Wait only on this line until a marker or the next sentence is
+        # known. Already-bound sentences keep their immediate streaming path.
+        first = parts[0]
+        if (not _BINDING_RE.search(first) and "\n" not in first and "\r" not in first
+                and first.rstrip()[-1:] in "。！？!?；;"):
+            suffix = rest.lstrip(" \t")
+            if not suffix or (suffix.startswith("[") and "\n" not in suffix and "\r" not in suffix):
+                return None, buf
         if len(parts) == 1 and not _ends_sentence(buf):
             # 只有一段且没说完，继续等
             return None, buf
@@ -768,8 +777,22 @@ def split_sentences(text: str) -> list[str]:
     pos = 0
     for m in _SENT_SPLIT_RE.finditer(text):
         end = m.end()
-        if inside_marker(m.start()) or inside_marker(end):
+        if m.start() < pos or inside_marker(m.start()) or inside_marker(end):
             continue
+        # DeepSeek may put an explicit citation just AFTER punctuation. Attach
+        # only same-line markers to this otherwise unbound sentence. Do not
+        # borrow a later sentence's citation, or cross a newline/paragraph.
+        if (m.start() > pos and text[m.start() - 1] in "。！？!?；;"
+                and not _BINDING_RE.search(text[pos:m.start()])):
+            cursor = m.start()
+            while cursor < len(text):
+                while cursor < len(text) and text[cursor] in " \t":
+                    cursor += 1
+                marker = _BINDING_RE.match(text, cursor)
+                if not marker or "\n" in marker.group() or "\r" in marker.group():
+                    break
+                end = max(end, marker.end())
+                cursor = marker.end()
         piece = text[pos:end]
         if piece:
             out.append(piece)

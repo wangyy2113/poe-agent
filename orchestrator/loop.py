@@ -4293,9 +4293,7 @@ def stream_turn(
                 elif event.kind == "tool_calls":
                     pending = list(event.tool_calls)
                 elif event.kind == "usage" and event.usage is not None:
-                    # 模型名必须记下来：故障转移会切模型，不同模型的推理 token
-                    # 行为差别很大（实测 claude-opus-5 的 reasoning 恒为 0），
-                    # 少了这个字段就会把「换了模型」误判成 bug
+                    # Record the pinned model; missing/zero reasoning usage is valid.
                     result.model = event.model or result.model
                     result.tokens = {
                         "prompt": budget.used.prompt_tokens,

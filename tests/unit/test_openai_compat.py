@@ -85,7 +85,7 @@ class OpenAICompletionTest(unittest.TestCase):
                 priority=1,
             )],
             binding=BindingResult(blocked=1),
-            model="glm-test",
+            model="deepseek-v4-1-flash-1017",
             tokens={"prompt": 10, "output": 4, "reasoning": 2, "total": 14},
             elapsed_ms=12,
         )
@@ -109,7 +109,7 @@ class OpenAICompletionTest(unittest.TestCase):
         self.assertIn("https://poedb.tw/cn/Headhunter", content)
         self.assertNotIn("不得外发", json.dumps(response, ensure_ascii=False))
         self.assertEqual(response["usage"]["completion_tokens_details"]["reasoning_tokens"], 2)
-        self.assertEqual(response["poe_agent"]["upstream_model"], "glm-test")
+        self.assertEqual(response["poe_agent"]["upstream_model"], "deepseek-v4-1-flash-1017")
         self.assertEqual(response["poe_agent"]["blocked_claims"], 1)
         self.assertEqual(ChatCompletion.model_validate(response).id, "chatcmpl-trace-1")
         self.assertEqual(save.call_args_list, [
@@ -140,7 +140,7 @@ class OpenAICompletionTest(unittest.TestCase):
             }]},
             {"type": "note", "text": "检索已降级"},
             {"type": "done", "trace_id": "trace-2", "evidence_gap": False,
-             "blocked_claims": 0, "model": "glm-test",
+             "blocked_claims": 0, "model": "deepseek-v4-1-flash-1017",
              "tokens": {"prompt": 8, "output": 3, "reasoning": 1, "total": 11}},
         ]
         req = _request(stream=True, usage=True)
@@ -174,7 +174,7 @@ class OpenAICompletionTest(unittest.TestCase):
         self.assertEqual(payloads[-2]["choices"][0]["finish_reason"], "stop")
         self.assertEqual(payloads[-1]["choices"], [])
         self.assertEqual(payloads[-1]["usage"]["total_tokens"], 11)
-        self.assertEqual(payloads[-2]["poe_agent"]["upstream_model"], "glm-test")
+        self.assertEqual(payloads[-2]["poe_agent"]["upstream_model"], "deepseek-v4-1-flash-1017")
         stream.assert_called_once_with(
             "猎首有什么词缀？", conversation_id="conv-oai", owner_id="test"
         )

@@ -175,7 +175,7 @@ class SearchEntryPointFallbackTest(unittest.TestCase):
 
         self.assertTrue(result.ok)
         self.assertIs(captured["vector_enabled"], False)
-        self.assertEqual("扩展加载被禁用", captured["vector_disabled_reason"])
+        self.assertIn("DeepSeek 单模型", captured["vector_disabled_reason"])
 
     def test_http_search使用同一运行时有效值(self) -> None:
         import api.search as search_api
@@ -201,7 +201,7 @@ class SearchEntryPointFallbackTest(unittest.TestCase):
 
         self.assertTrue(response.degraded)
         self.assertIs(captured["vector_enabled"], False)
-        self.assertEqual("扩展加载被禁用", captured["vector_disabled_reason"])
+        self.assertIn("DeepSeek 单模型", captured["vector_disabled_reason"])
 
 
 class HealthFallbackTest(unittest.TestCase):
@@ -253,7 +253,7 @@ class HealthFallbackTest(unittest.TestCase):
         self.assertFalse(result["vector"]["extension_available"])
         self.assertTrue(result["vector"]["requested"])
         self.assertFalse(result["vector"]["enabled"])
-        self.assertEqual("扩展加载被禁用", result["vector"]["reason"])
+        self.assertIn("DeepSeek 单模型", result["vector"]["reason"])
 
 
 if __name__ == "__main__":
