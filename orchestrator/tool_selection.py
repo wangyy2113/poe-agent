@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from typing import Any
-import re
 from copy import deepcopy
 
 from agents.knowledge import ALLOWED_TOOLS
@@ -36,7 +35,7 @@ def schemas(names: list[str], *, precision: bool = False, initial: bool = False)
                 "可补选工具回答复合问题、比较或修正初始路由。"
                 "检索未命中时可先用kb_search改写关键词，已知实体名用entity_lookup核实。"
                 "选择工具不会执行计算或提供事实证据。\n工具目录：\n"
-                + ("\n".join(f"{spec.name}: {re.split(r'[。\n]', spec.description)[0][:100]}"
+                + ("\n".join(f"{spec.name}: {spec.description.splitlines()[0].split('。')[0][:100]}"
                              for name in catalogue if (spec := REGISTRY.spec(name))) if initial else
                    "按名称补选；完整参数会在下一轮提供。")
             ),
