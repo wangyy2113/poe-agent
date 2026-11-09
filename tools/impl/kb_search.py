@@ -64,8 +64,9 @@ def kb_search(
 ) -> ToolResult:
     cfg = get_config()
     k = max(1, min(int(top_k or cfg.get("retrieval.top_k", 20)), 20))
+    conn = dbmod.get_conn()
     result = configured_retrieve(
-        dbmod.get_conn(), query, top_k=k,
+        conn, query, top_k=k,
         category=category or None, league=league or None, version=version or None,
     )
 
@@ -86,6 +87,11 @@ def kb_search(
             "text": h.text[:MAX_EVIDENCE_CHARS],
             "channel": h.channel,
         })
+
+    exact = [i for i, c in enumerate(citations) if c["channel"] == "alias"]
+    if len(exact) == 1:
+        i = exact[0]
+        citations[i] = _field_citation(conn, query, citations[i])
 
     return ToolResult(
         ok=True,
@@ -191,14 +197,7 @@ def entity_lookup(name: str, question: str = "") -> ToolResult:
         })
 
     if question and len(citations) == 1:
-        from orchestrator.binding import number_evidence
-        from orchestrator.entity_answer import render_entity_answer
-        answer = render_entity_answer(conn, question, number_evidence(citations))
-        if answer:
-            citations[0] = {**citations[0],
-                "chunk_id": citations[0]["chunk_id"] + ":field:" + hashlib.sha256(question.encode()).hexdigest()[:12],
-                "text": re.sub(r"\[\[E\d+\]\]", "", answer),
-                "claim_scope": "excerpt", "channel": "derived"}
+        citations[0] = _field_citation(conn, question, citations[0])
 
     return ToolResult(
         ok=True,
@@ -206,6 +205,20 @@ def entity_lookup(name: str, question: str = "") -> ToolResult:
               "evidence_count": len(citations)},
         citations=citations,
     )
+
+
+def _field_citation(conn: Any, question: str, citation: dict[str, Any]) -> dict[str, Any]:
+    """Search and entity lookup expose the same source-backed field projection."""
+    from orchestrator.binding import number_evidence
+    from orchestrator.entity_answer import render_entity_answer
+
+    answer = render_entity_answer(conn, question, number_evidence([citation]))
+    if not answer:
+        return citation
+    return {**citation,
+            "chunk_id": citation["chunk_id"] + ":field:" + hashlib.sha256(question.encode()).hexdigest()[:12],
+            "text": re.sub(r"\[\[E\d+\]\]", "", answer),
+            "claim_scope": "excerpt", "channel": "derived"}
 
 
 # ── 获取途径（第五十四轮）─────────────────────────────────────

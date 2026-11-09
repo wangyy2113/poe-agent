@@ -45,7 +45,8 @@ class SearchTerminologyTest(unittest.TestCase):
         self.assertEqual("unique_item:Inspired_Learning", result.hits[0].entity_id)
 
     def test_leech_and_ordinary_affix_queries_keep_their_meaning(self):
-        for question in ("生命偷取的腰带", "魔力偷取", "腰带生命词缀", "不偷取生命"):
+        for question in ("生命偷取的腰带", "魔力偷取", "腰带生命词缀", "不偷取生命",
+                         "生命偷取词缀的腰带", "魔力偷取的词缀", "能量护盾偷取词缀"):
             self.assertEqual(question, search_query(question))
         result = retrieve(self.conn, "生命偷取的腰带", top_k=8)
         self.assertIn(result.hits[0].entity_id, {"unique_item:Wurms_Molt", "unique_item:The_Retch"})

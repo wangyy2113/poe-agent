@@ -10,7 +10,7 @@ from unittest.mock import Mock, patch
 
 from core.llm import LLMResponse, StreamEvent, ToolCall, Usage
 from orchestrator import loop, tool_selection
-from orchestrator.answer import compose
+from orchestrator.answer import compose, schema
 from orchestrator.binding import Evidence
 from orchestrator.excerpts import source_quotes
 from orchestrator.question import conversation_context
@@ -26,6 +26,26 @@ def call(name, args):
 
 
 class AnswerContractTest(unittest.TestCase):
+    def test_answer_schema_only_offers_supported_operations_and_current_ids(self):
+        def fields(items):
+            return schema(items)["function"]["parameters"]["properties"]["blocks"]["items"]["properties"]
+        self.assertNotIn("quote", fields([]))
+        self.assertNotIn("text", fields([evidence()]))
+        self.assertNotIn("citations", fields([evidence()]))
+        self.assertEqual(["Q1.1"], fields([evidence()])["quote"]["enum"])
+        general = fields([evidence(scope="general")])
+        self.assertIn("text", general)
+        self.assertEqual(["E1"], general["citations"]["items"]["enum"])
+        self.assertNotIn("quote", general)
+
+    def test_clarification_cannot_smuggle_unverified_numeric_examples(self):
+        for ask in ("Mind over Matter分流比例（例如常见40%）", "最大火抗是否改为90%", "字段" * 70):
+            with self.subTest(ask=ask), self.assertRaises(ValueError):
+                compose({"status": "clarification", "blocks": [{"ask": ask}]}, [])
+        raw, checked = compose({"status": "clarification", "blocks": [{"ask": "实际生效的最大火焰抗性"}]}, [])
+        self.assertIn("最大火焰抗性", raw)
+        self.assertEqual(0, checked.blocked)
+
     def test_complete_fact_is_restored_with_its_subject_and_citation(self):
         raw, result = compose({"status": "answer", "blocks": [{"quote": "Q1.1"}]}, [evidence()])
         self.assertIn("猎首", raw)
@@ -286,7 +306,10 @@ class ToolBoundaryTest(unittest.TestCase):
         self.assertIn("不代表", result.data["reason"])
 
     def test_entity_field_endpoint_retains_provenance(self):
-        from tools.impl.kb_search import entity_lookup
+        from tools.impl.kb_search import entity_lookup, kb_search
+        from retrieval.fts import Hit
+        from retrieval.hybrid import RetrievalResult
+        from dataclasses import replace
         conn = sqlite3.connect(":memory:"); conn.row_factory = sqlite3.Row
         self.addCleanup(conn.close)
         conn.executescript("CREATE TABLE entity(entity_id,name_zh,name_en,base_type,attributes,url,source,source_priority);CREATE TABLE chunk(chunk_id,entity_id,text);")
@@ -299,6 +322,19 @@ class ToolBoundaryTest(unittest.TestCase):
         self.assertEqual("POEDB", result.citations[0]["source"])
         self.assertIn(":field:", result.citations[0]["chunk_id"])
         self.assertNotIn("[[E1]]", result.citations[0]["text"])
+        hit = Hit("item", "unique_item:Headhunter", "+(25-40) 最大生命",
+                  {"title": "猎首", "url": "https://poedb.tw/cn/Headhunter"},
+                  1, 0, "alias", "POEDB", 1)
+        query = "猎首的隐式词缀最多加多少生命？"
+        retrieval = RetrievalResult(query=query, hits=[hit], sufficient=True)
+        with patch("tools.impl.kb_search.dbmod.get_conn", return_value=conn), \
+             patch("tools.impl.kb_search.configured_retrieve", return_value=retrieval):
+            found = kb_search(query)
+            self.assertEqual(result.citations[0]["text"], found.citations[0]["text"])
+            self.assertEqual(result.citations[0]["chunk_id"], found.citations[0]["chunk_id"])
+            retrieval.hits.append(replace(hit, chunk_id="other", entity_id="unique_item:Mageblood"))
+            ambiguous = kb_search(query)
+            self.assertTrue(all(":field:" not in c["chunk_id"] for c in ambiguous.citations))
         from orchestrator.binding import number_evidence, verify
         self.assertGreater(verify("猎首使你免疫所有伤害[[E1]]", number_evidence(result.citations)).blocked, 0)
 

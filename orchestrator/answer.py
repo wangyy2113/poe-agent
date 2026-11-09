@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 from typing import Any
+import re
+from copy import deepcopy
 
 from orchestrator.binding import BindingResult, Evidence, SentenceVerdict, split_sentences, verify
 from orchestrator.excerpts import source_quotes
@@ -23,7 +25,7 @@ SCHEMA = {
                 "status": {"type": "string", "enum": ["answer", "clarification", "gap"]},
                 "blocks": {"type": "array", "minItems": 0, "maxItems": 24,
                            "items": {"type": "object", "properties": {
-                               "ask": {"type": "string", "description": "需用户补充或确认的信息，例如当前赛季、职业与升华、等级、目标；仅用于clarification，不包含游戏事实解释。"},
+                               "ask": {"type": "string", "maxLength": 120, "description": "仅填待确认的字段名，例如当前赛季、职业与升华、实际最大火抗；不填数值、建议取值、算例或机制解释。仅用于clarification。"},
                                "report": {"type": "string", "description": "可信工具报告ID（仅工具明确返回的report），与quote、text互斥"},
                                "quote": {"type": "string", "description": "完整原文段落ID，如Q1.2；与text二选一"},
                                "text": {"type": "string", "description": "缺据说明或有非摘录证据支持的解释；摘录事实使用quote，不手写引用标记"},
@@ -34,6 +36,25 @@ SCHEMA = {
         },
     },
 }
+
+
+def schema(evidence: list[Evidence]) -> dict:
+    """Only offer answer operations that the current evidence can support."""
+    result = deepcopy(SCHEMA)
+    properties = result["function"]["parameters"]["properties"]["blocks"]["items"]["properties"]
+    quotes = source_quotes(evidence)
+    if quotes:
+        properties["quote"]["enum"] = list(quotes)
+    else:
+        properties.pop("quote")
+    if not any(e.can_support_facts and e.claim_scope != "excerpt" for e in evidence):
+        # Excerpts cannot license paraphrases. Do not offer a text operation
+        # that can only fail the binding gate and consume another model round.
+        properties.pop("text")
+        properties.pop("citations")
+    else:
+        properties["citations"]["items"]["enum"] = [e.label for e in evidence if e.can_support_facts]
+    return result
 
 
 def compose(arguments: Any, evidence: list[Evidence], *, reports: dict[str, str] | None = None) -> tuple[str, BindingResult]:
@@ -55,6 +76,8 @@ def compose(arguments: Any, evidence: list[Evidence], *, reports: dict[str, str]
         if block.get("ask"):
             if arguments["status"] != "clarification" or not isinstance(block["ask"], str):
                 raise ValueError("ask只能用于clarification，内容须为待补充或确认的信息")
+            if len(block["ask"]) > 120 or re.search(r"[0-9%％]", block["ask"]):
+                raise ValueError("ask只填写简短的待确认字段名，不填数值或算例；数值与机制说明必须使用有据的quote/text")
             text = "请补充或确认：" + block["ask"].strip().rstrip("。？?") + "？"
             checked = BindingResult(verdicts=[SentenceVerdict(text, "narrative", (), True, "澄清问题")])
         elif block.get("report"):

@@ -58,7 +58,7 @@ CASES = [
     Case("max_hit_penetration", "5000生命，总火抗99%，没有最大抗性加成，敌人25%火焰穿透，没有其他减伤，一发最多能挨多少火焰伤害？", ("10000", "75%", "25%", "50%"), tools=("max_hit_calc",)),
     Case("max_hit_invalid_actual", "5000生命，实际生效火焰抗性99%，没有其他减伤，一发最多能挨多少火焰伤害？", ("90%", "核对|确认|澄清|不合法|不能"), "clarification", forbidden=("20000", "50000", "500000"), tools=("max_hit_calc",)),
     Case("max_hit_invalid_cap", "5000生命，总火抗120%，最大火抗95%，没有其他减伤，一发最多能挨多少火焰伤害？", ("90%|硬上限", "核对|确认|澄清|不合法|不能"), "clarification", forbidden=("20000", "50000", "100000"), tools=("max_hit_calc",)),
-    Case("max_hit_mom", "5000生命，总火抗75%，有Mind over Matter把部分伤害转给魔力，一发最多能挨多少火焰伤害？", ("MindoverMatter|MoM", "无法|不能|不支持|未支持|未覆盖|未提供|请补充|确认"), "clarification", forbidden=("20000",)),
+    Case("max_hit_mom", "5000生命，总火抗75%，有Mind over Matter把部分伤害转给魔力，一发最多能挨多少火焰伤害？", ("MindoverMatter|MoM", "无法|不能|不支持|未支持|未覆盖|未提供|请补充|确认"), "clarification", forbidden=("20000", "40%")),
     Case("crit", "技能基础暴击率5%，增加100%暴击率，暴击伤害加成300%，最终暴击率是多少？", ("暴击率(?:为|是)?[^。]{0,8}10(?:[.]0+)?%", "5%", "100%|增加的暴击率.{0,15}100/100"), tools=("crit_calc",)),
     Case("negation", "不是问猎首，法血有哪些词缀？", ("法师之血|Mageblood", "魔法非恢复类药剂", "2[–-]4"), forbidden=("当你击败稀有怪物",)),
     Case("comparison", "猎首和法血有什么区别？", ("猎首", "法师之血|Mageblood", "稀有怪物", "魔法非恢复类药剂")),

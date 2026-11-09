@@ -3004,7 +3004,7 @@ def _prepare_turn(
     if calculators:
         retrieval_note += "\n已开放计算器契约：" + "、".join(calculators) + "。计算器输出也是事实依据，可直接核对输入、公式和上限，无需先做全文检索。"
     if not precision and normalized_query != question:
-        retrieval_note += "\n检索术语归一后的原问题：" + normalized_query + "。此处只映射检索用语；事实、物品类型、触发条件和否定仍须按原问题与来源核对。"
+        retrieval_note += "\n按完整术语释义理解问题：" + normalized_query + "。动作及作用对象按此释义核对；保留否定与物品类型，具体触发条件和数值仍须查证。"
     if requirements:
         retrieval_note += "\n方案所需输入指引（已给的信息不要重复询问）：" + requirements
     setup.messages = [
@@ -3162,6 +3162,14 @@ def _handle_tool_call(state: _ToolLoopState, result: TurnResult, tc: Any) -> dic
         "message": {"role": "tool", "tool_call_id": tc.id, "content": tr.for_model()},
         "evidence_changed": evidence_changed,
     }
+
+
+def _round_tools(state: _ToolLoopState) -> list[dict[str, Any]]:
+    if state.precision_tool and state.succeeded:
+        return []
+    return [answer_contract.schema(state.evidence)
+            if s["function"]["name"] == answer_contract.FINISH_TOOL else s
+            for s in state.tools]
 
 
 def _assistant_tool_message(tool_calls: list[Any], content: str | None = None) -> dict[str, Any]:
@@ -3349,7 +3357,7 @@ def run_turn(
             if result.answer:
                 break
             # A completed tool result needs an answer, not another search loop.
-            round_tools = [] if state.precision_tool and state.succeeded else state.tools
+            round_tools = _round_tools(state)
             resp = client.chat(
                 messages,
                 tools=round_tools,
@@ -3491,7 +3499,7 @@ def stream_turn(
                 break
             pending: list[Any] = []
             round_content: list[str] = []
-            round_tools = [] if state.precision_tool and state.succeeded else state.tools
+            round_tools = _round_tools(state)
             with closing(client.stream(messages, tools=round_tools, budget=budget)) as upstream:
                 for event in upstream:
                     if event.kind == "thinking":
