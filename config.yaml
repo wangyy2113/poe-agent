@@ -29,14 +29,11 @@ paths:
   logs: "logs"
 
 llm:
-  # 推理模型必须留足预算：实测 GLM 5.2 在"只回答两个字"的任务上
-  # 消耗 117 输出 token，其中 114 是推理。设小了会正文为空且不报错。
+  # 所有文本、工具与图片请求统一使用 core/model_policy.py 中的 DeepSeek 模型。
+  # 保留工具 JSON 和可能的推理预算；推理字段为 0 / 缺失不代表调用失败。
   max_tokens: 8192
-  # 默认不发 temperature。实测该网关背后同时挂着 GLM 与 Bedrock，后者直接拒：
-  # `temperature is deprecated for this model` → 整次调用 400 失败。
-  # 而 GLM 5.2 是推理模型，temperature 的意义本就有限。
-  # 填了数值也没关系：客户端遇到「该模型不支持此参数」会自动停发并重试。
-  temperature: null
+  # 证据复述采用低随机性；网关拒绝可选参数时仍只在同模型上重试。
+  temperature: 0.0
   timeout_seconds: 180
   # 单轮闸门，防失控循环与费用失控
   max_tool_calls: 12
@@ -46,17 +43,8 @@ llm:
   # 凭证冷却（秒）：额度类可带外补充故定期重试；鉴权类不会自愈但也不写死到进程结束
   cooldown_budget_seconds: 1800
   cooldown_auth_seconds: 3600
-  # 模型别名 → 完整模型 ID
-  model_aliases:
-    glm: "glm-5.2"
-    opus: "claude-opus-5"
-    sonnet: "claude-sonnet-4-6"
-    haiku: "claude-haiku-4-5"
-  # 需要二次判断的场景用廉价模型，不占主模型预算
-  gate_model: "claude-haiku-4-5"
-  # 可选：支持 OpenAI image_url 消息的视觉模型。留空时截图入口返回明确的 503，
-  # 不会把普通文本模型冒充 OCR。模型只做转录，结果必须由用户确认后才进入分析。
-  vision_model: ""
+  # 截图转录与聊天共用模型、网关和凭证；用户确认后才进入确定性分析。
+  vision_enabled: true
 
 retrieval:
   top_k: 20
@@ -82,16 +70,12 @@ retrieval:
   timeout_seconds: 8
 
   vector:
-    # 2026-10-30 实测：当前网关未注册 embedding 模型 → 关闭。
-    # 关闭后走 BM25 + 实体精确匹配 + search_keywords 补偿。
+    # 单 DeepSeek 策略禁用远程 Embedding；旧索引保留，查询使用词法/实体通道。
+    # 即使旧配置设为 true，也不会调用其他模型。
     enabled: false
-    # 默认 0：scripts/backfill_vectors.py --apply 用模型实际输出维度建表。
-    # 若手动预建表，必须与该模型维度一致；完整回填前向量通道仍关闭。
     dim: 0
   rerank:
-    # 独立的远程 /v1/rerank 适配器；当前网关没有可用模型，故关闭。
-    # 开启后必须在 .env 配置 RERANK_BASE_URL、RERANK_API_KEY、RERANK_MODEL。
-    # 远端异常或响应不完整时保留 RRF 排序，并在检索元数据标注降级。
+    # 未验证目标模型的 ReRank 契约，不发送请求，也不切换其他模型。
     enabled: false
 
   # 事实句判定领域词表：命中这些词的句子视为事实断言，

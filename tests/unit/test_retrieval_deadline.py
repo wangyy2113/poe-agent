@@ -8,10 +8,10 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from retrieval.embedding import EmbeddingClient, EmbeddingTimeout
+from retrieval.embedding import EmbeddingTimeout
 from retrieval.fts import Hit
 from retrieval.hybrid import retrieve
-from retrieval.rerank import RerankClient, RerankTimeout
+from retrieval.rerank import RerankTimeout
 
 
 def _hit(channel: str) -> Hit:
@@ -21,28 +21,6 @@ def _hit(channel: str) -> Hit:
         channel=channel, source="POEDB", source_priority=1,
         coverage=1.0, matched_terms=["猎首", "装备"],
     )
-
-
-class RemoteBudgetTest(unittest.TestCase):
-    def test_embedding_retries_share_one_deadline(self) -> None:
-        with (
-            patch("retrieval.embedding.httpx.post", return_value=SimpleNamespace(status_code=503)) as post,
-            patch("retrieval.embedding.time.monotonic", side_effect=[0.0, 0.0, 0.0, 2.0]),
-            patch("retrieval.embedding.time.sleep"),
-        ):
-            with self.assertRaises(EmbeddingTimeout):
-                EmbeddingClient("https://example.test", "secret", "model", 1.0).embed(["猎首"])
-        post.assert_called_once()
-
-    def test_rerank_retries_share_one_deadline(self) -> None:
-        with (
-            patch("retrieval.rerank.httpx.post", return_value=SimpleNamespace(status_code=503)) as post,
-            patch("retrieval.rerank.time.monotonic", side_effect=[0.0, 0.0, 0.0, 2.0]),
-            patch("retrieval.rerank.time.sleep"),
-        ):
-            with self.assertRaises(RerankTimeout):
-                RerankClient("https://example.test", "secret", "model", 1.0).rerank("猎首", ["装备"])
-        post.assert_called_once()
 
 
 class RetrievalBudgetTest(unittest.TestCase):

@@ -73,8 +73,8 @@ class OpenAIStreamOptions(BaseModel):
 class OpenAIChatRequest(BaseModel):
     """OpenAI Chat Completions 的文本子集。
 
-    `model` 是客户端需要填写的逻辑名称；实际使用的上游模型由服务端配置与凭证池
-    决定，并通过响应的 `poe_agent.upstream_model` 扩展字段明确返回。
+    `model` 是客户端需要填写的逻辑名称；实际使用的上游模型由服务端 DeepSeek 单模型策略
+    固定，并通过响应的 `poe_agent.upstream_model` 扩展字段明确返回。
     """
 
     model: str = Field(default="poe-agent", min_length=1, max_length=200)
@@ -104,8 +104,8 @@ class ChatResponse(BaseModel):
     #: 被拦截的无据事实句数量。> 0 说明模型试图输出无据内容，已被闸门挡下
     blocked_claims: int
     citations: list[CitationOut]
-    #: 实际使用的模型。网关背后挂着多个模型，多 Key 故障转移时可能切到别的模型，
-    #: 而不同模型的推理 token 行为不同——不返回这个字段，排查时会误判。
+    #: 实际使用的固定 DeepSeek 模型；故障转移不改变模型，
+    #: 与 token 计量一并用于验收和排查。
     model: str
     tokens: dict[str, int]
     elapsed_ms: int

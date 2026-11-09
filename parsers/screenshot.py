@@ -18,6 +18,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
+from core.model_policy import DEEPSEEK_MODEL, ModelPolicyError, require_model
 from core.llm import LLMClient, LLMError
 from parsers.pob_build import BuildGem, PobBuild, SkillGroup
 
@@ -155,15 +156,13 @@ def recognize_screenshot(
     data_url: str,
     *,
     client: LLMClient,
-    model: str,
+    model: str = DEEPSEEK_MODEL,
 ) -> ScreenshotRecognition:
     """调用已配置的视觉模型并把响应收紧到白名单字段。"""
-    if not model.strip():
-        raise ScreenshotError(
-            "vision_model_not_configured",
-            "未配置 llm.vision_model，截图识别不可用",
-            status_code=503,
-        )
+    try:
+        model = require_model(model)
+    except ModelPolicyError as exc:
+        raise ScreenshotError("vision_model_not_allowed", str(exc), status_code=503) from None
     validate_image_data_url(data_url)
     messages: list[dict[str, Any]] = [
         {"role": "system", "content": _PROMPT},

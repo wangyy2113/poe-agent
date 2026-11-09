@@ -1,18 +1,8 @@
-"""LLM 客户端：`openai` SDK 直连内部 LiteLLM 网关的 `/v1/chat/completions`。
+"""DeepSeek gateway client with one model, credential failover and safe streaming.
 
-设计要点（对应 design.md 3.2.2 / 3.2.4，tasks 0.6b + 3.1）：
-
-1. **只实现 OpenAI 兼容一种**。网关已提供 OpenAI 协议，不引入 `anthropic` SDK，
-   也不走 `claude` CLI 子进程（拿不到增量流会破坏出口的按句校验）。
-2. **推理模型适配**。GLM 5.2 返回 `reasoning_content` / `reasoning_tokens`，
-   实测推理占输出可达 98%。因此：`max_tokens` 有强制下限；Token 计量含推理；
-   流式只把 `delta.content` 作为文本外发；推理内容**在类型层面就无法流出**。
-3. **多 Key 故障转移**。按优先级粘性选第一个健康凭证；额度类冷却 30 分钟、
-   鉴权/模型权限类冷却 60 分钟；5xx/429 只重试不降级 Key；切 Key 同步切模型。
-
-安全约束：完整密钥不得进入任何日志或异常消息（见 `_scrub`）；
-`reasoning_content` 不得作为答案外发——那正是模型凭参数记忆猜测的地方，
-透出去等于绕过「无据不答」的全部闸门。
+Reasoning is measured but never returned as answer text or persisted. Credential
+failover changes only the key, never the upstream model. All callers, including
+image transcription, use the same model policy.
 """
 
 from __future__ import annotations
@@ -26,14 +16,12 @@ from typing import Any, Iterator, Literal, Sequence
 from openai import APIConnectionError, APIStatusError, APITimeoutError, OpenAI
 
 from core.config import Config, Secrets, get_config, get_secrets, mask
+from core.model_policy import ModelPolicyError, require_model
 
 logger = logging.getLogger(__name__)
 
 
-#: `max_tokens` 硬下限。实测 GLM 5.2 回答「收到」两个字消耗 completion_tokens=117，
-#: 其中 reasoning_tokens=114。若 max_tokens 设小（首测 64），推理会吃光预算导致
-#: **正文为空且不报错**——最隐蔽的失败模式。故在客户端层强制抬到该下限，
-#: 不信任调用方与配置文件。
+#: Reserve output headroom for tool JSON and gateways that emit reasoning first.
 MIN_MAX_TOKENS = 2048
 
 #: 失败分类。决定「重试同一 Key」还是「冷却并换 Key」还是「直接失败」。
@@ -50,8 +38,7 @@ _AUTH_HINTS = (
     "unauthorized", "auth_error", "no access", "not allowed", "not permitted",
     "model_not_found", "does not exist", "key not found",
 )
-#: 「某个采样参数这个模型不支持」类的 400。实测该网关背后既有 GLM 也有 Bedrock，
-#: 后者直接拒 `temperature`（`temperature is deprecated for this model`）。
+#: Compatible gateways may reject optional sampling parameters with HTTP 400.
 #: 这类错误不该让整次调用失败——去掉该参数重试一次即可。
 _PARAM_UNSUPPORTED_HINTS = (
     "deprecated for this model", "unsupported parameter", "unsupported_parameter",
@@ -76,7 +63,7 @@ class TokenBudgetExceeded(LLMError):
 
 
 class EmptyContentError(LLMError):
-    """正文为空但推理消耗了 token —— 典型是 max_tokens 给少了。
+    """上游没有返回正文或工具调用，可能是输出预算不足。
 
     单列成一类异常而非返回空串，是为了让这个失败模式无法被静默忽略。
     """
@@ -152,8 +139,7 @@ class StreamEvent:
     usage: Usage | None = None
     detail: str = ""
     #: 实际服务本次请求的模型，只在 `kind == "usage"` 时填。
-    #: 非流式走 `LLMResponse.model`，流式必须由这里带出来——网关背后挂着多个模型，
-    #: 多 Key 故障转移会切模型，不知道是谁答的就没法解释不同的推理 token 行为
+    #: 非流式走 `LLMResponse.model`，流式使用同一固定模型。
     model: str = ""
 
     def __post_init__(self) -> None:
@@ -190,7 +176,7 @@ class TurnBudget:
 class _Credential:
     index: int
     key: str
-    #: 绑定模型。受限 Key 访问别的模型只会 401，所以切 Key 必须同步切模型。
+    #: Every credential is normalized to the same pinned model.
     model: str = ""
     cooldown_until: float = 0.0
     reason: str = ""
@@ -221,7 +207,7 @@ class CredentialPool:
         if not specs:
             raise LLMError("未配置任何 LLM 凭证：请在 .env 设置 LLM_API_KEY 或 LLM_API_KEYS")
         self._creds = [
-            _Credential(index=i, key=key, model=model)
+            _Credential(index=i, key=key, model=require_model(model or None))
             for i, (key, model) in enumerate(specs)
         ]
         self._budget_cooldown = budget_cooldown
@@ -303,7 +289,7 @@ def classify_failure(exc: Exception) -> tuple[FailureKind, str]:
         if status in (401, 403):
             return "auth", detail
         if status == 404:
-            # 网关上没有这个模型 / 该 Key 无权访问 → 换 Key 时会同步换模型
+            # 固定模型不可见 / 该 Key 无权访问，只允许尝试同模型的下一把 Key
             return "auth", detail
         if _hit(body, _BUDGET_HINTS):
             return "budget", detail
@@ -336,7 +322,17 @@ class LLMClient:
         self._cfg = cfg or get_config()
         self._sec = secrets or get_secrets()
         self._base_url = _normalize_base_url(self._sec.llm_base_url)
-        self._default_model = self._cfg.resolve_model(self._sec.llm_model)
+        try:
+            self._default_model = require_model(self._sec.llm_model)
+            specs = self._sec.credential_specs()
+            # Reject obsolete alternate routing, even if a caller never reaches it.
+            for value in (self._cfg.get("llm.model_aliases", {}) or {}).values():
+                require_model(value)
+            for key in ("llm.gate_model", "llm.vision_model"):
+                if self._cfg.get(key):
+                    require_model(self._cfg.get(key))
+        except ModelPolicyError as exc:
+            raise LLMError(str(exc)) from None
         self._timeout = float(self._cfg.get("llm.timeout_seconds", 180))
         self._temperature = self._cfg.get("llm.temperature", None)
         self._retry_delays: tuple[float, ...] = tuple(
@@ -344,18 +340,17 @@ class LLMClient:
         )
         self._max_tokens = _clamp_max_tokens(int(self._cfg.get("llm.max_tokens", 8192)))
         self._pool = CredentialPool(
-            self._sec.credential_specs(),
+            specs,
             budget_cooldown=float(self._cfg.get("llm.cooldown_budget_seconds", 1800)),
             auth_cooldown=float(self._cfg.get("llm.cooldown_auth_seconds", 3600)),
         )
         self._clients: dict[int, OpenAI] = {}
-        #: 网关拒绝过的采样参数，之后不再发送。实测该网关背后既有 GLM 也有
-        #: Bedrock，后者拒 `temperature`。见 `_drop_unsupported`。
+        #: Sampling parameters rejected by this gateway are no longer sent.
         self._unsupported_params: set[str] = set()
         self._lock = threading.Lock()
         logger.info(
-            "LLM 客户端就绪：%s 模型=%s 凭证=%d max_tokens=%d",
-            self._base_url, self._default_model, self._pool.size, self._max_tokens,
+            "LLM 客户端就绪：provider=deepseek 模型=%s 凭证=%d max_tokens=%d",
+            self._default_model, self._pool.size, self._max_tokens,
         )
 
     # ── 公开 API ──
@@ -381,9 +376,9 @@ class LLMClient:
     ) -> LLMResponse:
         """一次非流式调用。
 
-        `allow_empty_content=False` 时，若正文为空而推理消耗了 token，抛
-        `EmptyContentError`——这是 max_tokens 不足的典型症状，不能静默当成
-        「模型没话说」。只在明确期待纯 tool_call 回复时才置 True。
+        Pure tool_call replies are valid. An HTTP success with neither content
+        nor tools always raises EmptyContentError. allow_empty_content remains
+        as a compatibility argument; it cannot authorize a resultless reply.
         """
         started = time.monotonic()
         raw, model_used = self._invoke(
@@ -397,6 +392,7 @@ class LLMClient:
         )
         elapsed_ms = int((time.monotonic() - started) * 1000)
 
+        self._check_served_model(getattr(raw, "model", ""))
         choice = raw.choices[0] if raw.choices else None
         msg = getattr(choice, "message", None)
         content = (getattr(msg, "content", "") or "").strip()
@@ -419,12 +415,12 @@ class LLMClient:
             usage.completion_tokens - usage.reasoning_tokens, usage.reasoning_tokens,
             len(content), len(calls),
         )
+        if budget is not None:
+            budget.add(usage)
         self._check_empty(
             content, calls, usage, finish, model_used,
             self._effective_max_tokens(max_tokens), allow_empty_content,
         )
-        if budget is not None:
-            budget.add(usage)
 
         return LLMResponse(
             content=content,
@@ -471,7 +467,7 @@ class LLMClient:
         reasoning_chars = 0
         thinking_announced = False
         finish = ""
-        #: 网关在每个分片里回报实际服务的模型，可能与请求的不同（别名解析、灰度）
+        #: Validate the reported model before exposing any response fragment.
         served_model = ""
         #: 流式 tool_calls 按 index 分片到达，需要在此拼装
         partial: dict[int, dict[str, str]] = {}
@@ -481,6 +477,7 @@ class LLMClient:
                 chunk_usage = _usage_of(chunk)
                 if chunk_usage.total_tokens:
                     usage = chunk_usage  # 网关在末尾给累计值，直接覆盖而非相加
+                self._check_served_model(getattr(chunk, "model", ""))
                 served_model = getattr(chunk, "model", "") or served_model
 
                 choices = getattr(chunk, "choices", None) or []
@@ -537,15 +534,18 @@ class LLMClient:
             served_model or model_used, elapsed_ms, finish, usage.total_tokens,
             usage.reasoning_tokens, content_chars, reasoning_chars, len(partial),
         )
-        if not content_chars and not partial and reasoning_chars:
-            logger.warning(
-                "流式正文为空但推理产出 %d 字：本次 max_tokens=%d 可能不足，"
-                "推理吃光了预算（这是静默失败，不会报错）",
-                reasoning_chars, self._effective_max_tokens(max_tokens),
-            )
         if budget is not None:
             budget.add(usage)
         yield StreamEvent(kind="usage", usage=usage, model=served_model or model_used)
+        if not content_chars and not partial:
+            yield StreamEvent(
+                kind="error",
+                detail="DeepSeek 未返回正文或工具调用；请重试或检查输出预算",
+            )
+
+    def _check_served_model(self, model: str | None) -> None:
+        if model and model != self._default_model:
+            raise LLMError("网关返回的模型与固定 DeepSeek 模型不一致，响应已拒绝")
 
     # ── 内部 ──
 
@@ -561,13 +561,15 @@ class LLMClient:
         temperature: float | None,
     ) -> tuple[Any, str]:
         """带重试与故障转移的调用。返回 (原始响应或流, 实际使用的模型)。"""
+        try:
+            model_used = require_model(model)
+        except ModelPolicyError as exc:
+            raise LLMError(str(exc)) from None
         effective_max = self._effective_max_tokens(max_tokens)
         attempt = 0
-        last: Exception | None = None
         while True:
             cred = self._pool.acquire()
-            # 切 Key 必须同步切模型：受限 Key 访问别的模型只会 401
-            model_used = self._cfg.resolve_model(model or cred.model or self._default_model)
+            # Failover selects another credential for the same model only.
             payload: dict[str, Any] = {
                 "model": model_used,
                 "messages": list(messages),
@@ -588,9 +590,8 @@ class LLMClient:
             try:
                 return self._client_for(cred).chat.completions.create(**payload), model_used
             except Exception as exc:  # noqa: BLE001
-                last = exc
                 kind, detail = classify_failure(exc)
-                detail = _scrub(detail, self._pool)
+                detail = _scrub(detail, self._pool).replace(self._base_url, "[gateway]").replace(self._sec.llm_base_url.rstrip("/"), "[gateway]")
 
                 if kind == "fatal":
                     # 「这个模型不支持某个采样参数」不该让整次调用失败：
@@ -667,18 +668,12 @@ class LLMClient:
     ) -> None:
         if content or calls:
             return
-        if not usage.reasoning_tokens:
-            return
-        # 报本次实际生效的 max_tokens，不是配置默认值——这条日志的唯一用途
-        # 就是定位「预算给少了」，数字失真等于没有这条日志。
+        # Empty tool-only responses are valid only when tool_calls is nonempty.
+        # A successful HTTP status without either result must never look like success.
         msg = (
-            f"模型 {model} 正文为空，但消耗了 {usage.reasoning_tokens} 个推理 token"
-            f"（finish_reason={finish or '未给出'}）：本次 max_tokens={max_tokens} "
-            "很可能不足，推理吃光了输出预算"
+            f"模型 {model} 未返回正文或工具调用（finish_reason={finish or '未给出'}，"
+            f"max_tokens={max_tokens}，reasoning_tokens={usage.reasoning_tokens}）"
         )
-        if allow_empty:
-            logger.warning("%s", msg)
-            return
         logger.error("%s", msg)
         raise EmptyContentError(msg)
 
@@ -688,9 +683,18 @@ class LLMClient:
 def _normalize_base_url(base_url: str) -> str:
     """网关地址补 `/v1`。`.env` 里配的是根地址，而 SDK 会直接在 base_url
     后拼 `/chat/completions`，不补就会 404。"""
+    from urllib.parse import urlsplit
+
     url = (base_url or "").strip().rstrip("/")
     if not url:
         raise LLMError("LLM_BASE_URL 未配置")
+    try:
+        parsed = urlsplit(url)
+        if (parsed.scheme not in ("http", "https") or not parsed.netloc
+                or parsed.username or parsed.password or parsed.query or parsed.fragment):
+            raise ValueError
+    except ValueError:
+        raise LLMError("LLM_BASE_URL 必须是无凭证、查询参数和片段的 HTTP(S) 地址") from None
     return url if url.endswith("/v1") else f"{url}/v1"
 
 
@@ -698,7 +702,7 @@ def _clamp_max_tokens(value: int) -> int:
     if value >= MIN_MAX_TOKENS:
         return value
     logger.warning(
-        "max_tokens=%d 低于推理模型下限 %d，已抬升。GLM 5.2 的推理会先消耗预算，"
+        "max_tokens=%d 低于推理模型下限 %d，已抬升。推理可能先消耗输出预算，"
         "给少了会导致正文为空且不报错", value, MIN_MAX_TOKENS,
     )
     return MIN_MAX_TOKENS

@@ -22,7 +22,8 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
 from api import normalize_base_path  # noqa: E402
-from core.config import get_config  # noqa: E402
+from core.config import get_config
+from core.model_policy import DEEPSEEK_MODEL  # noqa: E402
 
 PASS = FAIL = 0
 
@@ -223,14 +224,8 @@ def main() -> int:
           f"prompt_tokens={d['tokens'].get('prompt', 0)}")
     check("Token 计量含 reasoning 字段", "reasoning" in d["tokens"],
           f"model={d['model']} tokens={d['tokens']}")
-    if d["model"].startswith("glm"):
-        # 只有推理模型才该有非零 reasoning。故障转移可能切到非推理模型，
-        # 此时 reasoning=0 是正确的，不该判失败。
-        check("GLM 是推理模型，reasoning 应大于 0",
-              d["tokens"].get("reasoning", 0) > 0,
-              f"reasoning={d['tokens'].get('reasoning')}")
-    else:
-        print(f"  [跳过] 推理 token 检查 —— 实际模型 {d['model']} 非推理模型")
+    check("上游固定为 DeepSeek", d["model"] == DEEPSEEK_MODEL)
+    check("推理用量允许为零但不得为负", d["tokens"].get("reasoning", 0) >= 0)
     check("答案里没有模型自写的来源行（引用由代码装配）",
           "来源：" not in d["answer"])
     if d["blocked_claims"]:
@@ -268,8 +263,7 @@ def main() -> int:
     check("正文非空", bool(stream_text.strip()), f"{len(stream_text)} 字")
     check("两条路径都不是缺据声明",
           not d["evidence_gap"] and not done.get("evidence_gap"))
-    # 故障转移会切模型，两条路径都必须报出实际模型，否则「换了模型」会被误判成 bug
-    check("流式也报出实际模型", bool(done.get("model")), f"实得 {done.get('model')!r}")
+    check("流式使用相同的固定模型", done.get("model") == d.get("model") == DEEPSEEK_MODEL)
 
     section("6. 缺据路径的流式呈现")
     gap_frames = sse(base, "/chat/stream", {"message": "流放之路2 的升华机制是什么"})

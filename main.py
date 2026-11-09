@@ -44,6 +44,7 @@ from core.config import REPO_ROOT, get_config, get_secrets
 from core.llm import LLMError, get_llm_client
 from core.logging_setup import setup_logging
 from core.version import APP_VERSION
+from core.model_policy import AUXILIARY_MODEL_REASON, DEEPSEEK_MODEL, capabilities
 from retrieval.runtime import vector_runtime as active_vector_runtime
 from retrieval.rerank import configured_rerank_client
 
@@ -63,7 +64,7 @@ async def _lifespan(_app: FastAPI):
     dbmod.init_db(cfg.db_path, vector_dim=dim)
     logger.info("数据库就绪：%s", cfg.db_path)
     vector_requested = bool(cfg.get("retrieval.vector.enabled", False))
-    vector_runtime = dbmod.vector_channel_status(vector_requested)
+    vector_runtime, _ = active_vector_runtime(dbmod.get_conn(), vector_requested, None)
     if vector_requested and not vector_runtime.available:
         logger.warning("向量通道已自动禁用：%s", vector_runtime.reason)
     else:
@@ -154,8 +155,11 @@ def health() -> dict[str, Any]:
     try:
         sec = get_secrets()
         out["llm"] = {
-            "base_url": sec.llm_base_url,
-            "model": sec.llm_model,
+            "provider": "deepseek",
+            "policy": "single_model",
+            "base_url_configured": bool(sec.llm_base_url),
+            "model": DEEPSEEK_MODEL,
+            "capabilities": capabilities(),
             "credentials": len(sec.credential_specs()),
         }
         # 凭证池状态（脱敏）：能看出哪个 Key 在冷却、为什么冷却。
@@ -169,15 +173,11 @@ def health() -> dict[str, Any]:
             out["status"] = "degraded"
             out["llm"]["pool_error"] = str(exc)
         out["embedding"] = {
-            "configured": bool(
-                sec.embedding_base_url and getattr(sec, "embedding_api_key", "")
-                and sec.embedding_model
-            ),
-            "model": sec.embedding_model or None,
+            "configured": False, "model": None, "reason": AUXILIARY_MODEL_REASON,
         }
     except Exception as exc:  # noqa: BLE001
         out["status"] = "degraded"
-        out["llm"] = {"error": f"{type(exc).__name__}: {exc}"}
+        out["llm"] = {"error": "LLM 配置无效，请运行 selfcheck 检查本机配置"}
     return out
 
 

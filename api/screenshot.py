@@ -65,18 +65,14 @@ def screenshot_recognize(
 ) -> ScreenshotResponse:
     try:
         media_type, raw = validate_image_data_url(req.data_url)
-        model = str(get_config().get("llm.vision_model", "") or "").strip()
-        if not model:
+        if not get_config().get("llm.vision_enabled", True):
             raise ScreenshotError(
-                "vision_model_not_configured",
-                "未配置 llm.vision_model，截图识别不可用",
+                "vision_disabled",
+                "截图识别已关闭；可粘贴装备文字或导入 PoB",
                 status_code=503,
             )
-        result = recognize_screenshot(
-            req.data_url,
-            client=get_llm_client(),
-            model=model,
-        )
+        client = get_llm_client()
+        result = recognize_screenshot(req.data_url, client=client, model=client.default_model)
     except ScreenshotError as exc:
         _raise_screenshot_error(exc)
     except LLMError as exc:
