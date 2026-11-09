@@ -25,7 +25,8 @@
 | `scripts/import_pob_uniques.py` | 原子导入 PoB 当前唯一装备与隔离的命名变体历史 |
 | `scripts/verify_pob_mods.py` | POEDB × PoB 词缀对账 |
 | `scripts/verify_pob_uniques.py` | POEDB × PoB 唯一装备对账 |
-| `scripts/verify_chat.py` | `/chat`、`/chat/stream`、`/item` 端到端验证，61 项（`--gap-only` 31 项，不需要凭证） |
+| `scripts/verify_chat.py` | `/chat`、`/chat/stream`、`/item` 的接口和实体字段直出验证 |
+| `scripts/verify_answer_quality.py` | 当前模型的15个真实问答场景：字段、追问、复合问题、澄清、拒答和成本 |
 | `scripts/check_spec_refs.py` | 校验 spec 里的需求交叉引用 |
 | `scripts/check_doc_facts.py` | 核对文档里的数字断言（单测项数、库内行数）与实际状态是否一致 |
 | `scripts/check_portability.py` | AST 平台中立性检查：平台专有模块、shell 依赖、路径 API 与文本编码 |
@@ -33,7 +34,23 @@
 | `scripts/eval_run.py` | 黄金问答集评测：检索侧指标 / 录制回放 / 出口闸门指标 / 人工审计清单 |
 | `scripts/import_pob_bases.py` | 导入 PoB 底材注册表，18 个装备类别（默认不联网；`--dry-run` 清点、`--category` 单类、`--fetch` 缺页补抓） |
 
-### 评测：四项指标与黄金问答集
+### 问答链路与质量评测
+
+问题先解析当前会话中明确的对象，再检索和选择必要工具。单件装备字段与已有计算结果
+由代码呈现；普通资料问答由 DeepSeek 选择原文段落，代码验证段落ID后装配正文与引用。
+模型不能通过改写原文把秒数变成百分比，未解决的指代会先澄清。需要工具的任务只携带
+当前工具契约，不重复附带全量工具说明和整份知识库清单。
+
+```bash
+# 服务启动后测试当前模型，保存真实最终答案与事件
+.venv/bin/python scripts/verify_answer_quality.py --json data/eval/answer-quality.json
+```
+
+这15个场景包括澄清与正确拒答，通过不等于已交付15份完整方案。完整BD仍需要角色、
+赛季与目标信息；来源版本时效需另行核对。旧黄金录制的模型和时间必须与当前部署区别
+看待；引用规则通过率、排版误拦数不能当成语义准确率或全部误拦率。
+
+### 黄金问答集与离线回放
 
 `config.yaml` 里的阈值与 `orchestrator/binding.py` 的闸门规则都需要判据，否则改动之后
 无法判断是变好还是变坏。判据来自 `tests/golden/questions.yaml`（198 条，六类样本：
@@ -67,7 +84,7 @@
 .venv/bin/python -m unittest discover -s tests -t .
 ```
 
-目前 2513 项单元测试覆盖以下与「无据不答」直接相关的重点：
+目前 2526 项单元测试覆盖以下与「无据不答」直接相关的重点：
 
 | 组 | 重点 |
 | --- | --- |

@@ -464,7 +464,7 @@ class RouteBoundaryTest(unittest.TestCase):
             )
             self.assertEqual(
                 [item["function"]["name"] for item in loop._tools_for_question(QUESTION)],
-                ["kb_search", "craft_attempt_plan"],
+                ["craft_attempt_plan"],
             )
         with patch("orchestrator.loop.REGISTRY.call") as call:
             result, matched = loop._call_tool(

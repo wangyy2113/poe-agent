@@ -23,7 +23,6 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from api import normalize_base_path  # noqa: E402
 from core.config import get_config
-from core.model_policy import DEEPSEEK_MODEL  # noqa: E402
 
 PASS = FAIL = 0
 
@@ -187,7 +186,7 @@ def main() -> int:
         print(f"\n{'=' * 74}\n结果：{PASS} 通过，{FAIL} 失败")
         return 0 if FAIL == 0 else 1
 
-    section("3. 有据路径（需要可用 LLM 凭证）")
+    section("3. 实体字段直出（不调用模型）")
     q = "猎首（Headhunter）有哪些词缀？"
     try:
         d = post(base, "/chat", {"message": q})
@@ -222,10 +221,8 @@ def main() -> int:
     check("单实体问答不发送全量工具 schema",
           d["tokens"].get("prompt", 0) < 3000,
           f"prompt_tokens={d['tokens'].get('prompt', 0)}")
-    check("Token 计量含 reasoning 字段", "reasoning" in d["tokens"],
-          f"model={d['model']} tokens={d['tokens']}")
-    check("上游固定为 DeepSeek", d["model"] == DEEPSEEK_MODEL)
-    check("推理用量允许为零但不得为负", d["tokens"].get("reasoning", 0) >= 0)
+    check("实体字段直出不消耗模型 Token", not d["tokens"].get("total", 0))
+    check("直出不冒充模型生成", not d["model"])
     check("答案里没有模型自写的来源行（引用由代码装配）",
           "来源：" not in d["answer"])
     if d["blocked_claims"]:
@@ -238,7 +235,7 @@ def main() -> int:
     print(f"  收到 {len(frames)} 帧：{_summarize(kinds)}")
     check("首帧是 meta", kinds[:1] == ["meta"], f"实得 {kinds[:1]}")
     check("末帧是 done", kinds[-1:] == ["done"], f"实得 {kinds[-1:]}")
-    check("有逐句下发的正文", kinds.count("sentence") > 1,
+    check("有逐句下发的正文", kinds.count("sentence") >= 1,
           f"sentence 帧 {kinds.count('sentence')} 个")
     check("有引用帧", "citations" in kinds)
 
@@ -263,7 +260,7 @@ def main() -> int:
     check("正文非空", bool(stream_text.strip()), f"{len(stream_text)} 字")
     check("两条路径都不是缺据声明",
           not d["evidence_gap"] and not done.get("evidence_gap"))
-    check("流式使用相同的固定模型", done.get("model") == d.get("model") == DEEPSEEK_MODEL)
+    check("两条路径均为实体字段直出", not done.get("model") and not d.get("model"))
 
     section("6. 缺据路径的流式呈现")
     gap_frames = sse(base, "/chat/stream", {"message": "流放之路2 的升华机制是什么"})

@@ -1123,21 +1123,21 @@ class PartialDimensionDisclosureTest(unittest.TestCase):
         ]
 
     def test_批量与流式都保留答案并附同一缺口声明(self) -> None:
-        answer = "猎首提供 +(40-55) 力量[[E1]]。"
+        answer = "猎首提供 +(40-55) 力量"
         recorded: list[tuple[list[str], str]] = []
         with ExitStack() as stack:
             for p in self._patches(recorded):
                 stack.enter_context(p)
             batch = loop.run_turn(
                 self.QUESTION,
-                client=_ChatClient([LLMResponse(content=answer, model="fake")]),
+                client=_ChatClient([LLMResponse(content='["P1"]', model="fake")]),
             )
         with ExitStack() as stack:
             for p in self._patches(recorded):
                 stack.enter_context(p)
             events = list(loop.stream_turn(
                 self.QUESTION,
-                client=_StreamClient([[StreamEvent(kind="content", text=answer)]]),
+                client=_StreamClient([[StreamEvent(kind="content", text='["P1"]')]]),
             ))
 
         self.assertFalse(batch.evidence_gap)

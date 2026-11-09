@@ -413,6 +413,13 @@ class BindingResult:
         return "".join(v.output for v in self.verdicts)
 
     @property
+    def public_text(self) -> str:
+        text = "".join(v.text for v in self.verdicts if v.ok).strip()
+        if self.blocked:
+            text += "\n\n部分内容未得到引用支持，已省略。"
+        return text
+
+    @property
     def all_passed(self) -> bool:
         return self.blocked == 0
 
@@ -479,6 +486,8 @@ def render_evidence_block(evidence: list[Evidence]) -> str:
         tags: list[str] = []
         if not e.can_support_facts:
             tags.append("社区来源，不可支撑事实断言")
+        if e.claim_scope == "excerpt":
+            tags.append("原文摘录：只引用完整原文行，保留字段、单位与触发条件")
         if e.claim_scope == "bench_catalog":
             tags.append("仅可支撑目录存在、效果原文、原始费用、ItemClasses 与解锁信息")
         if e.claim_scope == "metamod_matrix":
@@ -1358,6 +1367,25 @@ def inheritable_labels(
     return ()
 
 
+def _excerpt_supported(sentence: str, evidence: list[Evidence]) -> bool:
+    """Compare whole source statements, never a bag of words or numbers."""
+    def normalize(text: str) -> str:
+        text = _BINDING_RE.sub("", text)
+        text = re.sub(r"^\s*(?:[-*>]+|\d+[.)、])\s*", "", text)
+        text = re.sub(r"^\[(?:隐式词缀|显式词缀|说明)\]\s*", "", text)
+        return re.sub(r"[\s*`\"“”]", "", normalize_signs(text)).strip("。；;：:")
+
+    supported = set()
+    for item in evidence:
+        for line in item.text.splitlines():
+            if not line.strip() or line.startswith(("来源：", "http")):
+                continue
+            supported.add(normalize(line))
+            supported.update(normalize(part) for part in re.split(r"[。；]", line) if part.strip())
+    lines = [normalize(line) for line in sentence.splitlines() if line.strip()]
+    return bool(lines) and all(line in supported for line in lines)
+
+
 def _check_sentence(
     sentence: str,
     by_label: dict[str, Evidence],
@@ -1380,7 +1408,9 @@ def _check_sentence(
         )
     if kind == "narrative" and not labels:
         return SentenceVerdict(sentence, kind, labels, True, "无需绑定")
-    if kind == "recommendation" and not labels:
+    if kind == "recommendation" and not labels and not any(
+        e.claim_scope == "excerpt" for e in by_label.values()
+    ):
         # 纯建议不强制绑定；一旦主动绑定证据，仍须检查该证据的能力范围。
         return SentenceVerdict(sentence, kind, labels, True, "无需绑定")
 
@@ -1408,6 +1438,17 @@ def _check_sentence(
         )
 
     bound = [by_label[lb] for lb in labels]
+    excerpts = [e for e in bound if e.claim_scope == "excerpt"]
+    excerpt_supported = bool(excerpts) and _excerpt_supported(sentence, bound)
+    if excerpts and not excerpt_supported:
+        return _block(
+            sentence, kind, labels,
+            "引用未逐字支持该字段或条件，请保留完整原文",
+            f"需核对字段及条件：{_excerpt(stripped)}",
+        )
+    # A source quotation is not an arithmetic derivation even if it says 因此.
+    if excerpt_supported:
+        kind = "factual"
     restricted = [e for e in bound if e.claim_scope == "bench_catalog"]
     if restricted:
         scope_error = _bench_catalog_scope_error(stripped, restricted, kind)

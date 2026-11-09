@@ -438,6 +438,7 @@ def record_case(case: Case) -> Recording:
         precision_route=str(r.retrieval_meta.get("precision_route") or ""),
         gap_answer=r.answer if r.evidence_gap else "",
         final_answer=r.answer,
+        answer_mode=str(r.retrieval_meta.get("answer_mode") or ""),
         model=r.model,
         tokens=dict(r.tokens),
         # 键是 `tool` 不是 `name`（见 `orchestrator.loop._tool_record`）。
@@ -470,7 +471,7 @@ def replay_case(conn, case: Case, rec: Recording, params: dict) -> GateOutcome:
     if rec.evidence_gap:
         # 两条不作答路径的契约**不同**，分开查。混在一起会逼着越界声明去说「查不到」，
         # 而项目自己的规定是那句话不能说——它会让用户以为游戏里没这东西。
-        if rec.tokens.get("total"):
+        if rec.tokens.get("total") and rec.answer_mode != "source_selection":
             out.gap_contract.append(f"不作答路径消耗了 {rec.tokens['total']} token（应为 0）")
         if rec.out_of_scope:
             if "流放之路 2" not in rec.gap_answer:
@@ -498,6 +499,11 @@ def replay_case(conn, case: Case, rec: Recording, params: dict) -> GateOutcome:
                 out.gap_contract.append("缺据声明里没有「查不到」这类明确表述")
             if "poedb.tw" not in rec.gap_answer and "poewiki" not in rec.gap_answer:
                 out.gap_contract.append("缺据声明没有给出查证途径")
+    elif rec.answer_mode == "source_selection":
+        from orchestrator.excerpts import passages, render_selection
+        rendered, labels = render_selection(rec.raw_answer, passages(rec.evidence))
+        if not rendered or not labels or not rec.final_answer.startswith(rendered):
+            out.gap_contract.append("段落选择无法从录制证据重建最终回答")
     else:
         # 代码直出的精确池计划没有模型原文，raw_answer 为空；此前回放把空串
         # 送进绑定闸门，产生“缺少全部三类证据”的假失败，也完全没测到实际答案。
@@ -574,7 +580,7 @@ def _strip_thousands(text: str) -> str:
 
 def summarize_gate(outs: list[GateOutcome]) -> dict:
     generated = [o for o in outs if not o.rec.evidence_gap]
-    streamed = [o for o in generated if o.rec.raw_answer]
+    streamed = [o for o in generated if o.rec.raw_answer and o.rec.answer_mode != "source_selection"]
     gaps = [o for o in outs if o.rec.evidence_gap]
     factual = [v for o in generated for v in o.factual]
     blocked = [v for o in generated for v in o.blocked]
@@ -583,7 +589,8 @@ def summarize_gate(outs: list[GateOutcome]) -> dict:
         "recordings": {
             "total": len(outs),
             "generated": len(generated),
-            "code_direct": len(generated) - len(streamed),
+            "code_direct": sum(not o.rec.raw_answer for o in generated),
+            "source_selected": sum(o.rec.answer_mode == "source_selection" for o in generated),
             "gap_path": len(gaps),
             "passed": sum(1 for o in outs if o.passed),
             "stale": [o.case.id for o in outs if o.stale],
@@ -653,10 +660,10 @@ def print_gate_report(outs: list[GateOutcome], s: dict, *, verbose: bool) -> Non
                       + (f"  ← {v.reason[:40]}" if not v.ok else ""))
 
     cv = s["citation_validity"]
-    print(f"\n  引用有效率           {_pct(cv['rate'])}  ({cv['ok']}/{cv['total']} 事实句"
+    print(f"\n  引用规则通过率           {_pct(cv['rate'])}  ({cv['ok']}/{cv['total']} 事实句"
           f"绑定有效且数值可溯源)")
     b = s["blocked"]
-    print(f"  拦截                 {b['total']} 句，其中确定误拦 {b['definitely_wrong']}（应为 0）")
+    print(f"  拦截                 {b['total']} 句，其中排版误拦 {b['definitely_wrong']}（不代表语义误拦率）")
     sp = s["stream_parity"]
     print(f"  流式与批量判定一致   {sp['consistent']}/{sp['total']}"
           + (f"，另有 {len(sp['whitespace_only_ids'])} 条仅空白字符不同"
@@ -667,9 +674,10 @@ def print_gate_report(outs: list[GateOutcome], s: dict, *, verbose: bool) -> Non
     r = s["recordings"]
     print(f"  录制                 {r['passed']}/{r['total']} 通过"
           f"（{sp['total']} 条流式模型输出 / {r['code_direct']} 条代码直出 / "
-          f"{r['gap_path']} 条走缺据路径）")
+          f"{r['source_selected']} 条原文选择 / {r['gap_path']} 条走缺据路径）")
     print(f"  模型                 {', '.join(s['models']) or '—'}"
           f"   录制期间累计 {s['tokens']} token")
+    print("  注：离线回放不等于当前模型的回答准确率；新版本请运行 verify_answer_quality.py。")
     if b["reasons"]:
         print("\n  拦截原因分布：")
         for reason in b["reasons"]:
