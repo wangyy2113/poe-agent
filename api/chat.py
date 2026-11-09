@@ -11,6 +11,7 @@ import json
 import logging
 import time
 import uuid
+from contextlib import closing
 from typing import Any, Iterator, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -178,6 +179,41 @@ def _openai_chunk(
     return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
 
+def _conversation_stream(
+    question: str, conversation_id: str, caller: str,
+) -> Iterator[dict[str, Any]]:
+    """Persist only a completed answer, identically for both streaming APIs."""
+    parts: list[str] = []
+    citations: list[dict[str, Any]] = []
+    upstream = stream_turn(question, conversation_id=conversation_id, owner_id=caller)
+    try:
+        for event in upstream:
+            kind = event.get("type")
+            if kind in {"sentence", "blocked", "gap"}:
+                parts.append(str(event.get("text") or ""))
+            elif kind == "note":
+                note = str(event.get("text") or "")
+                if note:
+                    parts.append(f"\n\n{note}" if note.startswith("推导（取自证据") else f"\n\n> {note}")
+            elif kind == "citations":
+                citations = list(event.get("items") or [])
+            elif kind == "done":
+                text = "".join(parts) + _citation_block(citations)
+                if text.strip():
+                    _save_message(conversation_id, "assistant", text)
+            yield event
+            if kind in {"done", "error"}:
+                return
+        yield {"type": "error", "message": "生成未完成，请重试"}
+    except Exception as exc:  # noqa: BLE001  Headers have already been sent.
+        logger.exception("流式问答异常")
+        yield {"type": "error", "message": f"生成失败（{type(exc).__name__}）"}
+    finally:
+        close = getattr(upstream, "close", None)
+        if close is not None:
+            close()
+
+
 def _openai_stream(
     req: OpenAIChatRequest,
     question: str,
@@ -187,13 +223,10 @@ def _openai_stream(
 ) -> Iterator[str]:
     completion_id = f"chatcmpl-{uuid.uuid4().hex}"
     trace_id = ""
-    answer_parts: list[str] = []
     citations: list[dict[str, Any]] = []
     done: dict[str, Any] = {}
-    try:
-        for event in stream_turn(
-            question, conversation_id=conversation_id, owner_id=caller
-        ):
+    with closing(_conversation_stream(question, conversation_id, caller)) as events:
+        for event in events:
             kind = event.get("type")
             if kind == "meta":
                 trace_id = str(event.get("trace_id") or "")
@@ -212,7 +245,6 @@ def _openai_stream(
             elif kind in {"sentence", "blocked", "gap"}:
                 text = str(event.get("text") or "")
                 if text:
-                    answer_parts.append(text)
                     yield _openai_chunk(
                         completion_id, created, req.model, delta={"content": text}
                     )
@@ -220,7 +252,6 @@ def _openai_stream(
                 text = str(event.get("text") or "")
                 if text:
                     rendered = f"\n\n{text}" if text.startswith("推导（取自证据") else f"\n\n> {text}"
-                    answer_parts.append(rendered)
                     yield _openai_chunk(
                         completion_id, created, req.model, delta={"content": rendered}
                     )
@@ -242,7 +273,6 @@ def _openai_stream(
 
         citation_text = _citation_block(citations)
         if citation_text:
-            answer_parts.append(citation_text)
             yield _openai_chunk(
                 completion_id, created, req.model, delta={"content": citation_text}
             )
@@ -271,10 +301,6 @@ def _openai_stream(
                 usage=_openai_usage(done.get("tokens") or {}),
             )
         yield "data: [DONE]\n\n"
-    finally:
-        text = "".join(answer_parts)
-        if text.strip():
-            _save_message(conversation_id, "assistant", text)
 
 
 @router.post("/v1/chat/completions", response_model=None)
@@ -408,33 +434,15 @@ def chat_stream(req: ChatRequest, caller: str = Depends(require_user)) -> Stream
     _save_message(conversation_id, "user", req.message)
 
     def gen() -> Iterator[str]:
-        parts: list[str] = []
-        citations: list[dict[str, Any]] = []
-        try:
-            for event in stream_turn(
-                req.message, conversation_id=conversation_id, owner_id=caller
-            ):
-                if event["type"] in ("sentence", "blocked", "gap"):
-                    parts.append(event.get("text", ""))
-                elif event["type"] == "citations":
-                    citations = event.get("items", [])
-                elif event["type"] == "done":
+        with closing(_conversation_stream(req.message, conversation_id, caller)) as events:
+            for event in events:
+                if event["type"] == "done":
                     logger.info(
                         "chat/stream 完成 caller=%s trace=%s 缺据=%s 拦截=%d 耗时=%dms",
                         caller, event.get("trace_id"), event.get("evidence_gap"),
                         event.get("blocked_claims", 0), event.get("elapsed_ms", 0),
                     )
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
-        except Exception as exc:  # noqa: BLE001  流已开始，只能以事件形式报错
-            logger.exception("流式问答异常")
-            payload = {"type": "error", "message": type(exc).__name__}
-            yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
-        finally:
-            # 落盘完整回答，供会话历史回看。引用附在末尾，与非流式一致。
-            text = "".join(parts)
-            text += _citation_block(citations)
-            if text.strip():
-                _save_message(conversation_id, "assistant", text)
 
     return StreamingResponse(
         gen(),

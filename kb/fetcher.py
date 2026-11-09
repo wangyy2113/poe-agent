@@ -170,6 +170,7 @@ class Fetcher:
             headers={"User-Agent": self.user_agent, "Accept-Language": "zh-CN,zh;q=0.9"},
             follow_redirects=True,
         )
+        reject_poe2_host(str(resp.url))
         if resp.status_code >= 400:
             return FetchResult(
                 url=url,

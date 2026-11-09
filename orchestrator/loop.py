@@ -19,6 +19,7 @@ import math
 import re
 import time
 import uuid
+from contextlib import closing
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Any, Iterator
@@ -4130,7 +4131,6 @@ def run_turn(
 ) -> TurnResult:
     started = time.monotonic()
     cfg = get_config()
-    client = client or get_llm_client()
     trace_id = uuid.uuid4().hex
     result = TurnResult(trace_id=trace_id, question=question, answer="")
 
@@ -4146,6 +4146,7 @@ def run_turn(
     answer_text = ""
 
     try:
+        client = client or get_llm_client()
         for round_no in range(max_calls + 1):
             # 第一轮裁剪 schema 代替 tool_choice（网关忽略后者，实测见 _first_round_tools）
             round_tools = (
@@ -4156,7 +4157,6 @@ def run_turn(
                 messages,
                 tools=round_tools,
                 budget=budget,
-                allow_empty_content=True,  # 纯 tool_call 回复是合法的
             )
             result.model = resp.model
             if not resp.tool_calls:
@@ -4174,6 +4174,10 @@ def run_turn(
         # 消息已由 core/llm.py 脱敏，可安全写日志。
         logger.error("生成失败（trace=%s）：%s", trace_id, exc)
         result.answer = f"生成失败（{type(exc).__name__}），本轮不作答以免输出无据内容。"
+    finally:
+        result.tokens = budget.used.as_dict()
+
+    if result.answer:
         return _end(result, conversation_id, started)
 
     gap = _terminal_gap(state, setup)
@@ -4184,12 +4188,6 @@ def run_turn(
 
     evidence = state.evidence
     _record_final_tool_result_gaps(question, state.final_results)
-    result.tokens = {
-        "prompt": budget.used.prompt_tokens,
-        "output": budget.used.completion_tokens,
-        "reasoning": budget.used.reasoning_tokens,
-        "total": budget.used.total_tokens,
-    }
 
     # ── 出口闸门 ──
     result.raw_answer = answer_text
@@ -4238,7 +4236,6 @@ def stream_turn(
     """
     started = time.monotonic()
     cfg = get_config()
-    client = client or get_llm_client()
     trace_id = uuid.uuid4().hex
     result = TurnResult(trace_id=trace_id, question=question, answer="")
     yield {"type": "meta", "trace_id": trace_id, "conversation_id": conversation_id}
@@ -4269,8 +4266,10 @@ def stream_turn(
         domain_terms=_domain_terms(),
     )
     announced_thinking = False
+    failure = ""
 
     try:
+        client = client or get_llm_client()
         for _round in range(max_calls + 1):
             pending: list[Any] = []
             round_content: list[str] = []
@@ -4278,34 +4277,26 @@ def stream_turn(
                 _first_round_tools(setup.preferred_tool, setup.tools)
                 if _round == 0 and setup.needs_model_call else setup.tools
             )
-            for event in client.stream(messages, tools=round_tools, budget=budget):
-                if event.kind == "thinking":
-                    if not announced_thinking:
-                        announced_thinking = True
-                        yield {"type": "thinking"}
-                elif event.kind == "content":
-                    if setup.precision_tool:
-                        # 精确路径整轮缓冲：直到确认该轮没有后续工具调用，正文才进闸门。
-                        round_content.append(event.text)
-                    else:
-                        for verdict in gate.feed(event.text):
-                            yield _sentence_event(verdict)
-                elif event.kind == "tool_calls":
-                    pending = list(event.tool_calls)
-                elif event.kind == "usage" and event.usage is not None:
-                    # Record the pinned model; missing/zero reasoning usage is valid.
-                    result.model = event.model or result.model
-                    result.tokens = {
-                        "prompt": budget.used.prompt_tokens,
-                        "output": budget.used.completion_tokens,
-                        "reasoning": budget.used.reasoning_tokens,
-                        "total": budget.used.total_tokens,
-                    }
-                elif event.kind == "error":
-                    yield {"type": "error", "message": event.detail}
-                    pending = []
-                    break
-
+            with closing(client.stream(messages, tools=round_tools, budget=budget)) as upstream:
+                for event in upstream:
+                    if event.kind == "thinking":
+                        if not announced_thinking:
+                            announced_thinking = True
+                            yield {"type": "thinking"}
+                    elif event.kind == "content":
+                        if setup.precision_tool:
+                            # 精确路径整轮缓冲：直到确认该轮没有后续工具调用，正文才进闸门。
+                            round_content.append(event.text)
+                        else:
+                            for verdict in gate.feed(event.text):
+                                yield _sentence_event(verdict)
+                    elif event.kind == "tool_calls":
+                        pending = list(event.tool_calls)
+                    elif event.kind == "usage" and event.usage is not None:
+                        # Record the pinned model; missing/zero reasoning usage is valid.
+                        result.model = event.model or result.model
+                    elif event.kind == "error":
+                        raise LLMError(event.detail)
             if not pending:
                 if state.succeeded and not state.invalidated:
                     for piece in round_content:
@@ -4327,7 +4318,15 @@ def stream_turn(
             logger.warning("流式工具调用达到上限 %d", max_calls)
     except LLMError as exc:
         logger.error("流式生成失败（trace=%s）：%s", trace_id, exc)
-        yield {"type": "error", "message": f"生成失败（{type(exc).__name__}）"}
+        failure = f"生成失败（{type(exc).__name__}）"
+    finally:
+        result.tokens = budget.used.as_dict()
+
+    if failure:
+        result.answer = failure + "，本轮未完成，请重试。"
+        _end(result, conversation_id, started)
+        yield {"type": "error", "message": result.answer}
+        return
 
     # 四种确定性拒答与非流式**同一个函数**（`_terminal_gap`），含偏好工具零证据兜底
     gap = _terminal_gap(state, setup)

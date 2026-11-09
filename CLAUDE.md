@@ -1733,6 +1733,6 @@ Elder、Uber Elder 这四页得到这三类门槛；Maven、Cortex、Exarch、Ea
 在 `/v1/models` 中，但用它调用 `/v1/embeddings` 返回 HTTP 400
 `Unmapped LLM provider for this endpoint`；模型清单 31 项里没有可识别的
 Embedding 模型。保留向量通道显式关闭，不把聊天模型名写进 `EMBEDDING_MODEL`。
-后续已接通远程 OpenAI 兼容 Embedding 客户端、sqlite-vec 查询、模型绑定的完整回填、
-同内容缓存与检索 RRF 融合；`vector_channel_status` 在扩展、凭证或完整索引缺失时仍拒绝
-把配置请求报告成运行时启用。当前网关没有 Embedding 模型，真实回填与在线向量验收尚未完成。
+这一路径已被单 DeepSeek 策略替代：远程适配器、向量查询/回填算法与旧运行时开关均已移除，
+只保留既有索引数据和只读元数据检查。生产检索通过 `retrieval.runtime.configured_retrieve`
+统一使用 BM25、实体精确与词缀意图通道；正常词法检索不标为降级。

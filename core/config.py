@@ -30,14 +30,6 @@ class Secrets(BaseSettings):
     llm_api_keys: str = ""  # 多 Key：逗号分隔，所有凭证只服务同一个模型
     llm_model: str = DEEPSEEK_MODEL
 
-    # ── Legacy values accepted for migration; no remote adapter consumes them ──
-    embedding_base_url: str = ""
-    embedding_api_key: str = ""
-    embedding_model: str = ""
-    rerank_base_url: str = ""
-    rerank_api_key: str = ""
-    rerank_model: str = ""
-
     # ── 鉴权 ──
     admin_token: str = ""
     api_keys: str = ""
@@ -54,15 +46,15 @@ class Secrets(BaseSettings):
         "hide_input_in_errors": True,
     }
 
-    def credential_specs(self) -> list[tuple[str, str]]:
+    def credential_keys(self) -> list[str]:
         """Resolve credentials without permitting per-key model routing.
 
         The old ``key:model`` format is accepted only when it names the pinned
         model. Invalid entries fail before any network call, without echoing keys.
         """
-        model = require_model(self.llm_model)
+        require_model(self.llm_model)
         raw = self.llm_api_keys.strip() or self.llm_api_key.strip()
-        specs: list[tuple[str, str]] = []
+        keys: list[str] = []
         seen: set[str] = set()
         for item in raw.split(","):
             item = item.strip()
@@ -76,8 +68,8 @@ class Secrets(BaseSettings):
                 raise ModelPolicyError("LLM 凭证条目为空；请检查本机配置")
             if key not in seen:
                 seen.add(key)
-                specs.append((key, model))
-        return specs
+                keys.append(key)
+        return keys
 
 
 @dataclass
@@ -127,10 +119,6 @@ class Config:
     def priority_of(self, source: str) -> int:
         """未登记的来源按最低优先级处理，避免被误当高优先级采信。"""
         return int(self.source_priority.get(source, 99))
-
-    def resolve_model(self, alias: str) -> str:
-        """Compatibility entry point; arbitrary aliases no longer route models."""
-        return require_model(alias)
 
 
 def load_config(path: Path | None = None) -> Config:

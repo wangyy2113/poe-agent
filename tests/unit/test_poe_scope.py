@@ -92,14 +92,20 @@ class Poe2HostGuardTest(unittest.TestCase):
             with self.subTest(url=url):
                 reject_poe2_host(url)  # 不抛即通过
 
-    def test_guard_is_at_the_fetch_entry(self) -> None:
-        """护栏放在抓取入口而不是各抽取器里：抽取器有十几个，漏一个等于没护栏。"""
-        import inspect
-
+    def test_redirect_to_poe2_is_rejected_before_caching(self) -> None:
+        import tempfile
+        from pathlib import Path
+        from unittest.mock import patch
+        import httpx
         from kb.fetcher import Fetcher
 
-        src = inspect.getsource(Fetcher.fetch)
-        self.assertIn("reject_poe2_host", src)
+        with tempfile.TemporaryDirectory() as directory:
+            fetcher = Fetcher(Path(directory), "poe-agent-test", respect_robots=False)
+            response = httpx.Response(200, text="POE2 data", request=httpx.Request("GET", "https://poe2db.tw/cn/Bows"))
+            with patch("kb.fetcher.httpx.get", return_value=response):
+                with self.assertRaises(Poe2SourceRejected):
+                    fetcher.fetch("https://poedb.tw/cn/Bows")
+            self.assertEqual([], list(Path(directory).iterdir()))
 
 
 if __name__ == "__main__":

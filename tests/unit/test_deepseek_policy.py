@@ -44,7 +44,7 @@ class DeepSeekPolicyTest(unittest.TestCase):
 
     def test_only_pinned_model_and_deepseek_alias_are_allowed(self):
         self.assertEqual(require_model(), DEEPSEEK_MODEL)
-        self.assertEqual(Config(raw={}).resolve_model("deepseek"), DEEPSEEK_MODEL)
+        self.assertEqual(require_model("deepseek"), DEEPSEEK_MODEL)
         for model in ("glm-5.2", "claude-opus-5", "gpt-4o", "deepseek-other", "", 1):
             with self.subTest(model=model), self.assertRaises(ModelPolicyError):
                 require_model(model)
@@ -56,9 +56,9 @@ class DeepSeekPolicyTest(unittest.TestCase):
 
     def test_legacy_keys_are_normalized_deduplicated_and_never_route_models(self):
         s = secrets(llm_api_keys=f"key-a, key-b:{DEEPSEEK_MODEL},key-a, key-c:deepseek")
-        self.assertEqual(s.credential_specs(), [(k, DEEPSEEK_MODEL) for k in ("key-a", "key-b", "key-c")])
+        self.assertEqual(s.credential_keys(), ["key-a", "key-b", "key-c"])
         with self.assertRaises(ModelPolicyError) as caught:
-            secrets(llm_api_keys="private-secret:glm-5.2").credential_specs()
+            secrets(llm_api_keys="private-secret:glm-5.2").credential_keys()
         self.assertNotIn("private-secret", str(caught.exception))
 
     def test_invalid_model_or_legacy_alias_fails_before_client_creation(self):
@@ -107,7 +107,7 @@ class DeepSeekPolicyTest(unittest.TestCase):
         budget = TurnBudget(100)
         with patch.object(c, "_invoke", return_value=(response(content=""), DEEPSEEK_MODEL)):
             with self.assertRaises(EmptyContentError):
-                c.chat([], budget=budget, allow_empty_content=True)
+                c.chat([], budget=budget)
         self.assertEqual(budget.used.total_tokens, 30)
 
     def test_stream_empty_response_is_not_silent_success(self):

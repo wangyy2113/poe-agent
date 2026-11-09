@@ -26,7 +26,7 @@ def main() -> int:
     parser.parse_args()
     try:
         secrets = get_secrets()
-        secrets.credential_specs()  # Reject legacy routing before any network request.
+        secrets.credential_keys()  # Reject legacy routing before any network request.
         client = LLMClient()
         print(f"模型策略：仅 {DEEPSEEK_MODEL}")
         print(f"网关已配置；凭证数量：{len(client.credential_status())}")

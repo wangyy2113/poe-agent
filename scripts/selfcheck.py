@@ -41,7 +41,6 @@ def main() -> int:
     print(f"  向量启用    : {cfg.get('retrieval.vector.enabled')}")
     print(f"  重排启用    : {cfg.get('retrieval.rerank.enabled')}")
     print(f"  截图视觉模型: {DEEPSEEK_MODEL}（与聊天共用；不自动切换模型）")
-    print(f"  min_score   : {cfg.get('retrieval.min_score')}")
     print(f"  POEDB 优先级: {cfg.priority_of('POEDB')}  未知来源: {cfg.priority_of('某站')}")
     print(f"  模型策略    : 仅 {DEEPSEEK_MODEL}")
     if cfg.priority_of("POEDB") != 1:
@@ -54,12 +53,12 @@ def main() -> int:
         from core.config import get_secrets
 
         sec = get_secrets()
-        specs = sec.credential_specs()
+        specs = sec.credential_keys()
         print(f"  LLM 网关     : {'已配置' if sec.llm_base_url else '未配置'}")
         print(f"  LLM model    : {sec.llm_model}")
         print(f"  凭证数       : {len(specs)}")
-        for key, model in specs:
-            print(f"    - {mask(key)}  统一模型={model}")
+        for key in specs:
+            print(f"    - {mask(key)}  统一模型={DEEPSEEK_MODEL}")
         print(f"  ADMIN_TOKEN  : {'已设置' if sec.admin_token else '未设置（/admin 将拒绝全部请求）'}")
         print(
             "  POE OAuth     : "
@@ -160,15 +159,8 @@ def main() -> int:
         print("  全部实体都有 content_hash")
 
     vs = dbmod.vector_status()
-    vector_requested = bool(cfg.get("retrieval.vector.enabled", False))
-    from retrieval.runtime import configured_vector_runtime
-
-    vector_runtime, _ = configured_vector_runtime(conn, vector_requested)
     print(f"  向量扩展     : {vs}")
-    print(f"  向量配置请求 : {'启用' if vector_requested else '关闭'}")
-    print(f"  向量运行状态 : {vector_runtime}")
-    if vector_requested and not vector_runtime.available:
-        print("     → 已自动禁用向量通道，BM25 + 实体精确匹配不受影响")
+    print("  检索通道     : BM25 + 实体精确匹配 + 词缀意图；远程向量/重排已停用")
 
     dbmod.close_db()
     wal = cfg.db_path.with_suffix(cfg.db_path.suffix + "-wal")
