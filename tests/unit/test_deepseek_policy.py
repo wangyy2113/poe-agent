@@ -104,7 +104,7 @@ class DeepSeekPolicyTest(unittest.TestCase):
 
     def test_empty_http_success_is_failure_even_without_reasoning_usage(self):
         c = self.client()
-        budget = TurnBudget(100)
+        budget = TurnBudget(4096)
         with patch.object(c, "_invoke", return_value=(response(content=""), DEEPSEEK_MODEL)):
             with self.assertRaises(EmptyContentError):
                 c.chat([], budget=budget)

@@ -80,6 +80,7 @@ def kb_search(
             # P7 社区来源不得支撑事实断言（需求 2.2）。这里就打上标记，
             # 出口校验据此拒绝用它绑定事实句。
             "can_support_facts": priority <= MAX_FACTUAL_PRIORITY,
+            "claim_scope": "excerpt",
             "text": h.text[:MAX_EVIDENCE_CHARS],
             "channel": h.channel,
         })
@@ -178,6 +179,7 @@ def entity_lookup(name: str) -> ToolResult:
             "source": r["source"],
             "source_priority": priority,
             "can_support_facts": priority <= MAX_FACTUAL_PRIORITY,
+            "claim_scope": "excerpt",
             "text": r["text"][:MAX_EVIDENCE_CHARS],
             "channel": "alias",
         })

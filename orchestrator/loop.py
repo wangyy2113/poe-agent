@@ -27,11 +27,15 @@ from typing import Any, Iterator
 from agents.knowledge import (
     ALLOWED_TOOLS,
     EVIDENCE_TEMPLATE,
-    SIMPLE_ENTITY_SYSTEM_PROMPT,
     build_system_prompt,
     render_gap,
 )
 from core import db as dbmod
+from orchestrator.question import (
+    without_style, entity_question, resolve_followup, build_clarification, unknown_named_item,
+)
+from orchestrator.entity_answer import render_entity_answer
+from orchestrator.excerpts import Passage, passages, selection_messages, render_selection
 from core.user_memory import build_prompt_memory_context
 from core.config import get_config
 from core.llm import LLMClient, LLMError, TurnBudget, get_llm_client
@@ -104,29 +108,11 @@ def _prepare_tools() -> list[dict[str, Any]]:
 
 def _tools_for_question(question: str) -> list[dict[str, Any]]:
     """按本轮精确来源授权裁剪 schema；执行层仍会做第二次检查。"""
-    tools = _prepare_tools()
-    affix_authorized = bool(_affix_pool_precision_query(question)[0])
-    attempt_plan_authorized = _craft_attempt_plan_args(question) is not None
-    metamod_excluded = _metamod_source_policy(question) == "excluded"
-    return [
-        schema
-        for schema in tools
-        if not (
-            str((schema.get("function") or {}).get("name") or "")
-            == "metamod_interaction_matrix"
-            and metamod_excluded
-        )
-        and not (
-            str((schema.get("function") or {}).get("name") or "")
-            == "affix_pool_odds"
-            and not affix_authorized
-        )
-        and not (
-            str((schema.get("function") or {}).get("name") or "")
-            == "craft_attempt_plan"
-            and not attempt_plan_authorized
-        )
-    ]
+    selected = _precision_tool_route(question) or _preferred_tool_route(question)
+    names = {selected} if selected else {"kb_search", "entity_lookup", "kb_coverage"}
+    return [schema for schema in _prepare_tools()
+            if schema["function"]["name"] in names]
+
 
 
 #: 《流放之路 2》（Path of Exile 2 / 流放之路：降临）的标记词。
@@ -1128,7 +1114,7 @@ _PREFERRED_TOOL_INTENTS: tuple[tuple[str, tuple[str, ...]], ...] = (
     # 不收裸的「有效生命」——那也可能在问「怎么堆生命」。
     ("max_hit_calc", (
         "一发最多", "最多能挨", "能挨多少", "会被秒", "会不会秒", "一发秒",
-        "最大承受", "max hit", "Max Hit", "挨得住", "秒吗", "秒掉", "会秒",
+        "最大承受", "最多能承受", "单次承伤", "max hit", "Max Hit", "挨得住", "秒吗", "秒掉", "会秒",
     )),
     # 暴击：暴击率上限、平均伤害倍率。判据专指**算**，裸的「暴击」会把
     # 「哪些词缀给暴击」「暴击词缀有几档」抢过来。
@@ -1161,25 +1147,14 @@ _ENTITY_LOOKUP_INTENTS = (
     "什么属性", "是什么装备", "是什么",
 )
 
-# 单一实体的“是什么”问法在代码直接查完实体后，只需模型整理已编号证据。
-# 省掉后续 81 个工具 schema 可避免简单问答消耗数万 prompt token；
-# 复合问题仍保留完整工具集，不能因为一次实体命中就截断其它能力。
-_SIMPLE_ENTITY_QUESTION_RE = re.compile(
-    r"^[^，,；;\n]{1,60}(?:是什么|是啥|有哪些词缀|有什么词缀|的词缀列表|"
-    r"是什么装备|属性是什么|什么属性)[？?。]?"
-    r"(?:请用中文回答并附来源[。.]?)?$"
-)
 
 
 def _can_finish_from_entity(
     question: str, preferred_tool: str, preferred_result: ToolResult | None,
 ) -> bool:
-    # 含多个对象或比较意图的短句即使某个别名只命中一项，也不能据此截断其余检索。
-    if any(word in question for word in ("和", "与", "以及", "跟", "对比", "比较", "区别", "相比", "还是")):
-        return False
     return bool(
         preferred_tool == "entity_lookup"
-        and _SIMPLE_ENTITY_QUESTION_RE.fullmatch(question.strip())
+        and entity_question(question)
         and preferred_result is not None
         and preferred_result.ok
         and len(preferred_result.citations) == 1
@@ -1978,17 +1953,11 @@ def _rare_comparable_args(question: str) -> dict[str, Any] | None:
 
 
 def _preferred_tool_route(question: str) -> str:
-    """代码决定本轮该先调哪个精确工具；无把握时返回空串，交回模型自选。
-
-    只在**第一次**调用时强制（`tool_choice`），后续轮次放开——工具结果可能说明
-    需要换工具，锁死会让它无路可走。
-    """
+    """Choose the relevant tool; unresolved intent keeps only retrieval tools."""
     # 有唯一别名命中的单实体定义/词缀题优先于类目词缀汇总。
     # 否则“猎首有哪些词缀”会被“有哪些词缀”抢到 mod_class_summary，
     # 明明实体已知却让模型携 81 个 schema 重新搜索，还容易混入仿品。
-    if _SIMPLE_ENTITY_QUESTION_RE.fullmatch(question.strip()) and not any(
-        word in question for word in ("和", "与", "以及", "跟", "对比", "比较", "区别", "相比", "还是")
-    ):
+    if entity_question(question):
         try:
             from retrieval import alias as alias_mod  # noqa: PLC0415
 
@@ -2213,7 +2182,7 @@ def _slot_values(question: str, keywords: tuple[str, ...]) -> set[float]:
         backward.update(
             float(m.group(1))
             for m in re.finditer(
-                rf"{kw}\s*(?:是|有|为|到)?\s*{_CALC_NUMBER}\s*[%％点]?", question
+                rf"{kw}\s*(?:是|有|为|达到|到)?\s*{_CALC_NUMBER}\s*[%％点]?", question
             )
         )
     return forward or backward
@@ -2241,7 +2210,7 @@ def _slot_values_by_shape(
         backward.update(
             float(m.group(1))
             for m in re.finditer(
-                rf"{kw}\s*(?:是|有|为|到|加|加快|提高)?\s*{_CALC_NUMBER}{tail}", question
+                rf"{kw}\s*(?:是|有|为|达到|到|加|加快|提高)?\s*{_CALC_NUMBER}{tail}", question
             )
         )
     return forward or backward
@@ -2336,7 +2305,7 @@ def _ailment_args(question: str) -> dict[str, Any] | None:
 _MAXHIT_SLOTS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("life", ("生命", "血", "血量")),
     ("energy_shield", ("护盾", "能量护盾")),
-    ("resist_pct", ("抗性", "火抗", "冰抗", "电抗", "混抗", "抗")),
+    ("resist_pct", ("火焰抗性", "冰霜抗性", "闪电抗性", "混沌抗性", "抗性", "火抗", "冰抗", "电抗", "混抗", "抗")),
     ("armour", ("护甲",)),
 )
 
@@ -3135,24 +3104,6 @@ def _invoke_preferred_tool(
     return tr
 
 
-def _first_round_tools(
-    tool: str, tools: list[dict[str, Any]]
-) -> list[dict[str, Any]]:
-    """第一轮只offer偏好工具本身。
-
-    网关忽略 `tool_choice`，所以「强制」只能靠**把别的选项拿掉**：强制检索已经
-    由代码跑过 `kb_search`，模型这一轮没有理由再退回它。裁剪只作用于第一轮，
-    后续轮次放开——工具结果可能说明需要换工具，锁死会让它无路可走。
-    """
-    if not tool:
-        return tools
-    subset = [
-        s for s in tools
-        if str((s.get("function") or {}).get("name") or "") == tool
-    ]
-    return subset or tools
-
-
 def _precision_tool_route(question: str) -> str:
     """只为参数可从问题逐字冻结的结构化能力放行精确工具。"""
     # 「跨来源冲突」里的“冲突”不是“两个装备词缀互斥”。精确制作路由优先级更高，
@@ -3682,6 +3633,8 @@ class _TurnSetup:
     `sentence` 事件，所以不能合成一个字段。
     """
 
+    question: str = ""
+    passages: list[Passage] = field(default_factory=list)
     evidence: list[Evidence] = field(default_factory=list)
     precision_tool: str = ""
     preferred_tool: str = ""
@@ -3698,13 +3651,32 @@ class _TurnSetup:
         return bool(self.gap or self.final)
 
 
+def _prepare_source_selection(setup: _TurnSetup, evidence: list[Evidence]) -> bool:
+    if (not evidence or setup.precision_tool
+            or any(e.claim_scope not in ("excerpt", "general") for e in evidence)):
+        return False
+    setup.evidence = evidence
+    setup.passages = passages(evidence)
+    setup.messages = selection_messages(setup.question, setup.passages)
+    setup.tools = []
+    return True
+
+
 def _prepare_turn(
-    question: str, result: TurnResult, *, owner_id: str | None = None
+    question: str, result: TurnResult, *, owner_id: str | None = None,
+    conversation_id: str | None = None,
 ) -> _TurnSetup:
     """POE2 边界 → 强制检索 → 路由 → 维度闸门 → 编号证据 → 代码调偏好工具。
 
     只写 `result`，不落库、不发事件——收尾动作由调用方按自己的形态做。
     """
+    question = without_style(question)
+    if conversation_id and owner_id:
+        question, clarification = resolve_followup(
+            dbmod.get_conn(), question, conversation_id, owner_id
+        )
+        if clarification:
+            return _TurnSetup(final=clarification)
     marker = poe2_marker(question)
     if marker:
         # 放在检索**之前**：越界问题不该消耗检索，更不该产生任何可能被当作依据的证据
@@ -3719,10 +3691,24 @@ def _prepare_turn(
         )
         return _TurnSetup(gap=_out_of_scope_answer(question, marker))
 
+    clarification = build_clarification(question)
+    if clarification:
+        return _TurnSetup(final=clarification)
+
+    if unknown_named_item(question):
+        result.evidence_gap = True
+        _record_gaps(question, ["装备名称未命中，请核对名称"], category="input_clarification/entity")
+        return _TurnSetup(gap=(
+            "知识库中查不到这件装备。请核对名称，或粘贴游戏内 Ctrl+C 复制的装备文本。"
+            "也可在 [POEDB](https://poedb.tw/cn/) 核对名称。"
+        ))
+
     # 强制检索。不让模型决定「要不要查」
     first = REGISTRY.call("kb_search", json.dumps({"query": question}, ensure_ascii=False))
     result.tool_calls.append(_tool_record("kb_search", {"query": question}, first))
     result.retrieval_meta = dict(first.meta)
+    if question != result.question:
+        result.retrieval_meta["resolved_question"] = question
     if not first.ok:
         result.evidence_gap = True
         return _TurnSetup(
@@ -3781,6 +3767,10 @@ def _prepare_turn(
         )
         return _TurnSetup(gap=answer)
 
+    named = _exact_entity_ids(first.citations)
+    if named and not precision_tool and preferred_tool in ("", "entity_lookup"):
+        first.citations = [c for c in first.citations if c.get("entity_id") in named]
+
     # BM25 不充分时不能把「最不差」的命中当证据；精确路由只给模型调用工具的机会。
     evidence = number_evidence(
         [] if precision_tool else (first.citations if data.get("sufficient") else [])
@@ -3791,7 +3781,7 @@ def _prepare_turn(
     # 网关忽略 tool_choice，交给模型「请调用」是不可靠的。
     preferred_result = _invoke_preferred_tool(question, preferred_tool, result)
     if preferred_result is not None and preferred_result.ok and preferred_result.citations:
-        evidence = _merge_evidence(evidence, preferred_result.citations)
+        evidence = number_evidence(preferred_result.citations)
         result.evidence = evidence
     simple_entity = _can_finish_from_entity(question, preferred_tool, preferred_result)
     if simple_entity:
@@ -3807,13 +3797,35 @@ def _prepare_turn(
         )
 
     setup = _TurnSetup(
+        question=question,
         evidence=evidence,
         precision_tool=precision_tool,
         preferred_tool=preferred_tool,
-        tools=_tools_for_question(question),
+        tools=([] if preferred_result is not None and preferred_result.ok
+               else _tools_for_question(question)),
         needs_model_call=bool(preferred_tool) and preferred_result is None,
         missing_terms=list(data.get("missing_terms") or []),
     )
+    if simple_entity:
+        setup.final = render_entity_answer(dbmod.get_conn(), question, evidence)
+        if setup.final:
+            result.retrieval_meta["answer_mode"] = "entity_fields"
+            result.citations = cit.collect(evidence, [e.label for e in evidence])
+            setup.tools = []
+            return setup
+    if (preferred_result is not None and preferred_result.ok
+            and preferred_result.meta.get("channel") == "derived"
+            and (preferred_result.data or {}).get("kind") == "result"
+            and preferred_result.citations):
+        result.retrieval_meta["answer_mode"] = "calculation"
+        evidence = number_evidence(preferred_result.citations)
+        result.evidence = setup.evidence = evidence
+        result.citations = cit.collect(evidence, [e.label for e in evidence])
+        setup.final = "\n\n".join(
+            e.text.split("\n来源：", 1)[0].strip() + f"\n\n[[{e.label}]]"
+            for e in evidence if e.can_support_facts
+        )
+        return setup
     if (
         preferred_tool == "cluster_jewel_info"
         and _cluster_point_cost_query(question)
@@ -3831,9 +3843,6 @@ def _prepare_turn(
             setup.final += f"\n\n尺寸表来源 [[{result.evidence[0].label}]]。"
             result.retrieval_meta["evidence_policy"] = "cluster_point_cost_boundary"
             return setup
-    if simple_entity:
-        setup.tools = []
-        result.retrieval_meta["tool_schema_policy"] = "none_after_single_entity"
     # 覆盖声明走代码生成路径，直接答完（理由见 `_coverage_answer`）
     if (
         preferred_tool == "kb_coverage"
@@ -3872,6 +3881,9 @@ def _prepare_turn(
         setup.gap = _preferred_tool_gap(question, preferred_tool, setup.missing_terms)
         return setup
 
+    if not setup.needs_model_call and _prepare_source_selection(setup, evidence):
+        return setup
+
     memory_text = ""
     if owner_id:
         try:
@@ -3885,9 +3897,7 @@ def _prepare_turn(
             logger.warning("长期记忆注入失败，继续无记忆问答：%s", type(exc).__name__)
             result.retrieval_meta["memory_error"] = type(exc).__name__
     setup.messages = [
-        {"role": "system", "content": (
-            SIMPLE_ENTITY_SYSTEM_PROMPT if simple_entity else build_system_prompt()
-        )},
+        {"role": "system", "content": build_system_prompt()},
         {
             "role": "user",
             "content": _initial_user_content(
@@ -3918,7 +3928,7 @@ class _ToolLoopState:
     @classmethod
     def start(cls, setup: _TurnSetup, question: str) -> _ToolLoopState:
         return cls(
-            question=question,
+            question=setup.question or question,
             precision_tool=setup.precision_tool,
             evidence=setup.evidence,
             succeeded=not bool(setup.precision_tool),
@@ -4102,6 +4112,8 @@ def _apply_notes(result: TurnResult, evidence: list[Evidence]) -> list[str]:
     notes: list[str] = []
     if result.partial_gap_note:
         notes.append(result.partial_gap_note)
+    used = {c.label for c in result.citations}
+    evidence = [e for e in evidence if e.label in used]
     for note in _answer_notes(result.tool_calls, evidence):
         if note not in notes:
             notes.append(note)
@@ -4134,7 +4146,7 @@ def run_turn(
     trace_id = uuid.uuid4().hex
     result = TurnResult(trace_id=trace_id, question=question, answer="")
 
-    setup = _prepare_turn(question, result, owner_id=owner_id)
+    setup = _prepare_turn(question, result, owner_id=owner_id, conversation_id=conversation_id)
     if setup.done:
         result.answer = setup.gap or setup.final
         return _end(result, conversation_id, started)
@@ -4148,11 +4160,11 @@ def run_turn(
     try:
         client = client or get_llm_client()
         for round_no in range(max_calls + 1):
-            # 第一轮裁剪 schema 代替 tool_choice（网关忽略后者，实测见 _first_round_tools）
-            round_tools = (
-                _first_round_tools(setup.preferred_tool, setup.tools)
-                if round_no == 0 and setup.needs_model_call else setup.tools
-            )
+            if (state.final_results and all(tr.ok and tr.citations for tr in state.final_results.values())
+                    and _prepare_source_selection(setup, state.evidence)):
+                messages = setup.messages
+            # A completed tool result needs an answer, not another search loop.
+            round_tools = setup.tools if not state.final_results else []
             resp = client.chat(
                 messages,
                 tools=round_tools,
@@ -4189,6 +4201,12 @@ def run_turn(
     evidence = state.evidence
     _record_final_tool_result_gaps(question, state.final_results)
 
+    if setup.passages:
+        _selected_answer(result, setup, answer_text)
+        if not result.evidence_gap:
+            _apply_notes(result, setup.evidence)
+        return _end(result, conversation_id, started)
+
     # ── 出口闸门 ──
     result.raw_answer = answer_text
     binding = verify(
@@ -4198,7 +4216,7 @@ def run_turn(
         domain_terms=_domain_terms(),
     )
     result.binding = binding
-    result.answer = binding.text
+    result.answer = binding.public_text
     result.citations = cit.collect(evidence, binding.used_labels)
     _apply_notes(result, evidence)
     if result.degraded_note:
@@ -4242,7 +4260,7 @@ def stream_turn(
 
     # 准备阶段与非流式**同一个函数**（`_prepare_turn`）：POE2 边界、强制检索、路由、
     # 维度闸门、代码调偏好工具。这里只负责把它的结论翻译成事件。
-    setup = _prepare_turn(question, result, owner_id=owner_id)
+    setup = _prepare_turn(question, result, owner_id=owner_id, conversation_id=conversation_id)
     if setup.gap:
         result.answer = setup.gap
         yield {"type": "gap", "text": result.answer}
@@ -4251,7 +4269,9 @@ def stream_turn(
     if setup.final:
         result.answer = setup.final
         yield {"type": "sentence", "text": result.answer,
-               "kind": "narrative", "labels": []}
+               "kind": "factual" if result.citations else "narrative",
+               "labels": [c.label for c in result.citations]}
+        yield from _citation_events(result)
         yield from _finish(result, conversation_id, started)
         return
 
@@ -4271,12 +4291,12 @@ def stream_turn(
     try:
         client = client or get_llm_client()
         for _round in range(max_calls + 1):
+            if (state.final_results and all(tr.ok and tr.citations for tr in state.final_results.values())
+                    and _prepare_source_selection(setup, state.evidence)):
+                messages = setup.messages
             pending: list[Any] = []
             round_content: list[str] = []
-            round_tools = (
-                _first_round_tools(setup.preferred_tool, setup.tools)
-                if _round == 0 and setup.needs_model_call else setup.tools
-            )
+            round_tools = setup.tools if not state.final_results else []
             with closing(client.stream(messages, tools=round_tools, budget=budget)) as upstream:
                 for event in upstream:
                     if event.kind == "thinking":
@@ -4284,7 +4304,7 @@ def stream_turn(
                             announced_thinking = True
                             yield {"type": "thinking"}
                     elif event.kind == "content":
-                        if setup.precision_tool:
+                        if setup.precision_tool or setup.passages or setup.needs_model_call:
                             # 精确路径整轮缓冲：直到确认该轮没有后续工具调用，正文才进闸门。
                             round_content.append(event.text)
                         else:
@@ -4298,7 +4318,7 @@ def stream_turn(
                     elif event.kind == "error":
                         raise LLMError(event.detail)
             if not pending:
-                if state.succeeded and not state.invalidated:
+                if state.succeeded and not state.invalidated and not setup.passages:
                     for piece in round_content:
                         for verdict in gate.feed(piece):
                             yield _sentence_event(verdict)
@@ -4328,6 +4348,18 @@ def stream_turn(
         yield {"type": "error", "message": result.answer}
         return
 
+    if setup.passages:
+        _selected_answer(result, setup, "".join(round_content))
+        yield {"type": "gap" if result.evidence_gap else "sentence",
+               "text": result.answer, "kind": "factual",
+               "labels": [c.label for c in result.citations]}
+        yield from _citation_events(result)
+        if not result.evidence_gap:
+            for note in _apply_notes(result, setup.evidence):
+                yield {"type": "note", "text": note}
+        yield from _finish(result, conversation_id, started)
+        return
+
     # 四种确定性拒答与非流式**同一个函数**（`_terminal_gap`），含偏好工具零证据兜底
     gap = _terminal_gap(state, setup)
     if gap:
@@ -4344,18 +4376,10 @@ def stream_turn(
 
     binding = gate.result()
     result.binding = binding
-    result.answer = binding.text
+    result.answer = binding.public_text
     result.citations = cit.collect(evidence, binding.used_labels)
 
-    if result.citations:
-        yield {
-            "type": "citations",
-            "items": [
-                {"label": c.label, "source": c.source, "title": c.title,
-                 "url": c.url, "priority": c.priority}
-                for c in result.citations
-            ],
-        }
+    yield from _citation_events(result)
     for note in _apply_notes(result, evidence):
         yield {"type": "note", "text": note}
     if result.degraded_note:
@@ -4367,6 +4391,28 @@ def stream_turn(
         _record_binding_gaps(question, binding)
 
     yield from _finish(result, conversation_id, started)
+
+
+def _selected_answer(result: TurnResult, setup: _TurnSetup, raw: str) -> None:
+    result.raw_answer = raw
+    result.retrieval_meta["answer_mode"] = "source_selection"
+    result.answer, labels = render_selection(raw, setup.passages)
+    result.citations = cit.collect(setup.evidence, labels)
+    if not result.answer:
+        result.evidence_gap = True
+        _record_gaps(result.question, ["检索资料中未选出直接回答问题的原文"], category="not_recalled/source_selection")
+        result.answer = (
+            "知识库中查不到可直接回答本轮问题的依据，请补充具体对象或所需字段，"
+            "或在 [POEDB](https://poedb.tw/cn/) 核对原文。"
+        )
+
+
+def _citation_events(result: TurnResult) -> Iterator[dict[str, Any]]:
+    if result.citations:
+        yield {"type": "citations", "items": [
+            {"label": c.label, "source": c.source, "title": c.title,
+             "url": c.url, "priority": c.priority} for c in result.citations
+        ]}
 
 
 def _sentence_event(verdict) -> dict[str, Any]:  # noqa: ANN001

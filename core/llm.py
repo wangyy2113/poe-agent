@@ -7,6 +7,7 @@ image transcription, use the same model policy.
 
 from __future__ import annotations
 
+import json
 import logging
 import threading
 import time
@@ -386,6 +387,7 @@ class LLMClient:
         nor tools always raises EmptyContentError.
         """
         started = time.monotonic()
+        max_tokens = self._request_tokens(messages, tools, max_tokens, budget)
         raw, model_used = self._invoke(
             stream=False,
             messages=messages,
@@ -458,6 +460,7 @@ class LLMClient:
         中途失败会以 `kind="error"` 事件结束。
         """
         started = time.monotonic()
+        max_tokens = self._request_tokens(messages, tools, max_tokens, budget)
         raw, model_used = self._invoke(
             stream=True,
             messages=messages,
@@ -654,6 +657,18 @@ class LLMClient:
         return (_scrub(detail, self._pool)
                 .replace(self._base_url, "[gateway]")
                 .replace(self._sec.llm_base_url.strip().rstrip("/"), "[gateway]"))
+
+    def _request_tokens(self, messages, tools, requested, budget) -> int:
+        maximum = self._effective_max_tokens(requested)
+        if budget is None or not budget.limit:
+            return maximum
+        # A conservative local estimate; actual provider usage is still charged.
+        payload = json.dumps({"messages": messages, "tools": tools or []}, ensure_ascii=False)
+        estimated_input = (len(payload.encode("utf-8")) + 2) // 3 + 64
+        available = budget.remaining - estimated_input
+        if available < MIN_MAX_TOKENS:
+            raise TokenBudgetExceeded("剩余 Token 预算不足以发送本轮上下文，请缩小问题范围")
+        return min(maximum, available)
 
     def _effective_max_tokens(self, max_tokens: int | None) -> int:
         return _clamp_max_tokens(max_tokens) if max_tokens else self._max_tokens

@@ -121,6 +121,7 @@ class Recording:
     #: 实测撞到：`cross_spectre_conflict` 要求答案里并列两个来源，而冲突块正是代码附上的，
     #: 按 `binding.text` 判就永远缺失。答案内容类契约一律按这一版判。
     final_answer: str = ""
+    answer_mode: str = ""
     model: str = ""
     tokens: dict[str, int] = field(default_factory=dict)
     tool_calls: list[str] = field(default_factory=list)
@@ -145,6 +146,7 @@ class Recording:
             "precision_route": self.precision_route,
             "gap_answer": self.gap_answer,
             "final_answer": self.final_answer,
+            "answer_mode": self.answer_mode,
             "blocked_claims": self.blocked_claims,
             "elapsed_ms": self.elapsed_ms,
             "evidence_fingerprint": self.evidence_fingerprint,
@@ -171,6 +173,7 @@ class Recording:
             precision_route=str(d.get("precision_route") or ""),
             gap_answer=str(d.get("gap_answer") or ""),
             final_answer=str(d.get("final_answer") or ""),
+            answer_mode=str(d.get("answer_mode") or ""),
             model=str(d.get("model") or ""),
             tokens=dict(d.get("tokens") or {}),
             tool_calls=list(d.get("tool_calls") or []),

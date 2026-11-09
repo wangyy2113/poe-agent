@@ -25,12 +25,16 @@ class ModelStreamLifecycleTest(unittest.TestCase):
                 closed = Mock()
                 def raw():
                     try:
-                        yield chunk(content="片段")
+                        frame = chunk(content="片段")
+                        if mode == "budget":
+                            frame.usage.prompt_tokens = 4990
+                            frame.usage.total_tokens = 5010
+                        yield frame
                         if mode == "error":
                             raise RuntimeError("unit-test-secret https://gateway.example.test/v1 broken")
                     finally:
                         closed()
-                budget = TurnBudget(1 if mode == "budget" else 100)
+                budget = TurnBudget(4096)
                 with patch.object(self.client, "_invoke", return_value=(raw(), DEEPSEEK_MODEL)):
                     stream = self.client.stream([], budget=budget)
                     events = [next(stream)]
@@ -39,7 +43,7 @@ class ModelStreamLifecycleTest(unittest.TestCase):
                     else:
                         events.extend(stream)
                 closed.assert_called_once()
-                self.assertEqual(30, budget.used.total_tokens)
+                self.assertEqual(5010 if mode == "budget" else 30, budget.used.total_tokens)
                 if mode in {"error", "budget"}:
                     self.assertEqual("error", events[-1].kind)
                     self.assertNotIn("tool_calls", [event.kind for event in events])
@@ -53,7 +57,7 @@ class ModelStreamLifecycleTest(unittest.TestCase):
                     tool = SimpleNamespace(index=0, id="call", function=SimpleNamespace(name="tool", arguments='{"partial":'))
                     raw = chunk(calls=[tool]) if streaming else response(calls=[tool])
                     raw.choices[0].finish_reason = finish
-                    budget = TurnBudget(100)
+                    budget = TurnBudget(4096)
                     with patch.object(self.client, "_invoke", return_value=(iter([raw]) if streaming else raw, DEEPSEEK_MODEL)):
                         if streaming:
                             events = list(self.client.stream([], budget=budget))
@@ -65,7 +69,7 @@ class ModelStreamLifecycleTest(unittest.TestCase):
 
     def test_rejected_model_still_counts_upstream_usage(self):
         for streaming in (False, True):
-            budget = TurnBudget(100)
+            budget = TurnBudget(4096)
             raw = iter([chunk(model="other")]) if streaming else response(model="other")
             with patch.object(self.client, "_invoke", return_value=(raw, DEEPSEEK_MODEL)):
                 if streaming:

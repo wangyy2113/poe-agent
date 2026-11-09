@@ -74,13 +74,15 @@ class SimpleEntityCostTest(unittest.TestCase):
             loop.dbmod, "get_conn", return_value=object()
         ), patch.object(loop.REGISTRY, "call", side_effect=call), patch.object(
             loop, "_apply_dimension_gate", return_value=({"sufficient": True}, False)
-        ), patch.object(loop, "_tools_for_question", return_value=[{"function": {"name": "x"}}]):
+        ), patch.object(loop, "_tools_for_question", return_value=[{"function": {"name": "x"}}]), patch.object(
+            loop, "render_entity_answer", return_value=""
+        ):
             setup = loop._prepare_turn(question, result)
         self.assertEqual([], setup.tools)
         self.assertEqual(1, len(result.evidence))
         self.assertEqual("猎首", result.evidence[0].title)
         self.assertEqual("exact_single_entity", result.retrieval_meta["evidence_policy"])
-        self.assertIn("本轮没有计算工具", setup.messages[0]["content"])
+        self.assertIn("只返回 JSON 数组", setup.messages[0]["content"])
 
 
 def _scan(text: str) -> list[str]:
@@ -330,29 +332,6 @@ class PreferredRouteTest(unittest.TestCase):
     def test_generic_craft_plan_does_not_invent_an_operation(self) -> None:
         self.assertIsNone(loop._craft_operation_args("这把毕业弓应该怎么做"))
         self.assertNotEqual("craft_operation_state", loop._preferred_tool_route("这把毕业弓应该怎么做"))
-
-
-class FirstRoundToolsTest(unittest.TestCase):
-    """网关忽略 tool_choice，所以「强制」靠裁剪 schema。"""
-
-    TOOLS = [
-        {"type": "function", "function": {"name": "kb_search"}},
-        {"type": "function", "function": {"name": "mod_tiers"}},
-        {"type": "function", "function": {"name": "entity_lookup"}},
-    ]
-
-    def test_trims_to_the_preferred_tool(self) -> None:
-        got = loop._first_round_tools("mod_tiers", self.TOOLS)
-        self.assertEqual(["mod_tiers"], [s["function"]["name"] for s in got])
-
-    def test_no_preference_keeps_everything(self) -> None:
-        self.assertEqual(self.TOOLS, loop._first_round_tools("", self.TOOLS))
-
-    def test_unknown_tool_keeps_everything(self) -> None:
-        """偏好工具不在本轮 schema 里（可能被来源授权裁掉了）时不能把工具清空。"""
-        self.assertEqual(
-            self.TOOLS, loop._first_round_tools("affix_pool_odds", self.TOOLS)
-        )
 
 
 if __name__ == "__main__":

@@ -610,7 +610,7 @@ class TestAffixPoolToolBindingAndRoute(unittest.TestCase):
             )
             self.assertEqual(
                 [s["function"]["name"] for s in loop._tools_for_question(QUESTION)],
-                ["kb_search", "affix_pool_odds"],
+                ["affix_pool_odds"],
             )
         with patch("orchestrator.loop.REGISTRY.call") as registry_call:
             result, matched = loop._call_tool(

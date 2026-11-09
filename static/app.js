@@ -583,10 +583,10 @@ function addAssistantMessage() {
    * 不逐句 append HTML，因为 Markdown 结构（列表、表格）会跨句，
    * 逐句拼 HTML 会把它们拆断。
    *
-   * 遇到拦截或缺据时**封段**：下一句开新段。这样拦截提示出现在它实际发生的
-   * 位置，而不是全堆到末尾——堆到末尾用户就看不出是哪里被拦了。 */
+   * 遇到拦截或缺据时封段，避免前后正文误拼成同一句；拦截原因在末尾折叠。 */
   let markdownBuffer = '';
   let prose = null;
+  const blockedReasons = [];
 
   const ensureProse = () => {
     if (!prose) {
@@ -627,12 +627,8 @@ function addAssistantMessage() {
 
     /** 被拦截的无据断言。显示的是拦截说明，不是原文。 */
     appendBlocked(text, reason) {
-      const d = document.createElement('div');
-      d.className = 'blocked';
-      d.innerHTML = `<b>已拦截</b>：${escapeHtml(reason)}`;
-      body.insertBefore(d, status);
+      blockedReasons.push(reason);
       sealProse();
-      scrollToEnd();
     },
 
     /** 缺据声明。与正文视觉分区（需求 6.8）。 */
@@ -705,12 +701,20 @@ function addAssistantMessage() {
         d.textContent = '本轮没有产生可下发的内容。';
         body.appendChild(d);
       }
-      if (info && info.blocked_claims > 0) {
-        const d = document.createElement('div');
-        d.className = 'note';
-        d.textContent =
-          `出口校验拦截了 ${info.blocked_claims} 句无据断言（trace ${info.trace_id.slice(0, 8)}）。`;
-        body.appendChild(d);
+      if (blockedReasons.length) {
+        const details = document.createElement('details');
+        details.className = 'note';
+        const summary = document.createElement('summary');
+        summary.textContent = `部分内容未得到引用支持，已省略（${blockedReasons.length} 处）`;
+        details.appendChild(summary);
+        const list = document.createElement('ul');
+        for (const reason of new Set(blockedReasons)) {
+          const item = document.createElement('li');
+          item.textContent = reason;
+          list.appendChild(item);
+        }
+        details.appendChild(list);
+        body.appendChild(details);
       }
     },
   };
