@@ -50,7 +50,8 @@ class SearchTerminologyTest(unittest.TestCase):
             self.assertEqual(question, search_query(question))
         result = retrieve(self.conn, "生命偷取的腰带", top_k=8)
         self.assertIn(result.hits[0].entity_id, {"unique_item:Wurms_Molt", "unique_item:The_Retch"})
-        self.assertIn("mod_intent", retrieve(self.conn, "腰带词缀", top_k=8).channels)
+        self.assertNotIn("mod_intent", retrieve(self.conn, "生命偷取词缀的腰带", top_k=8).channels)
+        self.assertIn("mod_intent", retrieve(self.conn, "腰带词缀池", top_k=8).channels)
 
     def test_negation_and_compound_constraints_remain_in_search_text(self):
         self.assertEqual("不要获得怪物属性的腰带，要生命偷取的腰带",

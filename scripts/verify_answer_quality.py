@@ -67,6 +67,7 @@ CASES = [
     Case("description_reworded", "有什么腰带能窃取怪物的词缀？", ("猎首", "稀有怪物", "仿品", "魔法怪物"), forbidden=("生命偷取上限", "每秒偷取")),
     Case("description_jewel", "偷取词缀的珠宝有哪些？", ("求知的热情|InspiredLearning", "4个关键天赋", "20秒"), forbidden=("生命偷取上限",)),
     Case("description_leech", "哪些腰带有生命偷取？请给两个例子。", ("龙蜕|Wurm", "呕吐|TheRetch", "生命偷取"), forbidden=("击败稀有怪物",)),
+    Case("description_leech_affix", "生命偷取词缀的腰带有哪些？请给两个例子。", ("龙蜕|Wurm", "呕吐|TheRetch", "生命偷取"), forbidden=("击败稀有怪物",)),
     Case("description_negation", "不要偷取词缀的腰带，要生命偷取的腰带，请举两个例子。", ("龙蜕|Wurm", "呕吐|TheRetch", "生命偷取"), forbidden=("击败稀有怪物",)),
     Case("unsupported_condition", "10000护甲受到5000物理击中，另有20%物理减伤，敌人无视10%物理减伤，最终受到多少伤害？", ("10%", "不能|无法|不支持|未覆盖|未纳入"), "clarification", forbidden=("2571",)),
     Case("recharge", "我有3000能量护盾，50%护盾回充速度加成，护盾回充每秒恢复多少？", ("1485", "3000", "50%|增加的回充速度.{0,15}50/100"), tools=("recovery_calc",)),
